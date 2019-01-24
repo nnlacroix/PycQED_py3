@@ -12,6 +12,8 @@ from copy import deepcopy
 
 import matplotlib.pyplot as plt
 import lmfit
+import os
+import h5py
 import logging
 import itertools
 from collections import OrderedDict
@@ -758,7 +760,6 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
                          data_file_path=data_file_path,
                          options_dict=options_dict,
                          extract_only=extract_only, do_fitting=do_fitting)
-
         self.n_readouts = options_dict['n_readouts']
         self.thresholds = options_dict['thresholds']
         self.channel_map = options_dict['channel_map']
@@ -807,6 +808,10 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
             self.run_analysis()
 
     def process_data(self):
+        if self.thresholds == None:
+            self.thresholds = self.thresholds_extract(channel_map=self.channel_map,
+                                                      path=self.raw_data_dict['folder'][0])
+        print('thresholds:',self.thresholds,'(has already *1.5)')
         shots_thresh = {}
         logging.info("Loading from file")
 
@@ -822,6 +827,22 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
                 list(self.observables.values()),
                 self.n_readouts
         )
+        
+    def thresholds_extract(self, channel_map, path):
+        """
+        This function can find the thresholds of the qubits from the certain h5py file.
+        """
+        #We open the document '.hdf5' from the path
+        files = os.listdir(path)
+        for f in files:
+            if f.endswith('.hdf5'):
+                hdf = path + '\\' + f
+        hdf = h5py.File(hdf,'r')
+        thresholds = {}
+        for qb in channel_map:
+            key = 'quex_thres_' + channel_map[qb][-1] + '_level'
+            thresholds[qb] = float(hdf['Instrument settings/UHFQC'].attrs[key]) *1.5
+        return thresholds
 
     @staticmethod
     def probability_table(shots_of_qubits, observables, n_readouts):
