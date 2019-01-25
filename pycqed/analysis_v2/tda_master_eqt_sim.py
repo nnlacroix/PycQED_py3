@@ -1749,6 +1749,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                 meas_string = meas_string[0]
         self.plot_dicts['density_matrix'] = {
             'plotfn': self.plot_bar3D,
+            # 'plotsize': (8, 5),
             '3d': True,
             '3d_azim': -35,
             '3d_elev': 35,
@@ -1803,7 +1804,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                                  r'$\frac{3}{2}\pi$', r'$2\pi$'],
                 'clabel': 'Phase (rad)',
                 'title': ('Target density matrix\n' +
-                          self.raw_data_dict['timestamp'] + ' ' +
+                          self.raw_data_dict['timestamp'] + '\n' +
                           meas_string),
                 'bar_kws': dict(zorder=1),
             }
@@ -1869,7 +1870,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                 'ctick_labels': ['$0$', r'$\frac{1}{2}\pi$', r'$\pi$',
                                  r'$\frac{3}{2}\pi$', r'$2\pi$'],
                 'clabel': 'Phase (rad)',
-                'title': (title + self.raw_data_dict['timestamp'] + ' ' +
+                'title': (title + self.raw_data_dict['timestamp'] + '\n' +
                           meas_string),
                 'do_legend': True,
                 'legend_entries': legend_entries,
