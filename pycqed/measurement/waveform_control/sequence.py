@@ -20,8 +20,8 @@ class Sequence:
     """
 
     def __init__(self, name):
-        self.pulsar = ps.Pulsar.get_instance()
         self.name = name
+        self.pulsar = ps.Pulsar.get_instance()
         self.segments = odict()
         self.awg_sequence = {}
 
@@ -33,8 +33,7 @@ class Sequence:
 
     def sequence_for_awg(self):
         """
-        Returns for an AWG a sequence with the ordered lists containing
-        element name, segment name and 'RO' flag for readout elements.
+        Stores the for all AWGs the sequence of elements in self.sequence_for_awg.
         """
 
         self.awg_sequence = {}
