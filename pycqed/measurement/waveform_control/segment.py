@@ -29,7 +29,7 @@ class Segment:
         self.unresolved_pulses = []
         self.previous_pulse = None
         self.elements = odict()
-        self.element_start_end = {}
+        self.element_start_samples = {}
         self.elements_on_awg = {}
         self.trigger_pars = {
             'pulse_length': 50e-9,
@@ -112,7 +112,7 @@ class Segment:
             * the charge compensation pulses are added
         """
         self.resolve_timing()
-        self.resolve_Z_gates()
+        self.resolve_z_gates()
         self.gen_trigger_el()
         self.add_charge_compensation()
 
@@ -130,15 +130,15 @@ class Segment:
         """
 
         visited_pulses = []
-        ref_points = []
+        ref_pulses = []
         i = 0
 
-        pulses = self.gen_refpoint_dict()
+        pulses = self.gen_refpulse_dict()
 
         # add pulses that refer to segment start
         for pulse in pulses['segment_start']:
             if pulse.pulse_obj.name in pulses:
-                ref_points.append((pulse.pulse_obj.name, pulse))
+                ref_pulses.append((pulse.pulse_obj.name, pulse))
 
             t0 = pulse.delay - pulse.ref_point_new * pulse.pulse_obj.length
             pulse.pulse_obj.algorithm_time(t0)
@@ -149,15 +149,15 @@ class Segment:
             raise ValueError('No pulse references to the segment start!')
 
         # add remaining pulses
-        while len(ref_points) > 0:
-            new_ref_points = []
-            for (name, pulse) in ref_points:
+        while len(ref_pulses) > 0:
+            new_ref_pulses = []
+            for (name, pulse) in ref_pulses:
                 for p in pulses[name]:
 
                     # add p.name to reference list if it is used as a key
                     # in pulses
                     if p.pulse_obj.name in pulses:
-                        new_ref_points.append((p.pulse_obj.name, p))
+                        new_ref_pulses.append((p.pulse_obj.name, p))
 
                     t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
                         p.ref_point_new * p.pulse_obj.length + \
@@ -167,7 +167,7 @@ class Segment:
                     visited_pulses.append((t0, i, p))
                     i += 1
 
-            ref_points = new_ref_points
+            ref_pulses = new_ref_pulses
 
         if len(visited_pulses) != len(self.unresolved_pulses):
             raise Exception('Not all pulses have been resolved!')
@@ -219,7 +219,7 @@ class Segment:
         for element in self.elements:
             # finds the channels of AWGs with that element
             awg_channels = set()
-            for awg in self.element_start_end[element]:
+            for awg in self.element_start_samples[element]:
                 chan = set(self.pulsar.find_awg_channels(awg))
                 awg_channels = awg_channels.union(chan)
 
@@ -290,7 +290,7 @@ class Segment:
                         comp_i, self.name)
                     comp_dict[RO_awg] = last_element
                     self.elements[last_element] = []
-                    self.element_start_end[last_element] = {RO_awg: [t_end, 0]}
+                    self.element_start_samples[last_element] = {RO_awg: [t_end, 0]}
                     self.elements_on_awg[RO_awg].append(last_element)
                     comp_i += 1
                 else:
@@ -321,9 +321,9 @@ class Segment:
             el_start = self.get_element_start(el, awg)
             new_end = t_end + length_comp
             new_samples = self.time2sample(new_end - el_start, awg=awg)
-            self.element_start_end[el][awg][1] = new_samples
+            self.element_start_samples[el][awg][1] = new_samples
 
-    def gen_refpoint_dict(self):
+    def gen_refpulse_dict(self):
         """
         Returns a dictionary of UnresolvedPulses with their reference_points as 
         keys.
@@ -500,10 +500,12 @@ class Segment:
             for (awg, el) in trigger_el_set:
                 self.element_start_length(el, awg)
 
+        # update elements_on_awg
+        self.gen_elements_on_awg()
         # checks if elements on AWGs overlap
         self._test_overlap()
         # checks if there is only one element on the master AWG
-        self._test_trigger_awg()
+        self._test_master_awg()
 
     def find_trigger_element(self, trigger_awg, trigger_pulse_time):
         """
@@ -540,15 +542,15 @@ class Segment:
         This method returns the end of an element on an AWG in algorithm_time 
         """
 
-        samples = self.element_start_end[element][awg][1]
+        samples = self.element_start_samples[element][awg][1]
         length = self.sample2time(samples, awg=awg)
-        return self.element_start_end[element][awg][0] + length
+        return self.element_start_samples[element][awg][0] + length
 
     def get_element_start(self, element, awg):
         """
         This method returns the start of an element on an AWG in algorithm_time 
         """
-        return self.element_start_end[element][awg][0]
+        return self.element_start_samples[element][awg][0]
 
     def _test_overlap(self):
         """
@@ -559,7 +561,7 @@ class Segment:
             el_list = []
             i = 0
             for el in self.elements_on_awg[awg]:
-                el_list.append([self.element_start_end[el][awg][0], i, el])
+                el_list.append([self.element_start_samples[el][awg][0], i, el])
                 i += 1
 
             el_list.sort()
@@ -583,12 +585,11 @@ class Segment:
                     raise ValueError('{} and {} overlap on {}'.format(
                         prev_el, el_list[i + 1][2], awg))
 
-    def _test_trigger_awg(self):
+    def _test_master_awg(self):
         """
         Checks if there is more than one element on the AWGs that are not 
         triggered by another AWG.
         """
-        self.gen_elements_on_awg()
 
         for awg in self.elements_on_awg:
             if len(self.pulsar.get('{}_trigger_channels'.format(awg))) != 0:
@@ -597,7 +598,7 @@ class Segment:
                 raise ValueError(
                     'There is more than one element on {}'.format(awg))
 
-    def resolve_Z_gates(self):
+    def resolve_z_gates(self):
         """
         The phase of a basis rotation is acquired by an basis pulse, if the 
         middle of the basis rotation pulse happens before the middle of the 
@@ -622,10 +623,10 @@ class Segment:
     def element_start_length(self, element, awg):
         """
         Finds and saves the start and length of an element on AWG awg
-        in self.element_start_end.
+        in self.element_start_samples.
         """
-        if element not in self.element_start_end:
-            self.element_start_end[element] = {}
+        if element not in self.element_start_samples:
+            self.element_start_samples[element] = {}
 
         # find element start, end and length
         t_start = float('inf')
@@ -654,7 +655,7 @@ class Segment:
         if samples % gran != 0:
             samples += gran - samples % gran
 
-        self.element_start_end[element][awg] = [t_start, samples]
+        self.element_start_samples[element][awg] = [t_start, samples]
         return [t_start, samples]
 
     def waveforms(self, awgs=None, channels=None):
@@ -840,7 +841,7 @@ class Segment:
         else:
             raise Exception('instrument_ref has to be channel or AWG name!')
 
-        return self.element_start_end[element][awg][1]
+        return self.element_start_samples[element][awg][1]
 
     def time2sample(self, t, **kw):
         """

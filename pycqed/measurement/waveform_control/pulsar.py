@@ -746,15 +746,15 @@ class AWG5014Pulsar:
         for grp in ['ch1','ch2','ch3', 'ch4']:
             grp_wfnames = []
             try:
-                for (
-                        element,
-                        segment,
-                ) in sequence.awg_sequence[obj.name]:
+                for el_info in sequence.awg_sequence[obj.name]:
+                    if 'RO' in el_info:
+                        raise ValueError('AWG5014 does neither support RO \
+                                        nor codewords!')
+                    element = el_info[0]
                     wfname = element + '_' + grp
                     grp_wfnames.append(wfname)
                 wfname_l.append(grp_wfnames)
-            except ValueError:
-                raise ValueError('AWG5014 does neither support RO nor codewords!')
+            
         no_of_elements = len(sequence.awg_sequence[obj.name])
 
         nrep_l = [1] * no_of_elements

@@ -59,7 +59,7 @@ class Sequence:
                     continue
 
                 for element in seg.elements_on_awg[awg]:
-                    self.awg_sequence[awg].append([element, segment])
+                    self.awg_sequence[awg].append([element])
                     if element in seg.acquisition_elements:
                         self.awg_sequence[awg][-1].append('RO')
 
