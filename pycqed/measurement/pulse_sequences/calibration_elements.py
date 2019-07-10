@@ -1,5 +1,7 @@
+import numpy as np
 from copy import deepcopy
 from pycqed.measurement.pulse_sequences.standard_elements import multi_pulse_elt
+from pycqed.measurement.waveform_control import pulsar as ps
 from pycqed.measurement.waveform_control import sequence as sequence
 from pycqed.measurement.waveform_control import segment as segment
 from pycqed.measurement.pulse_sequences.single_qubit_tek_seq_elts import \
@@ -65,7 +67,7 @@ def cos_seq(amplitude, frequency, channels, phases,
 
 def mixer_calibration_sequence(trigger_separation, amplitude, trigger_channel=None,
                                RO_pars = None,
-                               pulse_I_channel=None, pulse_Q_channel=None,
+                               pulse_I_channel='AWG_ch1', pulse_Q_channel='AWG_ch2',
                                f_pulse_mod=0, phi_skew=0, alpha=1, upload=True):
     if trigger_channel is not None:
         RO_trigger = {'pulse_type': 'SquarePulse',
@@ -128,8 +130,8 @@ def mixer_calibration_sequence(trigger_separation, amplitude, trigger_channel=No
 
 def readout_pulse_scope_seq(delays, pulse_pars, RO_pars, RO_separation,
                             cal_points=((-4, -3), (-2, -1)), comm_freq=225e6,
-                            verbose=False, upload=True, return_seq=False,
-                            prep_pulses=None):
+                            upload=True, return_seq=False, prep_pulses=None,
+                            verbose=False):
     """
     Prepares the AWGs for a readout pulse shape and timing measurement.
 
@@ -160,13 +162,17 @@ def readout_pulse_scope_seq(delays, pulse_pars, RO_pars, RO_separation,
         The sequence object and the element list if return_seq is True. Else
         return the sequence name.
     """
-    if cal_points is True: cal_points = ((-4, -3), (-2, -1))
-    elif cal_points is False or cal_points is None: cal_points = ((), ())
-    if prep_pulses is None: prep_pulses = []
-    if comm_freq: RO_separation -= RO_separation % (-1/comm_freq)
+    if cal_points:
+        cal_points = ((-4, -3), (-2, -1))
+    elif not cal_points or cal_points is None:
+        cal_points = ((), ())
+    if prep_pulses is None:
+        prep_pulses = []
+    if comm_freq:
+        RO_separation -= RO_separation % (-1/comm_freq)
 
     seq_name = 'readout_pulse_scope_sequence'
-    seq = sequence.Sequence(seq_name, station.pulsar)
+    seq = sequence.Sequence(seq_name)
     seg_list = []
     pulses = get_pulse_dict_from_pars(pulse_pars)
     min_delay = min(delays)
@@ -181,30 +187,51 @@ def readout_pulse_scope_seq(delays, pulse_pars, RO_pars, RO_separation,
         pulse['pulse_delay'] = -2*np.abs(min_delay)
     for i, tau in enumerate(delays):
         if i in cal_points[0] or i - len(delays) in cal_points[0]:
-            seg = segment.Segment('segment_{}'.format(2*i), station.pulsar, [pulses['I'], RO_pars])
+            seg = segment.Segment('segment_{}'.format(2*i),
+                                  [pulses['I'], RO_pars])
             seg_list.append(seg)
             seq.add(seg)
-            seg = segment.Segment('segment_{}'.format(2*i+1), station.pulsar, [pulses['I'], RO_pars])
+            seg = segment.Segment('segment_{}'.format(2*i+1),
+                                  [pulses['I'], RO_pars])
             seg_list.append(seg)
             seq.add(seg)
         elif i in cal_points[1] or i - len(delays) in cal_points[1]:
-            seg = segment.Segment('segment_{}'.format(2*i), station.pulsar, [pulses['X180'], RO_pars])
+            seg = segment.Segment('segment_{}'.format(2*i),
+                                  [pulses['X180'], RO_pars])
             seg_list.append(seg)
             seq.add(seg)
-            seg = segment.Segment('segment_{}'.format(2*i+1), station.pulsar, [pulses['X180'], RO_pars])
+            seg = segment.Segment('segment_{}'.format(2*i+1),
+                                  [pulses['X180'], RO_pars])
             seg_list.append(seg)
             seq.add(seg)
         else:
-
             probe_pulse['pulse_delay'] = tau - min_delay
             readout_x1['pulse_delay'] = -tau
-            seg = segment.Segment('segment_{}'.format(2*i), station.pulsar, prep_pulses +
-                                 [probe_pulse, readout_x1, readout_x2])
+            # probe_pulse.update({
+            #     'reference_pulse': 'segment_start',
+            #     'name': 'probe_pulse{}'.format(2 * i),
+            #     'element_name': 'probe_elt{}'.format(2 * i),
+            # })
+            # readout_x1.update({
+            #     'reference_pulse': 'probe_pulse{}'.format(2 * i),
+            #     'name': 'probe_ro{}'.format(2 * i),
+            #     'element_name': 'probe_elt{}'.format(2 * i),
+            # })
+            # readout_x2.update({
+            #     'reference_pulse': 'probe_ro{}'.format(2 * i),
+            #     'name': 'measure_ro{}'.format(2 * i),
+            #     'element_name': 'measure_elt{}'.format(2 * i),
+            # })
+            # from pprint import pprint
+            # for p in [probe_pulse, readout_x1, readout_x2]:
+            #     pprint(p)
+            seg = segment.Segment('segment_{}'.format(2*i), prep_pulses +
+                                  [probe_pulse, readout_x1, readout_x2])
             seg_list.append(seg)
             seq.add(seg)
 
     if upload:
-        station.pulsar.program_awgs(seq)
+        ps.Pulsar.get_instance().program_awgs(seq)
     if return_seq:
         return seq, seg_list
     else:

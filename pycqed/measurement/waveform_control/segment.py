@@ -60,28 +60,35 @@ class Segment:
                 len(self.unresolved_pulses))
         self._pulse_names.add(pars_copy['name'])
 
+
         # Makes sure that element name is unique within sequence of 
         # segments by appending the segment name to the element name
         # and that RO pulses have their own elements if no element_name
         # was provided
+        i = len(self.acquisition_elements) + 1
+
         if pars_copy.get('element_name', None) == None:
             if pars_copy.get('operation_type', None) == 'RO':
-                i = len(self.acquisition_elements) + 1
                 pars_copy['element_name'] = \
                     'RO_element_{}_{}'.format(i, self.name)
-                # add element to set of acquisition elements
-                self.acquisition_elements.add(pars_copy['element_name'])
             else:
                 pars_copy['element_name'] = 'default_{}'.format(self.name)
         else:
             pars_copy['element_name'] += '_' + self.name
+
+        
+        # add element to set of acquisition elements
+        if pars_copy.get('operation_type', None) == 'RO':
+            if pars_copy['element_name'] not in self.acquisition_elements:
+                self.acquisition_elements.add(pars_copy['element_name'])
+        
 
         new_pulse = UnresolvedPulse(pars_copy)
 
         if new_pulse.ref_pulse == 'previous_pulse':
             if self.previous_pulse != None:
                 new_pulse.ref_pulse = self.previous_pulse.pulse_obj.name
-            # if the first pulse added to the segment has no ref_pulse
+            # if the frist pulse added to the segment has no ref_pulse
             # it is reference to segment_start by default
             elif self.previous_pulse == None and \
                  len(self.unresolved_pulses) == 0:
@@ -118,7 +125,7 @@ class Segment:
               the UnresolvedPulse
             * saves the resolved pulse in the elements ordered dictionary by 
               ascending element start time and the pulses in each element by 
-              ascending _t0
+
             * orderes the unresolved_pulses list by ascending pulse middle
         """
 
@@ -323,7 +330,6 @@ class Segment:
         """
 
         pulses = {}
-
         for pulse in self.unresolved_pulses:
             if pulse.ref_pulse not in pulses:
                 pulses[pulse.ref_pulse] = [pulse]
@@ -629,34 +635,27 @@ class Segment:
             t_start = min(pulse.algorithm_time(), t_start)
             t_end = max(pulse.algorithm_time() + pulse.length, t_end)
 
-        length = t_end - t_start
+        # make sure that element start is a multiple of element
+        # start granularity
+        # we allow rounding up of the start time by half a sample, otherwise
+        # we round the start time down
+        start_gran = self.pulsar.get(
+            '{}_element_start_granularity'.format(awg))
+        sample_time = 1/self.pulsar.clock(awg=awg)
+        if start_gran is not None:
+            t_start = math.floor((t_start + 0.5*sample_time) / start_gran) \
+                      * start_gran
+
 
         # make sure that element length is multiple of
         # sample granularity
         gran = self.pulsar.get('{}_granularity'.format(awg))
-        samples = self.time2sample(length, awg=awg)
+        samples = self.time2sample(t_end - t_start, awg=awg)
         if samples % gran != 0:
             samples += gran - samples % gran
 
-        # make sure that element start is a multiple of element
-        # start granularity
-        start_gran = self.pulsar.get(
-            '{}_element_start_granularity'.format(awg))
-
-        if start_gran != None:
-            t_start_awg = math.floor(t_start / start_gran) * start_gran
-            # add the number of samples the element gets larger when changing
-            # t_start
-            add = self.time2sample(t_start - t_start_awg, awg=awg)
-            if add % gran != 0:
-                add += gran - add % gran
-            samples += add
-
-        else:
-            t_start_awg = t_start
-
-        self.element_start_end[element][awg] = [t_start_awg, samples]
-        return [t_start_awg, samples]
+        self.element_start_end[element][awg] = [t_start, samples]
+        return [t_start, samples]
 
     def waveforms(self, awgs=None, channels=None):
         """
@@ -697,7 +696,6 @@ class Segment:
                 tvals = self.tvals(channel_list, element)
                 wfs = {}
                 element_start_time = self.get_element_start(element, awg)
-
                 for pulse in self.elements[element]:
                     # checks whether pulse is played on AWG
                     pulse_channels = set(pulse.channels) & set(channel_list)
@@ -728,10 +726,7 @@ class Segment:
                         )[pulse_start:pulse_end]
                     
                     # calculate pulse waveforms
-                    if pulse.element_name in self.acquisition_elements:
-                        pulse_wfs = pulse.get_wfs(chan_tvals, RO=True)
-                    else:
-                        pulse_wfs = pulse.get_wfs(chan_tvals)
+                    pulse_wfs = pulse.get_wfs(chan_tvals)
 
                     # insert the waveforms at the correct position in wfs
                     for channel in pulse_channels:
@@ -859,6 +854,74 @@ class Segment:
         """
         return samples / self.pulsar.clock(**kw)
 
+    def plot(self, instruments=None, channels=None,
+             delays=dict(), savefig=False, cmap=None, frameon=True):
+        """
+        Plots a segment. Can only be done if the segment can be resolved.
+
+        :param instruments (list): instruments for which pulses have to be plotted.
+            defaults to all.
+        :param channels (list):  channels to plot. defaults to all.
+        :param delays (dict): keys are instruments, values are additional delays.
+            if passed, the delay is substracted to the time values of this
+            instrument, such that the pulses are plotted at timing when they
+            physically occur.
+        :param savefig: save the plot
+        :param cmap:
+        :param frameon:
+        :return:
+        """
+        import matplotlib.pyplot as plt
+        try:
+            self.resolve_segment()
+            wfs = self.waveforms(awgs=instruments, channels=None)
+            n_instruments = len(wfs)
+            fig, ax = plt.subplots(nrows=n_instruments, sharex=True,
+                                   squeeze=False,
+                                   figsize=(16, n_instruments * 3))
+            if cmap is None:
+                cmap = plt.get_cmap('Paired')
+            for i, instr in enumerate(wfs):
+                # formatting
+                ax[i, 0].set_title(instr)
+                ax[i, 0].spines["top"].set_visible(frameon)
+                ax[i, 0].spines["right"].set_visible(frameon)
+                ax[i, 0].spines["bottom"].set_visible(frameon)
+                ax[i, 0].spines["left"].set_visible(frameon)
+                # plotting
+                for elem_name, v in wfs[instr].items():
+                    for k, wf_per_ch in v.items():
+                        for n_wf, (ch, wf) in enumerate(wf_per_ch.items()):
+                            if channels is None or ch in channels.get(instr, []):
+                                tvals = \
+                                self.tvals([f"{instr}_{ch}"], elem_name[1])[
+                                    f"{instr}_{ch}"] \
+                                - delays.get(instr, 0)
+                                ax[i, 0].plot(tvals * 1e6, wf,
+                                              label=f"{elem_name[1]}_{k}_{ch}",
+                                              linewidth=0.7)
+
+                ax[i, 0].legend(loc=[1.02, 0], prop={'size': 8})
+
+            # formatting
+            ax[-1, 0].set_xlabel('time ($\mu$s)')
+            # start, end = ax[-1,0].get_xlim()
+            # step = (end - start)/20
+            # ax[-1,0].xaxis.set_ticks(np.arange(start, end, 0.25))
+            plt.tight_layout()
+            if savefig:
+                plt.savefig(f'{self.name}.png')
+            plt.show()
+        except Exception as e:
+            log.error(f"Could not plot: {self.name}")
+            raise e
+    def __repr__(self):
+        string_repr = f"---- {self.name} ----\n"
+
+        for i, p in enumerate(self.unresolved_pulses):
+            string_repr += f"{i}: " + repr(p) + "\n"
+        return string_repr
+
 
 class UnresolvedPulse:
     """
@@ -870,7 +933,6 @@ class UnresolvedPulse:
 
     def __init__(self, pulse_pars):
         self.ref_pulse = pulse_pars.get('ref_pulse', 'previous_pulse')
-
         if pulse_pars.get('ref_point', 'end') == 'end':
             self.ref_point = 1
         elif pulse_pars.get('ref_point', 'end') == 'middle':
@@ -878,8 +940,8 @@ class UnresolvedPulse:
         elif pulse_pars.get('ref_point', 'end') == 'start':
             self.ref_point = 0
         else:
-            raise ValueError('Passed invalid value for ref_point. Allowed \
-                values are: start, end, middle. Default value: end')
+            raise ValueError('Passed invalid value for ref_point. Allowed '
+                'values are: start, end, middle. Default value: end')
 
         if pulse_pars.get('ref_point_new', 'start') == 'start':
             self.ref_point_new = 0
@@ -888,10 +950,10 @@ class UnresolvedPulse:
         elif pulse_pars.get('ref_point_new', 'start') == 'end':
             self.ref_point_new = 1
         else:
-            raise ValueError('Passed invalid value for ref_point_new. Allowed \
-                values are: start, end, middle. Default value: start')
+            raise ValueError('Passed invalid value for ref_point_new. Allowed '
+                'values are: start, end, middle. Default value: start')
 
-        self.delay = pulse_pars['pulse_delay']
+        self.delay = pulse_pars.get('pulse_delay', 0)
         self.original_phase = pulse_pars.get('phase', 0)
         self.basis = pulse_pars.get('basis', None)
         self.operation_type = pulse_pars.get('operation_type', None)
@@ -916,3 +978,16 @@ class UnresolvedPulse:
             raise Exception(
                 'Codeword pulse {} does not support basis_rotation!'.format(
                     self.pulse_obj.name))
+
+    def __repr__(self):
+        string_repr = self.pulse_obj.name
+        if self.operation_type != None:
+            string_repr += f"\n   operation_type: {self.operation_type}"
+        string_repr += f"\n   ref_pulse: {self.ref_pulse}"
+        if self.ref_point != 1:
+            string_repr += f"\n   ref_point: {self.ref_point}"
+        if self.delay != 0:
+            string_repr += f"\n   delay: {self.delay}"
+        if self.original_phase != 0:
+            string_repr += f"\n   phase: {self.original_phase}"
+        return string_repr

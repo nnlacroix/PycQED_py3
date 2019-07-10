@@ -11,11 +11,16 @@ import itertools
 from copy import deepcopy
 
 import matplotlib.pyplot as plt
+import matplotlib.colors as mc
 import lmfit
 import logging
 import itertools
 from collections import OrderedDict
 import numpy as np
+from sklearn.mixture import GaussianMixture as GM
+from sklearn.tree import DecisionTreeClassifier as DTC
+from sklearn.metrics import confusion_matrix
+
 import pycqed.analysis.fitting_models as fit_mods
 from pycqed.analysis.fitting_models import ro_gauss, ro_CDF, ro_CDF_discr, \
     gaussian_2D, gauss_2D_guess, gaussianCDF, ro_double_gauss_guess
@@ -27,7 +32,9 @@ import pycqed.analysis.tools.data_manipulation as dm_tools
 from pycqed.analysis.tools.plotting import set_xlabel, set_ylabel
 from pycqed.utilities.general import int2base
 
+from matplotlib import gridspec
 from matplotlib.colors import LinearSegmentedColormap as lscmap
+
 
 odict = OrderedDict
 
@@ -243,7 +250,6 @@ class Singleshot_Readout_Analysis(ba.BaseDataAnalysis):
         self.proc_data_dict['F_assignment_raw'] = F_vs_th[opt_idx]
         self.proc_data_dict['threshold_raw'] = all_x[opt_idx]
 
-
     def prepare_fitting(self):
         self.fit_dicts = OrderedDict()
 
@@ -282,7 +288,6 @@ class Singleshot_Readout_Analysis(ba.BaseDataAnalysis):
             'fit_yvals': {'data': cdf_ys},
             'guess_pars': cum_params,
         }
-
 
     def analyze_fit_results(self):
         # Create a CDF based on the fit functions of both fits.
@@ -726,6 +731,517 @@ class Singleshot_Readout_Analysis(ba.BaseDataAnalysis):
                         'text_string': fit_text,
                     }
 
+class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
+    def __init__(self, t_start: str or list = None, t_stop: str = None,
+                 label: str or list = '', do_fitting: bool = True,
+                 data_file_path: str = None, levels = ('g', 'e', 'f'),
+                 options_dict: dict = None, auto=True, **kw):
+        '''
+        options dict options:
+            'nr_bins' : number of bins to use for the histograms
+            'post_select' :
+            'post_select_threshold' :
+            'nr_samples' : amount of different samples (e.g. ground and excited = 2)
+            'sample_0' : index of first sample (ground-state)
+            'sample_1' : index of second sample (first excited-state)
+            'max_datapoints' : maximum amount of datapoints for culumative fit
+            'log_hist' : use log scale for the y-axis of the 1D histograms
+            'verbose' : see BaseDataAnalysis
+            'presentation_mode' : see BaseDataAnalysis
+            'classif_method': how to classify the data.
+                'ncc' : default. Nearest Cluster Center
+                'gmm': gaussian mixture model.
+                'threshold': finds optimal vertical and horizontal thresholds.
+            'classif_kw': kw to pass to the classifier
+            see BaseDataAnalysis for more.
+        '''
+        super().__init__(t_start=t_start, t_stop=t_stop,
+                         label=label, do_fitting=do_fitting,
+                         data_file_path=data_file_path,
+                         options_dict=options_dict,
+                         **kw)
+        self.params_dict = {
+            'measurementstring': 'measurementstring',
+            'measured_values': 'measured_values',
+            'value_names': 'value_names',
+            'value_units': 'value_units'}
+        self.numeric_params = []
+        self.DEFAULT_CLASSIF = "gmm"
+        self.DEFAULT_PRE_SEL = False
+
+        self.levels = levels
+        # empty dict for analysis results
+        self.proc_data_dict = OrderedDict()
+        self.pre_selection = self.options_dict.get('pre_selection',
+                                                   self.DEFAULT_PRE_SEL)
+        self.classif_method = self.options_dict.get("classif_method",
+                                                    self.DEFAULT_CLASSIF)
+        if auto:
+            self.run_analysis()
+
+
+    def process_data(self):
+        """
+        Create the histograms based on the raw data
+        """
+        ######################################################
+        #  Separating data into shots for each level         #
+        ######################################################
+        # measured values is a list of arrays with measured
+        # values for each level in self.levels
+        meas_val = {l: self.raw_data_dict['measured_values'][i]
+                    for i, l in enumerate(self.levels)}
+        intermediate_ro = dict()    # store intermediate ro (preselection)
+        data = dict()               # store final data
+        mu = dict()                 # store mean of measurements
+        # loop through levels
+        for l, l_data in meas_val.items():
+            if self.pre_selection:
+                intermediate_ro[l], data[l] = self._filter(l_data)
+            else:
+                data[l] = l_data
+            mu[l] = np.mean(data[l], axis=-1)
+            # make 2D array in case only one channel (1D array)
+            if len(data[l].shape) == 1:
+                data[l] = np.array([data[l]])
+
+        X = np.vstack([data[l].transpose() for l in self.levels])
+        prep_states = np.hstack(
+            [np.ones_like(data[l][0]) * i for i, l in enumerate(self.levels)])
+
+        self.proc_data_dict['analysis_params'] = OrderedDict()
+        self.proc_data_dict['analysis_params']['mu'] = deepcopy(mu)
+        self.proc_data_dict['data'] = dict(X=deepcopy(X), prep_states=prep_states)
+        self.proc_data_dict['keyed_data'] = deepcopy(data)
+
+        assert np.ndim(X) == 2, "Data must be a two D array. " \
+                                "Received shape {}, ndim {}"\
+                                .format(X.shape, np.ndim(X))
+        pred_states, clf_params = \
+            self._classify(X, prep_states,
+                           method=self.classif_method,
+                           **self.options_dict.get("classif_kw", dict()))
+        fm = self.fidelity_matrix(prep_states, pred_states)
+
+        self.proc_data_dict['analysis_params']['state_prob_mtx'] = fm
+        self.proc_data_dict['analysis_params']['n_shots'] = X.shape[0]
+        self.proc_data_dict['analysis_params'] \
+                           ['classifier_params'] = clf_params
+
+        if self.pre_selection:
+            prep_states = []
+            X = []
+            #re do with classification first of preselection and masking
+            pred_presel = dict()
+            for i, l in enumerate(self.levels):
+                data[l] = data[l].transpose()
+                pred_presel[l] = self.clf_.predict(intermediate_ro[l]
+                                                   .transpose())
+                data_masked = data[l][pred_presel[l] == 0.]
+                X.append(data_masked)
+                prep_states.append(np.ones((data_masked.shape[0]))*i)
+
+            X = np.vstack(X)
+            pred_states = self.clf_.predict(X)
+            prep_states = np.hstack(prep_states)
+
+            fm = self.fidelity_matrix(prep_states, pred_states)
+            self.proc_data_dict['data_masked'] = dict(X=deepcopy(X),
+                                                      prep_states=prep_states)
+            self.proc_data_dict['analysis_params']\
+                               ['state_prob_mtx_masked'] = fm
+            self.proc_data_dict['analysis_params']['n_shots_masked'] = \
+                X.shape[0]
+
+    def _filter(self, data):
+        """
+        Filters data of level and returns intermediate ro and data separately
+        """
+        nr_samples = self.options_dict.get('nr_samples', 2)
+        sample_0 = self.options_dict.get('sample_0', 0)
+        sample_1 = self.options_dict.get('sample_1', 1)
+        intermediate_ro, data = data.transpose()[sample_0::nr_samples], \
+                                data.transpose()[sample_1::nr_samples]
+        return intermediate_ro.transpose(), data.transpose()
+
+    def _classify(self, X, prep_state, method, **kw):
+        """
+
+        Args:
+            X: measured data to classify
+            prep_state: prepared states (true values)
+            type: classification method
+
+        Returns:
+
+        """
+        if np.ndim(X) == 1:
+            X = X.reshape((-1,1))
+
+        params = dict()
+
+        if method == 'ncc':
+            class NCC:
+                def __init__(self, cluster_centers):
+                    """
+                    cluster_centers is a dict of cluster centers
+                    (name as key, n dimensional array as value)
+
+                    """
+                    self.cluster_centers = cluster_centers
+                def predict(self, X):
+                    pred_states = []
+                    for pt in X:
+                        dist = []
+                        for _, cluster_center in self.cluster_centers.items():
+                            dist.append(np.linalg.norm(pt - cluster_center))
+                        dist = np.asarray(dist)
+                        pred_states.append(np.argmin(dist))
+                    pred_states = np.array(pred_states)
+                    return pred_states
+                def predict_proba(self, X):
+                    raise NotImplementedError("Not implemented for NCC")
+            ncc = NCC(self.proc_data_dict['analysis_params']['mu'])
+            pred_states = ncc.predict(X)
+            self.clf_ = ncc
+            return pred_states, dict()
+
+        elif method == 'gmm':
+            cov_type = kw.pop("covariance_type", "tied")
+            # full allows full covariance matrix for each level. Other options
+            # see GM documentation
+            gm = GM(n_components=len(self.levels), covariance_type=cov_type,
+                    random_state=0,
+                    means_init=[mu for _, mu in
+                                self.proc_data_dict['analysis_params']
+                                    ['mu'].items()])
+            gm.fit(X)
+            pred_states = np.argmax(gm.predict_proba(X), axis=1)
+
+            if cov_type == "tied":
+                # in case all components share the same cov mtx return a list
+                # of identical cov matrices
+                covs = [gm.covariances_ for _ in range(gm.n_components)]
+            elif cov_type == "full":
+                # already of the right shape (n_comp, n_features, n_features)
+                covs = gm.covariances_
+            elif cov_type == "spherical":
+                # return list of sigma_i^2 * I instead of list of sigma_i^2
+                covs = [np.diag([gm.covariances_[i]
+                                 for _ in range(X.shape[1])])
+                        for i in range(gm.n_components)]
+            elif cov_type == "diag":
+                # make covariance matrices from diagonals
+                covs = [np.diag(gm.covariances_[i])
+                            for i in range(gm.n_components)]
+            else:
+                raise ValueError("covariance type: {} is not supported"
+                                 .format(cov_type))
+            params['means_'] = gm.means_
+            params['covariances_'] = gm.covariances_ #covs
+            params['covariance_type'] = gm.covariance_type
+            params['weights_'] = gm.weights_
+            params['precisions_cholesky_'] = gm.precisions_cholesky_
+            self.clf_ = gm
+            return pred_states, params
+
+        elif method == "threshold":
+            tree = DTC(max_depth=kw.pop("max_depth", X.ndim),
+                       random_state=0, **kw)
+            tree.fit(X, prep_state)
+            pred_states = tree.predict(X)
+            params["thresholds"], params["mapping"] = \
+                self._extract_tree_info(tree, self.levels)
+            self.clf_ = tree
+            if len(params["thresholds"]) == 1:
+                msg = "Best 2 thresholds to separate this data lie on axis {}" \
+                    ", most probably because the data is not well separated." \
+                    "The classifier attribute clf_ can still be used for " \
+                    "classification (which was done to obtain the state " \
+                    "assignment probability matrix), but only the threshold" \
+                    " yielding highest gini impurity decrease was returned." \
+                    "\nTo circumvent this problem, you can either choose" \
+                    " a second threshold manually (fidelity will likely be " \
+                    "worse), make the data more separable, or use another " \
+                    "classification method."
+                logging.warning(msg.format(list(params['thresholds'].keys())[0]))
+            return pred_states, params
+        elif method == "threshold_brute":
+            raise NotImplementedError()
+        else:
+            raise NotImplementedError("Classification method: {} is not "
+                                      "implemented. Available methods: {}"
+                                      .format(method, ['ncc', 'gmm',
+                                                       'threshold']))
+
+
+    @staticmethod
+    def fidelity_matrix(prep_states, pred_states, levels=('g', 'e', 'f'),
+                        plot=False, normalize=True):
+        fm = confusion_matrix(prep_states, pred_states)
+        if plot:
+            Singleshot_Readout_Analysis_Qutrit.plot_fidelity_matrix(fm,
+                                                                    levels)
+        if normalize:
+            fm = fm.astype('float') / fm.sum(axis=1)[:, np.newaxis]
+        return fm
+
+    @staticmethod
+    def plot_fidelity_matrix(fm, target_names,
+                             title="State Assignment Probability Matrix",
+                             auto_shot_info=True,
+                             cmap=None, normalize=True, show=False):
+        fidelity_avg = np.trace(fm) / float(np.sum(fm))
+        if auto_shot_info:
+            title += '\nTotal # shots:{}'.format(np.sum(fm))
+        if cmap is None:
+            cmap = plt.get_cmap('Reds')
+
+        fig, ax = plt.subplots(1, figsize=(8, 6))
+
+        if normalize:
+            fm = fm.astype('float') / fm.sum(axis=1)[:, np.newaxis]
+
+        im = ax.imshow(fm, interpolation='nearest', cmap=cmap,
+                       norm=mc.LogNorm(), vmin=5e-3, vmax=1.)
+        ax.set_title(title)
+        fig.colorbar(im)
+
+        if target_names is not None:
+            tick_marks = np.arange(len(target_names))
+            ax.set_xticks(tick_marks)
+            ax.set_xticklabels( target_names, rotation=45)
+            ax.set_yticks(tick_marks)
+            ax.set_yticklabels(target_names)
+
+        thresh = fm.max() / 1.5 if normalize else fm.max() / 2
+        for i, j in itertools.product(range(fm.shape[0]), range(fm.shape[1])):
+            if normalize:
+                ax.text(j, i, "{:0.4f}".format(fm[i, j]),
+                         horizontalalignment="center",
+                         color="white" if fm[i, j] > thresh else "black")
+            else:
+                ax.text(j, i, "{:,}".format(fm[i, j]),
+                         horizontalalignment="center",
+                         color="white" if fm[i, j] > thresh else "black")
+        plt.tight_layout()
+        ax.set_ylabel('Prepared State')
+        ax.set_xlabel('Predicted State\n$\mathcal{{F}}_{{avg}}$={:0.2f} %'
+                      .format(fidelity_avg * 100))
+        if show:
+            plt.show()
+        return fig
+
+
+    @staticmethod
+    def _extract_tree_info(tree_clf, class_names=None):
+        tree_ = tree_clf.tree_
+        feature_name = [np.arange(tree_.n_features)[i]
+                        for i in tree_.feature]
+        if class_names is None:
+            class_names = np.arange(len(tree_.value[0]))
+        thresholds, mapping = dict(), dict()
+
+        def recurse(node, thresholds_final, loc, mapping):
+            if tree_.feature[node] != -2:
+                name = feature_name[node]
+                threshold = tree_.threshold[node]
+                if not name in thresholds_final.keys():
+                    thresholds_final[name] = threshold
+                recurse(tree_.children_left[node], thresholds_final,
+                        loc + [0], mapping)
+                recurse(tree_.children_right[node], thresholds_final,
+                        loc + [1], mapping)
+            else:
+                mapping[tuple(loc)] = class_names[np.argmax(tree_.value[node])]
+
+        recurse(0, thresholds, [], mapping)
+
+        #translate keys to codeword index format
+        mapping = {Singleshot_Readout_Analysis_Qutrit._to_codeword_idx(k): v
+                   for k, v in mapping.items()}
+
+        return thresholds, mapping
+
+    @staticmethod
+    def _to_codeword_idx(tuple):
+        """
+        Maps a binary tuple (in ascending axis order) to codeword index.
+        eg. for 4 tuples:
+        (0, 1) | (1, 1)          2 | 3
+        ---------------    -->   -----
+        (0, 0) | (1, 0)          0 | 1
+        :param tuple:
+        :return:
+        """
+        return np.sum([i * 2**n for n, i in enumerate(tuple)])
+
+    @staticmethod
+    def plot_scatter_and_marginal_hist(data, y_true=None, plot_fitting=False,
+                                       **kwargs):
+        """
+        Plot data with classifier boundary functions,
+        side histograms and possibly thresholds
+        Args:
+            data: array of size (n_samples, 2)
+            y_true: array of size (n_samples,) with classification label
+                for each class
+            plot_fitting: Not implemented (not useful?)
+            **kwargs: plotting keywords
+
+        Returns:
+
+        """
+        if kwargs.get("fig", None) is None:
+            fig, axes = plt.subplots(figsize=(10, 8))
+            kwargs['fig'] = fig
+
+        gs = gridspec.GridSpec(2, 2, width_ratios=[3, 1], height_ratios=[1, 4],
+                               figure=kwargs['fig'])
+
+        # Create scatter plot
+        ax = plt.subplot(gs[1, 0])
+        for yval in np.unique(y_true):
+            ax.scatter(data[:, 0][y_true == yval], data[:, 1][y_true == yval],
+                       alpha=kwargs.get('alpha', 0.6), marker='.',
+                       label=kwargs.get("legend_labels",
+                                        [yval] * len(np.unique(y_true)))[int(yval)])
+        #h, labels = sc.legend_elements()
+        #legend = ax.legend(h, kwargs.get("legend_labels", labels))
+        #ax.add_artist(legend)
+        # Create Y-marginal (right)
+        axr = plt.subplot(gs[1, 1], sharey=ax, frameon=False)
+        for yval in np.unique(y_true):
+            axr.hist(data[:, 1][y_true == yval], bins=50,
+                     orientation='horizontal', density=False,
+                     alpha=kwargs.get('alpha', 0.6))
+        axr.set_xscale(kwargs.get("scale", "log"))
+        plt.setp(axr.get_yticklabels(), visible=False)
+
+        # Create X-marginal (top)
+        axt = plt.subplot(gs[0, 0], sharex=ax, frameon=False)
+        plt.setp(axt.get_xticklabels(), visible=False)
+
+        for yval in np.unique(y_true):
+            axt.hist(data[:, 0][y_true == yval], bins=50,
+                     orientation='vertical', density=False,
+                     alpha=kwargs.get('alpha', 0.6))
+        axt.set_yscale(kwargs.get("scale", "log"))
+
+        axt.set_title(kwargs.get('title', None))
+        ax.set_xlabel(kwargs.get('xlabel', None))
+        ax.set_ylabel(kwargs.get('ylabel', None))
+
+        # Bring the marginals closer to the scatter plot
+        kwargs['fig'].tight_layout(pad=1)
+
+        if plot_fitting:
+            ymin, ymax = data[:, 1].min(), data[:, 1].max()
+            xmin, xmax = data[:, 0].min(), data[:, 0].max()
+            x = np.linspace(xmin, xmax, 100)
+            y = np.linspace(ymin, ymax, 100)
+            raise NotImplementedError()
+        return kwargs['fig']
+
+    @staticmethod
+    def plot_clf_boundaries(X, clf, ax=None, cmap=None):
+        def make_meshgrid(x, y, h=None, margin=None):
+            if margin is None:
+                deltax = x.max() - x.min()
+                deltay = y.max() - y.min()
+                margin_x = deltax * 0.10
+                margin_y = deltay * 0.10
+            else:
+                margin_x, margin_y = margin, margin
+            x_min, x_max = x.min() - margin_x, x.max() + margin_x
+            y_min, y_max = y.min() - margin_y, y.max() + margin_y
+            if h is None:
+                h = 0.01*(x_max - x_min)
+            xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                                 np.arange(y_min, y_max, h))
+            return xx, yy
+
+        def plot_contours(ax, clf, xx, yy, **params):
+            Z = clf.predict(np.c_[xx.ravel(), yy.ravel()])
+            Z = Z.reshape(xx.shape)
+            out = ax.contourf(xx, yy, Z, **params)
+            return out
+
+        if ax is None:
+            fig, ax = plt.subplots(1, figsize=(10, 10))
+
+        X0, X1 = X[:, 0], X[:, 1]
+        xx, yy = make_meshgrid(X0, X1)
+        plot_contours(ax, clf, xx, yy, cmap=cmap, alpha=0.3)
+
+    def prepare_plots(self):
+        cmap = plt.get_cmap('tab10')
+        tab_x = a_tools.truncate_colormap(cmap, 0, len(self.levels)/10)
+
+        show = self.options_dict.get("show", False)
+
+        kwargs = dict(legend_labels=self.levels,
+                      xlabel="Integration Unit 0",
+                      ylabel="Integration Unit 1",
+                      scale=self.options_dict.get("hist_scale", "linear"),
+                      cmap=tab_x)
+        data_keys = [k for k in list(self.proc_data_dict.keys()) if
+                        k.startswith("data")]
+        for dk in data_keys:
+            data = self.proc_data_dict[dk]
+            title =  self.raw_data_dict['timestamps'][0] + " " + dk + \
+                "\n{} classifier".format(self.classif_method)
+            kwargs.update(dict(title=title))
+            # plot data and histograms
+            fig = self.plot_scatter_and_marginal_hist(data['X'],
+                                                      data["prep_states"],
+                                                      **kwargs)
+            # plot means
+            main_ax =  fig.get_axes()[0]
+            for _ , mu in self.proc_data_dict['analysis_params']['mu'].items():
+               main_ax.scatter(mu[0], mu[1], color='r', s=80)
+
+            # plot clf_boundaries
+            self.plot_clf_boundaries(data['X'], self.clf_, ax=main_ax,
+                                     cmap=tab_x)
+
+            # plot thresholds
+            plt_fn = {0: main_ax.axvline, 1: main_ax.axhline}
+            thresholds = self.proc_data_dict['analysis_params'][
+                'classifier_params'].get("thresholds", dict())
+            for k, thres in thresholds.items():
+                plt_fn[k](thres, linewidth=2,
+                          label="threshold i.u. {}: {:.5f}".format(k, thres),
+                          color='k', linestyle="--")
+                main_ax.legend(loc=[0.2,-0.62])
+            self.figs['{}_classifier_{}'.format(self.classif_method, dk)] = fig
+        if show:
+            plt.show()
+
+        title = self.raw_data_dict['timestamps'][0] + "\n{} State Assignment" \
+            " Probability Matrix\nTotal # shots:{}"\
+            .format(self.classif_method,
+                    self.proc_data_dict['analysis_params']['n_shots'])
+        fig = self.plot_fidelity_matrix(
+            self.proc_data_dict['analysis_params']['state_prob_mtx'],
+            self.levels, title=title, show=show, auto_shot_info=False)
+        self.figs['state_prob_matrix_{}'.format(self.classif_method)] = fig
+
+        if self.pre_selection:
+            title = self.raw_data_dict['timestamps'][0] + \
+                "\n{} State Assignment Probability Matrix Masked"\
+                "\nTotal # shots:{}".format(
+                    self.classif_method,
+                    self.proc_data_dict['analysis_params']['n_shots_masked'])
+
+            fig = self.plot_fidelity_matrix(
+                self.proc_data_dict['analysis_params'] \
+                                   ['state_prob_mtx_masked'],
+                self.levels, title=title, show=show, auto_shot_info=False)
+            fig_key = 'state_prob_matrix_masked_{}'.format(self.classif_method)
+            self.figs[fig_key] = fig
+
+
 class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
     """
     Extracts table of counts from multiplexed single shot readout experiment.
@@ -1094,6 +1610,7 @@ def get_shots_zero_one(data, post_select: bool=False,
         shots_0, shots_1 = a_tools.zigzag(
             data, sample_0, sample_1, nr_samples)
     else:
+        # FIXME nathan 2019.05.17: This is useless?
         presel_0, presel_1 = a_tools.zigzag(
             data, sample_0, sample_1, nr_samples)
 

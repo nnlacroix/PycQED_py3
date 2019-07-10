@@ -77,15 +77,9 @@ class ZI_HDAWG8(ZI_base_instrument):
         self.connect_message(begin_time=t0)
 
     def set_default_values(self):
-        self._dev.seti('triggers/out/0/source', 4)
-        self._dev.seti('triggers/out/1/source', 6)
-        self._dev.seti('triggers/out/2/source', 4)
-        self._dev.seti('triggers/out/3/source', 6)
-        self._dev.seti('triggers/out/4/source', 4)
-        self._dev.seti('triggers/out/5/source', 6)
-        self._dev.seti('triggers/out/6/source', 4)
-        self._dev.seti('triggers/out/7/source', 6)
-
+        for i in range(8):
+            self._dev.seti('/{}/triggers/out/{}/source'.format(self._devname, i), 4 + 2*(i%2))
+        
     def _add_extra_parameters(self):
         self.add_parameter(
             'timeout',
@@ -370,12 +364,8 @@ class ZI_HDAWG8(ZI_base_instrument):
     def _write_csv_waveform(self, wf_name: str, waveform):
         filename = os.path.join(self.lab_one_webserver_path, 'awg', 'waves',
                                 self._devname + '_' + wf_name + '.csv')
-        # with open(filename, 'w') as f:
-        if isinstance(waveform[0], np.int32):
-            # marker channel waveforms have to be stored as int
-            np.savetxt(filename, waveform, delimiter=",", fmt='%1u')
-        else:
-            np.savetxt(filename, waveform, delimiter=",")
+        fmt = '%.18e' if waveform.dtype == np.float else '%d'
+        np.savetxt(filename, waveform, delimiter=",", fmt=fmt)
 
     def _read_csv_waveform(self, wf_name: str):
         filename = os.path.join(self.lab_one_webserver_path, 'awg', 'waves',

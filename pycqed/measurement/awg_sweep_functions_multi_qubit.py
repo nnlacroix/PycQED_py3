@@ -1,5 +1,4 @@
 import numpy as np
-import logging
 import pycqed.measurement.sweep_functions as swf
 import pycqed.measurement.pulse_sequences.multi_qubit_tek_seq_elts as sqs2
 import time
@@ -137,20 +136,17 @@ class n_qubit_seq_sweep(swf.Hard_Sweep):
 
 class n_qubit_off_on(swf.Hard_Sweep):
 
-    def __init__(self, pulse_pars_list, RO_pars, upload=True,
-                 preselection=False, parallel_pulses=False,
-                 verbose=False, RO_spacing=200e-9):
+    def __init__(self, pulse_pars_list, RO_pars_list, upload=True,
+                 preselection=False, parallel_pulses=False, RO_spacing=200e-9):
         super().__init__()
         self.pulse_pars_list = pulse_pars_list
-        self.RO_pars = RO_pars
+        self.RO_pars_list = RO_pars_list
         self.upload = upload
         self.parameter_name = 'sample'
         self.unit = '#'
         samples = 2**len(pulse_pars_list)
         if preselection:
             samples *= 2
-        # self.sweep_points = np.arange(samples)
-        self.verbose = verbose
         self.preselection = preselection
         self.parallel_pulses = parallel_pulses
         self.RO_spacing = RO_spacing
@@ -159,16 +155,14 @@ class n_qubit_off_on(swf.Hard_Sweep):
     def prepare(self, **kw):
         if self.upload:
             sqs2.n_qubit_off_on(pulse_pars_list=self.pulse_pars_list,
-                                RO_pars=self.RO_pars,
+                                RO_pars_list=self.RO_pars_list,
                                 preselection=self.preselection,
                                 parallel_pulses=self.parallel_pulses,
-                                RO_spacing=self.RO_spacing,
-                                verbose=self.verbose)
+                                RO_spacing=self.RO_spacing)
 
 class n_qubit_reset(swf.Hard_Sweep):
     def __init__(self, qubit_names, operation_dict, reset_cycle_time,
-                 nr_resets=1, upload=True, verbose=False,
-                 codeword_indices=None):
+                 nr_resets=1, upload=True, codeword_indices=None):
         super().__init__()
         self.qubit_names = qubit_names
         self.operation_dict = operation_dict
@@ -179,7 +173,6 @@ class n_qubit_reset(swf.Hard_Sweep):
         self.nr_resets = nr_resets
         samples = nr_resets*2**len(qubit_names)
         self.sweep_points = np.arange(samples)
-        self.verbose = verbose
         self.name = '{}_reset_x{}'.format(','.join(qubit_names), nr_resets)
 
     def prepare(self, **kw):
@@ -187,8 +180,7 @@ class n_qubit_reset(swf.Hard_Sweep):
             sqs2.n_qubit_reset(qubit_names=self.qubit_names,
                                operation_dict=self.operation_dict,
                                reset_cycle_time=self.reset_cycle_time,
-                               nr_resets=self.nr_resets,
-                               verbose=self.verbose)
+                               nr_resets=self.nr_resets)
 
 
 class n_qubit_Simultaneous_RB_sequence_lengths(swf.Soft_Sweep):
@@ -298,11 +290,12 @@ class n_qubit_Simultaneous_RB_fixed_seeds(swf.Hard_Sweep):
 class two_qubit_randomized_benchmarking_nr_cliffords(swf.Soft_Sweep):
 
     def __init__(self, sweep_control='soft',
-                 two_qubit_RB_sweepfunction=None):
+                 two_qubit_RB_sweepfunction=None, upload=True):
         super().__init__()
 
         self.sweep_control = sweep_control
         self.two_qubit_RB_sweepfunction = two_qubit_RB_sweepfunction
+        self.upload = upload
         self.name = 'Two_Qubit_Randomized_Benchmarking_nr_cliffords'
         self.parameter_name = 'Nr of Cliffords'
         self.unit = '#'
@@ -310,7 +303,7 @@ class two_qubit_randomized_benchmarking_nr_cliffords(swf.Soft_Sweep):
 
     def set_parameter(self, val):
         self.two_qubit_RB_sweepfunction.nr_cliffords_value = val
-        self.two_qubit_RB_sweepfunction.upload = True
+        self.two_qubit_RB_sweepfunction.upload = self.upload
         self.two_qubit_RB_sweepfunction.prepare()
 
 

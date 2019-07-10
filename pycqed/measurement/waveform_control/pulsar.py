@@ -6,9 +6,9 @@
 import numpy as np
 import logging
 from qcodes.instrument.base import Instrument
-from qcodes.instrument.parameter import ManualParameter
+from qcodes.instrument.parameter import (
+    ManualParameter, InstrumentRefParameter)
 import qcodes.utils.validators as vals
-from pycqed.instrument_drivers.pq_parameters import InstrumentParameter
 import pycqed.measurement.waveform_control.element as element
 import string
 import time
@@ -55,7 +55,8 @@ class UHFQCPulsar:
         self.add_parameter('{}_granularity'.format(awg.name),
                            get_cmd=lambda: 16)
         self.add_parameter('{}_element_start_granularity'.format(awg.name),
-                           get_cmd=lambda: 8/(1.8e9))
+                           initial_value=8/(1.8e9),
+                           parameter_class=ManualParameter)
         self.add_parameter('{}_min_length'.format(awg.name),
                            get_cmd=lambda: 16 /(1.8e9))
         self.add_parameter('{}_inter_element_deadtime'.format(awg.name),
@@ -100,6 +101,12 @@ class UHFQCPulsar:
                             get_cmd=self._uhfqc_getter(awg, id, 'amp'),
                             vals=vals.Numbers(0.075, 1.5),
                             initial_value=0.75)
+        self.add_parameter('{}_offset'.format(name),
+                            label='{} offset'.format(name), unit='V',
+                            set_cmd=self._uhfqc_setter(awg, id, 'offset'),
+                            get_cmd=self._uhfqc_getter(awg, id, 'offset'),
+                            vals=vals.Numbers(-1.5, 1.5),
+                            initial_value=0)
         self.add_parameter('{}_distortion'.format(name),
                             label='{} distortion mode'.format(name),
                             initial_value='off',
@@ -165,7 +172,8 @@ class UHFQCPulsar:
                  "  RO_TRIG=WINT_TRIG;\n" \
                  "}\n\n"
             
-        main_loop = "repeat (loop_cnt) {\n"
+        # main_loop = "repeat (loop_cnt) {\n"
+        main_loop = "for (var i = loop_cnt; i > 0; i -= 1) {\n"
 
         footer = "}\n" \
                  "wait(1000);\n" \
@@ -231,7 +239,8 @@ class UHFQCPulsar:
                     pass 
 
                 if name_ch1 is not None or name_ch2 is not None:
-                    main_loop += self._UHFQC_element_seqc(name_ch1, name_ch2, 'RO' in el_info)
+                    main_loop += self._UHFQC_element_seqc(name_ch1, name_ch2,
+                                                          'RO' in el_info)
 
         awg_str = header + main_loop + footer
 
@@ -265,17 +274,20 @@ class UHFQCPulsar:
             string for playing back an element
         """
 
-        wait_wave_str = '\t\twaitWave();\n'
         trigger_str = '\t\twaitDigTrigger(1, 1);\n'
         if name1 is None:
+            prefetch_str = '\t\tprefetch({});\n'.format(name2)
             play_str = '\t\tplayWave(2, {});\n'.format(name2)
         elif name2 is None:
+            prefetch_str = '\t\tprefetch({});\n'.format(name1)
             play_str = '\t\tplayWave(1, {});\n'.format(name1)
         else:
+            prefetch_str = '\t\tprefetch({}, {});\n'.format(name1, name2)
             play_str = '\t\tplayWave({}, {});\n'.format(name1, name2)
         readout_str = '\t\tsetTrigger(WINT_EN+RO_TRIG);\n' if readout else ''
         readout_str += '\t\tsetTrigger(WINT_EN);\n' if readout else ''
-        return wait_wave_str + trigger_str + play_str + readout_str
+        return prefetch_str + trigger_str + \
+               play_str + readout_str
 
     def _clock(self, obj, cid=None):
         if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
@@ -298,7 +310,8 @@ class HDAWG8Pulsar:
         self.add_parameter('{}_granularity'.format(awg.name),
                            get_cmd=lambda: 16)
         self.add_parameter('{}_element_start_granularity'.format(awg.name),
-                           get_cmd=lambda: 8/(2.4e9))
+                           initial_value=8/(2.4e9),
+                           parameter_class=ManualParameter)
         self.add_parameter('{}_min_length'.format(awg.name),
                            get_cmd=lambda: 16 /(2.4e9))
         self.add_parameter('{}_inter_element_deadtime'.format(awg.name),
@@ -428,14 +441,6 @@ class HDAWG8Pulsar:
     def _program_awg(self, obj, sequence):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
             return super()._program_awg(obj, sequence)
-
-        # delete previous cache files
-        obj._delete_chache_files()
-        log.info('Previous AWG8 cache files have been deleted.')
-        # delete old csv files
-        obj._delete_csv_files()
-        log.info('Previous AWG8 csv files have been deleted.')
-
         ch_has_waveforms = {'ch{}{}'.format(i+1,j): False for i in range(8) for j in ['','m']}
 
         for awg_nr in [0, 1, 2, 3]:
@@ -623,8 +628,8 @@ class HDAWG8Pulsar:
             prefetch_str = ''
             play_str = 'playWaveDIO();\n'
         elif name1 is None:
-            prefetch_str = 'prefetch({});\n'.format(name2)
-            play_str = 'playWave(2, {});\n'.format(name2)
+            prefetch_str = 'prefetch(zeros(1) + marker(1, 0), {});\n'.format(name2)
+            play_str = 'playWave(zeros(1) + marker(1, 0), {});\n'.format(name2)
         elif name2 is None:
             prefetch_str = 'prefetch({});\n'.format(name1)
             play_str = 'playWave(1, {});\n'.format(name1)
@@ -817,7 +822,8 @@ class AWG5014Pulsar:
         self.add_parameter('{}_granularity'.format(awg.name),
                            get_cmd=lambda: 4)
         self.add_parameter('{}_element_start_granularity'.format(awg.name),
-                            get_cmd=lambda: 4/(1.2e9))
+                           initial_value=4/(1.2e9),
+                           parameter_class=ManualParameter)
         self.add_parameter('{}_min_length'.format(awg.name),
                            get_cmd=lambda: 256/(1.2e9)) # Can not be triggered 
                                                         # faster than 210 ns.
@@ -1072,8 +1078,9 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
     def __init__(self, name='Pulsar', master_awg=None):
         super().__init__(name)
 
-        self.add_parameter('master_awg', parameter_class=InstrumentParameter,
-                           initial_value=master_awg, vals=vals.Strings())
+        self.add_parameter('master_awg', 
+                           parameter_class=InstrumentRefParameter,
+                           initial_value=master_awg)
         self.add_parameter('inter_element_spacing',
                            vals=vals.MultiType(vals.Numbers(0),
                                                vals.Enum('auto')),
@@ -1104,7 +1111,6 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             channel_name_map: A dictionary that maps channel ids to channel
                               names. (default {})
         """
-
         if channel_name_map is None:
             channel_name_map = {}
 
@@ -1210,29 +1216,37 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         else:
             self._awgs_with_waveforms.add(awg)
 
-    def start(self):
+    def start(self, exclude=None):
         """
         Start the active AWGs. If multiple AWGs are used in a setup where the
         slave AWGs are triggered by the master AWG, then the slave AWGs must be
         running and waiting for trigger when the master AWG is started to
         ensure synchronous playback.
         """
+        if exclude is None:
+            exclude = []
 
         # Start only the AWGs which have at least one channel programmed, i.e.
         # where at least one channel has state = 1. 
         awgs_with_waveforms = self.awgs_with_waveforms()
         used_awgs = set(self.active_awgs()) & awgs_with_waveforms
+        
+        for awg in used_awgs:
+            self._stop_awg(awg)
 
         if self.master_awg() is None:
             for awg in used_awgs:
-                self._start_awg(awg)
+                if awg not in exclude:
+                    self._start_awg(awg)
         else:
+            if self.master_awg() not in exclude:
+                self.master_awg.get_instr().stop()
             for awg in used_awgs:
-                if awg != self.master_awg():
+                if awg != self.master_awg() and awg not in exclude:
                     self._start_awg(awg)
             tstart = time.time()
             for awg in used_awgs:
-                if awg == self.master_awg():
+                if awg == self.master_awg() or awg in exclude:
                     continue
                 good = False
                 while not (good or time.time() > tstart + 10):
@@ -1243,7 +1257,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 if not good:
                     raise Exception('AWG {} did not start in 10s'
                                     .format(awg))
-            self._start_awg(self.master_awg())
+            if self.master_awg() not in exclude:
+                self.master_awg.get_instr().start()
 
     def stop(self):
         """
@@ -1272,18 +1287,24 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
 
         # resolves timing and generates trigger elements for all segments 
         for segment in sequence.segments:
-            seg = sequence.segments[segment]
+            sequence.segments[segment].resolve_segment()
 
-            seg.resolve_segment()
-        
         sequence.sequence_for_awg()
+        for awg in awgs:
+            obj = self.AWG_obj(awg=awg)
+            if isinstance(obj, ZI_HDAWG8):
+                # delete previous cache files
+                obj._delete_chache_files()
+                log.info('Previous AWG8 cache files have been deleted.')
+                # delete old csv files
+                obj._delete_csv_files()
+                log.info('Previous AWG8 csv files have been deleted.')
+                break
 
         for awg in awgs:
-            #returns the instance of the class AWG that is requested
-            obj = self.AWG_obj(awg=awg)
-            #programs the AWG to play the segments in the order as in sequence
-            self._program_awg(obj, sequence)
-        
+            self._program_awg(self.AWG_obj(awg=awg), sequence)
+
+        # sequence.sequence_for_awg()
         self.AWGs_prequeried(False)
 
     def old_program_awgs(self, sequence, *elements, AWGs='all', channels='all',
