@@ -2380,7 +2380,7 @@ def cphase_nz_seq(phases, flux_params_dict,
                   verbose=False, cal_points=False,
                   num_cal_points=4,
                   upload=True, return_seq=False,
-                  first_data_point=True
+                  first_data_point=True, preselection = False
                   ):
 
     assert num_cz_gates % 2 != 0
@@ -2396,7 +2396,17 @@ def cphase_nz_seq(phases, flux_params_dict,
     X180_control_2 = deepcopy(operation_dict['X180 ' + qbc_name])
     X90_target_2 = deepcopy(operation_dict['X90 ' + qbt_name])
 
+    operation_dict['RO mux_presel'] = operation_dict['RO mux'].copy()
+    operation_dict['RO mux_presel']['refpoint'] = 'end'
+    operation_dict['RO presel_dummy'] = {
+        'pulse_type': 'SquarePulse',
+        'channel': operation_dict['RO mux']['acq_marker_channel'],
+        'amplitude': 0.0,
+        'length': 0,
+        'pulse_delay': 0}
+
     CZ_pulse = deepcopy(operation_dict[CZ_pulse_name])
+
     for param_name, param_value in flux_params_dict.items():
         CZ_pulse[param_name] = param_value
     CZ_pulse['channel'] = CZ_pulse_channel
@@ -2408,6 +2418,9 @@ def cphase_nz_seq(phases, flux_params_dict,
         # RO_pulse['pulse_delay'] = max_flux_length
     print(max_flux_length)
 
+    # ro_delay = 100e-9 + operation_dict['RO mux']['length']
+    ro_spacing = max_flux_length + 1.5*operation_dict['RO mux']['length']
+    print(ro_spacing)
     pulse_list.append(X180_control)
     pulse_list.append(X90_target)
 
@@ -2429,7 +2442,8 @@ def cphase_nz_seq(phases, flux_params_dict,
     # pulse_list.append(X180_control)
     pulse_list.append(X90_target_2)
     pulse_list.append(RO_pulse)
-
+    print('RO mux length')
+    print(operation_dict['RO mux']['length'])
     if not first_data_point:
         reduced_pulse_list += num_cz_gates*[CZ_pulse]
         upload_channels, upload_AWGs = get_required_upload_information(
@@ -2443,6 +2457,7 @@ def cphase_nz_seq(phases, flux_params_dict,
         # upload_channels, upload_AWGs = get_required_upload_information(
         #     pulse_list, station)
 
+
     unique_phases = np.unique(phases)
     for pipulse in [True, False]:
         if not pipulse:
@@ -2452,22 +2467,68 @@ def cphase_nz_seq(phases, flux_params_dict,
             el_iter = i if pipulse else len(unique_phases)+i
             if cal_points and num_cal_points == 3 and \
                     i == (len(unique_phases) - 3):
-                el = multi_pulse_elt(el_iter, station,
-                                     [operation_dict['RO mux']])
+                if preselection:
+                    # print('Finding ro spacing')
+                    # print(X180_control)
+                    # ro_spacing = ro_delay
+                    operation_dict['RO mux_presel']['pulse_delay'] = \
+                        -ro_spacing - operation_dict['RO mux']['length']
+                    operation_dict['RO presel_dummy']['length'] = ro_spacing
+                    # print(ro_spacing)
+                    el = multi_pulse_elt(el_iter, station,
+                                         [
+                                         operation_dict['RO mux_presel'],
+                                         operation_dict['RO presel_dummy'],
+                                         operation_dict['RO mux']])
+                else:
+                    el = multi_pulse_elt(el_iter, station,
+                                          [operation_dict['RO mux']])
             elif cal_points and num_cal_points == 3 and \
                     i == (len(unique_phases) - 2):
-                el = multi_pulse_elt(el_iter, station,
-                                     [operation_dict['X180 ' + qbc_name],
-                                      operation_dict['X180s ' + qbt_name],
-                                      operation_dict['RO mux']])
+                if preselection:
+                    # print('Finding ro spacing')
+                    # print(X180_control)
+                    # ro_spacing = ro_delay + 1* X180_control['nr_sigma'] * X180_control['sigma']
+                    operation_dict['RO mux_presel']['pulse_delay'] = \
+                        -ro_spacing - operation_dict['RO mux']['length']
+                    operation_dict['RO presel_dummy']['length'] = ro_spacing
+                    # print(ro_spacing)
+                    el = multi_pulse_elt(el_iter, station,
+                                        [operation_dict['X180 ' + qbc_name],
+                                         operation_dict['X180s ' + qbt_name],
+                                         operation_dict['RO mux_presel'],
+                                         operation_dict['RO presel_dummy'],
+                                         operation_dict['RO mux']])
+                else:
+                    el = multi_pulse_elt(el_iter, station,
+                                         [operation_dict['X180 ' + qbc_name],
+                                          operation_dict['X180s ' + qbt_name],
+                                          operation_dict['RO mux']])
             elif cal_points and num_cal_points == 3 and \
                     i == (len(unique_phases) - 1):
-                el = multi_pulse_elt(el_iter, station,
-                                     [operation_dict['X180 ' + qbc_name],
-                                      operation_dict['X180s ' + qbt_name],
-                                      operation_dict['X180_ef ' + qbc_name],
-                                      operation_dict['X180s_ef ' + qbt_name],
-                                      operation_dict['RO mux']])
+                if preselection:
+                    # print('Finding ro spacing')
+                    # print(X180_control)
+                    # ro_spacing = ro_delay + 2* X180_control['nr_sigma'] * X180_control['sigma']
+                    operation_dict['RO mux_presel']['pulse_delay'] = \
+                        -ro_spacing - operation_dict['RO mux']['length']
+                    operation_dict['RO presel_dummy']['length'] = ro_spacing
+                    # print(ro_spacing)
+                    el = multi_pulse_elt(el_iter, station,
+                                        [operation_dict['X180 ' + qbc_name],
+                                         operation_dict['X180s ' + qbt_name],
+                                         operation_dict['X180_ef ' + qbc_name],
+                                         operation_dict['X180s_ef ' + qbt_name],
+                                         operation_dict['RO mux_presel'],
+                                         operation_dict['RO presel_dummy'],
+                                         operation_dict['RO mux']])
+                else:
+                    el = multi_pulse_elt(el_iter, station,
+                                         [operation_dict['X180 ' + qbc_name],
+                                          operation_dict['X180s ' + qbt_name],
+                                          operation_dict['X180_ef ' + qbc_name],
+                                          operation_dict['X180s_ef ' + qbt_name],
+                                          operation_dict['RO mux']])
             elif cal_points and num_cal_points == 4 and \
                     (i == (len(unique_phases) - 4) or
                      i == (len(unique_phases) - 3)):
@@ -2494,10 +2555,23 @@ def cphase_nz_seq(phases, flux_params_dict,
                 X90_target_2['refpoint'] = 'start'
                 pulse_list += num_cz_gates*[CZ_pulse]
                 pulse_list += [X180_control_2,
-                               X90_target_2, RO_pulse]
+                               X90_target_2]
                 # else:
                 #     pulse_list += num_cz_gates * [CZ_pulse]
                 #     pulse_list += [X90_target_2, RO_pulse]
+                if preselection:
+                    # print('Finding ro spacing')
+                    # print(X180_control)
+                    # ro_spacing = ro_delay + max_flux_length + 2 * X180_control['nr_sigma'] * X180_control['sigma']
+                    operation_dict['RO mux_presel']['pulse_delay'] = \
+                        -ro_spacing - operation_dict['RO mux']['length']
+                    operation_dict['RO presel_dummy']['length'] = ro_spacing
+                    # print(ro_spacing)
+                    pulse_list.append(operation_dict['RO mux_presel'])
+                    pulse_list.append(operation_dict['RO presel_dummy'])
+
+                pulse_list.append(RO_pulse)
+                # print(pulse_list)
                 el = multi_pulse_elt(el_iter, station, pulse_list)
             el_list.append(el)
             seq.append_element(el, trigger_wait=True)

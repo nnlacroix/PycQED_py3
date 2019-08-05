@@ -502,12 +502,14 @@ def get_multiplexed_readout_detector_functions(qubits, nr_averages=2**10,
                                                used_channels=None,
                                                correlations=None,
                                                add_channels=None,
+                                               preselection=False,
                                                **kw):
     max_int_len = 0
     for qb in qubits:
         if qb.RO_acq_integration_length() > max_int_len:
             max_int_len = qb.RO_acq_integration_length()
-
+    print('max_int_len')
+    print(max_int_len)
     channels = []
     for qb in qubits:
         channels += [qb.RO_acq_weight_function_I()]
@@ -529,6 +531,10 @@ def get_multiplexed_readout_detector_functions(qubits, nr_averages=2**10,
             pulsar = qb.AWG
         break
 
+    get_values_function_kwargs = {
+        'classifier_params': [qb.ro_acq_classifier_params() for qb in qubits],
+        'state_prob_mtx': [qb.ro_acq_state_prob_mtx() for qb in qubits]}
+
     return {
         'int_log_det': det.UHFQC_integration_logging_det(
             UHFQC=UHFQC, AWG=pulsar, channels=channels,
@@ -536,8 +542,9 @@ def get_multiplexed_readout_detector_functions(qubits, nr_averages=2**10,
             result_logging_mode='raw', **kw),
         'int_log_classif_det': det.UHFQC_integration_logging_classifier_det(
             UHFQC=UHFQC, AWG=pulsar, channels=channels,
-            integration_length=max_int_len, nr_shots=nr_shots,
-            result_logging_mode='raw', **kw),
+            integration_length=max_int_len, nr_shots=nr_shots, preselection = preselection,
+            result_logging_mode='raw',
+            get_values_function_kwargs=get_values_function_kwargs, **kw),
         'dig_log_det': det.UHFQC_integration_logging_det(
             UHFQC=UHFQC, AWG=pulsar, channels=channels,
             integration_length=max_int_len, nr_shots=nr_shots,
@@ -661,7 +668,10 @@ def measure_multiplexed_readout(qubits, f_LO, nreps=1, liveplot=False,
         [qb.name for qb in qubits])))
 
     if analyse and thresholds is not None:
-        channel_map = {qb.name: qb.int_log_det.value_names[0] for qb in qubits}
+        if thresholded == True:
+            channel_map = {qb.name: qb.dig_log_det.value_names[0] for qb in qubits}
+        else:
+            channel_map = {qb.name: qb.int_log_det.value_names[0] for qb in qubits}
         print('MRO channel map ', channel_map)
         ra.Multiplexed_Readout_Analysis(options_dict=dict(
             n_readouts=(2 if preselection else 1)*2**len(qubits),
@@ -971,7 +981,7 @@ def measure_two_qubit_randomized_benchmarking(qb1, qb2, f_LO,
                                               interleaved_gate=None,
                                               MC=None, UHFQC=None,
                                               pulsar=None, label=None, run=True,
-                                              analyze_RB=True):
+                                              analyze_RB=True,preselection=False, qutrit = False):
 
     qb1n = qb1.name
     qb2n = qb2.name
@@ -1007,7 +1017,7 @@ def measure_two_qubit_randomized_benchmarking(qb1, qb2, f_LO,
     multiplexed_pulse(qubits, f_LO, upload=True)
     operation_dict = get_operation_dict(qubits)
 
-    hard_sweep_points = np.arange(nr_seeds_value)
+    # hard_sweep_points = np.arange(nr_seeds_value)
     hard_sweep_func = awg_swf2.two_qubit_randomized_benchmarking_one_length(
         qb1n=qb1n, qb2n=qb2n, operation_dict=operation_dict,
         nr_cliffords_value=nr_cliffords_array[0],
@@ -1016,25 +1026,49 @@ def measure_two_qubit_randomized_benchmarking(qb1, qb2, f_LO,
         net_clifford=net_clifford,
         clifford_decomposition_name=clifford_decomposition_name,
         interleaved_gate=interleaved_gate,
-        upload=False)
+        upload=False,preselection=preselection)
 
     soft_sweep_points = nr_cliffords_array
     soft_sweep_func = awg_swf2.two_qubit_randomized_benchmarking_nr_cliffords(
         two_qubit_RB_sweepfunction=hard_sweep_func, upload=upload)
 
-    MC.set_sweep_function(hard_sweep_func)
-    MC.set_sweep_points(hard_sweep_points)
-    MC.set_sweep_function_2D(soft_sweep_func)
-    MC.set_sweep_points_2D(soft_sweep_points)
+    # MC.set_sweep_function(hard_sweep_func)
+    # MC.set_sweep_points(hard_sweep_points)
+    # MC.set_sweep_function_2D(soft_sweep_func)
+    # MC.set_sweep_points_2D(soft_sweep_points)
 
     correlations = [(qb1.RO_acq_weight_function_I(),
                      qb2.RO_acq_weight_function_I())]
     if nr_averages is None:
         nr_averages = max(qb.RO_acq_averages() for qb in qubits)
-    det_func = get_multiplexed_readout_detector_functions(
-        qubits, nr_averages=nr_averages, UHFQC=UHFQC, pulsar=pulsar,
-        correlations=correlations)['dig_corr_det']
 
+    if preselection:
+        if qutrit:
+            nr_shots = nr_averages
+            det_func = get_multiplexed_readout_detector_functions(
+                qubits, UHFQC=UHFQC, pulsar=pulsar,
+                nr_shots=nr_shots, preselection=preselection, for_RB = qutrit)['int_log_classif_det']
+            print(nr_seeds_value)
+            hard_sweep_points = np.arange(nr_seeds_value)
+        else:
+            nr_shots = 2 * nr_averages * nr_seeds_value
+            det_func = get_multiplexed_readout_detector_functions(
+                qubits, UHFQC=UHFQC, pulsar=pulsar,
+                nr_shots=nr_shots)['dig_log_det']
+            single_ro = np.tile(np.arange(nr_seeds_value), nr_averages)
+            two_ro = np.repeat(single_ro, 2)
+            print(two_ro)
+            hard_sweep_points = two_ro
+    else:
+        det_func = get_multiplexed_readout_detector_functions(
+            qubits, nr_averages=nr_averages, UHFQC=UHFQC, pulsar=pulsar,
+            correlations=correlations)['dig_corr_det']
+        hard_sweep_points = np.arange(nr_seeds_value)
+
+    MC.set_sweep_function(hard_sweep_func)
+    MC.set_sweep_points(hard_sweep_points)
+    MC.set_sweep_function_2D(soft_sweep_func)
+    MC.set_sweep_points_2D(soft_sweep_points)
     MC.set_detector_function(det_func)
     if run:
         MC.run(label, mode='2D')
@@ -1046,7 +1080,9 @@ def measure_two_qubit_randomized_benchmarking(qb1, qb2, f_LO,
                 use_latest_data=True,
                 gate_decomp=clifford_decomposition_name,
                 add_correction=False,
-                single_fit=True)
+                single_fit=True,
+                preselection=preselection,
+                qutrit=qutrit)
 
 
 def measure_n_qubit_simultaneous_randomized_benchmarking(
@@ -1058,7 +1094,7 @@ def measure_n_qubit_simultaneous_randomized_benchmarking(
         experiment_channels=None,
         soft_avgs=1, analyze_RB=True,
         MC=None, UHFQC=None, pulsar=None,
-        label=None, verbose=False, run=True):
+        label=None, verbose=False, run=True, preselection = False, qutrit = False):
 
     '''
     Performs a simultaneous randomized benchmarking experiment on n qubits.
@@ -1132,33 +1168,65 @@ def measure_n_qubit_simultaneous_randomized_benchmarking(
     multiplexed_pulse(qubits, f_LO, upload=True)
 
     if len(qubits) == 2:
-        if not hasattr(nr_cliffords, '__iter__'):
-            raise ValueError('For a two qubit experiment, nr_cliffords must '
-                             'be an array of sequence lengths.')
+        if preselection:
+            if qutrit:
+                nr_shots = nr_averages
+                det_func = get_multiplexed_readout_detector_functions(
+                    qubits, UHFQC=UHFQC, pulsar=pulsar,
+                    nr_shots=nr_shots, preselection=preselection, for_RB=qutrit)['int_log_classif_det']
+                print(nr_seeds)
+                hard_sweep_points = np.arange(nr_seeds)
+                hard_sweep_func = \
+                    awg_swf2.n_qubit_Simultaneous_RB_fixed_length(
+                        qubit_names_list=qubit_names_list,
+                        operation_dict=operation_dict,
+                        nr_cliffords_value=nr_cliffords[0],
+                        nr_seeds_array=np.arange(nr_seeds),
+                        # clifford_sequence_list=clifford_sequence_list,
+                        upload=False,
+                        gate_decomposition=gate_decomp,
+                        interleaved_gate=interleaved_gate,
+                        verbose=verbose, cal_points=cal_points, preselection = preselection)
+                soft_sweep_points = nr_cliffords
+                soft_sweep_func = \
+                    awg_swf2.n_qubit_Simultaneous_RB_sequence_lengths(
+                        n_qubit_RB_sweepfunction=hard_sweep_func)
+            else:
+                nr_shots = 2 * nr_averages * nr_seeds
+                det_func = get_multiplexed_readout_detector_functions(
+                    qubits, UHFQC=UHFQC, pulsar=pulsar,
+                    nr_shots=nr_shots)['dig_log_det']
+                single_ro = np.tile(np.arange(nr_seeds), nr_averages)
+                two_ro = np.repeat(single_ro, 2)
+                print(two_ro)
+                hard_sweep_points = two_ro
+        else:
+            if not hasattr(nr_cliffords, '__iter__'):
+                raise ValueError('For a two qubit experiment, nr_cliffords must '
+                                 'be an array of sequence lengths.')
 
-        correlations = [(qubits[0].RO_acq_weight_function_I(),
-                         qubits[1].RO_acq_weight_function_I())]
-        det_func = get_multiplexed_readout_detector_functions(
-            qubits, nr_averages=nr_averages, UHFQC=UHFQC,
-            pulsar=pulsar, used_channels=experiment_channels,
-            correlations=correlations)[key+'_corr_det']
-        hard_sweep_points = np.arange(nr_seeds)
-        hard_sweep_func = \
-            awg_swf2.n_qubit_Simultaneous_RB_fixed_length(
-                qubit_names_list=qubit_names_list,
-                operation_dict=operation_dict,
-                nr_cliffords_value=nr_cliffords[0],
-                nr_seeds_array=np.arange(nr_seeds),
-                # clifford_sequence_list=clifford_sequence_list,
-                upload=False,
-                gate_decomposition=gate_decomp,
-                interleaved_gate=interleaved_gate,
-                verbose=verbose, cal_points=cal_points)
-        soft_sweep_points = nr_cliffords
-        soft_sweep_func = \
-            awg_swf2.n_qubit_Simultaneous_RB_sequence_lengths(
-            n_qubit_RB_sweepfunction=hard_sweep_func)
-
+            correlations = [(qubits[0].RO_acq_weight_function_I(),
+                             qubits[1].RO_acq_weight_function_I())]
+            det_func = get_multiplexed_readout_detector_functions(
+                qubits, nr_averages=nr_averages, UHFQC=UHFQC,
+                pulsar=pulsar, used_channels=experiment_channels,
+                correlations=correlations)[key + '_corr_det']
+            hard_sweep_points = np.arange(nr_seeds)
+            hard_sweep_func = \
+                awg_swf2.n_qubit_Simultaneous_RB_fixed_length(
+                    qubit_names_list=qubit_names_list,
+                    operation_dict=operation_dict,
+                    nr_cliffords_value=nr_cliffords[0],
+                    nr_seeds_array=np.arange(nr_seeds),
+                    # clifford_sequence_list=clifford_sequence_list,
+                    upload=False,
+                    gate_decomposition=gate_decomp,
+                    interleaved_gate=interleaved_gate,
+                    verbose=verbose, cal_points=cal_points)
+            soft_sweep_points = nr_cliffords
+            soft_sweep_func = \
+                awg_swf2.n_qubit_Simultaneous_RB_sequence_lengths(
+                    n_qubit_RB_sweepfunction=hard_sweep_func)
     else:
         # if hasattr(nr_cliffords, '__iter__'):
         #             raise ValueError('For an experiment with more than two '
@@ -1234,7 +1302,9 @@ def measure_n_qubit_simultaneous_randomized_benchmarking(
                 qb_names=[qb.name for qb in qubits],
                 use_latest_data=True,
                 gate_decomp=gate_decomp,
-                add_correction=True)
+                add_correction=True,
+                preselection = preselection,
+                qutrit = qutrit)
 
     return MC
 
@@ -2689,7 +2759,8 @@ def measure_cphase_nz(qbc, qbt, soft_sweep_params_dict, f_LO,
                       phases=None, MC=None,
                       UHFQC=None, pulsar=None,
                       cal_points=True, num_cal_points=4, plot=False,
-                      analyze=True, upload=True, upload_all=True, **kw):
+                      analyze=True, upload=True, upload_all=True,
+                      preselection = False, pre_threshold = None, nr_shots = 1024, **kw):
     '''
     method to measure the leakage and the phase acquired during a flux pulse
     conditioned on the state of the control qubit (self).
@@ -2744,6 +2815,16 @@ def measure_cphase_nz(qbc, qbt, soft_sweep_params_dict, f_LO,
                       1 + np.arange(num_cal_points)]])
     sweep_points = np.concatenate((phases, phases))
 
+    if num_cal_points == 6:
+        cal_states_dict = {'g': [-6, -5], 'e': [-4, -3], 'f': [-2, -1]}
+    elif num_cal_points == 3:
+        cal_states_dict = {'g': [-3], 'e': [-2], 'f': [-1]}
+    elif num_cal_points == 4:
+        cal_states_dict = {'g': [-4, -3], 'e': [-2, -1]}
+    else:
+        raise ValueError('Measurement does not support {} cal points.'.format(
+            num_cal_points))
+
     operation_dict = get_operation_dict([qbc, qbt])
     if CZ_pulse_name is None:
         CZ_pulse_name = 'CZ ' + qbt.name + ' ' + qbc.name
@@ -2775,7 +2856,16 @@ def measure_cphase_nz(qbc, qbt, soft_sweep_params_dict, f_LO,
                                     cal_points=cal_points,
                                     num_cal_points=num_cal_points,
                                     reference_measurements=True,
-                                    upload=True)
+                                    upload=True, preselection = preselection)
+
+    # single_ro = np.tile(sweep_points, nr_shots)
+    # print(len(single_ro))
+    # two_ro = np.tile(single_ro, 2)
+    # two_ro[::2] = single_ro
+    # two_ro[1::2] = single_ro
+    # if preselection:
+    #     sweep_points = two_ro
+    # print(len(sweep_points))
 
     swf_list = [s1]
     soft_swpts_list = []
@@ -2802,6 +2892,13 @@ def measure_cphase_nz(qbc, qbt, soft_sweep_params_dict, f_LO,
 
     exp_metadata = {'leakage_qbname': qbc.name,
                     'cphase_qbname': qbt.name,
+                    'cal_states_rotations':
+                        None if classified else \
+                        {'g': 0, 'e': 1},
+                    'data_to_fit':
+                        {qbc.name: 'pf', qbt.name: 'pe'} if classified else \
+                        {qbc.name: 'pe', qbt.name: 'pe'},
+                    'cal_states_dict': cal_states_dict,
                     'num_cal_points': num_cal_points}
     label = kw.pop('label', None)
     if label is None:
@@ -2816,9 +2913,8 @@ def measure_cphase_nz(qbc, qbt, soft_sweep_params_dict, f_LO,
     if analyze:
         flux_pulse_tdma = tda.CPhaseLeakageAnalysis(
             qb_names=[qbc.name, qbt.name],
-            options_dict={'TwoD_tuples': True, 'plot_all_traces': plot,
-                          'cal_states_rotations': {'g': 0, 'e': 1},
-                          'data_to_fit': {qbc.name: 'pe', qbt.name: 'pe'}})
+            options_dict={'TwoD_tuples': True, 'plot_all_traces': plot},
+            preselection = preselection)
         cphases = flux_pulse_tdma.proc_data_dict[
             'analysis_params_dict']['cphase']['val']
         population_losses = flux_pulse_tdma.proc_data_dict[
@@ -2992,7 +3088,7 @@ def measure_CZ_bleed_through(qb, CZ_separation_times, phases, CZ_pulse_name,
 def measure_ramsey_add_pulse(measured_qubit, pulsed_qubit, times=None,
                              artificial_detuning=0, interleave=True,
                              label='', MC=None, analyze=True, close_fig=True,
-                             cal_points=True, upload=True):
+                             cal_points=True, upload=True, preselection = False, nr_shots = 4096, mux=False):
     if times is None:
         raise ValueError("Unspecified times for measure_ramsey")
     if artificial_detuning is None:
@@ -3004,8 +3100,13 @@ def measure_ramsey_add_pulse(measured_qubit, pulsed_qubit, times=None,
         logging.warning('The values in the times array might be too large.'
                         'The units should be seconds.')
 
-    for qb in [pulsed_qubit, measured_qubit]:
-        qb.prepare_for_timedomain()
+    if mux:
+        for qb in [pulsed_qubit, measured_qubit]:
+            qb.prepare_for_timedomain(multiplexed=True)
+        multiplexed_pulse([pulsed_qubit, measured_qubit], f_LO = 5.9e9, upload=True)
+    else:
+        for qb in [pulsed_qubit, measured_qubit]:
+            qb.prepare_for_timedomain()
     if MC is None:
         MC = measured_qubit.MC
 
@@ -3031,14 +3132,43 @@ def measure_ramsey_add_pulse(measured_qubit, pulsed_qubit, times=None,
         operation_dict=get_operation_dict([measured_qubit, pulsed_qubit]),
         artificial_detuning=artificial_detuning,
         cal_points=cal_points,
-        upload=upload)
+        upload=upload, preselection = preselection, mux = mux)
     MC.set_sweep_function(Rams_swf)
+    print(len(sweep_points))
     MC.set_sweep_points(sweep_points)
-    MC.set_detector_function(measured_qubit.int_avg_det)
+    if preselection:
+        # two_ro=np.repeat(sweep_points,2)
+        # sweep_points = two_ro
+        # prev_shots = measured_qubit.RO_acq_shots()
+        measured_qubit.RO_acq_shots(len(sweep_points)*nr_shots*2)
+        pulsed_qubit.RO_acq_shots(measured_qubit.RO_acq_shots())
+        print(measured_qubit.RO_acq_shots())
+        # sweep_points=two_ro
+        print('Preslection RO')
+        # print(sweep_points)
+        # MC.set_detector_function(measured_qubit.dig_log_det)
+        if mux:
+            qubits = [pulsed_qubit,measured_qubit]
+            UHFQC = pulsed_qubit.UHFQC
+            pulsar = pulsed_qubit.AWG
+            MC = pulsed_qubit.MC
+            det_func = get_multiplexed_readout_detector_functions(
+                qubits, UHFQC=UHFQC, pulsar=pulsar,
+                nr_shots=measured_qubit.RO_acq_shots())['dig_log_det']
+        else:
+            det_func = measured_qubit.dig_log_det
+        MC.set_detector_function(det_func)
+    else:
+        MC.set_detector_function(measured_qubit.int_avg_det)
+
+
+
     MC.run(label, exp_metadata={'artificial_detuning': artificial_detuning,
                                 'measured_qubit': measured_qubit.name,
                                 'pulsed_qubit': pulsed_qubit.name})
 
+    # measured_qubit.RO_acq_shots(prev_shots)
+    # pulsed_qubit.RO_acq_shots(prev_shots)
     if analyze:
         ma.MeasurementAnalysis(auto=True, close_fig=close_fig,
                                qb_name=measured_qubit.name)

@@ -891,7 +891,7 @@ class MeasurementAnalysis(object):
 
         return
 
-    def get_naming_and_values_2D(self, new_sweep_points=None):
+    def get_naming_and_values_2D(self, new_sweep_points=None, preselection = False):
         '''
         This should also be adjusted for 2D.
         Data should directly be turned into a convenient
@@ -942,9 +942,17 @@ class MeasurementAnalysis(object):
 
             x = self.data[0]
             y = self.data[1]
+            # print('get_naming data')
+            # print(self.data)
 
-            # cols = np.unique(x).shape[0]
-            cols = np.nonzero(y != y[0])[0][0]
+            if preselection:
+                cols = 2*np.unique(x).shape[0]
+                # cols = np.nonzero(y != y[0])[0][0]
+                # print(cols)
+            else:
+                # cols = np.unique(x).shape[0]
+                cols = np.nonzero(y != y[0])[0][0]
+                # print(cols)
 
             # Adding np.nan for prematurely interupted experiments
             nr_missing_values = 0
@@ -952,7 +960,6 @@ class MeasurementAnalysis(object):
                 nr_missing_values = cols - len(x) % cols
             x = np.append(x, np.zeros(nr_missing_values) + np.nan)
             y = np.append(y, np.zeros(nr_missing_values) + np.nan)
-
             # X,Y,Z can be put in colormap directly
             self.X = x.reshape(-1, cols)
             self.Y = y.reshape(-1, cols)
@@ -964,6 +971,7 @@ class MeasurementAnalysis(object):
                 z = np.append(z, np.zeros(nr_missing_values) + np.nan)
                 self.Z = z.reshape(-1, cols)
                 self.measured_values = [self.Z.T]
+
             else:
                 self.Z = []
                 self.measured_values = []
@@ -973,7 +981,7 @@ class MeasurementAnalysis(object):
                     Z = z.reshape(-1, cols)
                     self.Z.append(Z)
                     self.measured_values.append(Z.T)
-
+            # print(self.measured_values)
             self.xlabel = self.parameter_names[0] + ' (' + \
                           self.parameter_units[0] + ')'
             self.ylabel = self.parameter_names[1] + ' (' + \
@@ -3555,6 +3563,7 @@ class SSRO_Analysis(MeasurementAnalysis):
                              print_fit_results=False,
                              pge=None, peg=None,
                              preselection=False,
+                             qbc_thres=0,
                              n_bins: int = 120, **kw):
 
         self.add_analysis_datagroup_to_file()
@@ -3650,10 +3659,14 @@ class SSRO_Analysis(MeasurementAnalysis):
                               **kw)
 
         if preselection:
-            try:
-                V_th = self.V_th_d
-            except:
-                V_th = self.V_th_a
+
+            if qbc_thres == 0:
+                try:
+                    V_th = self.V_th_d
+                except:
+                    V_th = self.V_th_a
+            else:
+                V_th = qbc_thres
             s = np.sign(np.mean(shots_I_data_1_rot - shots_I_data_0_rot))
             shots_gmask_0 = s * (V_th - shots_presel_0_rot) > 0
             shots_gmask_1 = s * (V_th - shots_presel_1_rot) > 0

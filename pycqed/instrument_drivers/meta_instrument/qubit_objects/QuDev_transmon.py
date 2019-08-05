@@ -308,6 +308,8 @@ class QuDev_transmon(Qubit):
                                  initial_value=None, vals=vals.Strings())
         self.add_pulse_parameter('RO', 'RO_pulse_phase', 'phase',
                                  initial_value=None, vals=vals.Numbers())
+        self.add_pulse_parameter('RO', 'RO_threshold', 'threshold',
+                                 initial_value=0, vals=vals.Numbers())
         self.add_pulse_parameter('RO', 'ro_pulse_basis_rotation',
                                  'basis_rotation', initial_value={},
                                  docstring='Dynamic phase acquired by other '
@@ -2650,7 +2652,7 @@ class QuDev_transmon(Qubit):
 
     def find_ssro_fidelity(self, nreps=1, MC=None, analyze=True, close_fig=True,
                            no_fits=False, upload=True, preselection_pulse=True,
-                           thresholded=False, RO_comm=3/225e6, RO_slack=150e-9,
+                           thresholded=False, qbc_thres=0, RO_comm=3/225e6, RO_slack=150e-9,
                            RO_shots=50000, qutrit=False, update=False):
         """
         Conduct an off-on measurement on the qubit recording single-shot
@@ -2798,7 +2800,8 @@ class QuDev_transmon(Qubit):
                                        rotate=rotate, no_fits=no_fits,
                                        channels=channels, nr_samples=nr_samples,
                                        sample_0=sample_0, sample_1=sample_1,
-                                       preselection=preselection_pulse)
+                                       preselection=preselection_pulse,
+                                       qbc_thres=qbc_thres)
                 if not no_fits:
                     return ana.F_a, ana.F_d, ana.SNR
                 else:

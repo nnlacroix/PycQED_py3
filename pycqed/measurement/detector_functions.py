@@ -2221,6 +2221,7 @@ class UHFQC_integration_logging_classifier_det(Hard_Detector):
                  prepare_function=None,
                  prepare_function_kwargs: dict=None,
                  get_values_function_kwargs: dict=None,
+                 preselection = False, for_RB = False,
                  **kw):
         """
         Args:
@@ -2245,24 +2246,49 @@ class UHFQC_integration_logging_classifier_det(Hard_Detector):
             segments per point.
         """
         super().__init__()
-
+        self.for_RB = for_RB
+        self.preselection = preselection
         self.UHFQC = UHFQC
         self.name = '{}_UHFQC_integration_logging_det'.format(
             result_logging_mode)
+        if self.for_RB:
+            print(channels)
+            channels=np.append(channels,channels[0:2])
+            print('channels')
+            print(channels)
         self.channels = channels
-        self.state_labels = ['pg', 'pe', 'pf']
 
+        self.state_labels = ['pg', 'pe', 'pf']
+        self.state_labels_corr = ['corr_ge','corr_ef','corr_gef']
         channel_strings = [str(ch) for ch in self.channels]
         self.channel_str_pairs = [''.join(channel_strings[2*j: 2*j+2]) for
                                   j in range(len(self.channels)//2)]
-        self.value_names = ['']*(len(
-            self.state_labels)*len(self.channel_str_pairs))
-        idx = 0
-        for ch_pair in self.channel_str_pairs:
-            for state in self.state_labels:
-                self.value_names[idx] = '{} w{}'.format(
-                    state, ch_pair)
-                idx += 1
+
+        print('self.channel_str_pairs')
+        print(self.channel_str_pairs)
+
+        if self.for_RB:
+            self.value_names = [''] * (len(
+                self.state_labels) * (len(self.channel_str_pairs) - 1))
+            self.value_names = np.append(self.value_names,self.state_labels_corr)
+            idx = 0
+            for ch_pair in self.channel_str_pairs[0:-1]:
+                for state in self.state_labels:
+                    self.value_names[idx] = '{} w{}'.format(
+                        state, ch_pair)
+                    idx += 1
+        else:
+            self.value_names = [''] * (len(
+                self.state_labels) * (len(self.channel_str_pairs)))
+            idx = 0
+            for ch_pair in self.channel_str_pairs:
+                for state in self.state_labels:
+                    self.value_names[idx] = '{} w{}'.format(
+                        state, ch_pair)
+                    idx += 1
+
+        print('value_names')
+        print(self.value_names)
 
         if result_logging_mode == 'raw':
             self.value_units = ['']*(len(
@@ -2288,6 +2314,7 @@ class UHFQC_integration_logging_classifier_det(Hard_Detector):
         self.prepare_function = prepare_function
         self.prepare_function_kwargs = prepare_function_kwargs
         self.get_values_function_kwargs = get_values_function_kwargs
+        # print(get_values_function_kwargs)
 
     def prepare(self, sweep_points):
         if self.AWG is not None:
@@ -2303,15 +2330,22 @@ class UHFQC_integration_logging_classifier_det(Hard_Detector):
         self.nr_sweep_points = len(sweep_points)
         # The averaging-count is used to specify how many times the AWG program
         # should run
-        print(int(self.nr_shots*self.nr_sweep_points))
+
+
         self.UHFQC.awgs_0_single(1)
-        self.UHFQC.awgs_0_userregs_0(int(self.nr_shots*self.nr_sweep_points))
+        if self.preselection:
+            print(int(2*self.nr_shots * self.nr_sweep_points))
+            self.UHFQC.awgs_0_userregs_0(int(2*self.nr_shots * self.nr_sweep_points))
+            self.UHFQC.quex_rl_length(2*self.nr_shots * self.nr_sweep_points)
+        else:
+            print(int(self.nr_shots * self.nr_sweep_points))
+            self.UHFQC.awgs_0_userregs_0(int(self.nr_shots*self.nr_sweep_points))
+            self.UHFQC.quex_rl_length(self.nr_shots * self.nr_sweep_points)
+
         # The AWG program uses userregs/0 to define the number of iterations
         # in the loop
         self.UHFQC.awgs_0_userregs_1(0)  # 0 for rl, 1 for iavg (input avg)
 
-
-        self.UHFQC.quex_rl_length(self.nr_shots*self.nr_sweep_points)
         self.UHFQC.quex_rl_avgcnt(0)  # log2(1) for single shot readout
         self.UHFQC.quex_wint_length(int(self.integration_length*(1.8e9)))
 
@@ -2330,9 +2364,17 @@ class UHFQC_integration_logging_classifier_det(Hard_Detector):
         if self.AWG is not None:
             self.AWG.start()
 
-        data_raw = self.UHFQC.acquisition_poll(
-            samples=self.nr_shots*self.nr_sweep_points,
-            arm=False, acquisition_time=0.01)
+        if self.preselection:
+            print('Data Acquired')
+            data_raw = self.UHFQC.acquisition_poll(
+                samples=2*self.nr_shots * self.nr_sweep_points,
+                arm=False, acquisition_time=0.01)
+            print(len(data_raw[0]))
+        else:
+            data_raw = self.UHFQC.acquisition_poll(
+                samples=self.nr_shots * self.nr_sweep_points,
+                arm=False, acquisition_time=0.01)
+
         data = np.array([data_raw[key] for key in
                          sorted(data_raw.keys())])*self.scaling_factor
 
@@ -2356,16 +2398,111 @@ class UHFQC_integration_logging_classifier_det(Hard_Detector):
             state_prob_mtx_list = [state_prob_mtx_list]
 
         nr_states = len(self.state_labels)
+
         classified_data = np.zeros(
             (nr_states*len(self.channel_str_pairs),self.nr_sweep_points))
-        if self.get_values_function_kwargs.get('classify', True):
-            for i in range(len(self.channel_str_pairs)):
-                classified_data[nr_states*i: nr_states*i+nr_states, :] = \
-                    self.classify_shots(data[2*i: 2*i+2, :],
-                                        classifier_params_list[i],
-                                        state_prob_mtx_list[i],
-                                        self.get_values_function_kwargs.get(
-                                           'average', True))
+        print(self.channel_str_pairs)
+
+        if self.preselection and not self.for_RB:
+            if self.get_values_function_kwargs.get('classify', True):
+                classified_data_all=self.classify_shots_preselection(data,
+                                                 classifier_params_list)
+                for i in range(len(self.channel_str_pairs)):
+                    classified_data[nr_states * i: nr_states * i + nr_states, :] = \
+                        self.averager_preselection(classified_data_all[i],
+                                            state_prob_mtx_list[i],
+                                            self.get_values_function_kwargs.get(
+                                                'average', True))
+        elif self.preselection and self.for_RB:
+            classified_data = np.zeros(
+                (nr_states * (len(self.channel_str_pairs)), self.nr_sweep_points))
+            if self.get_values_function_kwargs.get('classify', True):
+                classified_data_all=self.classify_shots_preselection(data,
+                                                 classifier_params_list)
+                for i in range(len(self.channel_str_pairs)-1):
+                    classified_data[nr_states * i: nr_states * i + nr_states, :] = \
+                        self.averager_preselection(classified_data_all[i],
+                                            state_prob_mtx_list[i],
+                                            self.get_values_function_kwargs.get(
+                                                'average', True))
+                i=2
+                classified_data[nr_states * i: nr_states * i + nr_states, :] = \
+                    self.averager_preselection(classified_data_all[i],
+                                               None,
+                                               self.get_values_function_kwargs.get(
+                                                   'average', True))
+        else:
+            if self.get_values_function_kwargs.get('classify', True):
+                for i in range(len(self.channel_str_pairs)):
+                    classified_data[nr_states*i: nr_states*i+nr_states, :] = \
+                        self.classify_shots(data[2*i: 2*i+2, :],
+                                            classifier_params_list[i],
+                                            state_prob_mtx_list[i],
+                                            self.get_values_function_kwargs.get(
+                                               'average', True))
+
+        return classified_data
+
+    def classify_shots_preselection(self, data,classifier_params_dict,):
+
+        data_raw_1 = data[0: 2, :]
+        data_raw_2 = data[2: 4, :]
+
+        if classifier_params_dict is None:
+            raise ValueError('Please specify the classifier parameters dict.')
+
+        classified_data_1 = a_tools.predict_gm_proba_from_clf(
+            data_raw_1.T, classifier_params_dict[0])
+        classified_data_2 = a_tools.predict_gm_proba_from_clf(
+            data_raw_2.T, classifier_params_dict[1])
+
+        print('Classified')
+        print(len(classified_data_1))
+        # print(classified_data)
+
+        data_pre_1= classified_data_1[0::2]
+        data_pre_2 = classified_data_2[0::2]
+        classified_data_1 =classified_data_1[1::2]
+        classified_data_2 = classified_data_2[1::2]
+        pre_thres1 = 0.95 * np.mean(data_pre_1)
+        pre_thres2 = 0.95 * np.mean(data_pre_2)
+        print('Preselection threshold:')
+        print(pre_thres1,pre_thres2)
+
+        if self.for_RB:
+            classified_data_corr_ge = (classified_data_1[:,0]-classified_data_1[:,1])*(classified_data_2[:,0]-classified_data_2[:,1])
+            classified_data_corr_ef = (classified_data_1[:,1]-classified_data_1[:,2])*(classified_data_2[:,1]-classified_data_2[:,2])
+            classified_data_corr_gef = (classified_data_1[:,0]-classified_data_1[:,1]-classified_data_1[:,2])*(classified_data_2[:,0]-classified_data_2[:,1]-classified_data_1[:,2])
+            classified_data_corr = np.transpose(np.array([classified_data_corr_ge,classified_data_corr_ef,classified_data_corr_gef]))
+
+        del_total = 0
+        for i, val in enumerate(data_pre_1):
+            if val[0] < pre_thres1 or data_pre_2[i][0] < pre_thres2 :
+                classified_data_1[i] = [np.nan,np.nan,np.nan]
+                classified_data_2[i] = [np.nan,np.nan,np.nan]
+                if self.for_RB:
+                    classified_data_corr[i] = [np.nan,np.nan,np.nan]
+                del_total+=1
+        print('Preselection Done')
+        print(del_total/len(data_pre_1))
+        if self.for_RB:
+            classified_data = [classified_data_1,classified_data_2,classified_data_corr]
+        else:
+            classified_data = [classified_data_1, classified_data_2]
+        return classified_data
+
+    def averager_preselection(self, classified_data, state_prob_mtx=None, average=False):
+
+        if average:
+            classified_data = np.nanmean(np.reshape(
+                classified_data, (self.nr_shots, self.nr_sweep_points,
+                                  classified_data.shape[1])), axis=0)
+        if state_prob_mtx is not None:
+            classified_data = np.linalg.inv(state_prob_mtx) @ classified_data.T
+            print('Corrected based on state_prob_mtx.')
+        else:
+            classified_data = classified_data.T
+
         return classified_data
 
     def classify_shots(self, data, classifier_params_dict,
@@ -2375,9 +2512,10 @@ class UHFQC_integration_logging_classifier_det(Hard_Detector):
 
         classified_data = a_tools.predict_gm_proba_from_clf(
             data.T, classifier_params_dict)
-
+        print('Classified')
+        print(len(classified_data))
         if average:
-            classified_data = np.mean(np.reshape(
+            classified_data = np.nanmean(np.reshape(
                 classified_data, (self.nr_shots, self.nr_sweep_points,
                                   classified_data.shape[1])), axis=0)
         if state_prob_mtx is not None:

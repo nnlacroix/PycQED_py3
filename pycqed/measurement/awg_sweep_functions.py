@@ -2738,7 +2738,7 @@ class CPhase_NZ_hard_swf(swf.Hard_Sweep):
                  CZ_pulse_channel, operation_dict, num_soft_sweepparams,
                  max_flux_length, num_cz_gates=1,
                  cal_points=False, first_data_point=True,
-                 num_cal_points=4, upload=True, reference_measurements=False):
+                 num_cal_points=4, upload=True, reference_measurements=False, preselection = False):
 
         super().__init__()
         self.phases = phases
@@ -2760,6 +2760,7 @@ class CPhase_NZ_hard_swf(swf.Hard_Sweep):
         self.flux_params_dict = {}
         self.values_complete = False
         self.first_data_point = first_data_point
+        self.preselection = preselection
 
     def prepare(self, flux_params_dict={}, **kw):
         print('flux params dict in hard swf ',
@@ -2783,7 +2784,8 @@ class CPhase_NZ_hard_swf(swf.Hard_Sweep):
                 num_cal_points=self.num_cal_points,
                 upload=self.upload,
                 return_seq=True,
-                first_data_point=self.first_data_point
+                first_data_point=self.first_data_point,
+                preselection = self.preselection
             )
             self.first_data_point = False
 

@@ -1771,7 +1771,7 @@ class Multiplexed_Readout_Analysis(MultiQubit_SingleShot_Analysis):
                 # add preselection condition
                 if self.use_preselection:
                     self.observables[obs_name].update(preselection_condition)
-
+        print(self.observables)
         options_dict['observables'] = self.observables
         options_dict['readout_names'] = options_dict.get('readout_names',
                                                          def_seg_names)

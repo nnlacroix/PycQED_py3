@@ -1024,7 +1024,7 @@ def two_qubit_randomized_benchmarking_seq(qb1n, qb2n, operation_dict,
                                       clifford_decomposition_name='HZ',
                                       interleaved_gate=None,
                                       seq_name=None, upload=True,
-                                      return_seq=False, verbose=False):
+                                      return_seq=False, verbose=False, preselection=False):
 
     """
     Args
@@ -1046,6 +1046,17 @@ def two_qubit_randomized_benchmarking_seq(qb1n, qb2n, operation_dict,
         verbose (bool): print detailed runtime information
     """
 
+    operation_dict['RO mux_presel'] = operation_dict['RO mux'].copy()
+
+    operation_dict['RO mux_presel']['refpoint'] = 'end'
+
+    operation_dict['RO presel_dummy'] = {
+        'pulse_type': 'SquarePulse',
+        'channel': operation_dict['RO mux']['acq_marker_channel'],
+        'amplitude': 0.0,
+        'length': 0,
+        'pulse_delay': 0}
+
     if seq_name is None:
         seq_name = '2Qb_RB_sequence'
     seq = sequence.Sequence(seq_name)
@@ -1055,37 +1066,103 @@ def two_qubit_randomized_benchmarking_seq(qb1n, qb2n, operation_dict,
     tqc.gate_decomposition = rb.get_clifford_decomposition(
         clifford_decomposition_name)
 
-    for i in nr_seeds:
-        cl_seq = rb.randomized_benchmarking_sequence_new(
-            nr_cliffords_value,
-            number_of_qubits=2,
-            max_clifford_idx=max_clifford_idx,
-            interleaving_cl=interleaved_gate,
-            desired_net_cl=net_clifford)
+    if preselection:
+        np.max(nr_seeds)
+        pulse_list_all_seeds = []
+        for i in np.arange(np.max(nr_seeds)+1):
+            cl_seq = rb.randomized_benchmarking_sequence_new(
+                nr_cliffords_value,
+                number_of_qubits=2,
+                max_clifford_idx=max_clifford_idx,
+                interleaving_cl=interleaved_gate,
+                desired_net_cl=net_clifford)
+            pulse_list = []
+            for idx in cl_seq:
+                pulse_tuples_list = tqc.TwoQubitClifford(idx).gate_decomposition
+                pulsed_qubits = {qb1n, qb2n}
+                for j, pulse_tuple in enumerate(pulse_tuples_list):
 
-        pulse_list = []
-        for idx in cl_seq:
-            pulse_tuples_list = tqc.TwoQubitClifford(idx).gate_decomposition
-            pulsed_qubits = {qb1n, qb2n}
-            for j, pulse_tuple in enumerate(pulse_tuples_list):
-                if isinstance(pulse_tuple[1], list):
-                    pulse_list += [operation_dict[CZ_pulse_name]]
-                    pulsed_qubits = {qb1n, qb2n}
-                else:
-                    qb_name = qb1n if '0' in pulse_tuple[1] else qb2n
-                    pulse_name = pulse_tuple[0]
-                    if 'Z' not in pulse_name:
-                        if qb_name not in pulsed_qubits:
-                            pulse_name += 's'
-                        else:
-                            pulsed_qubits = set()
-                        pulsed_qubits |= {qb_name}
-                    pulse_list += [operation_dict[pulse_name + ' ' + qb_name]]
-        pulse_list += [operation_dict['RO mux']]
+                    if isinstance(pulse_tuple[1], list):
+                        pulse_list += [operation_dict[CZ_pulse_name]]
+                        pulsed_qubits = {qb1n, qb2n}
+                    else:
+                        qb_name = qb1n if '0' in pulse_tuple[1] else qb2n
+                        pulse_name = pulse_tuple[0]
+                        if 'Z' not in pulse_name:
+                            if qb_name not in pulsed_qubits:
+                                pulse_name += 's'
+                            else:
+                                pulsed_qubits = set()
+                            pulsed_qubits |= {qb_name}
+                        pulse_list += [operation_dict[pulse_name + ' ' + qb_name]]
+            ro_spacing = 1.5*operation_dict['RO mux']['length']
+            # print(pulse_list)
+            if preselection:
+                for pulse in pulse_list:
+                    try:
+                        if pulse['pulse_type'] == 'SSB_DRAG_pulse':
+                            ro_spacing += pulse['nr_sigma'] * pulse['sigma']
+                            # print('single qb +1')
+                        if pulse['refpoint'] == 'simultaneous':
+                            ro_spacing -= pulse['nr_sigma'] * pulse['sigma']
+                            # print('single qb -1')
+                    except KeyError:
+                        if pulse['pulse_type'] == 'NZBufferedCZPulse':
+                            ro_spacing += pulse['pulse_length'] + pulse['buffer_length_start'] + pulse[
+                                'buffer_length_end'] + 2 * pulse['extra_buffer_aux_pulse'] + 2 * pulse[
+                                              'gaussian_filter_sigma']
+                            # print('2 qb +1')
+                # print('Total sequence length:')
+                # print(ro_spacing)
+                operation_dict['RO mux_presel']['pulse_delay'] = \
+                    -ro_spacing - operation_dict['RO mux']['length']
+                operation_dict['RO presel_dummy']['length'] = ro_spacing
+                pulse_list.append(operation_dict['RO mux_presel'])
+                # RO presel dummy is referenced to end of RO mux presel => it happens
+                # before the preparation pulses!
+                pulse_list.append(operation_dict['RO presel_dummy'])
+            pulse_list += [operation_dict['RO mux']]
+            # pulse_list_all_seeds += [pulse_list]
+            # print(len(pulse_list_all_seeds))
+            # print(nr_seeds)
+            el = multi_pulse_elt(i, station, pulse_list)
+            el_list.append(el)
+            seq.append_element(el, trigger_wait=True)
 
-        el = multi_pulse_elt(i, station, pulse_list)
-        el_list.append(el)
-        seq.append_element(el, trigger_wait=True)
+    else:
+        for elt_idx, i in enumerate(nr_seeds):
+            cl_seq = rb.randomized_benchmarking_sequence_new(
+                nr_cliffords_value,
+                number_of_qubits=2,
+                max_clifford_idx=max_clifford_idx,
+                interleaving_cl=interleaved_gate,
+                desired_net_cl=net_clifford)
+
+            pulse_list = []
+            for idx in cl_seq:
+                pulse_tuples_list = tqc.TwoQubitClifford(idx).gate_decomposition
+                pulsed_qubits = {qb1n, qb2n}
+                for j, pulse_tuple in enumerate(pulse_tuples_list):
+
+                    if isinstance(pulse_tuple[1], list):
+                        pulse_list += [operation_dict[CZ_pulse_name]]
+                        pulsed_qubits = {qb1n, qb2n}
+                    else:
+                        qb_name = qb1n if '0' in pulse_tuple[1] else qb2n
+                        pulse_name = pulse_tuple[0]
+                        if 'Z' not in pulse_name:
+                            if qb_name not in pulsed_qubits:
+                                pulse_name += 's'
+                            else:
+                                pulsed_qubits = set()
+                            pulsed_qubits |= {qb_name}
+                        pulse_list += [operation_dict[pulse_name + ' ' + qb_name]]
+            pulse_list += [operation_dict['RO mux']]
+            # print(len(pulse_list))
+            # print(pulse_list)
+            el = multi_pulse_elt(elt_idx, station, pulse_list)
+            el_list.append(el)
+            seq.append_element(el, trigger_wait=True)
 
     if upload:
         station.pulsar.program_awgs(seq, *el_list, verbose=verbose)
@@ -1108,7 +1185,8 @@ def n_qubit_simultaneous_randomized_benchmarking_seq(qubit_names_list,
                                                      upload_all=True,
                                                      seq_name=None,
                                                      verbose=False,
-                                                     return_seq=False):
+                                                     return_seq=False,
+                                                     preselection=False):
 
     """
     Args:
@@ -1134,6 +1212,17 @@ def n_qubit_simultaneous_randomized_benchmarking_seq(qubit_names_list,
     """
     # get number of qubits
     n = len(qubit_names_list)
+
+    operation_dict['RO mux_presel'] = operation_dict['RO mux'].copy()
+
+    operation_dict['RO mux_presel']['refpoint'] = 'end'
+
+    operation_dict['RO presel_dummy'] = {
+        'pulse_type': 'SquarePulse',
+        'channel': operation_dict['RO mux']['acq_marker_channel'],
+        'amplitude': 0.0,
+        'length': 0,
+        'pulse_delay': 0}
 
     for qb_nr, qb_name in enumerate(qubit_names_list):
         operation_dict['Z0 ' + qb_name] = \
@@ -1238,6 +1327,30 @@ def n_qubit_simultaneous_randomized_benchmarking_seq(qubit_names_list,
                 else:
                     p['refpoint'] = 'end'
                     refpoint = [p['target_qubit']]
+
+        ro_spacing = 1.5 * operation_dict['RO mux']['length']
+        # print(pulse_list)
+        if preselection:
+            for pulse in pulse_list:
+                try:
+                    if pulse['pulse_type'] == 'SSB_DRAG_pulse':
+                        ro_spacing += pulse['nr_sigma'] * pulse['sigma']
+                        # print('single qb +1')
+                    if pulse['refpoint'] == 'simultaneous':
+                        ro_spacing -= pulse['nr_sigma'] * pulse['sigma']
+                        # print('single qb -1')
+                except KeyError:
+                    continue
+            # print('2 qb +1')
+            # print('Total sequence length:')
+            # print(ro_spacing)
+            operation_dict['RO mux_presel']['pulse_delay'] = \
+                -ro_spacing - operation_dict['RO mux']['length']
+            operation_dict['RO presel_dummy']['length'] = ro_spacing
+            pulse_list.append(operation_dict['RO mux_presel'])
+            # RO presel dummy is referenced to end of RO mux presel => it happens
+            # before the preparation pulses!
+            pulse_list.append(operation_dict['RO presel_dummy'])
 
         # add RO pulse pars at the end
         pulse_list += [operation_dict['RO mux']]
@@ -2201,7 +2314,7 @@ def Ramsey_add_pulse_seq(times, measured_qubit_name,
                          artificial_detuning=None,
                          cal_points=True,
                          verbose=False,
-                         upload=True, return_seq=False):
+                         upload=True, return_seq=False, preselection = False, mux = False):
 
     if np.any(times > 1e-3):
         logging.warning('The values in the times array might be too large.'
@@ -2211,7 +2324,6 @@ def Ramsey_add_pulse_seq(times, measured_qubit_name,
     seq = sequence.Sequence(seq_name)
     el_list = []
 
-
     pulse_pars_x1 = deepcopy(operation_dict['X90 ' + measured_qubit_name])
     pulse_pars_x1['refpoint'] = 'end'
     pulse_pars_x2 = deepcopy(pulse_pars_x1)
@@ -2219,28 +2331,92 @@ def Ramsey_add_pulse_seq(times, measured_qubit_name,
     RO_pars = operation_dict['RO ' + measured_qubit_name]
     add_pulse_pars = deepcopy(operation_dict['X180 ' + pulsed_qubit_name])
 
-    for i, tau in enumerate(times):
-        if cal_points and (i == (len(times)-4) or i == (len(times)-3)):
-            el = multi_pulse_elt(i, station, [
-                operation_dict['I ' + measured_qubit_name], RO_pars])
-        elif cal_points and (i == (len(times)-2) or i == (len(times)-1)):
-            el = multi_pulse_elt(i, station, [
-                operation_dict['X180 ' + measured_qubit_name], RO_pars])
-        else:
-            pulse_pars_x2['pulse_delay'] = tau
-            if artificial_detuning is not None:
-                Dphase = ((tau-times[0]) * artificial_detuning * 360) % 360
-                pulse_pars_x2['phase'] = Dphase
+    operation_dict['RO presel'] = operation_dict['RO ' + measured_qubit_name].copy()
+    operation_dict['RO presel']['refpoint'] = 'end'
+    operation_dict['RO presel_dummy'] = {
+        'pulse_type': 'SquarePulse',
+        'channel': operation_dict['RO ' + measured_qubit_name]['acq_marker_channel'],
+        'amplitude': 0.0,
+        'length': 0,
+        'pulse_delay': 0}
 
-            if i % 2 == 0:
-                el = multi_pulse_elt(
-                    i, station, [operation_dict['X90 ' + measured_qubit_name],
-                                 pulse_pars_x2, RO_pars])
+    if mux:
+        operation_dict['RO presel'] = operation_dict['RO mux'].copy()
+        operation_dict['RO presel']['refpoint'] = 'end'
+        operation_dict['RO presel_dummy'] = {
+            'pulse_type': 'SquarePulse',
+            'channel': operation_dict['RO mux']['acq_marker_channel'],
+            'amplitude': 0.0,
+            'length': 0,
+            'pulse_delay': 0}
+        RO_pars = operation_dict['RO mux']
+
+    ro_spacing = 2 * pulse_pars_x1['nr_sigma'] * pulse_pars_x1['sigma'] + 1.5 * operation_dict['RO ' + measured_qubit_name]['length']
+    operation_dict['RO presel']['pulse_delay'] = \
+        -ro_spacing - operation_dict['RO ' + measured_qubit_name]['length']
+    operation_dict['RO presel_dummy']['length'] = ro_spacing
+
+    for i, tau in enumerate(times):
+        if preselection:
+            if cal_points and (i == (len(times) - 4) or i == (len(times) - 3)):
+                el = multi_pulse_elt(i, station, [
+                    operation_dict['I ' + measured_qubit_name],
+                    operation_dict['RO presel'],
+                    operation_dict['RO presel_dummy'], RO_pars])
+            elif cal_points and (i == (len(times) - 2) or i == (len(times) - 1)):
+                el = multi_pulse_elt(i, station, [
+                    operation_dict['X180 ' + measured_qubit_name],
+                    operation_dict['RO presel'],
+                    operation_dict['RO presel_dummy'],
+                    RO_pars])
             else:
-                el = multi_pulse_elt(i, station,
-                                     [add_pulse_pars, pulse_pars_x1,
-                                     # [pulse_pars_x1, add_pulse_pars,
-                                      pulse_pars_x2, RO_pars])
+                pulse_pars_x2['pulse_delay'] = tau
+                ro_spacing = tau + 2 * pulse_pars_x1['nr_sigma'] * pulse_pars_x1['sigma'] + 1.5 * \
+                             operation_dict['RO ' + measured_qubit_name]['length']
+                operation_dict['RO presel']['pulse_delay'] = \
+                    -ro_spacing - operation_dict['RO ' + measured_qubit_name]['length']
+                operation_dict['RO presel_dummy']['length'] = ro_spacing
+                if artificial_detuning is not None:
+                    Dphase = ((tau - times[0]) * artificial_detuning * 360) % 360
+                    pulse_pars_x2['phase'] = Dphase
+
+                if i % 2 == 0:
+                    el = multi_pulse_elt(
+                        i, station, [operation_dict['X90 ' + measured_qubit_name],
+                                     pulse_pars_x2,
+                                     operation_dict['RO presel'],
+                                     operation_dict['RO presel_dummy'],
+                                     RO_pars])
+                else:
+                    el = multi_pulse_elt(i, station,
+                                         [add_pulse_pars, pulse_pars_x1,
+                                          # [pulse_pars_x1, add_pulse_pars,
+                                          pulse_pars_x2,
+                                          operation_dict['RO presel'],
+                                          operation_dict['RO presel_dummy'],
+                                          RO_pars])
+        else:
+            if cal_points and (i == (len(times)-4) or i == (len(times)-3)):
+                el = multi_pulse_elt(i, station, [
+                    operation_dict['I ' + measured_qubit_name], RO_pars])
+            elif cal_points and (i == (len(times)-2) or i == (len(times)-1)):
+                el = multi_pulse_elt(i, station, [
+                    operation_dict['X180 ' + measured_qubit_name], RO_pars])
+            else:
+                pulse_pars_x2['pulse_delay'] = tau
+                if artificial_detuning is not None:
+                    Dphase = ((tau-times[0]) * artificial_detuning * 360) % 360
+                    pulse_pars_x2['phase'] = Dphase
+
+                if i % 2 == 0:
+                    el = multi_pulse_elt(
+                        i, station, [operation_dict['X90 ' + measured_qubit_name],
+                                     pulse_pars_x2, RO_pars])
+                else:
+                    el = multi_pulse_elt(i, station,
+                                         [add_pulse_pars, pulse_pars_x1,
+                                         # [pulse_pars_x1, add_pulse_pars,
+                                          pulse_pars_x2, RO_pars])
         el_list.append(el)
         seq.append_element(el, trigger_wait=True)
     if upload:
@@ -2257,13 +2433,15 @@ def Ramsey_add_pulse_sweep_phase_seq(
         pulsed_qubit_name, operation_dict,
         verbose=False,
         upload=True, return_seq=False,
-        cal_points=True):
+        cal_points=True, preselection = False):
 
     seq_name = 'Ramsey_with_additional_pulse_sweep_phase_sequence'
     seq = sequence.Sequence(seq_name)
     el_list = []
 
     X90_2 = deepcopy(operation_dict['X90 ' + measured_qubit_name])
+
+
     for i, theta in enumerate(phases):
         X90_2['phase'] = theta*180/np.pi
         if cal_points and (theta == phases[-4] or theta == phases[-3]):

@@ -688,7 +688,7 @@ class Interleaved_RB_Analysis(RandomizedBenchmarking_Analysis):
 class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
 
     def __init__(self, timestamp=None, qb_names=None,
-                 use_cal_points=False, **kw):
+                 use_cal_points=False, preselection = False, qutrit=False, **kw):
         """
         timestamp (dict): string or length-1 list if experiment was done for
             2 qubits (used correlation mode of UHFQC), or either of the forms
@@ -699,7 +699,8 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
         self.use_cal_points = use_cal_points
         self.qb_names = qb_names
         use_latest_data = kw.pop('use_latest_data', False)
-
+        self.preselection = preselection
+        self.qutrit = qutrit
         if self.qb_names is None:
             raise ValueError('qb_names is not specified.')
         if type(self.qb_names) != list:
@@ -744,28 +745,37 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
         self.T1s, self.T2s, self.pulse_lengths = \
             load_T1_T2_pulse_length(self.folders, self.qb_names)
 
-        if len(self.qb_names) == 2:
-            self.correlator_analysis(**kw)
+        # if len(self.qb_names) == 2:
+        #     self.correlator_analysis(**kw)
+        # else:
+        #     self.single_shot_analysis(**kw)
+
+        if self.preselection and not self.qutrit:
+            self.single_shot_analysis(preselection=self.preselection, **kw)
+        elif self.preselection and self.qutrit:
+            self.preselection = False
+            self.correlator_analysis(qutrit=self.qutrit, **kw)
         else:
-            self.single_shot_analysis(**kw)
+            self.correlator_analysis(**kw)
 
         self.data_dict = deepcopy(self.data_dict_raw)
         self.fit_res_dict = deepcopy(self.fit_res_dict_raw)
         if add_correction:
             d_dict = self.data_dict['data']
             for var_name in d_dict:
-                fit_res = self.fit_res_dict_raw[var_name]
-                A = fit_res.best_values['Amplitude']
-                B = fit_res.best_values['offset']
-                A_scaled = A+B
-                # overwrite the values of the Amplitude and offset
-                self.fit_res_dict[var_name].best_values[
-                    'Amplitude'] = A_scaled
-                self.fit_res_dict[var_name].best_values[
-                    'offset'] = 0
+                if var_name != 'qb0_leak' and var_name != 'qb1_leak':
+                    fit_res = self.fit_res_dict_raw[var_name]
+                    A = fit_res.best_values['Amplitude']
+                    B = fit_res.best_values['offset']
+                    A_scaled = A+B
+                    # overwrite the values of the Amplitude and offset
+                    self.fit_res_dict[var_name].best_values[
+                        'Amplitude'] = A_scaled
+                    self.fit_res_dict[var_name].best_values[
+                        'offset'] = 0
 
-                self.data_dict['data'][var_name] = \
-                    (A_scaled/A)*(self.data_dict_raw['data'][var_name] - B)
+                    self.data_dict['data'][var_name] = \
+                        (A_scaled/A)*(self.data_dict_raw['data'][var_name] - B)
 
         # Save fitted params
         for data_file in self.data_files:
@@ -782,16 +792,22 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
         self.infidelities = {}
         for var_name, fit_res in self.fit_res_dict.items():
             if fit_res is not None:
-                self.depolariz_params[var_name] = \
-                    {'val': fit_res.best_values['p'],
-                     'stderr': fit_res.params['p'].stderr}
-                if var_name == 'corr':
-                    d = 2**len(self.qb_names)
+                if var_name == 'qb0_leak' or var_name == 'qb1_leak':
+                    self.depolariz_params[var_name] = None
+                    self.infidelities[var_name] = \
+                        {'val': fit_res.best_values['pu'],
+                         'stderr': np.abs( fit_res.params['pu'].stderr)}
                 else:
-                    d = 2
-                self.infidelities[var_name] = \
-                    {'val': (d-1)*(1-fit_res.best_values['p'])/d,
-                     'stderr': np.abs((d-1)*fit_res.params['p'].stderr/d)}
+                    self.depolariz_params[var_name] = \
+                        {'val': fit_res.best_values['p'],
+                         'stderr': fit_res.params['p'].stderr}
+                    if var_name == 'corr':
+                        d = 2 ** len(self.qb_names)
+                    else:
+                        d = 2
+                    self.infidelities[var_name] = \
+                        {'val': (d - 1) * (1 - fit_res.best_values['p']) / d,
+                         'stderr': np.abs((d - 1) * fit_res.params['p'].stderr / d)}
             else:
                 self.depolariz_params[var_name] = None
                 self.infidelities[var_name] = None
@@ -813,12 +829,12 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
             std_err_product_squared += std_err_term_squared
 
         self.alpha_product_err = np.sqrt(std_err_product_squared)
+
         delta_alpha = \
             depolariz_params_dict['corr']['val'] - self.alpha_product
         delta_alpha_stderr = np.sqrt(
             (depolariz_params_dict['corr']['stderr'])**2 +
             std_err_product_squared)
-
         self.delta_alpha = {'val': delta_alpha,
                             'stderr': delta_alpha_stderr}
 
@@ -833,6 +849,7 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
 
         self.xlabel_RB = 'Number of Cliffords, m'
         self.ylabel_RB = r'Expectation value $\langle \sigma_z \rangle$'
+        self.ylabel_RBLeakage = r'$|f\rangle state population $'
         self.ylabel_corr = (r'Expectation value $\langle '
                             r'\sigma_z^{{\otimes {{{n}}} }} '
                             r'\rangle$'.format(n=len(self.qb_names)))
@@ -844,19 +861,21 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
             self.plot_SRB(
                 plot_errorbars=plot_errorbars,
                 save_fig=save_fig,
-                fig_title_suffix=fig_title_suffix, **kw)
+                fig_title_suffix=fig_title_suffix,
+                preselection= self.preselection, **kw)
 
         if make_fig_cross_talk:
             self.plot_cross_talk(
                 plot_errorbars=plot_errorbars,
                 save_fig=save_fig,
-                fig_title_suffix=fig_title_suffix, **kw)
+                fig_title_suffix=fig_title_suffix,
+                preselection= self.preselection,**kw)
 
         # if close_file:
         #     self.finish(**kw)
 
     def correlator_analysis(self, **kw):
-
+        print('Correlator')
         self.fit_res_dict_raw = {}
         self.data_dict_raw = {}
         self.msmt_strings = {}
@@ -878,10 +897,11 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
 
             self.n_cl = self.data_dict_raw['n_cl']
             self.nr_seeds = self.data_dict_raw['nr_seeds']
-
+            print(self.data_dict_raw)
+            # print(self.var_data_dict)
             # get RO channels and fit data
             for var_name, dset in self.data_dict_raw['data'].items():
-                if var_name != 'corr':
+                if var_name != 'corr' and var_name != 'qb0_leak' and var_name != 'qb1_leak':
                     instr_set = self.data_file[
                         'Instrument settings']
                     self.RO_channels[var_name] = int(instr_set[var_name].attrs[
@@ -892,17 +912,23 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                 else:
                     d = 2
 
-                self.fit_res_dict_raw[var_name] = \
-                    self.fit_data(dset, self.n_cl, d=d,
-                                  epsilon=self.var_data_dict[var_name],
-                                  **kw)
+                if var_name == 'qb0_leak' or var_name == 'qb1_leak':
+                    self.fit_res_dict_raw[var_name] = \
+                        self.fit_data_leak(dset, self.n_cl, d=d,
+                                      epsilon=self.var_data_dict[var_name],
+                                      **kw)
+                else:
+                    self.fit_res_dict_raw[var_name] = \
+                        self.fit_data(dset, self.n_cl, d=d,
+                                      epsilon=self.var_data_dict[var_name],
+                                      **kw)
                 if self.epsilon is None:
                     self.epsilon_dict[var_name] = self.var_data_dict[var_name]
                 else:
                     self.epsilon_dict[var_name] = self.epsilon
 
 
-    def single_shot_analysis(self, **kw):
+    def single_shot_analysis(self, preselection = False, **kw):
 
         find_empirical_variance = kw.get('find_empirical_variance', True)
 
@@ -927,16 +953,80 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
         for var_name in self.qb_names+['corr']:
             self.data_dict_raw['data'][var_name] = np.array([])
 
+        print('Analysis Initialized')
+
         single_file = (len(self.folders) == 1)
         for i, folder in enumerate(self.folders):
             print(folder)
             self.folder = folder
             self.load_hdf5data(folder=self.folder, **kw)
-            self.extract_data(two_qubits=False,
-                              single_file=single_file, **kw)
+            print(folder)
+            if preselection:
+                self.extract_data(two_qubits=True,
+                                  single_file=single_file, **kw)
+                self.data_dict_raw['nr_seeds'] = self.data_dict_raw['nr_seeds'] / 2
+                # print('Data Extracted')
+                # print({'data':self.data})
+                # print({'n_cl': np.unique(self.data[1])})
+                print('Doing Preselection')
+                self.data_dict_raw['n_cl'] = np.unique(self.data[1])
+                data_q1_pre = 2*(1-self.data[2][::2])-1
+                data_q1_raw = 2*(1-self.data[2][1::2])-1
+                data_q2_pre = 2*(1-self.data[3][::2])-1
+                data_q2_raw = 2*(1-self.data[3][1::2])-1
 
+                for i, val in enumerate(data_q1_pre):
+                    if val == -1 or data_q2_pre[i] == -1:
+                        data_q1_raw[i] = np.nan
+                        data_q2_raw[i] = np.nan
+                print('Preselection Done')
+                data_corr=np.array(data_q1_raw)*np.array(data_q2_raw)
+                self.data_mean = []
+                for i in [data_q1_raw,data_q2_raw]:
+                    i = np.array_split(i, len(self.data_dict_raw['n_cl']))
+                    # print(len(i))
+                    data_rawmean_lst = []
+                    for j in i:
+                        # print('Working')
+                        # j = list(j)
+                        self.nr_shots = len(j)/self.data_dict_raw['nr_seeds']
+                        # print(len(j))
+                        # unique, counts = np.unique(j, return_counts=True)
+                        # print(dict(zip(unique, counts)))
+                        # data_rawmean = sum(filter(lambda x: x != 2, j))/(len(j)-j.count(2))
+                        data_rawmean = np.nanmean(j)
+                        data_rawmean_lst.append(data_rawmean)
+                        # print(data_rawmean)
+                    self.data_mean.append(data_rawmean_lst)
+
+                data_corr = np.array_split(data_corr, len(self.data_dict_raw['n_cl']))
+                # print(len(i))
+                data_rawmean_lst = []
+                for j in data_corr:
+                    # print('Working')
+                    # j = list(j)
+                    self.nr_shots = len(j) / self.data_dict_raw['nr_seeds']
+                    # print(len(j))
+                    # unique, counts = np.unique(j, return_counts=True)
+                    # print(dict(zip(unique, counts)))
+                    # data_rawmean = sum(filter(lambda x: x != 4, j)) / (len(j) - j.count(4))
+                    data_rawmean = np.nanmean(j)
+                    data_rawmean_lst.append(data_rawmean)
+                    # print(data_rawmean_lst)
+                self.data_mean.append(data_rawmean_lst)
+                self.data_mean=np.array(self.data_mean)
+                print('Average Done')
+                self.data_dict_raw['n_cl']=self.data_dict_raw['n_cl']
+                self.data_dict_raw['data']['qb1'] = self.data_mean[0]
+                self.data_dict_raw['data']['qb2'] = self.data_mean[1]
+                self.data_dict_raw['data']['corr'] = self.data_mean[2]
+                print(self.data_dict_raw)
+            else:
+                self.extract_data(two_qubits=False,
+                                  single_file=single_file, **kw)
             if i == 0:
-                self.data_dict_raw['nr_seeds'] = self.nr_seeds
+                self.nr_seeds = self.data_dict_raw['nr_seeds']
+
             if not single_file:
                 # get the nr_cliffords for the sequence from the
                 # measurementstring
@@ -960,12 +1050,13 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                     self.data_dict_raw['n_cl'],
                     int(float(nr_cliffs_string[idx_underscore+1::])))
             self.add_analysis_datagroup_to_file()
-
             self.msmt_strings += [self.measurementstring]
             self.data_files += [self.data_file]
 
         # get RO channels and fit data
+
         self.n_cl = self.data_dict_raw['n_cl']
+
         for var_name, dset in self.data_dict_raw['data'].items():
             if var_name != 'corr':
                 instr_set = self.data_file['Instrument settings']
@@ -976,7 +1067,6 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                 d = 2**(len(self.qb_names))
             else:
                 d = 2
-
             self.fit_res_dict_raw[var_name] = \
                 self.fit_data(dset, self.n_cl, d=d,
                               epsilon=self.var_data_dict[var_name], **kw)
@@ -984,25 +1074,30 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                 self.epsilon_dict[var_name] = self.var_data_dict[var_name]
             else:
                 self.epsilon_dict[var_name] = self.epsilon
-
+            if preselection:
+                # print(self.epsilon_dict[var_name])
+                self.epsilon_dict[var_name] = np.array(self.epsilon_dict[var_name]) * (1/self.nr_shots)**0.5
     def extract_data(self, **kw):
 
         two_qubits = kw.pop('two_qubits', True)
         find_empirical_variance = kw.pop('find_empirical_variance', True)
         scaling_factor = kw.pop('scaling_factor', 1)
-        print(scaling_factor)
-        self.get_naming_and_values_2D()
+        # print('scaling_factor')
+        # print(scaling_factor)
+
+        self.get_naming_and_values_2D(preselection=self.preselection)
         self.data[2::] = self.data[2:]/scaling_factor
         for i in range(len(self.measured_values)):
             self.measured_values[i] = self.measured_values[i]/scaling_factor
 
         if two_qubits:
+            print('two_qubits')
             n_cl = np.unique(self.sweep_points_2D)
             data = {'n_cl': n_cl,
                     'nr_seeds': 0,
                     'data': {}}
-
             if self.use_cal_points:
+                print('use_cal_points')
                 if self.cal_points is None:
                     self.cal_points = [[-2], [-1]]
 
@@ -1028,15 +1123,97 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                         data['data']['corr'] = deepcopy(data_temp)
                     else:
                         data['data'][self.qb_names[idx]] = deepcopy(data_temp)
-
-            else:
-                print('here')
+            elif self.qutrit:
+                # print('here')
                 nr_seeds = self.sweep_points.size
                 data['nr_seeds'] = nr_seeds
+                qb0_raw = self.measured_values[0]
+                qb1_raw = self.measured_values[3]
+                qb0_leak_raw = self.measured_values[2]
+                qb1_leak_raw = self.measured_values[5]
+                # print(data['nr_seeds'])
+                # print(self.measured_values[0])
+                # print(np.shape(np.array(self.measured_values)))
+                self.data_dict_raw['n_cl'] = n_cl
+                self.data_dict_raw['nr_seeds'] = nr_seeds
+                corr_raw = 1/2*(self.measured_values[6]+1)
 
+                qb0 = np.zeros(n_cl.size)
+                qb1 = np.zeros(n_cl.size)
+                corr = np.zeros(n_cl.size)
+                qb0_leak = np.zeros(n_cl.size)
+                qb1_leak = np.zeros(n_cl.size)
+
+                if find_empirical_variance:
+                    self.var_data_dict[self.qb_names[0]] = np.array([])
+                    self.var_data_dict[self.qb_names[1]] = np.array([])
+                    self.var_data_dict['qb0_leak'] = np.array([])
+                    self.var_data_dict['qb1_leak'] = np.array([])
+                    self.var_data_dict['corr'] = np.array([])
+                else:
+                    self.var_data_dict[self.qb_names[0]] = None
+                    self.var_data_dict[self.qb_names[1]] = None
+                    self.var_data_dict['qb0_leak'] = None
+                    self.var_data_dict['qb1_leak'] = None
+                    self.var_data_dict['corr'] = None
+
+                for i in range(n_cl.size):
+                    y = [qb0_raw[j][i] for j in range(nr_seeds)]
+                    qb0[i] = np.mean(y)
+                    if find_empirical_variance:
+                        y = 2 * (1 - np.asarray(y)) - 1
+                        self.var_data_dict[self.qb_names[0]] = np.append(
+                            self.var_data_dict[self.qb_names[0]], np.std(y))
+
+                    y = [qb1_raw[j][i] for j in range(nr_seeds)]
+                    qb1[i] = np.mean(y)
+                    if find_empirical_variance:
+                        y = 2 * (1 - np.asarray(y)) - 1
+                        self.var_data_dict[self.qb_names[1]] = np.append(
+                            self.var_data_dict[self.qb_names[1]], np.std(y))
+
+                    y = [corr_raw[j][i] for j in range(nr_seeds)]
+                    corr[i] = np.mean(y)
+                    if find_empirical_variance:
+                        y = 2 * np.asarray(y) - 1
+                        self.var_data_dict['corr'] = np.append(
+                            self.var_data_dict['corr'], np.std(y))
+
+                    y = [qb0_leak_raw[j][i] for j in range(nr_seeds)]
+                    qb0_leak[i] = np.mean(y)
+                    if find_empirical_variance:
+                        y = np.asarray(y)
+                        self.var_data_dict['qb0_leak'] = np.append(
+                            self.var_data_dict['qb0_leak'], np.std(y))
+
+                    y = [qb1_leak_raw[j][i] for j in range(nr_seeds)]
+                    qb1_leak[i] = np.mean(y)
+                    if find_empirical_variance:
+                        y =np.asarray(y)
+                        self.var_data_dict['qb1_leak'] = np.append(
+                            self.var_data_dict['qb1_leak'], np.std(y))
+
+
+                data['data'][self.qb_names[0]] = -(2 * (1 - qb0) - 1)
+                data['data'][self.qb_names[1]] = -(2 * (1 - qb1) - 1)
+                data['data']['corr'] = (2 * corr - 1)
+                data['data']['qb0_leak'] = qb0_leak
+                data['data']['qb1_leak'] = qb1_leak
+
+            else:
+                # print('here')
+                nr_seeds = self.sweep_points.size
+                data['nr_seeds'] = nr_seeds
                 qb0_raw = self.measured_values[0]
                 qb1_raw = self.measured_values[1]
-                corr_raw = self.measured_values[2]
+                # print(data['nr_seeds'])
+                # print(self.measured_values)
+                self.data_dict_raw['n_cl'] = n_cl
+                self.data_dict_raw['nr_seeds'] = nr_seeds
+                try:
+                    corr_raw = self.measured_values[2]
+                except IndexError:
+                    corr_raw = self.measured_values[1]
 
                 qb0 = np.zeros(n_cl.size)
                 qb1 = np.zeros(n_cl.size)
@@ -1077,6 +1254,7 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                 data['data'][self.qb_names[1]] = 2*(1 - qb1) - 1
                 data['data']['corr'] = 2*corr - 1
 
+            # print(data)
             return data
         else:
             single_file = kw.pop('single_file', True)
@@ -1253,6 +1431,65 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
 
         return fit_res
 
+    def fit_data_leak(self, data, numCliff, print_fit_results=False,
+                 show_guess=False,  plot_results=False, **kw):
+        guess_pars_dict = kw.pop('guess_pars_dict', {})
+        d = kw.pop('d', 2)
+        print('d in fit_data ', d)
+
+        RBModel = lmfit.Model(fit_mods.RandomizedBenchmarkingLeakage)
+        RBModel.set_param_hint('pu',
+                               min=0, max=0.1,
+                               value=guess_pars_dict.get('pu', 0.01))
+        RBModel.set_param_hint('pd',
+                               value=guess_pars_dict.get('pd', 0.01),
+                               min=0, max=0.1)
+        RBModel.set_param_hint('p0',
+                               value=guess_pars_dict.get('p0', 0),
+                               vary=True)
+
+        params = RBModel.make_params()
+        self.conf_level = kw.pop('conf_level', 0.68)
+
+        if kw.pop('single_fit', False):
+            print('single fit')
+            fit_res = RBModel.fit(data, numCliff=numCliff, params=params)
+            self.epsilon = None
+        else:
+            self.epsilon = kw.pop('epsilon', None)
+            if self.epsilon is None:
+                print('old fit')
+                # Run once to get an estimate for the error per Clifford
+                fit_res = RBModel.fit(data, numCliff=numCliff, params=params)
+
+                # Use the found error per Clifford to standard errors for the data
+                # points fro Helsen et al. (2017)
+                epsilon_guess = kw.pop('epsilon_guess', 0.01)
+                epsilon = calculate_confidence_intervals(
+                    nr_seeds=self.nr_seeds,
+                    nr_cliffords=self.n_cl,
+                    depolariz_param=0,
+                    conf_level=self.conf_level,
+                    epsilon_guess=epsilon_guess, d=d)
+
+                self.epsilon = epsilon
+                # Run fit again with scale_covar=False, and weights = 1/epsilon
+
+                # if an entry in epsilon_sqrd is 0, replace it with half the minimum
+                # value in the epsilon_sqrd array
+                idxs = np.where(epsilon==0)[0]
+                epsilon[idxs] = min([eps for eps in epsilon if eps!=0])/2
+                print(epsilon)
+                fit_res = RBModel.fit(data, numCliff=numCliff, params=params,
+                                      scale_covar=False, weights=1/epsilon)
+
+            else:
+                print('empirical variance fit')
+                self.conf_level = kw.pop('conf_level', 0.68)
+                fit_res = RBModel.fit(data, numCliff=numCliff, params=params,
+                                      scale_covar=False, weights=1/self.epsilon)
+        return fit_res
+
     def find_multi_qubit_error(self, fit_results_dict=None, **kw):
         print('in multi qubit error')
         if fit_results_dict is None:
@@ -1389,7 +1626,7 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                     deepcopy(mean_correl_data))
 
 
-    def plot_SRB(self, save_fig=True, fig_title_suffix=None, **kw):
+    def plot_SRB(self, save_fig=True, fig_title_suffix=None, preselection = False, **kw):
 
         show_SRB_base = kw.pop('show_SRB_base', False)
         plot_T1_lim_base = kw.pop('plot_T1_lim_base', True)
@@ -1423,6 +1660,25 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                 T1 = None
                 T2 = None
                 pulse_length = None
+
+            elif var_name == 'qb0_leak' or var_name == 'qb1_leak':
+                if len(self.qb_names) == 2:
+                    subplot_title = \
+                        r'$\langle \sigma_{{z,{qb0}}} ' \
+                        r'\sigma_{{z,{qb1}}} \rangle$'.format(
+                            qb0=self.qb_names[0],
+                            qb1=self.qb_names[1])
+                else:
+                    subplot_title = r'$\langle ' \
+                                    r'\sigma_z^{{\otimes {{{n}}} }}$'\
+                        .format(n=len(self.qb_names)) + r'$\rangle$'
+
+                ylabel = self.ylabel_RBLeakage
+                plot_T1_lim_temp = False
+                horizontal_alignment='right'
+                T1 = None
+                T2 = None
+                pulse_length = None
             else:
                 subplot_title = \
                     r'$\langle \sigma_{{z,{qb0}}} ' \
@@ -1443,7 +1699,6 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                                      xlabel=self.xlabel_RB,
                                      ylabel=ylabel,
                                      return_line=True)
-
             if self.fit_res_dict[var_name] is None:
                 pass
             else:
@@ -1453,7 +1708,8 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                     var_name=var_name,
                     T1=T1, T2=T2, pulse_length=pulse_length,
                     plot_T1_lim=plot_T1_lim_temp,
-                    horizontal_alignment=horizontal_alignment, **kw)
+                    horizontal_alignment=horizontal_alignment,
+                    preselection = preselection, **kw)
 
             ax.set_title(subplot_title)
 
@@ -1480,7 +1736,7 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
 
 
     def plot_cross_talk(self, plot_errorbars=True, save_fig=True,
-                        fig_title_suffix=None, **kw):
+                        fig_title_suffix=None, preselection = False, **kw):
 
         # ONLY FOR 2 qubits
         show_SRB_cross_talk = kw.pop('show_SRB_cross_talk', False)
@@ -1509,9 +1765,10 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
             if var_name=='corr':
                 #set color of the corr line to a darker green
                 line_color = 'g'
+            elif var_name == 'qb0_leak' or var_name == 'qb1_leak':
+                continue
             else:
                 line_color = self.line_colors[self.RO_channels[var_name]]
-
             line = plotting_function(x=self.data_dict['n_cl'],
                                      y=self.data_dict['data'][
                                          var_name],
@@ -1531,6 +1788,7 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                 plot_T1_lim=plot_T1_lim_cross_talk,
                 add_textbox=False,
                 plot_errorbars=plot_errorbars,
+                preselection = preselection,
                 **kw)
 
             if self.epsilon_dict[var_name] is None:
@@ -1538,20 +1796,22 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
 
         # plot the product \sigma_qb2 * \signam_qb7 which should equal
         # \sigma_corr in the ideal case
+
         self.find_and_plot_alpha_product(ax=ax, legend_labels=legend_labels,
-                                         n=n, **kw)
+                                             n=n, preselection = preselection ,**kw)
 
         if plot_errorbars:
             # set legend
             handles, labels = ax.get_legend_handles_labels()
             alpha_product_handle = handles.pop(labels.index(legend_labels[-1]))
             alpha_product_label = labels.pop(labels.index(legend_labels[-1]))
+
             handles_new = []
             labels_new = []
 
-            for i in range(n+1):
-                handles_new.extend([handles[i], handles[i+n+1]])
-                labels_new.extend([labels[i], labels[i+n+1]])
+            for i in range(n + 1):
+                handles_new.extend([handles[i], handles[i + n + 1]])
+                labels_new.extend([labels[i], labels[i + n + 1]])
             handles_new.extend([alpha_product_handle])
             labels_new.extend([alpha_product_label])
             ax.legend(handles_new, labels_new,
@@ -1595,7 +1855,7 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
         if kw.pop('close_fig', True):
             plt.close(fig)
 
-    def find_and_plot_alpha_product(self, ax, legend_labels, n=None, **kw):
+    def find_and_plot_alpha_product(self, ax, legend_labels, n=None, preselection = False,**kw):
         # plot the product \sigma_qb2 * \signam_qb7 which should equal
         # \sigma_corr in the ideal case
 
@@ -1608,7 +1868,6 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
             data_dict = self.data_dict_raw
             fit_res_dict = self.fit_res_dict_raw
             print('use unscaled data')
-
         A = fit_res_dict['corr'].best_values['Amplitude']
         x_fine = np.linspace(data_dict['n_cl'][0],
                              data_dict['n_cl'][-1], 100)
@@ -1617,7 +1876,7 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
         ax.plot(data_dict['n_cl'],
                 A*self.alpha_product**data_dict['n_cl'], 'mo')
 
-    def add_textbox_cross_talk(self, ax, **kw):
+    def add_textbox_cross_talk(self, ax, preselection=False, **kw):
         # pring infidelities
         textstr = ''
         for qb_name in self.qb_names:
@@ -1663,7 +1922,8 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                                              var_name,
                                              line=None,
                                              T1=None, T2=None,
-                                             pulse_length=None, **kw):
+                                             pulse_length=None,
+                                             preselection = False, **kw):
 
         plot_T1_lim = kw.pop('plot_T1_lim', True)
         return_FT1 = kw.pop('return_FT1', False)
@@ -1672,6 +1932,7 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
         plot_errorbars = kw.get('plot_errorbars', True)
         add_textbox = kw.pop('add_textbox', True)
         plot_fit = kw.pop('plot_fit', True)
+
 
         data = self.data_dict['data'][var_name]
         n_cl = self.data_dict['n_cl']
@@ -1711,10 +1972,17 @@ class Simultaneous_RB_Analysis(RandomizedBenchmarking_Analysis):
                                        color=c)
 
         if plot_fit:
-            x_fine = np.linspace(n_cl[0], n_cl[-1], 1000)
-            best_fit = fit_mods.RandomizedBenchmarkingDecay(
-                x_fine, **fit_res.best_values)
-            ax.plot(x_fine, best_fit, color=c)
+            if var_name == 'qb0_leak' or var_name == 'qb1_leak':
+                x_fine = np.linspace(n_cl[0], n_cl[-1], 1000)
+                best_fit = fit_mods.RandomizedBenchmarkingLeakage(
+                    x_fine, **fit_res.best_values)
+                ax.plot(x_fine, best_fit, color=c)
+                ax.set_ylim([0, 0.4])
+            else:
+                x_fine = np.linspace(n_cl[0], n_cl[-1], 1000)
+                best_fit = fit_mods.RandomizedBenchmarkingDecay(
+                    x_fine, **fit_res.best_values)
+                ax.plot(x_fine, best_fit, color=c)
 
 
         textstr = \

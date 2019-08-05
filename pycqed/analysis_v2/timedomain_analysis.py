@@ -4086,11 +4086,12 @@ class OverUnderRotationAnalysis(MultiQubit_TimeDomain_Analysis):
 
 class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, preselection = False, *args, **kwargs):
         params_dict = {'parameter_names': 'parameter_names',
                        'parameter_units': 'parameter_units'}
         kwargs['params_dict'] = params_dict
         super().__init__(*args, **kwargs)
+        self.preselection = preselection
 
     def process_data(self):
         super().process_data()
@@ -4114,6 +4115,10 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                 self.leakage_qbname = self.leakage_qbname[0]
             else:
                 self.leakage_qbname = None
+
+        print('Processing')
+        # print(self.raw_data_dict)
+        # print(self.proc_data_dict)
 
         for qbn, data in self.proc_data_dict['data_to_fit'].items():
             if data.shape[1] != self.raw_data_dict['sweep_points_dict'][qbn][
@@ -4209,8 +4214,8 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
             lines = np.array([fr.best_values['c'] for fr in fit_res_objs])
             lines_errs = np.array([fr.params['c'].stderr for fr in fit_res_objs])
             lines_errs[lines_errs == None] = 0.0
-
-            leakage = lines[0::2] - lines[1::2]#/np.abs(lines[1::2])
+            leakage = lines[0::2] - lines[1::2]# /np.abs(lines[1::2])
+            # leakage = np.abs(lines[0::2] - lines[1::2])#/np.abs(lines[1::2])
             x = lines[1::2] - lines[0::2]
             x_err = np.array(np.sqrt(lines_errs[0::2]**2 + lines_errs[1::2]**2),
                              dtype=np.float64)

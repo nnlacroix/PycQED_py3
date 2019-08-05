@@ -220,7 +220,7 @@ class n_qubit_Simultaneous_RB_fixed_length(swf.Hard_Sweep):
                  # clifford_sequence_list=None,
                  gate_decomposition='HZ', interleaved_gate=None,
                  upload=True, return_seq=False, seq_name=None,
-                 verbose=False, cal_points=False):
+                 verbose=False, cal_points=False, preselection = False):
 
         super().__init__()
         self.qubit_names_list = qubit_names_list
@@ -240,6 +240,8 @@ class n_qubit_Simultaneous_RB_fixed_length(swf.Hard_Sweep):
         self.unit = '#'
         self.name = 'two_qubit_Simultaneous_RB_fixed_length'
 
+        self.preselection = preselection
+
     def prepare(self, upload_all=True,  **kw):
         if self.upload:
             sqs2.n_qubit_simultaneous_randomized_benchmarking_seq(
@@ -254,7 +256,9 @@ class n_qubit_Simultaneous_RB_fixed_length(swf.Hard_Sweep):
                 verbose=self.verbose,
                 upload=True,
                 upload_all=upload_all,
-                cal_points=self.cal_points)
+                cal_points=self.cal_points,
+                preselection = self.preselection
+            )
 
 
 class n_qubit_Simultaneous_RB_fixed_seeds(swf.Hard_Sweep):
@@ -325,7 +329,7 @@ class two_qubit_randomized_benchmarking_one_length(swf.Hard_Sweep):
                  clifford_decomposition_name='HZ',
                  interleaved_gate=None,
                  seq_name=None, upload=True,
-                 return_seq=False, verbose=False):
+                 return_seq=False, verbose=False, preselection = False):
 
         super().__init__()
         self.qb1n = qb1n
@@ -341,7 +345,7 @@ class two_qubit_randomized_benchmarking_one_length(swf.Hard_Sweep):
         self.upload = upload
         self.return_seq = return_seq
         self.verbose = verbose
-
+        self.preselection = preselection
         self.parameter_name = 'Nr of Seeds'
         self.unit = '#'
         self.name = 'Two_Qubit_Randomized_Benchmarking_one_length'
@@ -359,7 +363,7 @@ class two_qubit_randomized_benchmarking_one_length(swf.Hard_Sweep):
                 clifford_decomposition_name=self.clifford_decomposition_name,
                 interleaved_gate=self.interleaved_gate,
                 seq_name=self.seq_name, upload=self.upload,
-                return_seq=self.return_seq, verbose=self.verbose)
+                return_seq=self.return_seq, verbose=self.verbose, preselection=self.preselection)
 
 
 class two_qubit_AllXY(swf.Hard_Sweep):
@@ -541,7 +545,7 @@ class Ramsey_add_pulse_swf(swf.Hard_Sweep):
                  pulsed_qubit_name, operation_dict,
                  artificial_detuning=None,
                  cal_points=True,
-                 upload=True):
+                 upload=True, preselection = False, mux = False):
         super().__init__()
         self.measured_qubit_name = measured_qubit_name
         self.pulsed_qubit_name = pulsed_qubit_name
@@ -549,7 +553,8 @@ class Ramsey_add_pulse_swf(swf.Hard_Sweep):
         self.upload = upload
         self.cal_points = cal_points
         self.artificial_detuning = artificial_detuning
-
+        self.preselection = preselection
+        self.mux = mux
         self.name = 'Ramsey Add Pulse'
         self.parameter_name = 't'
         self.unit = 's'
@@ -562,7 +567,7 @@ class Ramsey_add_pulse_swf(swf.Hard_Sweep):
                 pulsed_qubit_name=self.pulsed_qubit_name,
                 operation_dict=self.operation_dict,
                 artificial_detuning=self.artificial_detuning,
-                cal_points=self.cal_points)
+                cal_points=self.cal_points, preselection = self.preselection, mux=self.mux)
 
 
 class Ramsey_add_pulse_sweep_phase_swf(swf.Hard_Sweep):
