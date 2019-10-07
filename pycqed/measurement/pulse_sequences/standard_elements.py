@@ -65,7 +65,7 @@ def multi_pulse_elt(i,
     # don't count the Z_pulses when specifying number of pulses in element name
     count_z = 0
     for pls in pulse_list:
-        if 'Z_pulse' in pls['pulse_type']:
+        if 'VirtualPulse' in pls['pulse_type']:
             count_z += 1
     no_of_pulses = len(pulse_list) - count_z
 
@@ -134,7 +134,7 @@ def multi_pulse_elt(i,
         # Adding any non special (composite) pulse
         if (pulse_pars['pulse_type'] not in [
                 'MW_IQmod_pulse_tek', 'MW_IQmod_pulse_UHFQC',
-                'Gated_MW_RO_pulse', 'Multiplexed_UHFQC_pulse', 'Z_pulse'
+                'Gated_MW_RO_pulse', 'Multiplexed_UHFQC_pulse', 'VirtualPulse'
         ]):
             # only add phase_offset if the pulse is a qubit drive pulse
             if pulse_pars.get('operation_type', None) == 'MW':
@@ -165,7 +165,7 @@ def multi_pulse_elt(i,
                 operation_type=pulse_pars['operation_type'])
             j += 1
         else:
-            if pulse_pars['pulse_type'] == 'Z_pulse':
+            if pulse_pars['pulse_type'] == 'VirtualPulse':
                 pass
             else:
                 # Composite "special pulses"
