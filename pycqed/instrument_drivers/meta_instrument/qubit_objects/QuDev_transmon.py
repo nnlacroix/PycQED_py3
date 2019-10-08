@@ -2442,7 +2442,7 @@ class QuDev_transmon(Qubit):
                     self.T1_ef(T1)
                 else:
                     self.T1(T1)
-        return T1
+            return T1
 
     def find_rb_gate_fidelity(self, cliffords, nr_seeds, label=None,
                               gate_decomposition='HZ', interleaved_gate=None,

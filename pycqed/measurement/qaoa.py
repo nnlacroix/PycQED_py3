@@ -17,7 +17,7 @@ def qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info, operation_dict,
 
     # create sequence, segment and builder
     seq_name = f'QAOA_{cphase_implementation}_cphase_{qb_names}'
-    seg_name = f'QAOA_{cphase_implementation}_cphase_{qb_names}'
+    seg_name = f'segment_0'
     seq = sequence.Sequence(seq_name)
     seg = segment.Segment(seg_name)
     builder = QAOAHelper(qb_names, operation_dict)
@@ -26,17 +26,17 @@ def qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info, operation_dict,
 
     # initialize qubits
     seg.extend(builder.initialize(init_state, prep_params=prep_params).build())
-
-    # QAOA Unitaries
-    for k, (gamma, beta) in enumerate(zip(gammas, betas)):
-        # Uk
-        seg.extend(builder.U(f"U_{k}", two_qb_gates_info,
-                   gamma, cphase_implementation).build())
-        # Dk
-        seg.extend(builder.D(f"D_{k}", beta).build())
-
-    # readout qubits
-    seg.extend(builder.mux_readout().build())
+    pprint(builder.initialize(init_state, prep_params=prep_params).build())
+    # # QAOA Unitaries
+    # for k, (gamma, beta) in enumerate(zip(gammas, betas)):
+    #     # Uk
+    #     seg.extend(builder.U(f"U_{k}", two_qb_gates_info,
+    #                gamma, cphase_implementation).build())
+    #     # Dk
+    #     seg.extend(builder.D(f"D_{k}", beta).build())
+    #
+    # # readout qubits
+    # seg.extend(builder.mux_readout().build())
 
     seq.add(seg)
 
@@ -68,8 +68,34 @@ class HelperBase:
             assert qb in self.qb_names, f"{qb} not found in {self.qb_names}"
         return qubits
 
+    def get_pulse(self, op, parse_z_gate=False):
+        """
+        Gets a pulse from the operation dictionary, and possibly parses
+        arbitrary angle from Z gate operation.
+        Examples:
+             >>> get_pulse(['Z100 qb1'], parse_z_gate=True)
+             will perform a 100 degree Z rotation
+        Args:
+            op: operation
+            parse_z_gate: whether or not to look for Zgates with arbitrary angles.
+
+        Returns: deepcopy of the pulse dictionary
+
+        """
+        if parse_z_gate and op.startswith("Z"):
+            # assumes operation format of f"Z{angle} qbname"
+            # FIXME: This parsing is format dependent and is far from ideal but
+            #  until we can get parametrized pulses it is helpful to be able to
+            #  parse Z gates
+            angle, qbn = op.split(" ")[0][1:], op.split(" ")[1]
+            p = self.get_pulse(f"Z180 {qbn}", parse_z_gate=False)
+            p['basis_rotation'] = {qbn: float(angle)}
+            return p
+
+        return deepcopy(self.operation_dict[op])
+
     def initialize(self, init_state='0', qubits='all', prep_params=None,
-                   simultaneous=True):
+                   simultaneous=True, block_name=None):
         """
         Initializes the specified qubits with the corresponding init_state
         :param init_state (String or list): Can be one of the following
@@ -85,7 +111,8 @@ class HelperBase:
         :param prep_params: preparation parameters
         :return: init segment
         """
-        block_name = f"Initialization_{qubits}"
+        if block_name is None:
+            block_name = f"Initialization_{qubits}"
         qubits = self.get_qubits(qubits)
         if prep_params is None:
             prep_params = {}
@@ -97,17 +124,155 @@ class HelperBase:
                 f"qubits. Got {len(init_state)} init and {len(qubits)} qubits"
 
         pulses = []
-
-        for qbn, init in zip(qubits, init_state):
-            # add qb name and "s" for reference to start
+        pulses.extend(self.prepare(qubits, pulse_list=[self.Z_gate(qubits='qb1')],
+                                   ref_pulse="start",  **prep_params).build())
+        for i, (qbn, init) in enumerate(zip(qubits, init_state)):
+            # add qb name and "s" for reference to start of previous pulse
             op = self.STD_INIT.get(init, init) + \
                  f"{'s' if len(pulses) != 0 and simultaneous else ''} " + qbn
-            pulses.append(deepcopy(self.operation_dict[op]))
+            pulse = self.get_pulse(op)
+            # if i == 0:
+            #     pulse['ref_pulse'] = 'segment_start'
+            pulses.append(pulse)
 
-        # TODO: note, add prep pulses could be in this class also.
-        pulses_with_prep = add_preparation_pulses(pulses, self.operation_dict,
-                                                  qubits, **prep_params)
-        return Block(block_name, pulses_with_prep)
+        # # TODO: note, add prep pulses could be in this class also.
+        # pulses_with_prep = add_preparation_pulses(pulses, self.operation_dict,
+        #                                           qubits, **prep_params)
+        return Block(block_name, pulses)
+
+    def prepare(self, qubits='all', pulse_list=None, ref_pulse='start',
+                preparation_type='wait', post_ro_wait=1e-6,
+                ro_separation=1.5e-6, reset_reps=3, final_reset_pulse=True,
+                threshold_mapping=None, block_name=None):
+        """
+        Prepares specified qb for an experiment by creating preparation pulse for
+        preselection or active reset.
+        Args:
+            qubits: which qubits to prepare. Defaults to all.
+            pulse_list (optional): optional pulse list to which the preparation pulses
+                will be added
+            ref_pulse: reference pulse of the first pulse in the pulse list.
+                reset pulse will be added in front of this. If the pulse list is empty,
+                reset pulses will simply be before the block_start.
+            preparation_type:
+                for nothing: 'wait'
+                for preselection: 'preselection'
+                for active reset on |e>: 'active_reset_e'
+                for active reset on |e> and |f>: 'active_reset_ef'
+            post_ro_wait: wait time after a readout pulse before applying reset
+            ro_separation: spacing between two consecutive readouts
+            reset_reps: number of reset repetitions
+            final_reset_pulse: whether or not to have a reset pulse at the end
+                of the pulse list
+            threshold_mapping (dict): thresholds mapping for each qb
+
+        Returns:
+
+        """
+        if block_name is None:
+            block_name = f"Preparation_{qubits}"
+        qb_names = self.get_qubits(qubits)
+
+        if pulse_list is None:
+            pulse_list = []
+        if threshold_mapping is None:
+            threshold_mapping = {qbn: {0: 'g', 1: 'e'} for qbn in qb_names}
+
+        # Calculate the length of a ge pulse, assumed the same for all qubits
+        state_ops = dict(g=["I "], e=["X180 "], f=["X180_ef ", "X180 "])
+
+        if len(pulse_list) > 0 and 'ref_pulse' not in pulse_list[0]:
+            first_pulse = deepcopy(pulse_list[0])
+            first_pulse['ref_pulse'] = ref_pulse
+            pulse_list[0] = first_pulse
+
+        if preparation_type == 'wait':
+            return Block(block_name, pulse_list)
+        elif 'active_reset' in preparation_type:
+            reset_ro_pulses = []
+            ops_and_codewords = {}
+            for i, qbn in enumerate(qb_names):
+                reset_ro_pulses.append(self.get_pulse('RO ' + qbn))
+                reset_ro_pulses[-1]['ref_point'] = 'start' if i != 0 else 'end'
+
+                if preparation_type == 'active_reset_e':
+                    ops_and_codewords[qbn] = [
+                        (state_ops[threshold_mapping[qbn][0]], 0),
+                        (state_ops[threshold_mapping[qbn][1]], 1)]
+                elif preparation_type == 'active_reset_ef':
+                    assert len(threshold_mapping[qbn]) == 4, \
+                        "Active reset for the f-level requires a mapping of length 4" \
+                            f" but only {len(threshold_mapping)} were given: " \
+                            f"{threshold_mapping}"
+                    ops_and_codewords[qbn] = [
+                        (state_ops[threshold_mapping[qbn][0]], 0),
+                        (state_ops[threshold_mapping[qbn][1]], 1),
+                        (state_ops[threshold_mapping[qbn][2]], 2),
+                        (state_ops[threshold_mapping[qbn][3]], 3)]
+                else:
+                    raise ValueError(f'Invalid preparation type {preparation_type}')
+
+            reset_pulses = []
+            for i, qbn in enumerate(qb_names):
+                for ops, codeword in ops_and_codewords[qbn]:
+                    for j, op in enumerate(ops):
+                        reset_pulses.append(self.get_pulse(op + qbn))
+                        reset_pulses[-1]['codeword'] = codeword
+                        if j == 0:
+                            reset_pulses[-1]['ref_point'] = 'start'
+                            reset_pulses[-1]['pulse_delay'] = post_ro_wait
+                        else:
+                            reset_pulses[-1]['ref_point'] = 'start'
+                            pulse_length = 0
+                            for jj in range(1, j + 1):
+                                if 'pulse_length' in reset_pulses[-1 - jj]:
+                                    pulse_length += reset_pulses[-1 - jj]['pulse_length']
+                                else:
+                                    pulse_length += reset_pulses[-1 - jj]['sigma'] * \
+                                                    reset_pulses[-1 - jj]['nr_sigma']
+                            reset_pulses[-1]['pulse_delay'] = post_ro_wait + pulse_length
+
+            prep_pulse_list = []
+            for rep in range(reset_reps):
+                ro_list = deepcopy(reset_ro_pulses)
+                ro_list[0]['name'] = 'refpulse_reset_element_{}'.format(rep)
+
+                for pulse in ro_list:
+                    pulse['element_name'] = 'reset_ro_element_{}'.format(rep)
+                if rep == 0:
+                    ro_list[0]['ref_pulse'] = 'segment_start'
+                    ro_list[0]['pulse_delay'] = -reset_reps * ro_separation
+                else:
+                    ro_list[0]['ref_pulse'] = 'refpulse_reset_element_{}'.format(
+                        rep - 1)
+                    ro_list[0]['pulse_delay'] = ro_separation
+                    ro_list[0]['ref_point'] = 'start'
+
+                rp_list = deepcopy(reset_pulses)
+                for j, pulse in enumerate(rp_list):
+                    pulse['element_name'] = 'reset_pulse_element_{}'.format(rep)
+                    pulse['ref_pulse'] = 'refpulse_reset_element_{}'.format(rep)
+                prep_pulse_list += ro_list
+                prep_pulse_list += rp_list
+
+            if final_reset_pulse:
+                rp_list = deepcopy(reset_pulses)
+                for pulse in rp_list:
+                    pulse['element_name'] = f'reset_pulse_element_{reset_reps}'
+                pulse_list += rp_list
+            print(prep_pulse_list, pulse_list)
+            return Block(block_name, prep_pulse_list + pulse_list)
+
+        elif preparation_type == 'preselection':
+            preparation_pulses = []
+            for i, qbn in enumerate(qb_names):
+                preparation_pulses.append(self.get_pulse('RO ' + qbn))
+                preparation_pulses[-1]['ref_point'] = 'start'
+                preparation_pulses[-1]['element_name'] = 'preselection_element'
+            preparation_pulses[0]['ref_pulse'] = 'segment_start'
+            preparation_pulses[0]['pulse_delay'] = -ro_separation
+
+            return Block(block_name, preparation_pulses + pulse_list)
 
     def mux_readout(self, qubits='all', element_name='RO',ref_point='end',
                     pulse_delay=0.0):
@@ -152,12 +317,12 @@ class HelperBase:
 
         return pulses[0] if single_qb_given else pulses
 
-    def block_from_operations(self, block_name, operations, fill_values=None):
+    def block_from_ops(self, block_name, operations, fill_values=None):
         """
         Returns a block with the given operations.
         Eg.
         >>> ops = ['X180 {qbt:}', 'X90 {qbc:}']
-        >>> builder.block_from_operations("MyAwesomeBlock",
+        >>> builder.block_from_ops("MyAwesomeBlock",
         >>>                                ops,
         >>>                                {'qbt': qb1, 'qbc': qb2})
         :param block_name: Name of the block
@@ -167,7 +332,7 @@ class HelperBase:
         :return:
         """
         return Block(block_name,
-                     [deepcopy(self.operation_dict[op.format(**fill_values)])
+                     [self.get_pulse(op.format(**fill_values), True)
                       for op in operations])
 
 class QAOAHelper(HelperBase):
@@ -211,7 +376,8 @@ class QAOAHelper(HelperBase):
 
         U = Block(name, [])
         for i, two_qb_gates_same_timing in enumerate(gate_sequence_info):
-            simultaneous = Block(f"{name}_simultanenous_{i}", [])
+            simult_bname = f"simultanenous_{i}"
+            simultaneous = Block(simult_bname, [])
             for two_qb_gates_info in two_qb_gates_same_timing:
                 #gate info
                 qbc = two_qb_gates_info["qbc"]
@@ -236,8 +402,14 @@ class QAOAHelper(HelperBase):
 
                 two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                      [z_qbc, z_qbt, c_arb_pulse])
-                ref_point = "start" if len(simultaneous) > 0 else "end"
-                simultaneous.extend(two_qb_block.build(ref_point=ref_point))
+
+                # FIXME: not that nice that we have to add the "runtime"name of the ref
+                #  block i.e. prepending all higher level block. I guess a solution
+                #  would be to check recursively all reference to the pulse before
+                #  changing its name but this might be slow.
+                simultaneous.extend(
+                    two_qb_block.build(ref_pulse=f"{simult_bname}_start"))
+            # add block referenced to start of U_k
             U.extend(simultaneous.build())
 
         return U
@@ -247,19 +419,10 @@ class QAOAHelper(HelperBase):
             qubits = self.qb_names
 
         pulses = []
-        ops = ["mY90", "Zbeta", "Y90"]
-
+        ops = ["mY90 {qbn:}", "Z{angle:} {qbn:}", "Y90 {qbn:}"]
         for qbn in qubits:
-            mY90 = deepcopy(self.operation_dict["mY90 " + qbn])
-            Zbeta = self.Z_gate(beta*180/np.pi, qbn)
-            Y90 = deepcopy(self.operation_dict["Y90 " + qbn])
-            block = Block(f"{qbn}", [mY90, Zbeta, Y90])
-
-            for op in ops:
-                # get pulse from operation dict or zbeta pulse
-                p = deepcopy(
-                    self.operation_dict.get(f"{op} {qbn}" , ))
-
-                pulses.append(p)
-        print(pulses)
+            D_qbn = self.block_from_ops(f"{qbn}", ops,
+                                        dict(qbn=qbn, angle=beta * 180 / np.pi))
+            # reference block to beginning of D_k block
+            pulses.extend(D_qbn.build(ref_pulse=f"{name}_start"))
         return Block(name, pulses)

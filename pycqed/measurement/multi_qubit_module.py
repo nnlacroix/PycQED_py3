@@ -10,6 +10,7 @@ from copy import deepcopy
 import pygsti
 import logging
 
+from pycqed.measurement import qaoa
 from pycqed.utilities.general import temporary_value
 
 log = logging.getLogger()
@@ -383,6 +384,98 @@ def measure_multiplexed_readout(qubits, liveplot=False,
             channel_map=channel_map,
             use_preselection=preselection
         ))
+
+def measure_qaoa(qubits, two_qb_gates_info, maxiter=1, optimizer_method="Nelder-Mead",
+                 optimizer_kwargs=None,
+                 betas=(np.pi,), gammas=(np.pi,),
+                 init_state="+", cphase_implementation="hardware",
+                 prep_params=None, upload=True, label=None):
+    """
+    https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html
+
+    Args:
+        qubits:
+        two_qb_gates_info:
+        max_iter:
+        optimizer:
+        cphase_implementation:
+        prep_params:
+        upload:
+        label:
+
+    Returns:
+
+    """
+    qb_names = [qb.name for qb in qubits]
+
+    assert len(np.unique([qb.acq_shots() for qb in qubits])) == 1, \
+        f"Not all qubits have same number of acquisition shots:\n{qb_names} " \
+            f"\n{[qb.acq_shots() for qb in qubits]}"
+
+    if label is None:
+        label = f"QAOA_{qb_names}"
+
+    if prep_params is None:
+        prep_params = \
+            get_multi_qubit_prep_params([qb.preparation_params() for qb in qubits])
+
+    if optimizer_kwargs is None:
+        optimizer_kwargs = {}
+    optimizer_kwargs.update({"method": optimizer_method})
+    optimizer_options = {"maxiter": maxiter}
+    operation_dict = get_operation_dict(qubits)
+
+    # change init parameters to lists
+    betas = list(betas)
+    gammas = list(gammas)
+
+    MC = qubits[0].instr_mc.get_instr()
+
+    iteration = [0]
+
+    def minimize(x, C):
+        iter = iteration[-1]
+        log.info(f"Starting QAOA iteration: {iter}")
+        beta_new, gamma_new = x
+        betas.append(beta_new)
+        gammas.append(gamma_new)
+
+        #prepare qubits
+        for qb in qubits:
+            qb.prepare(drive='timedomain')
+
+        #sequence
+        seq, swp = qaoa.qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info,
+                                      operation_dict, init_state=init_state,
+                                      cphase_implementation=cphase_implementation,
+                                      prep_params=prep_params, upload=False)
+        # set detector and sweep functions
+        df = get_multiplexed_readout_detector_functions(
+            qubits, nr_averages=max(qb.acq_averages() for qb in qubits),
+            correlated=True)['int_avg_classif_det']
+        MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq, upload=upload))
+        MC.set_sweep_points(swp)
+        MC.set_detector_function(df)
+
+        # metadata and run experiment
+        exp_metadata = {'preparation_params': prep_params,
+                        'betas': betas,
+                        'gammas': gammas,
+                        'iteration': iter,
+                        'cphase_implementation': cphase_implementation,
+                        'optimizer_method': optimizer_method,
+                        'shots': qubits[0].acq_shots()}
+
+        MC.run(name=f"{label}_iter_{iter}", exp_metadata=exp_metadata)
+        iteration.append(iteration[-1] + 1)
+
+        # analyze
+        channel_map = {
+            qb.name: qb.int_log_det.value_names[0] + ' ' + qb.instr_uhf() for qb in
+            qubits}
+        tda.MultiQubit_TimeDomain_Analysis(qb_names=qb_names,
+                                           options_dict=dict(channel_map=channel_map))
+
 
 
 def measure_active_reset(qubits, shots=5000,

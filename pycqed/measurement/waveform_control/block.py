@@ -4,7 +4,18 @@ from copy import deepcopy
 log = logging.getLogger(__name__)
 
 class Block:
-    #counter = 0 for now cannot really reuse a block
+    """
+    A block is a building block for a Quantum Algorithm Experiment.
+
+            :param block_start_position: position of the block start. Defaults to
+            before first pulse in list. Position should be changed in case the
+            first pulse played is not the first one in the list.
+        :param block_end_position: position of the block end. Defaults to after
+            last pulse. If given, block_end_position MUST take into account the
+            block_start i.e. the block start is added to the pulses before inserting
+            the block end at its defined location.
+    """
+    counter = 0
     INSIDE_BLOCKINFO_NAME = "BlockInfo"
 
     def __init__(self, block_name, pulse_list:list):
@@ -12,8 +23,8 @@ class Block:
         self.pulses = deepcopy(pulse_list)
 
     def build(self, ref_point="end", ref_point_new="start",
-              ref_pulse='previous_pulse', block_delay=0, block_start_position=0,
-              block_end_position=None):
+              ref_pulse='previous_pulse', block_delay=0, name=None,
+               **kwargs):
         """
         Adds the block shell recursively through the pulse list.
         Returns the flattened pulse list
@@ -24,17 +35,15 @@ class Block:
         :param ref_pulse: to which pulse in the list is this block referenced to.
             Defaults to "previous_pulse" in list.
         :param block_delay: delay before the start of the block
-        :param block_start_position: position of the block start. Defaults to
-            before first pulse in list. Position should be changed in case the
-            first pulse played is not the first one in the list.
-        :param block_end_position: position of the block end. Defaults to after
-            last pulse.
+
         :return:
         """
         if ref_point_new != "start":
             raise NotImplementedError("For now can only refer blocks to 'start'")
+        if name is None:
+            name = self.name + (f"_{self.counter}" if self.counter > 0 else "")
+            self.counter += 1
 
-        block_instance_name = f"{self.name}"
         block_start = {"name": f"start",
                        "pulse_type": "VirtualPulse",
                        "pulse_delay": block_delay,
@@ -43,47 +52,70 @@ class Block:
         block_end = {"name": f"end",
                      "pulse_type": "VirtualPulse"}
 
-        # insert starting block at defined position
-        self.pulses.insert(block_start_position, block_start)
+        pulses_built = deepcopy(self.pulses)
 
-        # same for end
-        if block_end_position is None:
-            block_end_position = len(self.pulses)
-        self.pulses.insert(block_end_position, block_end)
+        # check if block_start/end  specified by user
+        block_start_specified = False
+        block_end_specified = False
+        for p in pulses_built:
+            if p.get("name", None) == "start":
+                block_start = p #save reference
+                block_start_specified = True
+            elif p.get("name", None) == "end":
+                block_end = p
+                block_end_specified = True
+        # add them if not specified
+        if not block_start_specified:
+            pulses_built = [block_start] + pulses_built
+        if not block_end_specified:
+            pulses_built = pulses_built + [block_end]
 
-        pulses_built = []
-        for p in self.pulses:
-            # if a block is found inside a block, build the lower level
-            # block assuming first dictionary in list are the arguments
-            # to build the block.
-            if isinstance(p, Block):
-                if len(p.pulses) == 0:
-                    raise ValueError(
-                        f"Blocks inside blocks must at least contain a "
-                        f"dictionary with parameters to build the block but "
-                        f"block {p.name} inside block {self.name} is empty.")
-                inside_block_params = deepcopy(p.pulses[0])
-                if inside_block_params.get("pulse_type", None) != \
-                    self.INSIDE_BLOCKINFO_NAME:
-                    log.warning(f"First dict in {p.name} inside {self.name}"
-                                f"is not a Block information dictionary because "
-                                f"its pulse_type is not "
-                                f"{self.INSIDE_BLOCKINFO_NAME}. {p.name} "
-                                f"will be build with default parameters")
-                    inside_block_pulses = p.build()
-                else:
-                    del p.pulses[0] #info to build block should not stay in block
-                    inside_block_pulses = p.build(**inside_block_params)
+        for p in pulses_built:
+            # if a dictionary wrapping a block is found, compile the inner block.
+            if p.get("pulse_type", None) == self.INSIDE_BLOCKINFO_NAME:
+                # p needs to have a block key
+                assert 'block' in p, f"Inside block {p.get('name', 'Block')} " \
+                    f"requires a key 'block' which refers to the uncompiled " \
+                    f"block object."
+                inside_block = p.pop('block')
+                inside_block_pulses = inside_block.build(**p)
                 # add all pulses of the inside block to the outer block
                 pulses_built.extend(inside_block_pulses)
-                continue
 
-            # else if the pulse has a name, prepend the blockname to it
-            elif p.get("name", None) is not None:
-                p['name'] = block_instance_name + "_" + p['name']
-            pulses_built.append(p)
+        # redo referencing and naming
+        for p in pulses_built:
+            # if the pulse has a name, prepend the blockname to it
+            if p.get("name", None) is not None:
+                p['name'] = name + "_" + p['name']
+
+            ref_pulse = p.get("ref_pulse", "previous_pulse")
+            p_is_block_shell = self._is_shell(p, block_start, block_end)
+
+            # rename ref pulse within the block if not a special name
+            escape_names = ("previous_pulse", "segment_start")
+            if ref_pulse not in escape_names and not p_is_block_shell:
+                p['ref_pulse'] = name + "_" + p['ref_pulse']
 
         return pulses_built
+
+    def _is_shell(self, pulse, block_start, block_end):
+        """
+        Checks, based on the pulse name, whether a pulse belongs to the block shell.
+        That is, if the pulse name is the same as the name of the block start or end.
+        A simple equivalence p == block_start or p == p_end does not work as pulse
+        could be a deepcopy of block_start, which would return False in the above
+        expressions.
+        Args:
+            pulse (dict): pulse to check.
+            block_start (dict): dictionary of the block start
+            block_end (dict): dictionary of the block end
+
+        Returns: whether pulse is a shell dictionary (bool)
+
+        """
+        is_p_start = pulse.get('name', None) == block_start['name']
+        is_p_end = pulse.get('name', None) == block_end['name']
+        return is_p_start or is_p_end
 
     def extend(self, additional_pulses):
         self.pulses.extend(additional_pulses)
