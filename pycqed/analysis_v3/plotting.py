@@ -394,7 +394,6 @@ def prepare_raw_data_plot_dicts(data_dict, keys_in=None, fig_name=None,
     data_label = params.get('data_label', 'Raw data')
     do_legend = params.get('do_legend', False)
     plotsize = get_default_plot_params(set=False)['figure.figsize']
-    plotsize = (plotsize[0], plotsize[0]/1.25)
     ncols = params.get('ncols', 2 if len(data_to_proc_dict) > 2 else 1)
     nrows = params.get('nrows', 2 if len(data_to_proc_dict) == 2 else
         len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
@@ -412,7 +411,7 @@ def prepare_raw_data_plot_dicts(data_dict, keys_in=None, fig_name=None,
             xvals = np.concatenate([physical_swpts, cal_swpts])
         yvals = data_to_proc_dict[keyi]
 
-        ylabel = params.get('ylabel', keyi)
+        ylabel = keyi
         yunit = params.get('yunit', help_func_mod.get_param(
             'value_units', data_dict, default_value='arb.'))
         if isinstance(yunit, list):

@@ -22,7 +22,10 @@ def get_hdf_param_value(group, param_name):
     # If it is an array of value decodes individual entries
     if type(s) == np.ndarray:
         s = [s.decode('utf-8') for s in s]
-    return s
+    try:
+        return eval(s)
+    except TypeError:
+        return s
 
 
 def get_params_from_hdf_file(data_dict, **params):
@@ -32,9 +35,7 @@ def get_params_from_hdf_file(data_dict, **params):
     if params_dict is None:
         raise ValueError('params_dict was not specified.')
 
-    raw_data_dict = []
-    raw_data_dict_ts = OrderedDict([(param, []) for param in
-                                    params_dict])
+    extracted_params_dict = OrderedDict([(param, []) for param in params_dict])
 
     folder = params.get('folder', data_dict.get('folder', None))
     if folder is None:
@@ -43,11 +44,11 @@ def get_params_from_hdf_file(data_dict, **params):
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, h5mode)
 
-    if 'measurementstring' in raw_data_dict_ts:
-        raw_data_dict_ts['measurementstring'] = \
+    if 'measurementstring' in extracted_params_dict:
+        extracted_params_dict['measurementstring'] = \
             os.path.split(folder)[1][7:]
-    if 'measured_data' in raw_data_dict_ts:
-        raw_data_dict_ts['measured_data'] = \
+    if 'measured_data' in extracted_params_dict:
+        extracted_params_dict['measured_data'] = \
             np.array(data_file['Experimental Data']['Data']).T
 
     for save_par, file_par in params_dict.items():
@@ -55,29 +56,29 @@ def get_params_from_hdf_file(data_dict, **params):
             par_name = file_par.split('.')[0]
             for group_name in data_file.keys():
                 if par_name in list(data_file[group_name].attrs):
-                    raw_data_dict_ts[save_par] = \
+                    extracted_params_dict[save_par] = \
                         get_hdf_param_value(data_file[group_name], par_name)
         else:
             group_name = '/'.join(file_par.split('.')[:-1])
             par_name = file_par.split('.')[-1]
             if group_name in data_file:
                 if par_name in list(data_file[group_name].attrs):
-                    raw_data_dict_ts[save_par] = \
+                    extracted_params_dict[save_par] = \
                         get_hdf_param_value(data_file[group_name], par_name)
                 elif par_name in list(data_file[group_name].keys()):
-                    raw_data_dict_ts[save_par] = read_dict_from_hdf5(
+                    extracted_params_dict[save_par] = read_dict_from_hdf5(
                         {}, data_file[group_name][par_name])
-        if isinstance(raw_data_dict_ts[save_par], list) and \
-                len(raw_data_dict_ts[save_par]) == 1:
-            raw_data_dict_ts[save_par] = raw_data_dict_ts[save_par][0]
-    raw_data_dict.append(raw_data_dict_ts)
+        if isinstance(extracted_params_dict[save_par], list) and \
+                len(extracted_params_dict[save_par]) == 1:
+            if save_par not in ['value_names', 'value_units']:
+                extracted_params_dict[save_par] = \
+                    extracted_params_dict[save_par][0]
 
-    if len(raw_data_dict) == 1:
-        raw_data_dict = raw_data_dict[0]
-    for par_name in raw_data_dict:
+    for par_name in extracted_params_dict:
         if par_name in numeric_params:
-            raw_data_dict[par_name] = np.double(raw_data_dict[par_name])
-    data_dict.update(raw_data_dict)
+            extracted_params_dict[par_name] = np.double(
+                extracted_params_dict[par_name])
+    data_dict.update(extracted_params_dict)
     return data_dict
 
 

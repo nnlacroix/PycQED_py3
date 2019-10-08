@@ -363,19 +363,18 @@ def rotate_iq(data_dict, keys_out, keys_in=None, **params):
     :param keys_out: list of key names or dictionary keys paths in
                 data_dict for the processed data to be saved into
     :param params: keyword arguments.:
-        cal_points_list (list): list of CalibrationPoints objects.
+        cal_points (CalibrationPoints object or its repr):
+            CalibratinonPoints object for the meaj_obj_name, or its repr
         last_ge_pulses (list): list of booleans
-        meas_obj_value_names_map (dict): {qbn: [value_names]}.
+        meas_obj_value_names_map (dict): {meaj_obj_name: [value_names]}.
 
     Assumptions:
         - keys_in is a list of tuples; each tuple has length 2 (IQ data)
         - one output key per keys in tuple
         - len(keys_in) == len(keys_out)
-        - cal_points_list exists in **params
-        - len(cp_list) == len(keys_in)
-        - one CalibrationPoints object per keys in tuple
-        - assumes the dicts returned by CalibrationPoints.get_indices(),
-        CalibrationPoints.get_rotations() are keyed by qubit names
+        - cal_points exists in **params, data_dict, or metadata
+        - assumes measj_obj_name is one of the keys of the dicts returned by
+        CalibrationPoints.get_indices(), CalibrationPoints.get_rotations()
         - keys_in exists in meas_obj_value_names_map
     """
     if keys_in is None:
@@ -393,19 +392,10 @@ def rotate_iq(data_dict, keys_out, keys_in=None, **params):
         raise ValueError('keys_in and keys_out do not have '
                          'the same length.')
 
-    cp_list = help_func_mod.get_param('cal_points_list', data_dict, **params)
-    if cp_list is None:
-        cp = help_func_mod.get_param('cal_points', data_dict, **params)
-        if cp is None:
-            raise ValueError(
-                'Neither cal_points_list nor cal_points was found.')
-        else:
-            cp_list = [eval(cp)]*len(keys_in)
-    else:
-        cp_list = [eval(cp) for cp in cp_list]
-    if len(cp_list) != len(keys_in):
-        raise ValueError('cal_points_list and keys_in do not have '
-                         'the same length.')
+    cp = help_func_mod.get_param('cal_points', data_dict, raise_error=True,
+                                 **params)
+    if isinstance(cp, str):
+        cp = eval(cp)
 
     last_ge_pulses = help_func_mod.get_param('last_ge_pulses', data_dict,
                                              default_value=[], **params)
@@ -413,9 +403,9 @@ def rotate_iq(data_dict, keys_out, keys_in=None, **params):
                                     raise_error=True, **params)
     if mobjn not in cp.qb_names:
         raise KeyError(f'{mobjn} not found in cal_points.')
-    for j, cp in enumerate(cp_list):
+    for j, keys_pair in enumerate(keys_in):
         data_to_proc_dict = help_func_mod.get_data_to_process(
-            data_dict, keys_in[j])
+            data_dict, keys_pair)
 
         data = data_dict
         all_keys = keys_out[j].split('.')
@@ -459,35 +449,21 @@ def rotate_1d_array(data_dict, keys_out, keys_in=None, **params):
     Assumptions:
         - one output key per input key
         - len(keys_in) == len(keys_out)
-        - cal_points_list exists in **params
-        - len(cp_list) == len(keys_in)
-        - one CalibrationPoints object input key
-        - assumes the dicts returned by CalibrationPoints.get_indices(),
-        CalibrationPoints.get_rotations() are keyed by channel number strings;
-        ex: indices for ch 0: {'0': {'g': [-4, -3], 'e': [-2, -1]}}
+        - cal_points exists in **params, data_dict, or metadata
+        - assumes measj_obj_name is one of the keys of the dicts returned by
+        CalibrationPoints.get_indices(), CalibrationPoints.get_rotations()
+        - keys_in exists in meas_obj_value_names_map
     """
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
-    keys_in = list(data_to_proc_dict)
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
-
-    cp_list = help_func_mod.get_param('cal_points_list', data_dict, **params)
-    if cp_list is None:
-        cp = help_func_mod.get_param('cal_points', data_dict, **params)
-        if cp is None:
-            raise ValueError(
-                'Neither cal_points_list nor cal_points was found.')
-        else:
-            cp_list = [eval(cp)]*len(keys_in)
-    else:
-        cp_list = [eval(cp) for cp in cp_list]
-    if len(cp_list) != len(keys_in):
-        raise ValueError('cal_points_list and keys_in do not have '
-                         'the same length.')
+    cp = help_func_mod.get_param('cal_points', data_dict, raise_error=True,
+                                 **params)
+    if isinstance(cp, str):
+        cp = eval(cp)
     last_ge_pulses = help_func_mod.get_param('last_ge_pulses', data_dict,
                                              default_value=[], **params)
-
     mobjn = help_func_mod.get_param('meas_obj_name', data_dict,
                                     raise_error=True, **params)
     if mobjn not in cp.qb_names:
@@ -502,7 +478,6 @@ def rotate_1d_array(data_dict, keys_out, keys_in=None, **params):
             else:
                 data = data[all_keys[i]]
 
-        cp = cp_list[j]
         rotations = cp.get_rotations(last_ge_pulses=last_ge_pulses)
         ordered_cal_states = []
         for ii in range(len(rotations[mobjn])):
@@ -548,7 +523,7 @@ class RabiAnalysis(object):
             prepare_fitting = params.pop('prepare_fitting', True)
             do_fitting = params.pop('do_fitting', True)
             prepare_plots = params.pop('prepare_plots', True)
-            do_plotting = params.pop('do_plotting', False)
+            do_plotting = params.pop('do_plotting', True)
 
             self.process_data(**params)
             if prepare_fitting:
@@ -751,7 +726,6 @@ class RabiAnalysis(object):
                 if old_pihalfpulse_val != old_pihalfpulse_val:
                     old_pihalfpulse_val = 0
                 old_pihalfpulse_val *= old_pipulse_val
-
                 if not hasattr(old_pipulse_val, '__iter__'):
                     textstr = ('  $\pi-Amp$ = {:.3f} V'.format(
                         rabi_amplitudes[self.mobjn]['piPulse']) +
@@ -919,8 +893,7 @@ class SingleQubitRBAnalysis(object):
             prepare_fitting = params.pop('prepare_fitting', True)
             do_fitting = params.pop('do_fitting', True)
             prepare_plots = params.pop('prepare_plots', True)
-            do_plotting = params.pop('do_plotting', False)
-
+            do_plotting = params.pop('do_plotting', True)
             self.process_data(**params)
             if prepare_fitting:
                 self.prepare_fitting()
