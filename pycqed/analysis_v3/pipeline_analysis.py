@@ -183,8 +183,6 @@ class PipelineDataAnalysis(object):
              'value_names': 'value_names',
              'value_units': 'value_units',
              'measured_data': 'measured_data',
-             'timestamp': 'timestamp',
-             'folder': 'folder',
              'exp_metadata':
                  'Experimental Data.Experimental Metadata'})
 
@@ -207,21 +205,6 @@ class PipelineDataAnalysis(object):
         if self.processing_pipe is None:
             self.processing_pipe = []
 
-    @staticmethod
-    def get_hdf_param_value(group, param_name):
-        '''
-        Returns an attribute "key" of the group "Experimental Data"
-        in the hdf5 datafile.
-        '''
-        s = group.attrs[param_name]
-        # converts byte type to string because of h5py datasaving
-        if type(s) == bytes:
-            s = s.decode('utf-8')
-        # If it is an array of value decodes individual entries
-        if type(s) == np.ndarray:
-            s = [s.decode('utf-8') for s in s]
-        return s
-
     def get_param_value(self, param_name, default_value=None):
         return self.options_dict.get(param_name, self.metadata.get(
             param_name, default_value))
@@ -229,68 +212,32 @@ class PipelineDataAnalysis(object):
     def get_data_from_timestamp_list(self):
         raw_data_dict = []
         for timestamp in self.timestamps:
-            raw_data_dict_ts = OrderedDict([(param, []) for param in
-                                           self.params_dict])
-
+            raw_data_dict_ts = OrderedDict()
             folder = a_tools.get_folder(timestamp)
-            h5mode = self.options_dict.get('h5mode', 'r+')
-            h5filepath = a_tools.measurement_filename(folder)
-            data_file = h5py.File(h5filepath, h5mode)
+            raw_data_dict_ts['timestamp'] = timestamp
+            raw_data_dict_ts['folder'] = folder
 
-            if 'timestamp' in raw_data_dict_ts:
-                raw_data_dict_ts['timestamp'] = timestamp
-            if 'folder' in raw_data_dict_ts:
-                raw_data_dict_ts['folder'] = folder
-            if 'measurementstring' in raw_data_dict_ts:
-                raw_data_dict_ts['measurementstring'] = \
-                    os.path.split(folder)[1][7:]
-            if 'measured_data' in raw_data_dict_ts:
-                raw_data_dict_ts['measured_data'] = \
-                    np.array(data_file['Experimental Data']['Data']).T
-
-            for save_par, file_par in self.params_dict.items():
-                if len(file_par.split('.')) == 1:
-                    par_name = file_par.split('.')[0]
-                    for group_name in data_file.keys():
-                        if par_name in list(data_file[group_name].attrs):
-                            raw_data_dict_ts[save_par] = \
-                                self.get_hdf_param_value(
-                                    data_file[group_name], par_name)
-                else:
-                    group_name = '/'.join(file_par.split('.')[:-1])
-                    par_name = file_par.split('.')[-1]
-                    if group_name in data_file:
-                        if par_name in list(data_file[group_name].attrs):
-                            raw_data_dict_ts[save_par] = \
-                                self.get_hdf_param_value(
-                                    data_file[group_name], par_name)
-                        elif par_name in list(data_file[group_name].keys()):
-                            raw_data_dict_ts[save_par] = read_dict_from_hdf5(
-                                {}, data_file[group_name][par_name])
-                if isinstance(raw_data_dict_ts[save_par], list) and \
-                        len(raw_data_dict_ts[save_par]) == 1:
-                    if save_par not in ['value_names', 'value_units']:
-                        raw_data_dict_ts[save_par] = raw_data_dict_ts[
-                            save_par][0]
+            # call get_params_from_hdf_file which gets values for params
+            # in self.params_dict and adds them to the dictionary
+            # raw_data_dict_ts
+            help_func_mod.get_params_from_hdf_file(
+                raw_data_dict_ts, params_dict=self.params_dict,
+                numeric_params=self.numeric_params,
+                folder=folder)
             raw_data_dict.append(raw_data_dict_ts)
 
         if len(raw_data_dict) == 1:
             raw_data_dict = raw_data_dict[0]
-        for par_name in raw_data_dict:
-            if par_name in self.numeric_params:
-                raw_data_dict[par_name] = np.double(raw_data_dict[par_name])
         return raw_data_dict
 
     @staticmethod
     def add_measured_data(raw_data_dict):
         if 'measured_data' in raw_data_dict and \
-                'value_names' in raw_data_dict and \
-                'sweep_points' in raw_data_dict['exp_metadata']:
+                'value_names' in raw_data_dict:
             measured_data = raw_data_dict.pop('measured_data')
-            sweep_points = raw_data_dict['exp_metadata']['sweep_points']
             raw_data_dict['measured_data'] = OrderedDict()
 
-            data = measured_data[len(sweep_points):]
+            data = measured_data[-len(raw_data_dict['value_names']):]
             if data.shape[0] != len(raw_data_dict['value_names']):
                 raise ValueError('Shape mismatch between data and '
                                  'ro channels.')
@@ -298,9 +245,10 @@ class PipelineDataAnalysis(object):
                                          default_value=False)
             for i, ro_ch in enumerate(raw_data_dict['value_names']):
                 if 'soft_sweep_points' in raw_data_dict and TD:
-                    hsl = len(sweep_points[0][list(sweep_points[0])[0]][0])
-                    ssl = len(sweep_points[1][list(sweep_points[0])[0]][0])
-                    measured_data = np.reshape(data[i], (ssl, hsl)).T
+                    pass
+                    # hsl = len(sweep_points[0][list(sweep_points[0])[0]][0])
+                    # ssl = len(sweep_points[1][list(sweep_points[0])[0]][0])
+                    # measured_data = np.reshape(data[i], (ssl, hsl)).T
                 else:
                     measured_data = data[i]
                 raw_data_dict['measured_data'][ro_ch] = measured_data

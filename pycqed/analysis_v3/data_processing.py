@@ -16,10 +16,10 @@ from pycqed.analysis import fitting_models as fit_mods
 from pycqed.measurement.calibration_points import CalibrationPoints
 
 
-def filter_data(data_dict, keys_out, keys_in=None, **params):
+def filter_data(data_dict, keys_in=None, keys_out=None, **params):
     """
     Filters data in data_dict for each keys_in according to data_filter
-    in params. Puts the filtered data in keys_out.
+    in params. Creates new keys_out in the data dict for the filtered data.
 
     To be used for example for filtering:
         - reset readouts
@@ -36,9 +36,13 @@ def filter_data(data_dict, keys_out, keys_in=None, **params):
             as a string that will be evaluated with eval.
 
     Assumptions:
+        - if any keyo in keys_out contains a '.' string, keyo is assumed to
+        indicate a path in the data_dict.
         - len(keys_out) == len(keys_in)
     """
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    if keys_out is None:
+        keys_out = [k+' filtered' for k in keys_in]
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
@@ -58,10 +62,10 @@ def filter_data(data_dict, keys_out, keys_in=None, **params):
     return data_dict
 
 
-def get_std_deviation(data_dict, keys_out, keys_in=None, **params):
+def get_std_deviation(data_dict, keys_in=None, keys_out=None, **params):
     """
     Finds the standard deviation of the num_bins in data_dict for each
-    keys_in. Puts the filtered data in keys_out.
+    keys_in.
 
     To be used for example for:
         - shots
@@ -74,29 +78,28 @@ def get_std_deviation(data_dict, keys_out, keys_in=None, **params):
     :param keys_out: list of key names or dictionary keys paths in
                     data_dict for the processed data to be saved into
     :param params: keyword arguments:
-        num_bins (list): list with number of bins into which to reshape the
-        data and on which to compute std dev.
+        num_bins (int): number of averaging bins for each entry in keys_in
 
     Assumptions:
+        - if any keyo in keys_out contains a '.' string, keyo is assumed to
+        indicate a path in the data_dict.
         - len(keys_out) == len(keys_in)
         - num_bins exists in params
-        - num_bins[i] exactly divides data_dict[keys_in[i]]
-        - len(keys_in) == len(num_bins)
+        - num_bins exactly divides data_dict[keyi] for all keyi in keys_in.
     """
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    if keys_out is None:
+        keys_out = [k + ' std' for k in keys_in]
     num_bins = help_func_mod.get_param('num_bins', data_dict, **params)
     if num_bins is None:
         raise ValueError('num_bins is not specified.')
-    if len(keys_in) != len(num_bins):
-        raise ValueError('keys_in and num_bins do not have '
-                         'the same length.')
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
     for k, keyi in enumerate(data_to_proc_dict):
         if len(data_to_proc_dict[keyi]) % num_bins[k] != 0:
-            raise ValueError(f'{num_bins[k]} does not exactly divide '
-                             f'len(data_dict[{keyi}]).')
+            raise ValueError(f'{num_bins} does not exactly divide '
+                             f'len(data_to_proc_dict[{keyi}]).')
         data = data_dict
         all_keys = keys_out[k].split('.')
         for i in range(len(all_keys)-1):
@@ -104,9 +107,9 @@ def get_std_deviation(data_dict, keys_out, keys_in=None, **params):
                 data[all_keys[i]] = OrderedDict()
             else:
                 data = data[all_keys[i]]
-        averages = len(data_to_proc_dict[keyi]) // num_bins[k]
+        averages = len(data_to_proc_dict[keyi]) // num_bins
         data[all_keys[-1]] = np.std(np.reshape(
-            data_to_proc_dict[keyi], (averages, num_bins[k])), axis=0)
+            data_to_proc_dict[keyi], (averages, num_bins)), axis=0)
     return data_dict
 
 
@@ -142,42 +145,41 @@ def classify_gm(data_dict, keys_out, keys_in=None, **params):
     in each level.
 
     Assumptions:
+        - if any keyo in keys_out contains a '.' string, keyo is assumed to
+        indicate a path in the data_dict.
         - keys_in is a list of tuples for qutrit and
             list of strings for qubit
         - keys_out is a list of tuples
         - len(keys_out) == len(keys_in) + 1
         - clf_params exist in **params
     """
-    pass
-    # clf_params = get_param('clf_params', data_dict, **params)
-    # if clf_params is None:
-    #     raise ValueError('clf_params is not specified.')
-    # if len(keys_out) != len(keys_in) + 1:
-    #     raise ValueError('Condition len(keys_out) == len(keys_in) + 1 '
-    #                      'is not satisfied.')
-    #
-    # reqs_params = ['means_', 'covariances_', 'covariance_type',
-    #                'weights_', 'precisions_cholesky_']
-    # for k, key_tup_in in enumerate(keys_in):
-    #     data_to_proc_dict = get_data_to_process(data_dict, key_tup_in)
-    #
-    #     data = data_dict
-    #     all_keys = keys_out[k].split('.')
-    #     for i in range(len(all_keys)-1):
-    #         if all_keys[i] not in data:
-    #             data[all_keys[i]] = OrderedDict()
-    #         else:
-    #             data = data[all_keys[i]]
-    #
-    #     clf_params_temp = deepcopy(clf_params[k])
-    #     for r in reqs_params:
-    #         assert r in clf_params_temp, "Required Classifier parameter {} " \
-    #                                      "not given.".format(r)
-    #     gm = GM(covariance_type=clf_params_temp.pop('covariance_type'))
-    #     for param_name, param_value in clf_params_temp.items():
-    #         setattr(gm, param_name, param_value)
-    #     data[all_keys[-1]] = gm.predict_proba(data_to_proc_dict[keyi])
-    # return data_dict
+    # pass
+    clf_params = help_func_mod.get_param('clf_params', data_dict, **params)
+    if clf_params is None:
+        raise ValueError('clf_params is not specified.')
+    reqs_params = ['means_', 'covariances_', 'covariance_type',
+                   'weights_', 'precisions_cholesky_']
+
+    data_to_proc_dict = help_func_mod.get_data_to_process(
+        data_dict, keys_in)
+
+    data = data_dict
+    all_keys = keys_out[k].split('.')
+    for i in range(len(all_keys)-1):
+        if all_keys[i] not in data:
+            data[all_keys[i]] = OrderedDict()
+        else:
+            data = data[all_keys[i]]
+
+    clf_params_temp = deepcopy(clf_params)
+    for r in reqs_params:
+        assert r in clf_params_temp, "Required Classifier parameter {} " \
+                                     "not given.".format(r)
+    gm = GM(covariance_type=clf_params_temp.pop('covariance_type'))
+    for param_name, param_value in clf_params_temp.items():
+        setattr(gm, param_name, param_value)
+    data[all_keys[-1]] = gm.predict_proba(data_to_proc_dict[keyi])
+    return data_dict
 
 
 def do_preselection(data_dict, classified_data, keys_out, **params):
@@ -201,6 +203,8 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
             preselection readouts satisfies presel_condition.
 
     Assumptions:
+        - if any keyo in keys_out contains a '.' string, keyo is assumed to
+        indicate a path in the data_dict.
         - len(keys_out) == len(classified_data)
         - if keys_in are given, len(keys_in) == len(classified_data)
         - classified_data either list of arrays or list of strings
@@ -273,9 +277,9 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
     return data_dict
 
 
-def average(data_dict, keys_out, keys_in=None, **params):
+def average_data(data_dict, keys_in=None, keys_out=None, **params):
     """
-    Averages data in data_dict specified by keys_in into num_avg_bins.
+    Averages data in data_dict specified by keys_in into num_bins.
     :param data_dict: OrderedDict containing data to be processed and where
                     processed data is to be stored
     :param keys_in: list of key names or dictionary keys paths in
@@ -283,29 +287,29 @@ def average(data_dict, keys_out, keys_in=None, **params):
     :param keys_out: list of key names or dictionary keys paths in
                     data_dict for the processed data to be saved into
     :param params: keyword arguments.:
-        num_bins (list): list with number of averaging bins for each entry
-            in keys_in
+        num_bins (int): number of averaging bins for each entry in keys_in
 
     Assumptions:
-        - len(keys_out) == len(data_to_proc_dict)
+        - if any keyo in keys_out contains a '.' string, keyo is assumed to
+        indicate a path in the data_dict.
+        - len(keys_out) == len(keys_in)
         - num_bins exists in params
-        - num_bins[i] exactly divides data_dict[keys_in[i]]
-        - len(keys_in) == len(num_bins)
+        - num_bins exactly divides data_dict[keyi] for all keyi in keys_in.
     """
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    if keys_out is None:
+        keys_out = [k + ' averaged' for k in keys_in]
     num_bins = help_func_mod.get_param('num_bins', data_dict, **params)
     if num_bins is None:
         raise ValueError('num_bins is not specified.')
-    if len(keys_in) != len(num_bins):
-        raise ValueError('keys_in and num_bins do not have '
-                         'the same length.')
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
     for k, keyi in enumerate(data_to_proc_dict):
-        if len(data_to_proc_dict[keyi]) % num_bins[k] != 0:
-            raise ValueError(f'{num_bins[k]} does not exactly divide '
-                             f'len(data_dict[{keyi}])={len(data_dict[keyi])}.')
+        if len(data_to_proc_dict[keyi]) % num_bins != 0:
+            raise ValueError(f'{num_bins} does not exactly divide '
+                             f'len(data_to_proc_dict[{keyi}])='
+                             f'{len(data_to_proc_dict[keyi])}.')
         data = data_dict
         all_keys = keys_out[k].split('.')
         for i in range(len(all_keys)-1):
@@ -313,10 +317,11 @@ def average(data_dict, keys_out, keys_in=None, **params):
                 data[all_keys[i]] = OrderedDict()
             else:
                 data = data[all_keys[i]]
-        averages = len(data_to_proc_dict[keyi]) // num_bins[k]
+        averages = len(data_to_proc_dict[keyi]) // num_bins
         data[all_keys[-1]] = np.mean(np.reshape(
-            data_to_proc_dict[keyi], (num_bins[k], averages)), axis=-1)
+            data_to_proc_dict[keyi], (num_bins, averages)), axis=-1)
     return data_dict
+
 
 def arbitrary_mapping(data_dict, data_keys_in, data_keys_out, **params):
     """
@@ -330,7 +335,8 @@ def arbitrary_mapping(data_dict, data_keys_in, data_keys_out, **params):
                     data_dict for the processed data to be saved into
     :param params: keyword arguments.:
         mapping (callable): string form of a callable or callable function
-        mapping_kwargs (dict): additional arguments to forward to mapping function
+        mapping_kwargs (dict): additional arguments to forward to
+        mapping function
 
     """
     mapping = help_func_mod.get_param('mapping', data_dict, **params)
@@ -351,11 +357,10 @@ def arbitrary_mapping(data_dict, data_keys_in, data_keys_out, **params):
         data_dict[keyo] = mapping(data_to_proc_dict[keyi], **mapping_kwargs)
     return data_dict
 
-def rotate_iq(data_dict, keys_out, keys_in=None, **params):
+
+def rotate_iq(data_dict, keys_in=None, keys_out=None, **params):
     """
     Rotates IQ data based on information in the CalibrationPoints objects.
-    The number of CalibrationPoints objects should equal the number of
-    tuples in keys_in.
     :param data_dict: OrderedDict containing data to be processed and where
                 processed data is to be stored
     :param keys_in: list of length-2 tuples of key names or dictionary
@@ -363,85 +368,67 @@ def rotate_iq(data_dict, keys_out, keys_in=None, **params):
     :param keys_out: list of key names or dictionary keys paths in
                 data_dict for the processed data to be saved into
     :param params: keyword arguments.:
-        cal_points_list (list): list of CalibrationPoints objects.
-        last_ge_pulses (list): list of booleans
-        meas_obj_value_names_map (dict): {qbn: [value_names]}.
+        cal_points (CalibrationPoints object or its repr):
+            CalibratinonPoints object for the meaj_obj_name, or its repr
+        last_ge_pulse (bool): only for a measurement on ef. Whether a ge
+            pi-pulse was applied before measurement.
+        meas_obj_value_names_map (dict): {meaj_obj_name: [value_names]}.
 
     Assumptions:
-        - keys_in is a list of tuples; each tuple has length 2 (IQ data)
-        - one output key per keys in tuple
-        - len(keys_in) == len(keys_out)
-        - cal_points_list exists in **params
-        - len(cp_list) == len(keys_in)
-        - one CalibrationPoints object per keys in tuple
-        - assumes the dicts returned by CalibrationPoints.get_indices(),
-        CalibrationPoints.get_rotations() are keyed by qubit names
-        - keys_in exists in meas_obj_value_names_map
+        - if any keyo in keys_out contains a '.' string, keyo is assumed to
+        indicate a path in the data_dict.
+        - len(keys_in) == 2 must be True; the 2 entries are I and Q data
+        - len(keys_out) == 1 must be True.
+        - cal_points exists in **params, data_dict, or metadata
+        - assumes measj_obj_name is one of the keys of the dicts returned by
+        CalibrationPoints.get_indices(), CalibrationPoints.get_rotations()
+        - keys_in exist in meas_obj_value_names_map
     """
-    if keys_in is None:
-        if 'measured_data' in data_dict:
-            keys_in = list(data_dict['measured_data'])
-            if len(keys_in) % 2 == 0:
-                keys_in = [keys_in[2*i:2*i+2] for i in range(len(keys_in)//2)]
-            else:
-                raise ValueError('The number of keys in keys_in=data_dict['
-                                 '"measured_values]" must be even.')
-        else:
-            raise ValueError('"keys_in" were not specified.')
+    data_to_proc_dict = help_func_mod.get_data_to_process(
+        data_dict, keys_in)
+    keys_in = list(data_to_proc_dict)
+    if keys_out is None:
+        keys_out = ['rotated datadata [' + ','.join(keys_in)+']']
+    if len(keys_in) != 2:
+        raise ValueError(f'keys_in must have length two. {len(keys_in)} '
+                         f'entries were given.')
 
-    if len(keys_in) != len(keys_out):
-        raise ValueError('keys_in and keys_out do not have '
-                         'the same length.')
-
-    cp_list = help_func_mod.get_param('cal_points_list', data_dict, **params)
-    if cp_list is None:
-        cp = help_func_mod.get_param('cal_points', data_dict, **params)
-        if cp is None:
-            raise ValueError(
-                'Neither cal_points_list nor cal_points was found.')
-        else:
-            cp_list = [eval(cp)]*len(keys_in)
-    else:
-        cp_list = [eval(cp) for cp in cp_list]
-    if len(cp_list) != len(keys_in):
-        raise ValueError('cal_points_list and keys_in do not have '
-                         'the same length.')
-
-    last_ge_pulses = help_func_mod.get_param('last_ge_pulses', data_dict,
+    cp = help_func_mod.get_param('cal_points', data_dict, raise_error=True,
+                                 **params)
+    if isinstance(cp, str):
+        cp = eval(cp)
+    last_ge_pulse = help_func_mod.get_param('last_ge_pulse', data_dict,
                                              default_value=[], **params)
     mobjn = help_func_mod.get_param('meas_obj_name', data_dict,
                                     raise_error=True, **params)
     if mobjn not in cp.qb_names:
         raise KeyError(f'{mobjn} not found in cal_points.')
-    for j, cp in enumerate(cp_list):
-        data_to_proc_dict = help_func_mod.get_data_to_process(
-            data_dict, keys_in[j])
 
-        data = data_dict
-        all_keys = keys_out[j].split('.')
-        for i in range(len(all_keys)-1):
-            if all_keys[i] not in data:
-                data[all_keys[i]] = OrderedDict()
-            else:
-                data = data[all_keys[i]]
+    data = data_dict
+    all_keys = keys_out[0].split('.')
+    for i in range(len(all_keys)-1):
+        if all_keys[i] not in data:
+            data[all_keys[i]] = OrderedDict()
+        else:
+            data = data[all_keys[i]]
 
-        rotations = cp.get_rotations(last_ge_pulses=last_ge_pulses)
-        ordered_cal_states = []
-        for ii in range(len(rotations[mobjn])):
-            ordered_cal_states += \
-                [k for k, idx in rotations[mobjn].items() if idx == ii]
-        rotated_data, _, _ = \
-            a_tools.rotate_and_normalize_data_IQ(
-                data=list(data_to_proc_dict.values()),
-                cal_zero_points=None if len(ordered_cal_states) == 0 else
-                    cp.get_indices()[mobjn][ordered_cal_states[0]],
-                cal_one_points=None if len(ordered_cal_states) == 0 else
-                    cp.get_indices()[mobjn][ordered_cal_states[1]])
-        data[all_keys[-1]] = rotated_data
+    rotations = cp.get_rotations(last_ge_pulses=last_ge_pulse)
+    ordered_cal_states = []
+    for ii in range(len(rotations[mobjn])):
+        ordered_cal_states += \
+            [k for k, idx in rotations[mobjn].items() if idx == ii]
+    rotated_data, _, _ = \
+        a_tools.rotate_and_normalize_data_IQ(
+            data=list(data_to_proc_dict.values()),
+            cal_zero_points=None if len(ordered_cal_states) == 0 else
+                cp.get_indices()[mobjn][ordered_cal_states[0]],
+            cal_one_points=None if len(ordered_cal_states) == 0 else
+                cp.get_indices()[mobjn][ordered_cal_states[1]])
+    data[all_keys[-1]] = rotated_data
     return data_dict
 
 
-def rotate_1d_array(data_dict, keys_out, keys_in=None, **params):
+def rotate_1d_array(data_dict, keys_in=None, keys_out=None, **params):
     """
     Rotates 1d array based on information in the CalibrationPoints objects.
     The number of CalibrationPoints objects should equal the number of
@@ -457,67 +444,122 @@ def rotate_1d_array(data_dict, keys_out, keys_in=None, **params):
         last_ge_pulses (list): list of booleans
 
     Assumptions:
-        - one output key per input key
-        - len(keys_in) == len(keys_out)
-        - cal_points_list exists in **params
-        - len(cp_list) == len(keys_in)
-        - one CalibrationPoints object input key
-        - assumes the dicts returned by CalibrationPoints.get_indices(),
-        CalibrationPoints.get_rotations() are keyed by channel number strings;
-        ex: indices for ch 0: {'0': {'g': [-4, -3], 'e': [-2, -1]}}
+        - if any keyo in keys_out contains a '.' string, keyo is assumed to
+        indicate a path in the data_dict.
+        - len(keys_in) == len(keys_out) == 1 must all be True
+        - cal_points exists in **params, data_dict, or metadata
+        - assumes measj_obj_name is one of the keys of the dicts returned by
+        CalibrationPoints.get_indices(), CalibrationPoints.get_rotations()
+        - keys_in exists in meas_obj_value_names_map
     """
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
     keys_in = list(data_to_proc_dict)
+    if keys_out is None:
+        keys_out = [f'rotated data [{keys_in[0]}]']
+    if len(keys_in) != 1:
+        raise ValueError(f'keys_in must have length one. {len(keys_in)} '
+                         f'entries were given.')
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
-
-    cp_list = help_func_mod.get_param('cal_points_list', data_dict, **params)
-    if cp_list is None:
-        cp = help_func_mod.get_param('cal_points', data_dict, **params)
-        if cp is None:
-            raise ValueError(
-                'Neither cal_points_list nor cal_points was found.')
-        else:
-            cp_list = [eval(cp)]*len(keys_in)
-    else:
-        cp_list = [eval(cp) for cp in cp_list]
-    if len(cp_list) != len(keys_in):
-        raise ValueError('cal_points_list and keys_in do not have '
-                         'the same length.')
+    cp = help_func_mod.get_param('cal_points', data_dict, raise_error=True,
+                                 **params)
+    if isinstance(cp, str):
+        cp = eval(cp)
     last_ge_pulses = help_func_mod.get_param('last_ge_pulses', data_dict,
                                              default_value=[], **params)
-
     mobjn = help_func_mod.get_param('meas_obj_name', data_dict,
                                     raise_error=True, **params)
     if mobjn not in cp.qb_names:
         raise KeyError(f'{mobjn} not found in cal_points.')
 
-    for j, keyi in enumerate(data_to_proc_dict):
-        data = data_dict
-        all_keys = keys_out[j].split('.')
-        for i in range(len(all_keys)-1):
-            if all_keys[i] not in data:
-                data[all_keys[i]] = OrderedDict()
-            else:
-                data = data[all_keys[i]]
+    data = data_dict
+    all_keys = keys_out[0].split('.')
+    for i in range(len(all_keys)-1):
+        if all_keys[i] not in data:
+            data[all_keys[i]] = OrderedDict()
+        else:
+            data = data[all_keys[i]]
 
-        cp = cp_list[j]
-        rotations = cp.get_rotations(last_ge_pulses=last_ge_pulses)
-        ordered_cal_states = []
-        for ii in range(len(rotations[mobjn])):
-            ordered_cal_states += \
-                [k for k, idx in rotations[mobjn].items() if idx == ii]
-        rotated_data = \
-            a_tools.rotate_and_normalize_data_1ch(
-                data=data_to_proc_dict[keyi],
-                cal_zero_points=None if len(ordered_cal_states) == 0 else
-                    cp.get_indices()[mobjn][ordered_cal_states[0]],
-                cal_one_points=None if len(ordered_cal_states) == 0 else
-                    cp.get_indices()[mobjn][ordered_cal_states[1]])
-        data[all_keys[-1]] = rotated_data
+    rotations = cp.get_rotations(last_ge_pulses=last_ge_pulses)
+    ordered_cal_states = []
+    for ii in range(len(rotations[mobjn])):
+        ordered_cal_states += \
+            [k for k, idx in rotations[mobjn].items() if idx == ii]
+    rotated_data = \
+        a_tools.rotate_and_normalize_data_1ch(
+            data=data_to_proc_dict[keys_in[0]],
+            cal_zero_points=None if len(ordered_cal_states) == 0 else
+                cp.get_indices()[mobjn][ordered_cal_states[0]],
+            cal_one_points=None if len(ordered_cal_states) == 0 else
+                cp.get_indices()[mobjn][ordered_cal_states[1]])
+    data[all_keys[-1]] = rotated_data
     return data_dict
 
+
+def threshold_data(data_dict, threshold_list, keys_in=None, **params):
+    """
+    Thresholds the data in data_dict specified by keys_in according to the
+    threshold_mapping and the threshold values in threshold_list.
+    This node will create nr_states entries in the data_dict, where
+    nr_states = len(set(threshold_mapping.values())).
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+    :param keys_out: list of key names or dictionary keys paths in
+                    data_dict for the processed data to be saved into
+    :param threshold_list: list of values around which to threshold each
+        data array in corresponding to keys_in.
+    :param params: keyword arguments.:
+        threshold_mapping (dict): dict of the form {idx: state_label}.
+        Ex: {0: 'e', 1: 'g', 2: 'f', 3: 'g'}. Default value if
+        len(threshold_list) == 1 is {0: 'g', 1: 'e'}. Else, None and a
+        ValueError will be raise.
+
+    Assumptions:
+        - len(threshold_list) == len(keys_in)
+        - data arrays corresponding to keys_in must all have the same length
+        - the order of the values in threshold_list is important!
+        The thresholds are in the same order as the data corresponding to
+        the keys_in. See the 3 lines after extraction of threshold_map below.
+    """
+    if not hasattr(threshold_list, '__iter__'):
+        threshold_list = [threshold_list]
+
+    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    if len(threshold_list) != len(data_to_proc_dict):
+        raise ValueError('threshold_list and keys_in do not have '
+                         'the same length.')
+    if len(set([arr.size for arr in data_to_proc_dict.values()])) > 1:
+        raise ValueError('The data arrays corresponding to keys_in must all '
+                         'have the same length.')
+    keys_in = list(data_to_proc_dict)
+    threshold_map = help_func_mod.get_param('threshold_map', data_dict,
+                                            raise_error=False, **params)
+    if threshold_map in None:
+        if len(threshold_list) == 1:
+            threshold_map = {0: 'g', 1: 'e'}
+        else:
+            raise ValueError(f'threshold_map was not found in either '
+                             f'exp_metadata or input params.')
+
+    thresh_data_binary = np.stack(
+        [data_to_proc_dict[keyi] >= th for keyi, th in
+         zip(keys_in, threshold_list)], axis=1)
+    thresh_data_decimal = thresh_data_binary.dot(1 << np.arange(
+        thresh_data_binary.shape[-1] - 1, -1, -1))
+
+    keyo_suffix = keys_in[0] if len(keys_in) == 1 else ','.join(keys_in)
+    for state in set(threshold_map.values()):
+        keyo = f'thresh_data_{keyo_suffix}_{state}'
+        data_dict[keyo] = np.zeros(
+            len(list(data_to_proc_dict)[0]))
+        state_idxs = [k for k,v in threshold_map.items() if v == state]
+        for idx in state_idxs:
+            data_dict[keyo] = np.logical_or(
+                data_dict[keyo], thresh_data_decimal == idx).astype('int')
+    return data_dict
 
 
 ## Nodes that are classes ##
@@ -548,7 +590,7 @@ class RabiAnalysis(object):
             prepare_fitting = params.pop('prepare_fitting', True)
             do_fitting = params.pop('do_fitting', True)
             prepare_plots = params.pop('prepare_plots', True)
-            do_plotting = params.pop('do_plotting', False)
+            do_plotting = params.pop('do_plotting', True)
 
             self.process_data(**params)
             if prepare_fitting:
@@ -751,7 +793,6 @@ class RabiAnalysis(object):
                 if old_pihalfpulse_val != old_pihalfpulse_val:
                     old_pihalfpulse_val = 0
                 old_pihalfpulse_val *= old_pipulse_val
-
                 if not hasattr(old_pipulse_val, '__iter__'):
                     textstr = ('  $\pi-Amp$ = {:.3f} V'.format(
                         rabi_amplitudes[self.mobjn]['piPulse']) +
@@ -919,8 +960,7 @@ class SingleQubitRBAnalysis(object):
             prepare_fitting = params.pop('prepare_fitting', True)
             do_fitting = params.pop('do_fitting', True)
             prepare_plots = params.pop('prepare_plots', True)
-            do_plotting = params.pop('do_plotting', False)
-
+            do_plotting = params.pop('do_plotting', True)
             self.process_data(**params)
             if prepare_fitting:
                 self.prepare_fitting()
