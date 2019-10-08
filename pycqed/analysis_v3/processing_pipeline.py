@@ -31,23 +31,23 @@ class ProcessingPipeline(list):
                                  'keys_in must be specified.')
         return keys_in
 
-    def add_filter_data_node(self, reset_reps, keys_in=None, **params):
+    def add_filter_data_node(self, data_filter, keys_in='previous', **params):
         keys_in = self.check_keys_in(keys_in=keys_in)
         return {'node_type': 'filter_data',
                 'keys_in': keys_in,
                 'keys_out': [k+' filtered' for k in keys_in],
-                'data_filter': f'lambda x: x[{reset_reps}::{reset_reps}+1]',
+                'data_filter': data_filter,
                 **params}
 
-    def add_average_node(self, num_bins, keys_in=None, **params):
+    def add_average_data_node(self, num_bins, keys_in='previous', **params):
         keys_in = self.check_keys_in(keys_in)
-        return {'node_type': 'average',
+        return {'node_type': 'average_data',
                 'keys_in': keys_in,
                 'keys_out': [k + ' averaged' for k in keys_in],
                 'num_bins': num_bins,
                 **params}
 
-    def add_get_std_deviation_node(self, num_bins, keys_in=None,
+    def add_get_std_deviation_node(self, num_bins, keys_in='previous',
                                    **params):
         keys_in = self.check_keys_in(keys_in)
         return {'node_type': 'get_std_deviation',
@@ -56,20 +56,21 @@ class ProcessingPipeline(list):
                 'num_bins': num_bins,
                 **params}
 
-    def add_rotate_iq_node(self, keys_in=None, meas_obj_name='', **params):
+    def add_rotate_iq_node(self, keys_in='previous',
+                           meas_obj_name='', **params):
         keys_in = self.check_keys_in(keys_in)
         return {'node_type': 'rotate_iq',
                 'keys_in': keys_in,
-                'keys_out': ['rotated data ' + '-'.join(k) for k in keys_in],
+                'keys_out': ['rotated data [' + ','.join(keys_in)+']'] ,
                 'meas_obj_name': meas_obj_name,
                 **params}
 
-    def add_rotate_1d_array_node(self, keys_in=None, meas_obj_name='',
+    def add_rotate_1d_array_node(self, keys_in='previous', meas_obj_name='',
                                  **params):
         keys_in = self.check_keys_in(keys_in)
         return {'node_type': 'rotate_1d_array',
                 'keys_in': keys_in,
-                'keys_out': [f'rotated data {k}' for k in keys_in],
+                'keys_out': [f'rotated data [{keys_in[0]}]'],
                 'meas_obj_name': meas_obj_name,
                 **params}
 
@@ -78,7 +79,7 @@ class ProcessingPipeline(list):
     ######################################
 
     def add_prepare_1d_plot_dicts_node(
-            self, keys_in=None, meas_obj_name='', fig_name='',
+            self, keys_in='previous', meas_obj_name='', fig_name='',
             do_plotting=False, **params):
         keys_in = self.check_keys_in(keys_in)
         return {'node_type': 'prepare_1d_plot_dicts',

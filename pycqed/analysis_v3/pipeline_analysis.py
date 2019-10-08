@@ -233,13 +233,11 @@ class PipelineDataAnalysis(object):
     @staticmethod
     def add_measured_data(raw_data_dict):
         if 'measured_data' in raw_data_dict and \
-                'value_names' in raw_data_dict and \
-                'sweep_points' in raw_data_dict['exp_metadata']:
+                'value_names' in raw_data_dict:
             measured_data = raw_data_dict.pop('measured_data')
-            sweep_points = raw_data_dict['exp_metadata']['sweep_points']
             raw_data_dict['measured_data'] = OrderedDict()
 
-            data = measured_data[len(sweep_points):]
+            data = measured_data[-len(raw_data_dict['value_names']):]
             if data.shape[0] != len(raw_data_dict['value_names']):
                 raise ValueError('Shape mismatch between data and '
                                  'ro channels.')
@@ -247,9 +245,10 @@ class PipelineDataAnalysis(object):
                                          default_value=False)
             for i, ro_ch in enumerate(raw_data_dict['value_names']):
                 if 'soft_sweep_points' in raw_data_dict and TD:
-                    hsl = len(sweep_points[0][list(sweep_points[0])[0]][0])
-                    ssl = len(sweep_points[1][list(sweep_points[0])[0]][0])
-                    measured_data = np.reshape(data[i], (ssl, hsl)).T
+                    pass
+                    # hsl = len(sweep_points[0][list(sweep_points[0])[0]][0])
+                    # ssl = len(sweep_points[1][list(sweep_points[0])[0]][0])
+                    # measured_data = np.reshape(data[i], (ssl, hsl)).T
                 else:
                     measured_data = data[i]
                 raw_data_dict['measured_data'][ro_ch] = measured_data
