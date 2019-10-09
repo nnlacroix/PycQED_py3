@@ -1337,8 +1337,12 @@ class UHFQC_classifier_detector(UHFQC_Base):
             raise ValueError('Please specify the classifier parameters list.')
 
         nr_states = len(self.state_labels)
+        if averaged:
+            classified_data_length = self.nr_sweep_points
+        else:
+            classified_data_length = self.nr_sweep_points*self.nr_shots
         classified_data = np.zeros(
-            (nr_states*len(self.channel_str_pairs), self.nr_sweep_points))
+            (nr_states*len(self.channel_str_pairs), classified_data_length))
 
         clf_data_all = np.zeros((self.nr_sweep_points*self.nr_shots,
                                 nr_states*len(self.channel_str_pairs)))
@@ -1354,11 +1358,12 @@ class UHFQC_classifier_detector(UHFQC_Base):
                                       np.argmax(clf_data, axis=1)).T
             clf_data_all[:, nr_states*i: nr_states*i+nr_states] = clf_data
 
-            # reshape into (nr_shots, nr_sweep_points, nr_data_columns)
-            clf_data = np.reshape(
-                clf_data, (self.nr_shots, self.nr_sweep_points,
-                                  clf_data.shape[-1]))
+
             if averaged:
+                # reshape into (nr_shots, nr_sweep_points, nr_data_columns)
+                clf_data = np.reshape(
+                    clf_data, (self.nr_shots, self.nr_sweep_points,
+                               clf_data.shape[-1]))
                 clf_data = np.mean(clf_data, axis=0)
             if state_prob_mtx_list is not None:
                 clf_data = np.linalg.inv(
