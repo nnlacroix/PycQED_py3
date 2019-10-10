@@ -177,14 +177,13 @@ class PipelineDataAnalysis(object):
         """
 
         self.params_dict.update(
-            {'sweep_parameter_names': 'sweep_parameter_names',
-             'sweep_parameter_units': 'sweep_parameter_units',
+            {'exp_metadata':'Experimental Data.Experimental Metadata',
+             'exp_metadata.sweep_parameter_names': 'sweep_parameter_names',
+             'exp_metadata.sweep_parameter_units': 'sweep_parameter_units',
+             'exp_metadata.value_names': 'value_names',
+             'exp_metadata.value_units': 'value_units',
              'measurementstring': 'measurementstring',
-             'value_names': 'value_names',
-             'value_units': 'value_units',
-             'measured_data': 'measured_data',
-             'exp_metadata':
-                 'Experimental Data.Experimental Metadata'})
+             'measured_data': 'measured_data'})
 
         self.data_dict = self.get_data_from_timestamp_list()
         self.metadata = self.data_dict.get('exp_metadata', {})
@@ -233,17 +232,18 @@ class PipelineDataAnalysis(object):
     @staticmethod
     def add_measured_data(raw_data_dict):
         if 'measured_data' in raw_data_dict and \
-                'value_names' in raw_data_dict:
+                'value_names' in raw_data_dict['exp_metadata']:
             measured_data = raw_data_dict.pop('measured_data')
-            raw_data_dict['measured_data'] = OrderedDict()
+            data = measured_data[-len(raw_data_dict[
+                                          'exp_metadata']['value_names']):]
+            if data.shape[0] != len(raw_data_dict[
+                                        'exp_metadata']['value_names']):
+                raise ValueError('Shape mismatch between data and ro channels.')
 
-            data = measured_data[-len(raw_data_dict['value_names']):]
-            if data.shape[0] != len(raw_data_dict['value_names']):
-                raise ValueError('Shape mismatch between data and '
-                                 'ro channels.')
             TD = help_func_mod.get_param('TwoD', raw_data_dict,
                                          default_value=False)
-            for i, ro_ch in enumerate(raw_data_dict['value_names']):
+            for i, ro_ch in enumerate(raw_data_dict[
+                                          'exp_metadata']['value_names']):
                 if 'soft_sweep_points' in raw_data_dict and TD:
                     pass
                     # hsl = len(sweep_points[0][list(sweep_points[0])[0]][0])
@@ -251,7 +251,7 @@ class PipelineDataAnalysis(object):
                     # measured_data = np.reshape(data[i], (ssl, hsl)).T
                 else:
                     measured_data = data[i]
-                raw_data_dict['measured_data'][ro_ch] = measured_data
+                raw_data_dict[ro_ch] = measured_data
         else:
             raise ValueError('"measured_data" was not added.')
         return raw_data_dict

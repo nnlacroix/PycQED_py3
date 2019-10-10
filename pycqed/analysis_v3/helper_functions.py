@@ -35,7 +35,7 @@ def get_params_from_hdf_file(data_dict, **params):
     if params_dict is None:
         raise ValueError('params_dict was not specified.')
 
-    extracted_params_dict = OrderedDict([(param, []) for param in params_dict])
+    extracted_params_dict = OrderedDict()
 
     folder = params.get('folder', data_dict.get('folder', None))
     if folder is None:
@@ -44,35 +44,43 @@ def get_params_from_hdf_file(data_dict, **params):
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, h5mode)
 
-    if 'measurementstring' in extracted_params_dict:
+    if 'measurementstring' in params_dict:
         extracted_params_dict['measurementstring'] = \
             os.path.split(folder)[1][7:]
-    if 'measured_data' in extracted_params_dict:
+    if 'measured_data' in params_dict:
         extracted_params_dict['measured_data'] = \
             np.array(data_file['Experimental Data']['Data']).T
 
     for save_par, file_par in params_dict.items():
+        epd = extracted_params_dict
+        all_keys = save_par.split('.')
+        for i in range(len(all_keys)-1):
+            if all_keys[i] not in epd:
+                epd[all_keys[i]] = OrderedDict()
+            else:
+                epd = epd[all_keys[i]]
+
         if len(file_par.split('.')) == 1:
             par_name = file_par.split('.')[0]
             for group_name in data_file.keys():
                 if par_name in list(data_file[group_name].attrs):
-                    extracted_params_dict[save_par] = \
+                    epd[all_keys[-1]] = \
                         get_hdf_param_value(data_file[group_name], par_name)
         else:
             group_name = '/'.join(file_par.split('.')[:-1])
             par_name = file_par.split('.')[-1]
             if group_name in data_file:
                 if par_name in list(data_file[group_name].attrs):
-                    extracted_params_dict[save_par] = \
+                    epd[all_keys[-1]] = \
                         get_hdf_param_value(data_file[group_name], par_name)
                 elif par_name in list(data_file[group_name].keys()):
-                    extracted_params_dict[save_par] = read_dict_from_hdf5(
+                    epd[all_keys[-1]] = read_dict_from_hdf5(
                         {}, data_file[group_name][par_name])
-        if isinstance(extracted_params_dict[save_par], list) and \
-                len(extracted_params_dict[save_par]) == 1:
+        if isinstance(epd[all_keys[-1]], list) and \
+                len(epd[all_keys[-1]]) == 1:
             if save_par not in ['value_names', 'value_units']:
-                extracted_params_dict[save_par] = \
-                    extracted_params_dict[save_par][0]
+                epd[all_keys[-1]] = \
+                    epd[all_keys[-1]][0]
 
     for par_name in extracted_params_dict:
         if par_name in numeric_params:
@@ -86,7 +94,7 @@ def get_data_to_process(data_dict, keys_in=None):
     """
     Finds data to be processed in unproc_data_dict based on keys_in.
 
-    :param unproc_data_dict: OrderedDict containing data to be processed
+    :param data_dict: OrderedDict containing data to be processed
     :param keys_in: list of channel names or dictionary paths leading to
             data to be processed. For example: measured_data.raw w0.
     :return:
@@ -142,6 +150,31 @@ def get_param(name, data_dict, default_value=None, raise_error=False, **params):
         raise ValueError(f'{name} was not found in either exp_metadata or '
                          f'input params.')
     return value
+
+
+def add_param(name, value, data_dict, update=False, **params):
+    """
+    Adds a new key-value pair to the data_dict, with key = name.
+    If update, it will try data_dict[name].update(value), else raises KeyError.
+    :param name: key of the new parameter in the data_dict
+    :param value: value of the new parameter
+    :param data_dict: OrderedDict containing data to be processed
+    :param update: whether to try data_dict[name].update(value)
+    :param params: keyword arguments
+    :return:
+    """
+    if name in data_dict:
+        if update:
+            if isinstance(value, dict):
+                data_dict[name].update(value)
+            else:
+                raise AttributeError(f'Value is not a dictionary, cannot update '
+                                     f'data_dict[{name}].')
+
+        else:
+            raise KeyError(f'{name} already exists in data_dict.')
+    else:
+        data_dict[name] = value
 
 
 def get_cp_sp_spmap_measobjn(data_dict, **params):

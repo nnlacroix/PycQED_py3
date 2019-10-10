@@ -58,7 +58,8 @@ def filter_data(data_dict, keys_in=None, keys_out=None, **params):
                 data[all_keys[i]] = OrderedDict()
             else:
                 data = data[all_keys[i]]
-        data[all_keys[-1]] = data_filter_func(data_to_proc_dict[keyi])
+        help_func_mod.add_param(
+            all_keys[-1], data_filter_func(data_to_proc_dict[keyi]), data)
     return data_dict
 
 
@@ -108,8 +109,10 @@ def get_std_deviation(data_dict, keys_in=None, keys_out=None, **params):
             else:
                 data = data[all_keys[i]]
         averages = len(data_to_proc_dict[keyi]) // num_bins
-        data[all_keys[-1]] = np.std(np.reshape(
-            data_to_proc_dict[keyi], (averages, num_bins)), axis=0)
+        help_func_mod.add_param(
+            all_keys[-1], np.std(np.reshape(
+                data_to_proc_dict[keyi], (averages, num_bins)), axis=0),
+            data)
     return data_dict
 
 
@@ -153,33 +156,33 @@ def classify_gm(data_dict, keys_out, keys_in=None, **params):
         - len(keys_out) == len(keys_in) + 1
         - clf_params exist in **params
     """
-    # pass
-    clf_params = help_func_mod.get_param('clf_params', data_dict, **params)
-    if clf_params is None:
-        raise ValueError('clf_params is not specified.')
-    reqs_params = ['means_', 'covariances_', 'covariance_type',
-                   'weights_', 'precisions_cholesky_']
-
-    data_to_proc_dict = help_func_mod.get_data_to_process(
-        data_dict, keys_in)
-
-    data = data_dict
-    all_keys = keys_out[k].split('.')
-    for i in range(len(all_keys)-1):
-        if all_keys[i] not in data:
-            data[all_keys[i]] = OrderedDict()
-        else:
-            data = data[all_keys[i]]
-
-    clf_params_temp = deepcopy(clf_params)
-    for r in reqs_params:
-        assert r in clf_params_temp, "Required Classifier parameter {} " \
-                                     "not given.".format(r)
-    gm = GM(covariance_type=clf_params_temp.pop('covariance_type'))
-    for param_name, param_value in clf_params_temp.items():
-        setattr(gm, param_name, param_value)
-    data[all_keys[-1]] = gm.predict_proba(data_to_proc_dict[keyi])
-    return data_dict
+    pass
+    # clf_params = help_func_mod.get_param('clf_params', data_dict, **params)
+    # if clf_params is None:
+    #     raise ValueError('clf_params is not specified.')
+    # reqs_params = ['means_', 'covariances_', 'covariance_type',
+    #                'weights_', 'precisions_cholesky_']
+    #
+    # data_to_proc_dict = help_func_mod.get_data_to_process(
+    #     data_dict, keys_in)
+    #
+    # data = data_dict
+    # all_keys = keys_out[k].split('.')
+    # for i in range(len(all_keys)-1):
+    #     if all_keys[i] not in data:
+    #         data[all_keys[i]] = OrderedDict()
+    #     else:
+    #         data = data[all_keys[i]]
+    #
+    # clf_params_temp = deepcopy(clf_params)
+    # for r in reqs_params:
+    #     assert r in clf_params_temp, "Required Classifier parameter {} " \
+    #                                  "not given.".format(r)
+    # gm = GM(covariance_type=clf_params_temp.pop('covariance_type'))
+    # for param_name, param_value in clf_params_temp.items():
+    #     setattr(gm, param_name, param_value)
+    # data[all_keys[-1]] = gm.predict_proba(data_to_proc_dict[keyi])
+    # return data_dict
 
 
 def do_preselection(data_dict, classified_data, keys_out, **params):
@@ -251,7 +254,7 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
             for k in range(len(all_keys)-1):
                 data[all_keys[k]] = OrderedDict()
                 data = data[all_keys[k]]
-            data[all_keys[-1]] = preselected_data
+            help_func_mod.add_param(all_keys[-1], preselected_data, data)
     else:
         for i, keyo in enumerate(keys_out):
             # Check if the entry in classified_data is an array or a string
@@ -273,7 +276,7 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                     mask[idx] = False
                 else:
                     mask[idx] = val
-            data_dict[keyo] = classif_data[mask]
+            help_func_mod.add_param(keyo, classif_data[mask], data_dict)
     return data_dict
 
 
@@ -318,8 +321,10 @@ def average_data(data_dict, keys_in=None, keys_out=None, **params):
             else:
                 data = data[all_keys[i]]
         averages = len(data_to_proc_dict[keyi]) // num_bins
-        data[all_keys[-1]] = np.mean(np.reshape(
-            data_to_proc_dict[keyi], (num_bins, averages)), axis=-1)
+        help_func_mod.add_param(
+            all_keys[-1], np.mean(np.reshape(
+                data_to_proc_dict[keyi], (num_bins, averages)), axis=-1),
+            data)
     return data_dict
 
 
@@ -354,7 +359,8 @@ def arbitrary_mapping(data_dict, data_keys_in, data_keys_out, **params):
                          'the same length.')
 
     for k, (keyi, keyo) in enumerate(zip(data_to_proc_dict, data_keys_out)):
-        data_dict[keyo] = mapping(data_to_proc_dict[keyi], **mapping_kwargs)
+        help_func_mod.add_param(
+            keyo, mapping(data_to_proc_dict[keyi], **mapping_kwargs), data_dict)
     return data_dict
 
 
@@ -424,7 +430,7 @@ def rotate_iq(data_dict, keys_in=None, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    data[all_keys[-1]] = rotated_data
+    help_func_mod.add_param(all_keys[-1], rotated_data, data)
     return data_dict
 
 
@@ -493,7 +499,7 @@ def rotate_1d_array(data_dict, keys_in=None, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    data[all_keys[-1]] = rotated_data
+    help_func_mod.add_param(all_keys[-1], rotated_data, data)
     return data_dict
 
 
@@ -553,8 +559,8 @@ def threshold_data(data_dict, threshold_list, keys_in=None, **params):
     keyo_suffix = keys_in[0] if len(keys_in) == 1 else ','.join(keys_in)
     for state in set(threshold_map.values()):
         keyo = f'thresh_data_{keyo_suffix}_{state}'
-        data_dict[keyo] = np.zeros(
-            len(list(data_to_proc_dict)[0]))
+        help_func_mod.add_param(keyo, np.zeros(
+            len(list(data_to_proc_dict)[0])), data_dict)
         state_idxs = [k for k,v in threshold_map.items() if v == state]
         for idx in state_idxs:
             data_dict[keyo] = np.logical_or(
@@ -654,10 +660,8 @@ class RabiAnalysis(object):
             rabi_amplitudes[self.mobjn] = self.get_amplitudes(
                 fit_res=fit_res, sweep_points=self.physical_swpts)
 
-        if 'analysis_params_dict' in self.data_dict:
-            self.data_dict['analysis_params_dict'].update(rabi_amplitudes)
-        else:
-            self.data_dict['analysis_params_dict'] = rabi_amplitudes
+        help_func_mod.add_param('analysis_params_dict', rabi_amplitudes,
+                                self.data_dict, update=True)
 
     def prepare_plots(self, **params):
         # prepare raw data plot
@@ -817,10 +821,8 @@ class RabiAnalysis(object):
                         'plotfn': 'plot_text',
                         'text_string': textstr}
 
-        if 'plot_dicts' in self.data_dict:
-            self.data_dict['plot_dicts'].update(plot_dicts)
-        else:
-            self.data_dict['plot_dicts'] = plot_dicts
+        help_func_mod.add_param('plot_dicts', plot_dicts,
+                                self.data_dict, update=True)
 
     def get_amplitudes(self, fit_res, sweep_points):
         # Extract the best fitted frequency and phase.
@@ -1082,7 +1084,7 @@ class SingleQubitRBAnalysis(object):
                     conf_level=self.conf_level,
                     epsilon_guess=epsilon_guess, d=2)
 
-                self.data_dict[keys] = epsilon
+                help_func_mod.add_param(keys, epsilon, self.data_dict)
                 # Run fit again with scale_covar=False, and weights = 1/epsilon
                 # if an entry in epsilon_sqrd is 0, replace it with half the
                 # minimum value in the epsilon_sqrd array
@@ -1091,10 +1093,8 @@ class SingleQubitRBAnalysis(object):
                 fit_kwargs = {'scale_covar': False, 'weights': 1/epsilon}
             fit_dicts[key]['fit_kwargs'] = fit_kwargs
 
-        if 'fit_dicts' in self.data_dict:
-            self.data_dict['fit_dicts'].update(fit_dicts)
-        else:
-            self.data_dict['fit_dicts'] = fit_dicts
+        help_func_mod.add_param('fit_dicts', fit_dicts,
+                                self.data_dict, update=True)
 
     def analyze_fit_results(self):
         if 'fit_dicts' in self.data_dict:
@@ -1106,10 +1106,8 @@ class SingleQubitRBAnalysis(object):
             fit_res = fit_dicts['rb_fit_' + self.mobjn + keyi]['fit_res']
             rb_fit_res[self.mobjn+keyi] = fit_res.params
 
-        if 'analysis_params_dict' in self.data_dict:
-            self.data_dict['analysis_params_dict'].update(rb_fit_res)
-        else:
-            self.data_dict['analysis_params_dict'] = rb_fit_res
+        help_func_mod.add_param(
+            'analysis_params_dict', rb_fit_res, self.data_dict, update=True)
 
     @staticmethod
     def calculate_confidence_intervals(
@@ -1260,10 +1258,8 @@ class SingleQubitRBAnalysis(object):
                     'plotfn': 'plot_text',
                     'text_string': textstr}
 
-        if 'plot_dicts' in self.data_dict:
-            self.data_dict['plot_dicts'].update(plot_dicts)
-        else:
-            self.data_dict['plot_dicts'] = plot_dicts
+        help_func_mod.add_param('plot_dicts', plot_dicts,
+                                self.data_dict, update=True)
 
     @staticmethod
     def get_textbox_str(fit_res, F_T1=None, **params):

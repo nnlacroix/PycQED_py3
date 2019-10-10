@@ -116,7 +116,4 @@ def prepare_cos_fit_dict(data_dict, keys_in=None, **params):
             'fit_yvals': {'data': data_fit},
             'guess_pars': guess_pars}
 
-    if 'fit_dicts' in data_dict:
-        data_dict['fit_dicts'].update(fit_dicts)
-    else:
-        data_dict['fit_dicts'] = fit_dicts
+    help_func_mod.add_param('fit_dicts', fit_dicts, data_dict, update=True)

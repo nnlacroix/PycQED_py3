@@ -202,11 +202,7 @@ def prepare_cal_states_plot_dicts(data_dict, fig_name=None,
 
             plot_names_cal += [plot_dict_name_cal, plot_dict_name_cal + '_line']
 
-    if 'plot_dicts' in data_dict:
-        data_dict['plot_dicts'].update(plot_dicts)
-    else:
-        data_dict['plot_dicts'] = plot_dicts
-
+    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_names_cal, **params)
 
@@ -319,11 +315,7 @@ def prepare_1d_plot_dicts(data_dict, fig_name, keys_in, **params):
             'legend_pos': 'center left'}
         plot_dict_names += [plot_dict_name]
 
-    if 'plot_dicts' in data_dict:
-        data_dict['plot_dicts'].update(plot_dicts)
-    else:
-        data_dict['plot_dicts'] = plot_dicts
-
+    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
 
@@ -440,11 +432,7 @@ def prepare_raw_data_plot_dicts(data_dict, keys_in=None, fig_name=None,
             'legend_pos': 'center left'}
         plot_dict_names += [plot_dict_name]
 
-    if 'plot_dicts' in data_dict:
-        data_dict['plot_dicts'].update(plot_dicts)
-    else:
-        data_dict['plot_dicts'] = plot_dicts
-
+    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
 
