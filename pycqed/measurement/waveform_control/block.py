@@ -47,8 +47,8 @@ class Block:
         block_start = {"name": f"start",
                        "pulse_type": "VirtualPulse",
                        "pulse_delay": block_delay,
-                       "ref_point": ref_point,
-                       "ref_pulse": ref_pulse}
+                       "ref_pulse": ref_pulse,
+                       "ref_point": ref_point}
         block_end = {"name": f"end",
                      "pulse_type": "VirtualPulse"}
 
@@ -82,19 +82,19 @@ class Block:
                 # add all pulses of the inside block to the outer block
                 pulses_built.extend(inside_block_pulses)
 
-        # redo referencing and naming
+        # prepend block name to reference pulses and pulses names
         for p in pulses_built:
             # if the pulse has a name, prepend the blockname to it
             if p.get("name", None) is not None:
-                p['name'] = name + "_" + p['name']
+                p['name'] = name + "-|-" + p['name']
 
             ref_pulse = p.get("ref_pulse", "previous_pulse")
-            p_is_block_shell = self._is_shell(p, block_start, block_end)
+            p_is_block_start = self._is_block_start(p, block_start)
 
             # rename ref pulse within the block if not a special name
             escape_names = ("previous_pulse", "segment_start")
-            if ref_pulse not in escape_names and not p_is_block_shell:
-                p['ref_pulse'] = name + "_" + p['ref_pulse']
+            if ref_pulse not in escape_names and not p_is_block_start:
+                p['ref_pulse'] = name + "-|-" + p['ref_pulse']
 
         return pulses_built
 
@@ -113,9 +113,42 @@ class Block:
         Returns: whether pulse is a shell dictionary (bool)
 
         """
-        is_p_start = pulse.get('name', None) == block_start['name']
-        is_p_end = pulse.get('name', None) == block_end['name']
-        return is_p_start or is_p_end
+        return self._is_block_start(pulse, block_start) \
+               or self._is_block_end(pulse, block_end)
+
+    def _is_block_start(self, pulse, block_start):
+        """
+        Checks, based on the pulse name, whether a pulse belongs to the block shell.
+        That is, if the pulse name is the same as the name of the block start or end.
+        A simple equivalence p == block_start or p == p_end does not work as pulse
+        could be a deepcopy of block_start, which would return False in the above
+        expressions.
+        Args:
+            pulse (dict): pulse to check.
+            block_start (dict): dictionary of the block start
+
+        Returns: whether pulse is a the block start dictionary (bool)
+
+        """
+        return pulse.get('name', None) == block_start['name']
+
+
+    def _is_block_end(self, pulse, block_end):
+        """
+        Checks, based on the pulse name, whether a pulse belongs to the block shell.
+        That is, if the pulse name is the same as the name of the block start or end.
+        A simple equivalence p == block_start or p == p_end does not work as pulse
+        could be a deepcopy of block_start, which would return False in the above
+        expressions.
+        Args:
+            pulse (dict): pulse to check.
+            block_end (dict): dictionary of the block end
+
+        Returns: whether pulse is a the block end dictionary (bool)
+
+        """
+        return pulse.get('name', None) == block_end['name']
+
 
     def extend(self, additional_pulses):
         self.pulses.extend(additional_pulses)

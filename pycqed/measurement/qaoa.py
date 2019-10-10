@@ -8,8 +8,101 @@ from pycqed.measurement.pulse_sequences.single_qubit_tek_seq_elts import \
 import pycqed.measurement.waveform_control.segment as segment
 from pycqed.measurement.waveform_control.block import Block
 from pycqed.measurement.waveform_control import pulsar as ps
+import itertools
+
+def correlate_qubits(qubit_states, correlations='all', correlator='z',
+                     average=True):
+    """
+    Returns correlations on the given qubit_states.
+    Args:
+        qubit_states (array): (n_shots, n_qubits) where each digit is the
+            assigned state of a qubit (0 or 1).
+        coorelations (list): list of tuples indicating which qubits have to be
+            correlated, where each tuple indicates the column index of the qubit.
+            Eg. [(0,1),(1,2)] will correlate qb0 and qb1, and then qb1 and qb2
+            for qubit_states where qi is the ith column of qubit_states.
+            defaults to "all" which takes all two qubit correlators
+        correlator: 'z' corresponding to sigma_z pauli matrix. Function can
+            easily be extended to support other correlators.
 
 
+    Returns:
+        correlations_output (array): (n_shots, n_correlations) if average == True
+            else (n_correlations,)
+    """
+    if correlator == 'z':
+        pauli_mtx = np.array([[1, 0], [0, -1]])  # sigma_z matrix
+        # correlator matrix for 2 qubits correlator. Can be extended to more
+        # qubits by recursively taking tensor product
+        corr_mtx = np.kron(pauli_mtx, pauli_mtx)  # sigma_z tensorproduct sigma_z
+    else:
+        raise NotImplementedError("non 'z' correlators are not yet supported.")
+
+    n_shots, n_qubits = qubit_states.shape
+    if correlations == "all":
+        correlations = list(itertools.combinations(np.arange(n_qubits), 2))
+
+    correlated_output = np.zeros((n_shots, len(correlations)))
+    for j, corr in enumerate(correlations):
+        qb_states_to_correlate = []
+        for i in corr:
+            qb_states_to_correlate.append(qubit_states[:, i])
+        # transform to 2 qb basis ie 00 --> 1000, 10 = 0100,...
+        qb_states_to_correlate = basis_transformation(np.array(qb_states_to_correlate))
+        # < phi | corr_mtx | phi> for all phis simultaneously
+        correlated_shots = (qb_states_to_correlate.T @ corr_mtx) @ qb_states_to_correlate
+        # only elements on diagonal are relevant
+        correlated_shots = correlated_shots[np.eye(n_shots, dtype=bool)]
+        correlated_output[:, j] = correlated_shots
+
+    return np.mean(correlated_output, axis=0) if average else correlated_output
+
+class ProblemHamiltonians:
+
+    @staticmethod
+    def ising(avg_sigma_z_sigma_z_corr, C):
+        """
+        $H = \sum_{i,j} C_{i,j} (I - \sigma_{z_i} \otimes \sigma_{z_j})$
+        Args:
+            avg_sigma_z_sigma_z_corr:
+            C:
+
+        Returns:
+
+        """
+        return np.sum([Ci * (1 - corr)
+                       for Ci, corr in zip(C, avg_sigma_z_sigma_z_corr)])
+
+
+def basis_transformation(qb_array_in_01_basis):
+    """
+    Transforms qubit string to qubits encoded in 2^n_qubits basis. Eg for 2 qubits:
+    [0,0]^T --> [1,0,0,0]^T
+    [0,1]^T --> [0,1,0,0]^T
+    [1,0]^T --> [0,0,1,0]^T
+    [1,1]^T --> [0,0,0,1]^T
+    qb_array_in_01_basis (array): (n_qubits, n_shots)
+    Returns:
+        array (2^n_qubits, n_shots)
+    """
+    n_qubits, n_shots = qb_array_in_01_basis.shape
+    inversions = np.logical_not(
+        list(itertools.product((0, 1), repeat=n_qubits)))  # (2^n_qubits, n_qubits)
+
+    # repeat the inversion for all shots
+    inversions = \
+        np.tile(inversions, (n_shots, 1)).reshape(n_shots, 2 ** n_qubits, n_qubits)
+
+    # expand qubits to new basis space (n_shots, basis_length, n_qubits)
+    trans = np.tile(qb_array_in_01_basis, 2 ** n_qubits).reshape(n_qubits,
+                                                                 2 ** n_qubits,
+                                                                 n_shots).T
+    # inverse
+    trans = np.logical_not(trans, out=trans, where=inversions)
+
+    # and
+    trans = np.all(trans, axis=-1)
+    return trans.astype(np.int).T
 
 def qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info, operation_dict,
                   init_state='0', cphase_implementation='hardware',
@@ -24,19 +117,19 @@ def qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info, operation_dict,
 
     prep_params = {} if prep_params is None else prep_params
 
-    # initialize qubits
+    # # initialize qubits
     seg.extend(builder.initialize(init_state, prep_params=prep_params).build())
-    pprint(builder.initialize(init_state, prep_params=prep_params).build())
+    # pprint(builder.initialize(init_state, prep_params=prep_params).build())
     # # QAOA Unitaries
-    # for k, (gamma, beta) in enumerate(zip(gammas, betas)):
-    #     # Uk
-    #     seg.extend(builder.U(f"U_{k}", two_qb_gates_info,
-    #                gamma, cphase_implementation).build())
-    #     # Dk
-    #     seg.extend(builder.D(f"D_{k}", beta).build())
-    #
-    # # readout qubits
-    # seg.extend(builder.mux_readout().build())
+    for k, (gamma, beta) in enumerate(zip(gammas, betas)):
+        # # Uk
+        seg.extend(builder.U(f"U_{k}", two_qb_gates_info,
+                   gamma, cphase_implementation).build())
+        # # Dk
+        seg.extend(builder.D(f"D_{k}", beta).build())
+
+    # readout qubits
+    seg.extend(builder.mux_readout().build())
 
     seq.add(seg)
 
@@ -124,8 +217,8 @@ class HelperBase:
                 f"qubits. Got {len(init_state)} init and {len(qubits)} qubits"
 
         pulses = []
-        pulses.extend(self.prepare(qubits, pulse_list=[self.Z_gate(qubits='qb1')],
-                                   ref_pulse="start",  **prep_params).build())
+        pulses.extend(self.prepare(qubits, ref_pulse="start",
+                                   **prep_params).build())
         for i, (qbn, init) in enumerate(zip(qubits, init_state)):
             # add qb name and "s" for reference to start of previous pulse
             op = self.STD_INIT.get(init, init) + \
@@ -140,17 +233,14 @@ class HelperBase:
         #                                           qubits, **prep_params)
         return Block(block_name, pulses)
 
-    def prepare(self, qubits='all', pulse_list=None, ref_pulse='start',
-                preparation_type='wait', post_ro_wait=1e-6,
-                ro_separation=1.5e-6, reset_reps=3, final_reset_pulse=True,
-                threshold_mapping=None, block_name=None):
+    def prepare(self, qubits='all', ref_pulse='start', preparation_type='wait',
+                post_ro_wait=1e-6, ro_separation=1.5e-6, reset_reps=3,
+                final_reset_pulse=False, threshold_mapping=None, block_name=None):
         """
         Prepares specified qb for an experiment by creating preparation pulse for
         preselection or active reset.
         Args:
             qubits: which qubits to prepare. Defaults to all.
-            pulse_list (optional): optional pulse list to which the preparation pulses
-                will be added
             ref_pulse: reference pulse of the first pulse in the pulse list.
                 reset pulse will be added in front of this. If the pulse list is empty,
                 reset pulses will simply be before the block_start.
@@ -162,8 +252,7 @@ class HelperBase:
             post_ro_wait: wait time after a readout pulse before applying reset
             ro_separation: spacing between two consecutive readouts
             reset_reps: number of reset repetitions
-            final_reset_pulse: whether or not to have a reset pulse at the end
-                of the pulse list
+            final_reset_pulse: Note: NOT used in this function.
             threshold_mapping (dict): thresholds mapping for each qb
 
         Returns:
@@ -173,21 +262,18 @@ class HelperBase:
             block_name = f"Preparation_{qubits}"
         qb_names = self.get_qubits(qubits)
 
-        if pulse_list is None:
-            pulse_list = []
+
         if threshold_mapping is None:
             threshold_mapping = {qbn: {0: 'g', 1: 'e'} for qbn in qb_names}
 
         # Calculate the length of a ge pulse, assumed the same for all qubits
         state_ops = dict(g=["I "], e=["X180 "], f=["X180_ef ", "X180 "])
 
-        if len(pulse_list) > 0 and 'ref_pulse' not in pulse_list[0]:
-            first_pulse = deepcopy(pulse_list[0])
-            first_pulse['ref_pulse'] = ref_pulse
-            pulse_list[0] = first_pulse
-
+        # no preparation pulses
         if preparation_type == 'wait':
-            return Block(block_name, pulse_list)
+            return Block(block_name, [])
+
+        # active reset
         elif 'active_reset' in preparation_type:
             reset_ro_pulses = []
             ops_and_codewords = {}
@@ -240,7 +326,7 @@ class HelperBase:
                 for pulse in ro_list:
                     pulse['element_name'] = 'reset_ro_element_{}'.format(rep)
                 if rep == 0:
-                    ro_list[0]['ref_pulse'] = 'segment_start'
+                    ro_list[0]['ref_pulse'] = ref_pulse
                     ro_list[0]['pulse_delay'] = -reset_reps * ro_separation
                 else:
                     ro_list[0]['ref_pulse'] = 'refpulse_reset_element_{}'.format(
@@ -255,24 +341,30 @@ class HelperBase:
                 prep_pulse_list += ro_list
                 prep_pulse_list += rp_list
 
-            if final_reset_pulse:
-                rp_list = deepcopy(reset_pulses)
-                for pulse in rp_list:
-                    pulse['element_name'] = f'reset_pulse_element_{reset_reps}'
-                pulse_list += rp_list
-            print(prep_pulse_list, pulse_list)
-            return Block(block_name, prep_pulse_list + pulse_list)
+            # manually add block_end with delay referenced to last readout
+            # as if it was an additional readout pulse
+            # otherwise next pulse will overlap with codeword padding.
+            block_end = dict(name='end', pulse_type="VirtualPulse",
+                             ref_pulse=f'refpulse_reset_element_{reset_reps-1}',
+                             pulse_delay=ro_separation)
+            prep_pulse_list += [block_end]
+            return Block(block_name, prep_pulse_list)
 
+        # preselection
         elif preparation_type == 'preselection':
             preparation_pulses = []
             for i, qbn in enumerate(qb_names):
                 preparation_pulses.append(self.get_pulse('RO ' + qbn))
                 preparation_pulses[-1]['ref_point'] = 'start'
                 preparation_pulses[-1]['element_name'] = 'preselection_element'
-            preparation_pulses[0]['ref_pulse'] = 'segment_start'
+            preparation_pulses[0]['ref_pulse'] = ref_pulse
+            preparation_pulses[0]['name'] = 'preselection_RO'
             preparation_pulses[0]['pulse_delay'] = -ro_separation
-
-            return Block(block_name, preparation_pulses + pulse_list)
+            block_end = dict(name='end', pulse_type="VirtualPulse",
+                             ref_pulse='preselection_RO',
+                             pulse_delay=ro_separation)
+            preparation_pulses += [block_end]
+            return Block(block_name, preparation_pulses)
 
     def mux_readout(self, qubits='all', element_name='RO',ref_point='end',
                     pulse_delay=0.0):
@@ -386,15 +478,15 @@ class QAOAHelper(HelperBase):
                 C = two_qb_gates_info["C"]
 
                 #virtual gate on qb 0
-                z_qbc = self.Z_gate(gamma * C * 180 / np.pi, qbc)
+                z_qbc = self.Z_gate(2 * gamma * C * 180 / np.pi, qbc)
 
                 # virtual gate on qb 1
-                z_qbt = self.Z_gate(gamma * C * 180 / np.pi, qbt)
+                z_qbt = self.Z_gate(2 * gamma * C * 180 / np.pi, qbt)
 
                 #arbitrary phase gate
                 c_arb_pulse = self.operation_dict[gate_name]
                 #get amplitude and dynamic phase from model
-                ampl, dyn_phase = two_qb_gates_info['arb_phase_func'](2 * gamma * C)
+                ampl, dyn_phase = two_qb_gates_info['arb_phase_func'](-4 * gamma * C)
                 c_arb_pulse['amplitude'] = ampl
                 c_arb_pulse['element_name'] = "flux_arb_gate"
                 c_arb_pulse['basis_rotation'].update(
@@ -408,7 +500,7 @@ class QAOAHelper(HelperBase):
                 #  would be to check recursively all reference to the pulse before
                 #  changing its name but this might be slow.
                 simultaneous.extend(
-                    two_qb_block.build(ref_pulse=f"{simult_bname}_start"))
+                    two_qb_block.build(ref_pulse=f"start"))
             # add block referenced to start of U_k
             U.extend(simultaneous.build())
 
@@ -424,5 +516,35 @@ class QAOAHelper(HelperBase):
             D_qbn = self.block_from_ops(f"{qbn}", ops,
                                         dict(qbn=qbn, angle=beta * 180 / np.pi))
             # reference block to beginning of D_k block
-            pulses.extend(D_qbn.build(ref_pulse=f"{name}_start"))
+            pulses.extend(D_qbn.build(ref_pulse=f"start"))
         return Block(name, pulses)
+
+    @staticmethod
+    def get_corr_and_coupl_info(two_qb_gates_info):
+        """
+        Helper function to get correlations and couplings used in the sequence
+        Correlations are defined as tuples of zero-indexed of qubits: eg.
+        (0,1) indicates a correlation will be made on qb1 and qb2
+        a coupling is the C between two qubits
+        Args:
+            two_qb_gates_info: list of list of information
+            dictionaries. Dictionaries contain information about a two QB gate:
+            assumes the following keys:
+            - qbc: control qubit
+            - qbt: target qubit
+            - gate_name: name of the 2 qb gate
+            - C: coupling btw the two qubits
+            - (arb_phase_func): only required when using hardware implementation
+               of arbitrary phase gate.
+
+        Returns:
+            corr_info (list): list of tuples indicating qubits to correlate
+            couplings (list): corresponding coupling for each correlation
+
+        """
+        flattened_info = deepcopy([i for info in two_qb_gates_info for i in info])
+
+        corr_info = [(int(i['qbc'][-1]) - 1, int(i['qbt'][-1]) - 1)
+                for i in flattened_info]
+        couplings = [i['C'] for i in flattened_info]
+        return corr_info, couplings

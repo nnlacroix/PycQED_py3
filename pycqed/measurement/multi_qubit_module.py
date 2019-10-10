@@ -10,10 +10,12 @@ from copy import deepcopy
 import pygsti
 import logging
 
+from scipy import optimize
+
 from pycqed.measurement import qaoa
 from pycqed.utilities.general import temporary_value
 
-log = logging.getLogger()
+log = logging.getLogger(__name__)
 log.addHandler(logging.StreamHandler())
 
 import pycqed.measurement.sweep_functions as swf
@@ -420,9 +422,9 @@ def measure_multiplexed_readout(qubits, liveplot=False,
             use_preselection=preselection
         ))
 
-def measure_qaoa(qubits, two_qb_gates_info, maxiter=1, optimizer_method="Nelder-Mead",
-                 optimizer_kwargs=None,
-                 betas=(np.pi,), gammas=(np.pi,),
+def measure_qaoa(qubits, two_qb_gates_info, maxiter=1,
+                 maxfev=None, optimizer_method="Nelder-Mead",
+                 optimizer_kwargs=None, betas_init=(np.pi,), gammas_init=(np.pi,),
                  init_state="+", cphase_implementation="hardware",
                  prep_params=None, upload=True, label=None):
     """
@@ -457,25 +459,34 @@ def measure_qaoa(qubits, two_qb_gates_info, maxiter=1, optimizer_method="Nelder-
     if optimizer_kwargs is None:
         optimizer_kwargs = {}
     optimizer_kwargs.update({"method": optimizer_method})
-    optimizer_options = {"maxiter": maxiter}
+    optimizer_kwargs.update(dict(options={"maxiter": maxiter, "maxfev": maxfev}))
     operation_dict = get_operation_dict(qubits)
 
-    # change init parameters to lists
-    betas = list(betas)
-    gammas = list(gammas)
+    # init list in which qaoa parameters are stored
+    betas = []
+    gammas = []
 
     MC = qubits[0].instr_mc.get_instr()
-
     iteration = [0]
 
-    def minimize(x, C):
+    #analysis dictionary
+    a = {}
+
+    def minimize_energy(x):
         iter = iteration[-1]
         log.info(f"Starting QAOA iteration: {iter}")
-        beta_new, gamma_new = x
-        betas.append(beta_new)
-        gammas.append(gamma_new)
-
-        #prepare qubits
+        # if first iteration then take the entire list of specified initial values
+        # else add the suggested step by optimizer
+        if iter == 0:
+            betas.extend(betas_init)
+            gammas.extend(gammas_init)
+        else:
+            gamma_new, beta_new = x
+            betas.append(beta_new)
+            gammas.append(gamma_new)
+        print(f"Gammas iter: {iter} : {gammas}")
+        print(f"Betas iter: {iter} : {betas}")
+        # #prepare qubits
         for qb in qubits:
             qb.prepare(drive='timedomain')
 
@@ -485,15 +496,21 @@ def measure_qaoa(qubits, two_qb_gates_info, maxiter=1, optimizer_method="Nelder-
                                       cphase_implementation=cphase_implementation,
                                       prep_params=prep_params, upload=False)
         # set detector and sweep functions
+        det_get_values_kws = {'classified': True,
+                              'correlated': False,
+                              'thresholded': False,
+                              'averaged': False}
         df = get_multiplexed_readout_detector_functions(
             qubits, nr_averages=max(qb.acq_averages() for qb in qubits),
-            correlated=True)['int_avg_classif_det']
+            det_get_values_kws=det_get_values_kws)['int_avg_classif_det']
         MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq, upload=upload))
         MC.set_sweep_points(swp)
         MC.set_detector_function(df)
 
         # metadata and run experiment
         exp_metadata = {'preparation_params': prep_params,
+                        'cal_points': CalibrationPoints([], []),
+                        'rotate': False,
                         'betas': betas,
                         'gammas': gammas,
                         'iteration': iter,
@@ -502,14 +519,55 @@ def measure_qaoa(qubits, two_qb_gates_info, maxiter=1, optimizer_method="Nelder-
                         'shots': qubits[0].acq_shots()}
 
         MC.run(name=f"{label}_iter_{iter}", exp_metadata=exp_metadata)
-        iteration.append(iteration[-1] + 1)
 
         # analyze
-        channel_map = {
-            qb.name: qb.int_log_det.value_names[0] + ' ' + qb.instr_uhf() for qb in
-            qubits}
-        tda.MultiQubit_TimeDomain_Analysis(qb_names=qb_names,
-                                           options_dict=dict(channel_map=channel_map))
+        channel_map = {qb.name: qb.int_avg_classif_det.value_names for qb in
+                        qubits}
+        options = dict(channel_map=channel_map, plot_proj_data=False,
+                       plot_raw_data=True)
+        a[iteration] = tda.MultiQubit_TimeDomain_Analysis(
+            qb_names=qb_names,
+            options_dict=options,
+            auto=False)
+        a[iteration].extract_data()
+        a[iteration].process_data()
+        # additional processing
+        qubit_states = []
+        filter = np.ones(exp_metadata['shots'], dtype=bool)
+        a[iteration].proc_data_dict['analysis_params_dict']["leakage"] = {}
+        leakage = a[iteration].proc_data_dict['analysis_params_dict']["leakage"]
+        for qb in qb_names:
+            qb_probs = \
+                a[iteration].proc_data_dict['meas_results_per_qb'][qb].values()
+            qb_probs = np.asarray(list(qb_probs)).T # (n_shots, (pg,pe,pf))
+            states = np.argmax(qb_probs, axis=1)
+            qubit_states.append(states)
+            leaked_shots = states == 2
+            leakage.update({qb: leaked_shots / exp_metadata['shots']})
+            filter = np.logical_and(filter, states != 2)
+        a[iteration].proc_data_dict['qubit_states'] = np.array(qubit_states).T
+        a[iteration].proc_data_dict['qubit_states_filtered'] = \
+            np.array(qubit_states).T[filter]
+        qb_states_filtered = a[iteration].proc_data_dict['qubit_states_filtered']
+        # correlate
+        c_info, coupl = qaoa.QAOAHelper.get_corr_and_coupl_info(two_qb_gates_info)
+        correlations = qaoa.correlate_qubits(qb_states_filtered, c_info)
+        a[iteration].proc_data_dict['correlations'] = {'names': c_info,
+                                                       'values': correlations}
+        energy = qaoa.ProblemHamiltonians.ising(correlations, coupl)
+        a[iteration].proc_data_dict['analysis_params_dict']['energy'] = energy
+
+        # plots
+        a[iteration].prepare_plots()
+        a[iteration].plot()
+
+        #save
+        a[iteration].save_processed_data()
+        iteration.append(iteration[-1] + 1)
+        return energy
+
+    return optimize.minimize(minimize_energy, [gammas_init[-1], betas_init[-1]],
+                      **optimizer_kwargs), a
 
 
 
