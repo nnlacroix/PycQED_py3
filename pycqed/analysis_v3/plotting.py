@@ -112,13 +112,13 @@ def prepare_cal_states_plot_dicts(data_dict, fig_name=None,
         - meas_obj_name is defined in cal_points
     """
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
-    cp, sp, meas_obj_sweep_points_map, mobjn = \
-        help_func_mod.get_cp_sp_spmap_measobjn(data_dict, **params)
+    cp, sp, mospm, _, mobjn = \
+        help_func_mod.get_cp_sp_spmap_vnmap_measobjn(data_dict, **params)
     if len(cp.states) == 0:
         print(f'There are no cal_states to plot for {mobjn}.')
         return
 
-    sp_name = params.get('sp_name', meas_obj_sweep_points_map[mobjn][0])
+    sp_name = params.get('sp_name', mospm[mobjn][0])
     sweep_info = [v for d in sp for k, v in d.items() if sp_name == k]
     if len(sweep_info) == 0:
         raise KeyError(f'{sp_name} not found.')
@@ -247,9 +247,9 @@ def prepare_1d_plot_dicts(data_dict, fig_name, keys_in, **params):
     """
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict,
                                                           keys_in=keys_in)
-    cp, sp, meas_obj_sweep_points_map, mobjn = \
-        help_func_mod.get_cp_sp_spmap_measobjn(data_dict, **params)
-    sp_name = params.get('sp_name', meas_obj_sweep_points_map[mobjn][0])
+    cp, sp, mospm, _, mobjn = \
+        help_func_mod.get_cp_sp_spmap_vnmap_measobjn(data_dict, **params)
+    sp_name = params.get('sp_name', mospm[mobjn][0])
     sweep_info = [v for d in sp for k, v in d.items() if sp_name == k]
     if len(sweep_info) == 0:
         raise KeyError(f'{sp_name} not found.')
@@ -358,15 +358,14 @@ def prepare_raw_data_plot_dicts(data_dict, keys_in=None, fig_name=None,
         - expects 1d arrays
         - meas_obj_name is defined in cal_points
     """
-    cp, sp, meas_obj_sweep_points_map, mobjn = \
-        help_func_mod.get_cp_sp_spmap_measobjn(data_dict, **params)
+    cp, sp, mospm, movnm, mobjn = \
+        help_func_mod.get_cp_sp_spmap_vnmap_measobjn(data_dict, **params)
+
     if keys_in is None:
-        meas_obj_value_names_map = help_func_mod.get_param(
-            'meas_obj_value_names_map', data_dict, raise_error=True)
-        keys_in=meas_obj_value_names_map[mobjn]
+        keys_in=movnm[mobjn]
     data_to_proc_dict = help_func_mod.get_data_to_process(
         data_dict, keys_in=keys_in)
-    sp_name = params.get('sp_name', meas_obj_sweep_points_map[mobjn][0])
+    sp_name = params.get('sp_name', mospm[mobjn][0])
     sweep_info = [v for d in sp for k, v in d.items() if sp_name == k]
     if len(sweep_info) == 0:
         raise KeyError(f'{sp_name} not found.')
@@ -402,7 +401,6 @@ def prepare_raw_data_plot_dicts(data_dict, keys_in=None, fig_name=None,
                                                            cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         yvals = data_to_proc_dict[keyi]
-
         ylabel = keyi
         yunit = params.get('yunit', help_func_mod.get_param(
             'value_units', data_dict, default_value='arb.'))

@@ -16,7 +16,7 @@ from pycqed.analysis import fitting_models as fit_mods
 from pycqed.measurement.calibration_points import CalibrationPoints
 
 
-def filter_data(data_dict, keys_in=None, keys_out=None, **params):
+def filter_data(data_dict, keys_in, keys_out=None, **params):
     """
     Filters data in data_dict for each keys_in according to data_filter
     in params. Creates new keys_out in the data dict for the filtered data.
@@ -51,19 +51,12 @@ def filter_data(data_dict, keys_in=None, keys_out=None, **params):
     if hasattr(data_filter_func, '__iter__'):
         data_filter_func = eval(data_filter_func)
     for keyo, keyi in zip(keys_out, list(data_to_proc_dict)):
-        data = data_dict
-        all_keys = keyo.split('.')
-        for i in range(len(all_keys)-1):
-            if all_keys[i] not in data:
-                data[all_keys[i]] = OrderedDict()
-            else:
-                data = data[all_keys[i]]
         help_func_mod.add_param(
-            all_keys[-1], data_filter_func(data_to_proc_dict[keyi]), data)
+            keyo, data_filter_func(data_to_proc_dict[keyi]), data_dict)
     return data_dict
 
 
-def get_std_deviation(data_dict, keys_in=None, keys_out=None, **params):
+def get_std_deviation(data_dict, keys_in, keys_out=None, **params):
     """
     Finds the standard deviation of the num_bins in data_dict for each
     keys_in.
@@ -98,25 +91,19 @@ def get_std_deviation(data_dict, keys_in=None, keys_out=None, **params):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
     for k, keyi in enumerate(data_to_proc_dict):
-        if len(data_to_proc_dict[keyi]) % num_bins[k] != 0:
+        if len(data_to_proc_dict[keyi]) % num_bins != 0:
             raise ValueError(f'{num_bins} does not exactly divide '
-                             f'len(data_to_proc_dict[{keyi}]).')
-        data = data_dict
-        all_keys = keys_out[k].split('.')
-        for i in range(len(all_keys)-1):
-            if all_keys[i] not in data:
-                data[all_keys[i]] = OrderedDict()
-            else:
-                data = data[all_keys[i]]
+                             f'data from ch {keyi} with length '
+                             f'{len(data_to_proc_dict[keyi])}.')
         averages = len(data_to_proc_dict[keyi]) // num_bins
         help_func_mod.add_param(
-            all_keys[-1], np.std(np.reshape(
+            keys_out[k], np.std(np.reshape(
                 data_to_proc_dict[keyi], (averages, num_bins)), axis=0),
-            data)
+            data_dict)
     return data_dict
 
 
-def classify_gm(data_dict, keys_out, keys_in=None, **params):
+def classify_gm(data_dict, keys_out, keys_in, **params):
     """
     BROKEN
     TODO: need to correctly handle channel tuples
@@ -249,12 +236,7 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                 else:
                     mask[idx] = val
             preselected_data = data_to_proc_dict[keyi][mask]
-            data = data_dict
-            all_keys = keys_out[i].split('.')
-            for k in range(len(all_keys)-1):
-                data[all_keys[k]] = OrderedDict()
-                data = data[all_keys[k]]
-            help_func_mod.add_param(all_keys[-1], preselected_data, data)
+            help_func_mod.add_param(keys_out[i], preselected_data, data_dict)
     else:
         for i, keyo in enumerate(keys_out):
             # Check if the entry in classified_data is an array or a string
@@ -280,7 +262,7 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
     return data_dict
 
 
-def average_data(data_dict, keys_in=None, keys_out=None, **params):
+def average_data(data_dict, keys_in, keys_out=None, **params):
     """
     Averages data in data_dict specified by keys_in into num_bins.
     :param data_dict: OrderedDict containing data to be processed and where
@@ -311,24 +293,17 @@ def average_data(data_dict, keys_in=None, keys_out=None, **params):
     for k, keyi in enumerate(data_to_proc_dict):
         if len(data_to_proc_dict[keyi]) % num_bins != 0:
             raise ValueError(f'{num_bins} does not exactly divide '
-                             f'len(data_to_proc_dict[{keyi}])='
+                             f'data from ch {keyi} with length '
                              f'{len(data_to_proc_dict[keyi])}.')
-        data = data_dict
-        all_keys = keys_out[k].split('.')
-        for i in range(len(all_keys)-1):
-            if all_keys[i] not in data:
-                data[all_keys[i]] = OrderedDict()
-            else:
-                data = data[all_keys[i]]
         averages = len(data_to_proc_dict[keyi]) // num_bins
         help_func_mod.add_param(
-            all_keys[-1], np.mean(np.reshape(
+            keys_out[k], np.mean(np.reshape(
                 data_to_proc_dict[keyi], (num_bins, averages)), axis=-1),
-            data)
+            data_dict)
     return data_dict
 
 
-def arbitrary_mapping(data_dict, data_keys_in, data_keys_out, **params):
+def arbitrary_mapping(data_dict, keys_in, keys_out, **params):
     """
     Maps data in data_dict specified by data_keys_in using mapping callable
     (can be any function).
@@ -351,20 +326,19 @@ def arbitrary_mapping(data_dict, data_keys_in, data_keys_out, **params):
         raise ValueError('mapping is not specified.')
     elif isinstance(mapping, str):
         mapping = eval(mapping)
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict,
-                                                          data_keys_in)
+    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
 
-    if len(data_keys_out) != len(data_to_proc_dict):
+    if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('data_keys_out and data_keys_in do not have '
                          'the same length.')
 
-    for k, (keyi, keyo) in enumerate(zip(data_to_proc_dict, data_keys_out)):
+    for k, (keyi, keyo) in enumerate(zip(data_to_proc_dict, keys_out)):
         help_func_mod.add_param(
             keyo, mapping(data_to_proc_dict[keyi], **mapping_kwargs), data_dict)
     return data_dict
 
 
-def rotate_iq(data_dict, keys_in=None, keys_out=None, **params):
+def rotate_iq(data_dict, keys_in, keys_out=None, **params):
     """
     Rotates IQ data based on information in the CalibrationPoints objects.
     :param data_dict: OrderedDict containing data to be processed and where
@@ -386,7 +360,7 @@ def rotate_iq(data_dict, keys_in=None, keys_out=None, **params):
         - len(keys_in) == 2 must be True; the 2 entries are I and Q data
         - len(keys_out) == 1 must be True.
         - cal_points exists in **params, data_dict, or metadata
-        - assumes measj_obj_name is one of the keys of the dicts returned by
+        - assumes meas_obj_names is one of the keys of the dicts returned by
         CalibrationPoints.get_indices(), CalibrationPoints.get_rotations()
         - keys_in exist in meas_obj_value_names_map
     """
@@ -405,18 +379,12 @@ def rotate_iq(data_dict, keys_in=None, keys_out=None, **params):
         cp = eval(cp)
     last_ge_pulse = help_func_mod.get_param('last_ge_pulse', data_dict,
                                              default_value=[], **params)
-    mobjn = help_func_mod.get_param('meas_obj_name', data_dict,
+    mobjn = help_func_mod.get_param('meas_obj_names', data_dict,
                                     raise_error=True, **params)
+    if isinstance(mobjn, list):
+        mobjn = mobjn[0]
     if mobjn not in cp.qb_names:
         raise KeyError(f'{mobjn} not found in cal_points.')
-
-    data = data_dict
-    all_keys = keys_out[0].split('.')
-    for i in range(len(all_keys)-1):
-        if all_keys[i] not in data:
-            data[all_keys[i]] = OrderedDict()
-        else:
-            data = data[all_keys[i]]
 
     rotations = cp.get_rotations(last_ge_pulses=last_ge_pulse)
     ordered_cal_states = []
@@ -430,11 +398,11 @@ def rotate_iq(data_dict, keys_in=None, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    help_func_mod.add_param(all_keys[-1], rotated_data, data)
+    help_func_mod.add_param(keys_out[0], rotated_data, data_dict)
     return data_dict
 
 
-def rotate_1d_array(data_dict, keys_in=None, keys_out=None, **params):
+def rotate_1d_array(data_dict, keys_in, keys_out=None, **params):
     """
     Rotates 1d array based on information in the CalibrationPoints objects.
     The number of CalibrationPoints objects should equal the number of
@@ -454,7 +422,7 @@ def rotate_1d_array(data_dict, keys_in=None, keys_out=None, **params):
         indicate a path in the data_dict.
         - len(keys_in) == len(keys_out) == 1 must all be True
         - cal_points exists in **params, data_dict, or metadata
-        - assumes measj_obj_name is one of the keys of the dicts returned by
+        - assumes meas_obj_namess is one of the keys of the dicts returned by
         CalibrationPoints.get_indices(), CalibrationPoints.get_rotations()
         - keys_in exists in meas_obj_value_names_map
     """
@@ -474,18 +442,12 @@ def rotate_1d_array(data_dict, keys_in=None, keys_out=None, **params):
         cp = eval(cp)
     last_ge_pulses = help_func_mod.get_param('last_ge_pulses', data_dict,
                                              default_value=[], **params)
-    mobjn = help_func_mod.get_param('meas_obj_name', data_dict,
+    mobjn = help_func_mod.get_param('meas_obj_names', data_dict,
                                     raise_error=True, **params)
+    if isinstance(mobjn, list):
+        mobjn = mobjn[0]
     if mobjn not in cp.qb_names:
         raise KeyError(f'{mobjn} not found in cal_points.')
-
-    data = data_dict
-    all_keys = keys_out[0].split('.')
-    for i in range(len(all_keys)-1):
-        if all_keys[i] not in data:
-            data[all_keys[i]] = OrderedDict()
-        else:
-            data = data[all_keys[i]]
 
     rotations = cp.get_rotations(last_ge_pulses=last_ge_pulses)
     ordered_cal_states = []
@@ -499,11 +461,11 @@ def rotate_1d_array(data_dict, keys_in=None, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    help_func_mod.add_param(all_keys[-1], rotated_data, data)
+    help_func_mod.add_param(keys_out[0], rotated_data, data_dict)
     return data_dict
 
 
-def threshold_data(data_dict, threshold_list, keys_in=None, **params):
+def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
     """
     Thresholds the data in data_dict specified by keys_in according to the
     threshold_mapping and the threshold values in threshold_list.
@@ -518,10 +480,12 @@ def threshold_data(data_dict, threshold_list, keys_in=None, **params):
     :param threshold_list: list of values around which to threshold each
         data array in corresponding to keys_in.
     :param params: keyword arguments.:
-        threshold_mapping (dict): dict of the form {idx: state_label}.
-        Ex: {0: 'e', 1: 'g', 2: 'f', 3: 'g'}. Default value if
-        len(threshold_list) == 1 is {0: 'g', 1: 'e'}. Else, None and a
-        ValueError will be raise.
+        threshold_map (dict): dict of the form {idx: state_label}.
+            Ex: {0: 'e', 1: 'g', 2: 'f', 3: 'g'}. Default value if
+            len(threshold_list) == 1 is {0: 'g', 1: 'e'}. Else, None and a
+            ValueError will be raise.
+        !!! IMPORTANT: quadrants 1 and 2 are reversed compared to the
+        threshold_map we save in qubit preparation parameters !!!
 
     Assumptions:
         - len(threshold_list) == len(keys_in)
@@ -543,28 +507,44 @@ def threshold_data(data_dict, threshold_list, keys_in=None, **params):
     keys_in = list(data_to_proc_dict)
     threshold_map = help_func_mod.get_param('threshold_map', data_dict,
                                             raise_error=False, **params)
-    if threshold_map in None:
+    if threshold_map is None:
         if len(threshold_list) == 1:
             threshold_map = {0: 'g', 1: 'e'}
         else:
             raise ValueError(f'threshold_map was not found in either '
                              f'exp_metadata or input params.')
+    if keys_out is None:
+        keyo = keys_in[0] if len(keys_in) == 1 else ','.join(keys_in)
+        keys_out = [f'{keyo} {s}' for s in set(threshold_map.values())]
 
+    # generate boolean array of size (nr_data_pts_per_ch, len(keys_in).
     thresh_data_binary = np.stack(
         [data_to_proc_dict[keyi] >= th for keyi, th in
          zip(keys_in, threshold_list)], axis=1)
+
+    # convert each row of thresh_data_binary into the decimal value whose
+    # binary representation is given by the booleans in each row.
+    # thresh_data_decimal is a 1d array of size nr_data_pts_per_ch
     thresh_data_decimal = thresh_data_binary.dot(1 << np.arange(
         thresh_data_binary.shape[-1] - 1, -1, -1))
 
-    keyo_suffix = keys_in[0] if len(keys_in) == 1 else ','.join(keys_in)
-    for state in set(threshold_map.values()):
-        keyo = f'thresh_data_{keyo_suffix}_{state}'
-        help_func_mod.add_param(keyo, np.zeros(
-            len(list(data_to_proc_dict)[0])), data_dict)
-        state_idxs = [k for k,v in threshold_map.items() if v == state]
+    for k, state in enumerate(set(threshold_map.values())):
+        dd = data_dict
+        all_keys = keys_out[k].split('.')
+        for i in range(len(all_keys)-1):
+            if all_keys[i] not in dd:
+                dd[all_keys[i]] = OrderedDict()
+            dd = dd[all_keys[i]]
+        help_func_mod.add_param(all_keys[-1], np.zeros(
+            len(list(data_to_proc_dict.values())[0])), dd)
+
+        # get the decimal values corresponding to state from threshold_map.
+        state_idxs = [k for k, v in threshold_map.items() if v == state]
+
         for idx in state_idxs:
-            data_dict[keyo] = np.logical_or(
-                data_dict[keyo], thresh_data_decimal == idx).astype('int')
+            dd[all_keys[-1]] = np.logical_or(
+                dd[all_keys[-1]], thresh_data_decimal == idx).astype('int')
+
     return data_dict
 
 
@@ -572,7 +552,7 @@ def threshold_data(data_dict, threshold_list, keys_in=None, **params):
 
 class RabiAnalysis(object):
 
-    def __init__(self, data_dict, keys_in=None, **params):
+    def __init__(self, data_dict, keys_in, **params):
         """
         Does Rabi analysis. Prepares fits and plot, and extracts
         pi-pulse and pi-half pulse amplitudes.
@@ -582,7 +562,7 @@ class RabiAnalysis(object):
                     data_dict for the data to be processed
 
         Assumptions:
-            - cal_points, sweep_points, meas_obj_sweep_points_map, meas_obj_name
+            - cal_points, sweep_points, meas_obj_sweep_points_map, meas_obj_names
             exist in exp_metadata or params
             - expects a 1d sweep, ie takes sweep_points[0][
             meas_obj_sweep_points_map[mobjn]][0] as sweep points
@@ -617,8 +597,9 @@ class RabiAnalysis(object):
         return self.data_dict
 
     def process_data(self, **params):
-        self.cp, self.sp, self.meas_obj_sweep_points_map, self.mobjn = \
-            help_func_mod.get_cp_sp_spmap_measobjn(self.data_dict, **params)
+        self.cp, self.sp, self.mospm, _, self.mobjn = \
+            help_func_mod.get_cp_sp_spmap_vnmap_measobjn(
+                self.data_dict, enforce_one_meas_obj=True, **params)
         # Get from the hdf5 file any parameters specified in
         # params_dict and numeric_params.
         params_dict = {}
@@ -632,10 +613,7 @@ class RabiAnalysis(object):
                                                params_dict=params_dict,
                                                numeric_params=list(params_dict),
                                                **params)
-
-        self.physical_swpts = self.sp[0][self.meas_obj_sweep_points_map[
-            self.mobjn][0]][0]
-
+        self.physical_swpts = self.sp[0][self.mospm[self.mobjn][0]][0]
         self.reset_reps = 0
         metadata = self.data_dict['exp_metadata']
         if 'preparation_params' in metadata:
@@ -647,7 +625,7 @@ class RabiAnalysis(object):
     def prepare_fitting(self):
         fit_module.prepare_cos_fit_dict(self.data_dict,
                                         keys_in=list(self.data_to_proc_dict),
-                                        meas_obj_name=self.mobjn)
+                                        meas_obj_names=self.mobjn)
 
     def analyze_fit_results(self):
         if 'fit_dicts' in self.data_dict:
@@ -675,33 +653,34 @@ class RabiAnalysis(object):
             swpts = np.arange(len(swpts))
             plot_module.prepare_raw_data_plot_dicts(
                 self.data_dict,
-                meas_obj_name=params.pop('meas_obj_name', self.mobjn),
+                meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                 xvals=swpts, **params)
 
-            filtered_raw_keys = [k for k in self.data_dict.keys() if 'filter' in k]
+            filtered_raw_keys = [k for k in self.data_dict.keys() if
+                                 'filter' in k]
             if len(filtered_raw_keys) > 0:
                 plot_module.prepare_raw_data_plot_dicts(
                     data_dict=self.data_dict,
                     keys_in=filtered_raw_keys,
                     fig_name='raw_data_filtered',
-                    meas_obj_name=params.pop('meas_obj_name', self.mobjn),
+                    meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                     **params)
         else:
             plot_module.prepare_raw_data_plot_dicts(
                 self.data_dict,
-                meas_obj_name=params.pop('meas_obj_name', self.mobjn), **params)
+                meas_obj_names=params.pop('meas_obj_names', self.mobjn), **params)
 
         plot_dicts = OrderedDict()
         for keyi, data in self.data_to_proc_dict.items():
             base_plot_name = 'Rabi_' + self.mobjn + '_' + keyi
-            sp_name = self.meas_obj_sweep_points_map[self.mobjn][0]
+            sp_name = self.mospm[self.mobjn][0]
             # plot data
             plot_module.prepare_1d_plot_dicts(
                 data_dict=self.data_dict,
                 keys_in=[keyi],
                 fig_name=base_plot_name,
                 sp_name=sp_name,
-                meas_obj_name=params.pop('meas_obj_name', self.mobjn),
+                meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                 do_plotting=False, **params)
 
             if len(self.cp.states) != 0:
@@ -711,7 +690,7 @@ class RabiAnalysis(object):
                     keys_in=[keyi],
                     fig_name=base_plot_name,
                     sp_name=sp_name,
-                    meas_obj_name=params.pop('meas_obj_name', self.mobjn),
+                    meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                     do_plotting=False, **params)
 
             if 'fit_dicts' in self.data_dict:
@@ -983,8 +962,9 @@ class SingleQubitRBAnalysis(object):
         return self.data_dict
 
     def process_data(self, **params):
-        self.cp, self.sp, self.meas_obj_sweep_points_map, self.mobjn = \
-            help_func_mod.get_cp_sp_spmap_measobjn(self.data_dict, **params)
+        self.cp, self.sp, self.mospm, _, self.mobjn = \
+            help_func_mod.get_cp_sp_spmap_vnmap_measobjn(
+                self.data_dict, enforce_one_meas_obj=True, **params)
         # Get from the hdf5 file any parameters specified in
         # params_dict and numeric_params.
         params_dict = {}
@@ -1004,10 +984,8 @@ class SingleQubitRBAnalysis(object):
                                                numeric_params=list(params_dict),
                                                **params)
 
-        self.nr_seeds = len(self.sp[0][self.meas_obj_sweep_points_map[
-            self.mobjn][0]][0])
-        self.cliffords = self.sp[1][self.meas_obj_sweep_points_map[
-            self.mobjn][1]][0]
+        self.nr_seeds = len(self.sp[0][self.mospm[self.mobjn][0]][0])
+        self.cliffords = self.sp[1][self.mospm[self.mobjn][1]][0]
         self.conf_level = help_func_mod.get_param('conf_level', self.data_dict,
                                                   default_value=0.68, **params)
         self.gate_decomp = help_func_mod.get_param('gate_decomp', self.data_dict,
@@ -1066,7 +1044,8 @@ class SingleQubitRBAnalysis(object):
                 fit_kwargs = {'scale_covar': False}
             elif keys is not None:
                 fit_kwargs = {'scale_covar': False,
-                              'weights': 1/self.data_dict[keys]}
+                              'weights': 1/help_func_mod.get_param(
+                                  keys, self.data_dict)}
             else:
                 # Run once to get an estimate for the error per Clifford
                 fit_res = model.fit(data_fit, numCliff=self.cliffords,
@@ -1164,7 +1143,7 @@ class SingleQubitRBAnalysis(object):
             swpts_with_rst = np.arange(len(swpts_with_rst))
             plot_module.prepare_raw_data_plot_dicts(
                 self.data_dict,
-                meas_obj_name=params.pop('meas_obj_name', self.mobjn),
+                meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                 xvals=swpts_with_rst, **params)
 
             filtered_raw_keys = [k for k in self.data_dict.keys() if
@@ -1175,17 +1154,17 @@ class SingleQubitRBAnalysis(object):
                     keys_in=filtered_raw_keys,
                     fig_name='raw_data_filtered',
                     xvals=swpts,
-                    meas_obj_name=params.pop('meas_obj_name', self.mobjn),
+                    meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                     **params)
         else:
             plot_module.prepare_raw_data_plot_dicts(
-                self.data_dict, meas_obj_name=self.mobjn,
+                self.data_dict, meas_obj_names=self.mobjn,
                 xvals=np.repeat(self.cliffords, self.nr_seeds))
 
         plot_dicts = OrderedDict()
         for keyi, data in self.data_to_proc_dict.items():
             base_plot_name = 'RB_' + self.mobjn + keyi
-            sp_name = self.meas_obj_sweep_points_map[self.mobjn][1]
+            sp_name = self.mospm[self.mobjn][1]
 
             # plot data
             plot_module.prepare_1d_plot_dicts(
@@ -1193,7 +1172,7 @@ class SingleQubitRBAnalysis(object):
                 keys_in=[keyi],
                 fig_name=base_plot_name,
                 sp_name=sp_name,
-                meas_obj_name=params.pop('meas_obj_name', self.mobjn),
+                meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                 do_plotting=False, **params)
 
             if len(self.cp.states) != 0:
@@ -1203,7 +1182,7 @@ class SingleQubitRBAnalysis(object):
                     keys_in=[keyi],
                     fig_name=base_plot_name,
                     sp_name=sp_name,
-                    meas_obj_name=params.pop('meas_obj_name', self.mobjn),
+                    meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                     do_plotting=False, **params)
 
             if 'fit_dicts' in self.data_dict:

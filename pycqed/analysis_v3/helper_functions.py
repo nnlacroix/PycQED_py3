@@ -1,5 +1,6 @@
 import logging
 log = logging.getLogger(__name__)
+import re
 import os
 import h5py
 import numpy as np
@@ -76,11 +77,14 @@ def get_params_from_hdf_file(data_dict, **params):
                 elif par_name in list(data_file[group_name].keys()):
                     epd[all_keys[-1]] = read_dict_from_hdf5(
                         {}, data_file[group_name][par_name])
+
+        if all_keys[-1] not in epd:
+            log.warning(f'Parameter {file_par} was not found.')
+            epd[all_keys[-1]] = 0
         if isinstance(epd[all_keys[-1]], list) and \
                 len(epd[all_keys[-1]]) == 1:
-            if save_par not in ['value_names', 'value_units']:
-                epd[all_keys[-1]] = \
-                    epd[all_keys[-1]][0]
+            if all_keys[-1] not in ['value_names', 'value_units']:
+                epd[all_keys[-1]] = epd[all_keys[-1]][0]
 
     for par_name in extracted_params_dict:
         if par_name in numeric_params:
@@ -90,22 +94,16 @@ def get_params_from_hdf_file(data_dict, **params):
     return data_dict
 
 
-def get_data_to_process(data_dict, keys_in=None):
+def get_data_to_process(data_dict, keys_in):
     """
     Finds data to be processed in unproc_data_dict based on keys_in.
 
     :param data_dict: OrderedDict containing data to be processed
     :param keys_in: list of channel names or dictionary paths leading to
-            data to be processed. For example: measured_data.raw w0.
+            data to be processed. For example: raw w1, filtered_data.raw w0
     :return:
         data_to_proc_dict: dictionary {ch_in: data_ch_in}
     """
-    if keys_in is None:
-        if 'measured_data' in data_dict:
-            keys_in = list(data_dict['measured_data'])
-        else:
-            raise ValueError('"keys_in" were not specified.')
-
     data_to_proc_dict = OrderedDict()
     key_found = True
     for keyi in keys_in:
@@ -113,24 +111,22 @@ def get_data_to_process(data_dict, keys_in=None):
         if len(all_keys) == 1:
             try:
                 if isinstance(data_dict[all_keys[0]], dict):
-                    data_to_proc_dict.update(data_dict[all_keys[0]])
+                    data_to_proc_dict = {f'{keyi}.{k}': deepcopy(v) for k, v
+                                         in data_dict[all_keys[0]].items()}
                 else:
                     data_to_proc_dict[keyi] = data_dict[all_keys[0]]
             except KeyError:
-                try:
-                    data_to_proc_dict[keyi] = data_dict[
-                        'measured_data'][keyi]
-                except KeyError:
-                    key_found = False
+                key_found = False
         else:
             try:
-                data = deepcopy(data_dict)
+                data = data_dict
                 for k in all_keys:
                     data = data[k]
                 if isinstance(data, dict):
-                    data_to_proc_dict.update({k: data[k] for k in data})
+                    data_to_proc_dict = {f'{keyi}.{k}': deepcopy(data[k])
+                                         for k in data}
                 else:
-                    data_to_proc_dict[all_keys[-1]] = data
+                    data_to_proc_dict[keyi] = deepcopy(data)
             except KeyError:
                 key_found = False
         if not key_found:
@@ -139,16 +135,29 @@ def get_data_to_process(data_dict, keys_in=None):
 
 
 def get_param(name, data_dict, default_value=None, raise_error=False, **params):
-    value = params.get(name,
-                          data_dict.get(name,
-                                        data_dict.get('exp_metadata',
-                                                      dict()).get(name,
-                                                                  default_value)
-                                        )
-                       )
+    p = params
+    md = data_dict.get('exp_metadata', dict())
+    dd = data_dict
+    all_keys = name.split('.')
+    if len(all_keys) > 1:
+        for i in range(len(all_keys)-1):
+            if all_keys[i] not in p:
+                p[all_keys[i]] = OrderedDict()
+            if all_keys[i] not in md:
+                md[all_keys[i]] = OrderedDict()
+            if all_keys[i] not in dd:
+                dd[all_keys[i]] = OrderedDict()
+            p = p[all_keys[i]]
+            md = md[all_keys[i]]
+            dd = dd[all_keys[i]]
+    value = p.get(all_keys[-1],
+                  dd.get(all_keys[-1],
+                         md.get(all_keys[-1], default_value)
+                         )
+                  )
     if raise_error and value is None:
-        raise ValueError(f'{name} was not found in either exp_metadata or '
-                         f'input params.')
+        raise ValueError(f'{name} was not found in either data_dict, or '
+                         f'exp_metadata or input params.')
     return value
 
 
@@ -163,28 +172,39 @@ def add_param(name, value, data_dict, update=False, **params):
     :param params: keyword arguments
     :return:
     """
-    if name in data_dict:
+    dd = data_dict
+    all_keys = name.split('.')
+    if len(all_keys) > 1:
+        for i in range(len(all_keys)-1):
+            if all_keys[i] not in dd:
+                dd[all_keys[i]] = OrderedDict()
+            dd = dd[all_keys[i]]
+
+    if all_keys[-1] in dd:
         if update:
             if isinstance(value, dict):
-                data_dict[name].update(value)
+                dd[all_keys[-1]].update(value)
             else:
                 raise AttributeError(f'Value is not a dictionary, cannot update '
-                                     f'data_dict[{name}].')
+                                     f'data_dict[{all_keys[-1]}].')
 
         else:
-            raise KeyError(f'{name} already exists in data_dict.')
+            raise KeyError(f'{all_keys[-1]} already exists in data_dict.')
     else:
-        data_dict[name] = value
+        dd[all_keys[-1]] = value
 
 
-def get_cp_sp_spmap_measobjn(data_dict, **params):
+def get_cp_sp_spmap_vnmap_measobjn(data_dict, enforce_one_meas_obj=True,
+                                   **params):
     """
     Extracts cal_points, sweep_points, meas_obj_sweep_points_map and
-    meas_obj_name from experiment metadata or from params.
+    meas_obj_names from experiment metadata or from params.
     :param data_dict: OrderedDict containing experiment metadata (exp_metadata)
+    :param enforce_one_meas_obj: checks if meas_obj_names contains more than
+        one element. If True, raises an error, else returns meas_obj_names[0].
     :param params: keyword arguments
     :return: cal_points, sweep_points, meas_obj_sweep_points_map and
-    meas_obj_name
+    meas_obj_names
 
     Assumptions:
         - if cp or sp are strings, then it assumes they can be evaluated
@@ -197,8 +217,17 @@ def get_cp_sp_spmap_measobjn(data_dict, **params):
         sp = eval(sp)
     meas_obj_sweep_points_map = get_param('meas_obj_sweep_points_map',
                                           data_dict, raise_error=True, **params)
-    mobjn = get_param('meas_obj_name', data_dict, raise_error=True, **params)
-    return cp, sp, meas_obj_sweep_points_map, mobjn
+    meas_obj_value_names_map = get_param('meas_obj_value_names_map',
+                                          data_dict, raise_error=True, **params)
+    mobjn = get_param('meas_obj_names', data_dict, raise_error=True, **params)
+    if enforce_one_meas_obj:
+        if isinstance(mobjn, list):
+            if len(mobjn) > 1:
+                raise ValueError(f'This node expects one measurement object, '
+                                 f'{len(mobjn)} were given.')
+            else:
+                mobjn = mobjn[0]
+    return cp, sp, meas_obj_sweep_points_map, meas_obj_value_names_map, mobjn
 
 
 def get_qb_channel_map_from_file(data_dict, data_keys, **params):
@@ -313,3 +342,36 @@ def get_latex_prob_label(prob_label):
         return r'$|f\rangle$ state population'
     else:
         return prob_label
+
+
+def flatten_list_func(lst):
+    if all([isinstance(e, list) for e in lst]):
+        return [e for l1 in lst for e in l1]
+    elif any([isinstance(e, list) for e in lst]):
+        l = []
+        for e in lst:
+            if isinstance(e, list):
+                l.extend(e)
+            else:
+                l.append(e)
+        return l
+    else:
+        return lst
+
+
+def get_sublst_with_all_strings_of_list(lst_to_search, lst_to_match):
+    """
+    Finds all string elements in lst_to_search that contain the
+    string elements of lst_to_match.
+    :param lst_to_search: list of strings to search
+    :param lst_to_match: list of strings to match
+    :return: list of strings from lst_to_search that contain all string
+    elements in lst_to_match
+    """
+    lst_w_matches = []
+    for etm in lst_to_match:
+        for ets in lst_to_search:
+            r = re.search(etm, ets)
+            if r is not None:
+                lst_w_matches += [ets]
+    return list(set(lst_w_matches))
