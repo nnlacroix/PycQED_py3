@@ -95,7 +95,7 @@ def prepare_cal_states_plot_dicts(data_dict, fig_name=None,
         plot_name_suffix (str, default: ''): suffix to be added to all the
             plot names in this function
         title_suffix (str, default: ''): suffix to be added to the figure
-            title, which is by default meas_obj_name
+            title, which is by default meas_obj_names
         ncols (int, default: 2 if len(data_to_proc_dict) > 2 else 1):
             number of subplots along x
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
@@ -106,10 +106,10 @@ def prepare_cal_states_plot_dicts(data_dict, fig_name=None,
         - if len(keys_in) > 1, this function will plot the data corresponding to
         each key_in on a separate subplot. To plot on same axis,
         set ncols=1, nrows=1.
-        - cal_points, sweep_points, meas_obj_name exist in
+        - cal_points, sweep_points, meas_obj_names exist in
         exp_metadata or params
         - expects 1d arrays
-        - meas_obj_name is defined in cal_points
+        - meas_obj_names is defined in cal_points
     """
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
     cp, sp, mospm, _, mobjn = \
@@ -129,7 +129,12 @@ def prepare_cal_states_plot_dicts(data_dict, fig_name=None,
         fig_name += '_' + mobjn
     plot_name_suffix = params.get('plot_name_suffix', '')
     title_suffix = mobjn + params.get('title_suffix', '')
-    title = (data_dict['timestamp'] + ' ' + data_dict['measurementstring'])
+    if len(data_dict['timestamps']) > 1:
+        title = f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]} ' \
+                f'{data_dict["measurementstrings"][-1]}'
+    else:
+        title = f'{data_dict["timestamps"][-1]} ' \
+                f'{data_dict["measurementstrings"][-1]}'
     if title_suffix is not None:
         title += '\n' + title_suffix
 
@@ -202,10 +207,10 @@ def prepare_cal_states_plot_dicts(data_dict, fig_name=None,
 
             plot_names_cal += [plot_dict_name_cal, plot_dict_name_cal + '_line']
 
-    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update=True)
+    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_names_cal, **params)
-
+    return plot_dicts
 
 def prepare_1d_plot_dicts(data_dict, fig_name, keys_in, **params):
     """
@@ -228,7 +233,7 @@ def prepare_1d_plot_dicts(data_dict, fig_name, keys_in, **params):
         plot_name_suffix (str, default: ''): suffix to be added to all the
             plot names in this function
         title_suffix (str, default: ''): suffix to be added to the figure
-            title, which is by default meas_obj_name
+            title, which is by default meas_obj_names
         ncols (int, default: 2 if len(data_to_proc_dict) > 2 else 1):
             number of subplots along x
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
@@ -240,10 +245,10 @@ def prepare_1d_plot_dicts(data_dict, fig_name, keys_in, **params):
         - if len(keys_in) > 1, this function will plot the data corresponding to
         each key_in on a separate subplot. To plot on same axis,
         set ncols=1, nrows=1.
-        - cal_points, sweep_points, meas_obj_name exist in
+        - cal_points, sweep_points, meas_obj_names exist in
         exp_metadata or params
         - expects 1d arrays
-        - meas_obj_name is defined in cal_points
+        - meas_obj_names is defined in cal_points
     """
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict,
                                                           keys_in=keys_in)
@@ -258,7 +263,12 @@ def prepare_1d_plot_dicts(data_dict, fig_name, keys_in, **params):
         fig_name += '_' + mobjn
     plot_name_suffix = params.get('plot_name_suffix', '')
     title_suffix = mobjn + params.get('title_suffix', '')
-    title = (data_dict['timestamp'] + ' ' + data_dict['measurementstring'])
+    if len(data_dict['timestamps']) > 1:
+        title = f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]} ' \
+                f'{data_dict["measurementstrings"][-1]}'
+    else:
+        title = f'{data_dict["timestamps"][-1]} ' \
+                f'{data_dict["measurementstrings"][-1]}'
     if title_suffix is not None:
         title += '\n' + title_suffix
 
@@ -315,9 +325,10 @@ def prepare_1d_plot_dicts(data_dict, fig_name, keys_in, **params):
             'legend_pos': 'center left'}
         plot_dict_names += [plot_dict_name]
 
-    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update=True)
+    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
+    return plot_dicts
 
 
 def prepare_raw_data_plot_dicts(data_dict, keys_in=None, fig_name=None,
@@ -375,7 +386,12 @@ def prepare_raw_data_plot_dicts(data_dict, keys_in=None, fig_name=None,
     if mobjn not in fig_name:
         fig_name += '_' + mobjn
     title_suffix = mobjn + params.get('title_suffix', '')
-    title = (data_dict['timestamp'] + ' ' + data_dict['measurementstring'])
+    if len(data_dict['timestamps']) > 1:
+        title = f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]} ' \
+                f'{data_dict["measurementstrings"][-1]}'
+    else:
+        title = f'{data_dict["timestamps"][-1]} ' \
+                f'{data_dict["measurementstrings"][-1]}'
     if title_suffix is not None:
         title += '\n' + title_suffix
 
@@ -430,10 +446,10 @@ def prepare_raw_data_plot_dicts(data_dict, keys_in=None, fig_name=None,
             'legend_pos': 'center left'}
         plot_dict_names += [plot_dict_name]
 
-    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update=True)
+    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
-
+    return plot_dicts
 
 ## Plotting functions ##
 

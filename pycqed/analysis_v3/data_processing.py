@@ -52,7 +52,8 @@ def filter_data(data_dict, keys_in, keys_out=None, **params):
         data_filter_func = eval(data_filter_func)
     for keyo, keyi in zip(keys_out, list(data_to_proc_dict)):
         help_func_mod.add_param(
-            keyo, data_filter_func(data_to_proc_dict[keyi]), data_dict)
+            keyo, data_filter_func(data_to_proc_dict[keyi]), data_dict,
+            update_key=params.get('update_key', False))
     return data_dict
 
 
@@ -84,22 +85,22 @@ def get_std_deviation(data_dict, keys_in, keys_out=None, **params):
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
     if keys_out is None:
         keys_out = [k + ' std' for k in keys_in]
-    num_bins = help_func_mod.get_param('num_bins', data_dict, **params)
-    if num_bins is None:
-        raise ValueError('num_bins is not specified.')
+    shape = help_func_mod.get_param('shape', data_dict, raise_error=True,
+                                    **params)
+    averaging_axis = help_func_mod.get_param('averaging_axis', data_dict,
+                                             default_value=-1, **params)
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
     for k, keyi in enumerate(data_to_proc_dict):
-        if len(data_to_proc_dict[keyi]) % num_bins != 0:
-            raise ValueError(f'{num_bins} does not exactly divide '
+        if len(data_to_proc_dict[keyi]) % shape[0] != 0:
+            raise ValueError(f'{shape[0]} does not exactly divide '
                              f'data from ch {keyi} with length '
                              f'{len(data_to_proc_dict[keyi])}.')
-        averages = len(data_to_proc_dict[keyi]) // num_bins
         help_func_mod.add_param(
             keys_out[k], np.std(np.reshape(
-                data_to_proc_dict[keyi], (averages, num_bins)), axis=0),
-            data_dict)
+                data_to_proc_dict[keyi], shape), axis=averaging_axis),
+            data_dict, update_key=params.get('update_key', False))
     return data_dict
 
 
@@ -236,7 +237,8 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                 else:
                     mask[idx] = val
             preselected_data = data_to_proc_dict[keyi][mask]
-            help_func_mod.add_param(keys_out[i], preselected_data, data_dict)
+            help_func_mod.add_param(keys_out[i], preselected_data, data_dict,
+                                    update_key=params.get('update_key', False))
     else:
         for i, keyo in enumerate(keys_out):
             # Check if the entry in classified_data is an array or a string
@@ -258,7 +260,8 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                     mask[idx] = False
                 else:
                     mask[idx] = val
-            help_func_mod.add_param(keyo, classif_data[mask], data_dict)
+            help_func_mod.add_param(keyo, classif_data[mask], data_dict,
+                                    update_key=params.get('update_key', False))
     return data_dict
 
 
@@ -284,22 +287,22 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
     if keys_out is None:
         keys_out = [k + ' averaged' for k in keys_in]
-    num_bins = help_func_mod.get_param('num_bins', data_dict, **params)
-    if num_bins is None:
-        raise ValueError('num_bins is not specified.')
+    shape = help_func_mod.get_param('shape', data_dict, raise_error=True,
+                                    **params)
+    averaging_axis = help_func_mod.get_param('averaging_axis', data_dict,
+                                             default_value=-1, **params)
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
     for k, keyi in enumerate(data_to_proc_dict):
-        if len(data_to_proc_dict[keyi]) % num_bins != 0:
-            raise ValueError(f'{num_bins} does not exactly divide '
+        if len(data_to_proc_dict[keyi]) % shape[0] != 0:
+            raise ValueError(f'{shape[0]} does not exactly divide '
                              f'data from ch {keyi} with length '
                              f'{len(data_to_proc_dict[keyi])}.')
-        averages = len(data_to_proc_dict[keyi]) // num_bins
         help_func_mod.add_param(
             keys_out[k], np.mean(np.reshape(
-                data_to_proc_dict[keyi], (num_bins, averages)), axis=-1),
-            data_dict)
+                data_to_proc_dict[keyi], shape), axis=averaging_axis),
+            data_dict, update_key=params.get('update_key', False))
     return data_dict
 
 
@@ -334,7 +337,8 @@ def arbitrary_mapping(data_dict, keys_in, keys_out, **params):
 
     for k, (keyi, keyo) in enumerate(zip(data_to_proc_dict, keys_out)):
         help_func_mod.add_param(
-            keyo, mapping(data_to_proc_dict[keyi], **mapping_kwargs), data_dict)
+            keyo, mapping(data_to_proc_dict[keyi], **mapping_kwargs),
+            data_dict, update_key=params.get('update_key', False))
     return data_dict
 
 
@@ -398,7 +402,8 @@ def rotate_iq(data_dict, keys_in, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    help_func_mod.add_param(keys_out[0], rotated_data, data_dict)
+    help_func_mod.add_param(keys_out[0], rotated_data, data_dict,
+                            update_key=params.get('update_key', False))
     return data_dict
 
 
@@ -461,7 +466,8 @@ def rotate_1d_array(data_dict, keys_in, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    help_func_mod.add_param(keys_out[0], rotated_data, data_dict)
+    help_func_mod.add_param(keys_out[0], rotated_data, data_dict,
+                            update_key=params.get('update_key', False))
     return data_dict
 
 
@@ -536,7 +542,8 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
                 dd[all_keys[i]] = OrderedDict()
             dd = dd[all_keys[i]]
         help_func_mod.add_param(all_keys[-1], np.zeros(
-            len(list(data_to_proc_dict.values())[0])), dd)
+            len(list(data_to_proc_dict.values())[0])), dd,
+                                update_key=params.get('update_key', False))
 
         # get the decimal values corresponding to state from threshold_map.
         state_idxs = [k for k, v in threshold_map.items() if v == state]
@@ -639,7 +646,7 @@ class RabiAnalysis(object):
                 fit_res=fit_res, sweep_points=self.physical_swpts)
 
         help_func_mod.add_param('analysis_params_dict', rabi_amplitudes,
-                                self.data_dict, update=True)
+                                self.data_dict, update_key=True)
 
     def prepare_plots(self, **params):
         # prepare raw data plot
@@ -801,7 +808,7 @@ class RabiAnalysis(object):
                         'text_string': textstr}
 
         help_func_mod.add_param('plot_dicts', plot_dicts,
-                                self.data_dict, update=True)
+                                self.data_dict, update_key=True)
 
     def get_amplitudes(self, fit_res, sweep_points):
         # Extract the best fitted frequency and phase.
@@ -955,7 +962,7 @@ class SingleQubitRBAnalysis(object):
                 self.prepare_plots(**params)
             if do_plotting:
                 getattr(plot_module, 'plot')(
-                    self.data_dict, keys_in=list(self.data_dict['plot_dicts']),
+                    self.data_dict, keys_in=list(self.plot_dicts),
                     **params)
 
     def __call__(self, *args, **kwargs):
@@ -985,6 +992,8 @@ class SingleQubitRBAnalysis(object):
                                                **params)
 
         self.nr_seeds = len(self.sp[0][self.mospm[self.mobjn][0]][0])
+        if len(self.data_dict['timestamps']) > 1:
+            self.nr_seeds *= len(self.data_dict['timestamps'])
         self.cliffords = self.sp[1][self.mospm[self.mobjn][1]][0]
         self.conf_level = help_func_mod.get_param('conf_level', self.data_dict,
                                                   default_value=0.68, **params)
@@ -1063,7 +1072,8 @@ class SingleQubitRBAnalysis(object):
                     conf_level=self.conf_level,
                     epsilon_guess=epsilon_guess, d=2)
 
-                help_func_mod.add_param(keys, epsilon, self.data_dict)
+                help_func_mod.add_param(keys, epsilon, self.data_dict,
+                                        update_key=params.get('update_key', False))
                 # Run fit again with scale_covar=False, and weights = 1/epsilon
                 # if an entry in epsilon_sqrd is 0, replace it with half the
                 # minimum value in the epsilon_sqrd array
@@ -1073,7 +1083,7 @@ class SingleQubitRBAnalysis(object):
             fit_dicts[key]['fit_kwargs'] = fit_kwargs
 
         help_func_mod.add_param('fit_dicts', fit_dicts,
-                                self.data_dict, update=True)
+                                self.data_dict, update_key=True)
 
     def analyze_fit_results(self):
         if 'fit_dicts' in self.data_dict:
@@ -1086,7 +1096,7 @@ class SingleQubitRBAnalysis(object):
             rb_fit_res[self.mobjn+keyi] = fit_res.params
 
         help_func_mod.add_param(
-            'analysis_params_dict', rb_fit_res, self.data_dict, update=True)
+            'analysis_params_dict', rb_fit_res, self.data_dict, update_key=True)
 
     @staticmethod
     def calculate_confidence_intervals(
@@ -1132,64 +1142,69 @@ class SingleQubitRBAnalysis(object):
         return np.asarray(epsilon)
 
     def prepare_plots(self, **params):
+        self.plot_dicts = OrderedDict()
         # prepare raw data plot
-        if self.reset_reps != 0:
-            swpts = deepcopy(np.repeat(self.cliffords, self.nr_seeds))
-            if len(self.cp.states) != 0:
-                swpts = np.concatenate([
-                    swpts, help_func_mod.get_cal_sweep_points(
-                        swpts, self.cp, self.mobjn)])
-            swpts_with_rst = np.repeat(swpts, self.reset_reps+1)
-            swpts_with_rst = np.arange(len(swpts_with_rst))
-            plot_module.prepare_raw_data_plot_dicts(
-                self.data_dict,
-                meas_obj_names=params.pop('meas_obj_names', self.mobjn),
-                xvals=swpts_with_rst, **params)
-
-            filtered_raw_keys = [k for k in self.data_dict.keys() if
-                                 'filter' in k]
-            if len(filtered_raw_keys) > 0:
-                plot_module.prepare_raw_data_plot_dicts(
-                    data_dict=self.data_dict,
-                    keys_in=filtered_raw_keys,
-                    fig_name='raw_data_filtered',
-                    xvals=swpts,
+        if params.get('prepare_raw_plot', len(self.data_dict['timestamps'])==1):
+            if self.reset_reps != 0:
+                swpts = deepcopy(np.repeat(self.cliffords, self.nr_seeds))
+                if len(self.cp.states) != 0:
+                    swpts = np.concatenate([
+                        swpts, help_func_mod.get_cal_sweep_points(
+                            swpts, self.cp, self.mobjn)])
+                swpts_with_rst = np.repeat(swpts, self.reset_reps+1)
+                swpts_with_rst = np.arange(len(swpts_with_rst))
+                self.plot_dicts.update(plot_module.prepare_raw_data_plot_dicts(
+                    self.data_dict,
                     meas_obj_names=params.pop('meas_obj_names', self.mobjn),
-                    **params)
-        else:
-            plot_module.prepare_raw_data_plot_dicts(
-                self.data_dict, meas_obj_names=self.mobjn,
-                xvals=np.repeat(self.cliffords, self.nr_seeds))
+                    xvals=swpts_with_rst, sp_name=self.mospm[self.mobjn][1],
+                    **params))
 
-        plot_dicts = OrderedDict()
+                filtered_raw_keys = [k for k in self.data_dict.keys() if
+                                     'filter' in k]
+                if len(filtered_raw_keys) > 0:
+                    self.plot_dicts.update(
+                        plot_module.prepare_raw_data_plot_dicts(
+                            data_dict=self.data_dict,
+                            keys_in=filtered_raw_keys,
+                            fig_name='raw_data_filtered',
+                            xvals=swpts, sp_name=self.mospm[self.mobjn][1],
+                            meas_obj_names=params.pop('meas_obj_names',
+                                                      self.mobjn),
+                            **params))
+            else:
+                self.plot_dicts.update(plot_module.prepare_raw_data_plot_dicts(
+                    self.data_dict, sp_name=self.mospm[self.mobjn][1],
+                    xvals=np.repeat(self.cliffords, self.nr_seeds)))
+
         for keyi, data in self.data_to_proc_dict.items():
             base_plot_name = 'RB_' + self.mobjn + keyi
             sp_name = self.mospm[self.mobjn][1]
 
             # plot data
-            plot_module.prepare_1d_plot_dicts(
+            self.plot_dicts.update(plot_module.prepare_1d_plot_dicts(
                 data_dict=self.data_dict,
                 keys_in=[keyi],
                 fig_name=base_plot_name,
                 sp_name=sp_name,
                 meas_obj_names=params.pop('meas_obj_names', self.mobjn),
-                do_plotting=False, **params)
+                do_plotting=False, **params))
 
             if len(self.cp.states) != 0:
                 # plot cal states
-                plot_module.prepare_cal_states_plot_dicts(
-                    data_dict=self.data_dict,
-                    keys_in=[keyi],
-                    fig_name=base_plot_name,
-                    sp_name=sp_name,
-                    meas_obj_names=params.pop('meas_obj_names', self.mobjn),
-                    do_plotting=False, **params)
+                self.plot_dicts.update(
+                    plot_module.prepare_cal_states_plot_dicts(
+                        data_dict=self.data_dict,
+                        keys_in=[keyi],
+                        fig_name=base_plot_name,
+                        sp_name=sp_name,
+                        meas_obj_names=params.pop('meas_obj_names', self.mobjn),
+                        do_plotting=False, **params))
 
             if 'fit_dicts' in self.data_dict:
                 fit_dicts = self.data_dict['fit_dicts']
                 # plot fit
                 fit_res = fit_dicts['rb_fit_' + self.mobjn + keyi]['fit_res']
-                plot_dicts['fit_' + self.mobjn + keyi] = {
+                self.plot_dicts['fit_' + self.mobjn + keyi] = {
                     'fig_id': base_plot_name,
                     'plotfn': 'plot_fit',
                     'fit_res': fit_res,
@@ -1215,7 +1230,7 @@ class SingleQubitRBAnalysis(object):
                     T1_limited_curve = fit_res.model.func(
                         clfs_fine, fit_res.best_values['Amplitude'], p_T1,
                                   fit_res.best_values['offset'])
-                    plot_dicts['t1Lim_' + self.mobjn + keyi] = {
+                    self.plot_dicts['t1Lim_' + self.mobjn + keyi] = {
                         'fig_id': base_plot_name,
                         'plotfn': 'plot_line',
                         'xvals': clfs_fine,
@@ -1228,7 +1243,7 @@ class SingleQubitRBAnalysis(object):
                 # add texbox
                 textstr, ha, hp, va, vp = self.get_textbox_str(fit_res, F_T1,
                                                                **params)
-                plot_dicts['text_msg_' + self.mobjn + keyi] = {
+                self.plot_dicts['text_msg_' + self.mobjn + keyi] = {
                     'fig_id': base_plot_name,
                     'ypos': vp,
                     'xpos': hp,
@@ -1237,8 +1252,8 @@ class SingleQubitRBAnalysis(object):
                     'plotfn': 'plot_text',
                     'text_string': textstr}
 
-        help_func_mod.add_param('plot_dicts', plot_dicts,
-                                self.data_dict, update=True)
+        help_func_mod.add_param('plot_dicts', self.plot_dicts,
+                                self.data_dict, update_key=True)
 
     @staticmethod
     def get_textbox_str(fit_res, F_T1=None, **params):

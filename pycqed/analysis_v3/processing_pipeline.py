@@ -1,6 +1,6 @@
 import logging
 log = logging.getLogger(__name__)
-
+from copy import deepcopy
 from pycqed.analysis_v3 import helper_functions as help_func_mod
 
 ##################################################
@@ -24,7 +24,7 @@ class ProcessingPipeline(list):
             self.append(params)
 
     def check_keys_mobjn(self, keys_in, keys_out=(), meas_obj_names='all',
-                         keys_out_container=''):
+                         keys_out_container='', update_key=False, **params):
         """
         Returns the correct list of keys_in, keys_out, and meas_obj_names.
         :param keys_in:
@@ -43,6 +43,11 @@ class ProcessingPipeline(list):
         :param keys_out_container:
             string. If not empty, will get appended to each key out with a '.',
             i.e. keys_out = [f'{container}.{k}' for k in keys_out]
+        :param update_key:
+            if any of keys_out already used in this pipeline, this flag
+            specifies whether to keep this key (will result in data being
+            overwritten or updated (if the data is a dict, see
+            helper_func_mod.add_param)), or create unique ones
         :return: keys_in, keys_out, meas_obj_names, mobj_keys
         """
         if meas_obj_names == 'all':
@@ -53,6 +58,11 @@ class ProcessingPipeline(list):
             mobj_keys = help_func_mod.flatten_list_func(
                 [self.movnm[mo] for mo in meas_obj_names])
 
+        prev_keys_out = []
+        for d in self:
+            if 'keys_out' in d:
+                prev_keys_out += d['keys_out']
+
         if keys_in == 'raw':
             keys_in = mobj_keys
         elif 'previous' in keys_in:
@@ -61,10 +71,6 @@ class ProcessingPipeline(list):
                 # a space
                 keys_in_split = keys_in.split(' ')
                 if len(keys_in_split) > 1:
-                    prev_keys_out = []
-                    for d in self:
-                        if 'keys_out' in d:
-                            prev_keys_out += [d['keys_out']]
                     keys_in = help_func_mod.get_sublst_with_all_strings_of_list(
                         lst_to_search=help_func_mod.flatten_list_func(
                             prev_keys_out),
@@ -86,17 +92,42 @@ class ProcessingPipeline(list):
             if len(keys_out) == 0:
                 keys_out = []
                 for keyi in keys_in:
+                    # take only what comes after '.' in keys_in and prepend
+                    # the keys_out_container
                     keyi_split = keyi.split('.')
-                    keys_out += [keyi_split[0] if len(keyi_split) == 1 else
-                                 keyi_split[1]]
-                if len(keys_out_container) != 0:
-                    keys_out = [f'{keys_out_container}.{k}' for k in keys_out]
+                    keyo = keyi_split[0] if len(keyi_split) == 1 else \
+                        keyi_split[1]
+                    if len(keys_out_container) != 0:
+                        # check if container.keyo was already used
+                        keyo_temp = deepcopy(keyo)
+                        keyo = f'{keys_out_container}.{keyo_temp}'
+                        num_previously_used = len(
+                            help_func_mod.get_sublst_with_all_strings_of_list(
+                                lst_to_search=[keyo],
+                                lst_to_match=prev_keys_out))
+                        if num_previously_used > 0 and not update_key:
+                            keys_out_container += f'{num_previously_used}'
+                            keyo = f'{keys_out_container}.{keyo_temp}'
+                    else:
+                        num_previously_used = len(
+                            help_func_mod.get_sublst_with_all_strings_of_list(
+                                lst_to_search=[keyo],
+                                lst_to_match=prev_keys_out))
+                        if num_previously_used > 0 and not update_key:
+                            raise ValueError(
+                                f'{keyo} has already been used in this '
+                                f'pipeline. Specify unique keys_out or set '
+                                f'"update_keys_out=True" if you want to '
+                                f'overwrite the data.')
+                    keys_out += [keyo]
+
         return keys_in, keys_out, meas_obj_names, mobj_keys
 
     def add_filter_data_node(self, data_filter, keys_in='previous',
                              meas_obj_names='all', keys_out=(), **params):
         keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
-            keys_in, keys_out, meas_obj_names, keys_out_container='filter_data')
+            keys_in, keys_out, meas_obj_names, keys_out_container='filter_data',
+            **params)
 
         return {'node_type': 'filter_data',
                 'keys_in': keys_in,
@@ -104,34 +135,38 @@ class ProcessingPipeline(list):
                 'data_filter': data_filter,
                 **params}
 
-    def add_average_data_node(self, num_bins, keys_in='previous',
-                              meas_obj_names='all', keys_out=(), **params):
+    def add_average_data_node(self, shape, averaging_axis=-1,
+                              keys_in='previous', meas_obj_names='all',
+                              keys_out=(), **params):
         keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
-            keys_in, keys_out, meas_obj_names, keys_out_container='average_data')
+            keys_in, keys_out, meas_obj_names,
+            keys_out_container='average_data', **params)
 
         return {'node_type': 'average_data',
                 'keys_in': keys_in,
                 'keys_out': keys_out,
-                'num_bins': num_bins,
+                'shape': shape,
+                'averaging_axis': averaging_axis,
                 **params}
 
-    def add_get_std_deviation_node(self, num_bins, keys_in='previous',
-                                   meas_obj_names='all', keys_out=(),
-                                   **params):
+    def add_get_std_deviation_node(self, shape, averaging_axis=-1,
+                                   keys_in='previous', meas_obj_names='all',
+                                   keys_out=(), **params):
         keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, keys_out, meas_obj_names,
-            keys_out_container='get_std_deviation')
+            keys_out_container='get_std_deviation', **params)
 
         return {'node_type': 'get_std_deviation',
                 'keys_in': keys_in,
                 'keys_out': keys_out,
-                'num_bins': num_bins,
+                'shape': shape,
+                'averaging_axis': averaging_axis,
                 **params}
 
     def add_rotate_iq_node(self, keys_in='previous',
                            meas_obj_names='all', keys_out=(), **params):
         keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
-            keys_in, keys_out, meas_obj_names)
+            keys_in, keys_out, meas_obj_names, **params)
 
         if keys_out is not None:
             keys_out = ['rotate_iq.' + ','.join(keys_in)]
@@ -145,7 +180,7 @@ class ProcessingPipeline(list):
                                  meas_obj_names='all', keys_out=(), **params):
         keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, keys_out, meas_obj_names,
-            keys_out_container='rotate_1d_array')
+            keys_out_container='rotate_1d_array', **params)
 
         return {'node_type': 'rotate_1d_array',
                 'keys_in': keys_in,
@@ -157,7 +192,7 @@ class ProcessingPipeline(list):
                                 keys_in='previous', meas_obj_names='all',
                                 keys_out=(), **params):
         keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
-            keys_in, keys_out, meas_obj_names)
+            keys_in, keys_out, meas_obj_names, **params)
 
         if keys_out is not None:
             keyo = keys_in[0] if len(keys_in) == 1 else ','.join(keys_in)
@@ -177,9 +212,9 @@ class ProcessingPipeline(list):
 
     def add_prepare_1d_plot_dicts_node(
             self, keys_in='previous', meas_obj_names='all', fig_name='',
-            do_plotting=False, **params):
+            do_plotting=True, **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
-            keys_in, meas_obj_names=meas_obj_names)
+            keys_in, meas_obj_names=meas_obj_names, **params)
         return {'node_type': 'prepare_1d_plot_dicts',
                 'keys_in': keys_in,
                 'meas_obj_names': meas_obj_names,
@@ -188,10 +223,10 @@ class ProcessingPipeline(list):
                 **params}
 
     def add_prepare_raw_data_plot_dicts_node(
-            self, keys_in='previous', meas_obj_names='all', fig_name='',
-            do_plotting=False, **params):
+            self, keys_in='previous', meas_obj_names='all', fig_name=None,
+            do_plotting=True, **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
-            keys_in, meas_obj_names=meas_obj_names)
+            keys_in, meas_obj_names=meas_obj_names, **params)
         return {'node_type': 'prepare_raw_data_plot_dicts',
                 'keys_in': keys_in,
                 'meas_obj_names': meas_obj_names,
@@ -201,9 +236,9 @@ class ProcessingPipeline(list):
 
     def add_prepare_cal_states_plot_dicts_node(
             self, keys_in='previous', meas_obj_names='all', fig_name='',
-            do_plotting=False, **params):
+            do_plotting=True, **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
-            keys_in, meas_obj_names=meas_obj_names)
+            keys_in, meas_obj_names=meas_obj_names, **params)
         return {'node_type': 'prepare_cal_states_plot_dicts',
                 'keys_in': keys_in,
                 'meas_obj_names': meas_obj_names,
@@ -218,7 +253,7 @@ class ProcessingPipeline(list):
     def add_RabiAnalysis_node(self, meas_obj_names, keys_in='previous', 
                               **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
-            keys_in, meas_obj_names=meas_obj_names)
+            keys_in, meas_obj_names=meas_obj_names, **params)
         return {'node_type': 'RabiAnalysis',
                 'keys_in': keys_in,
                 'meas_obj_names': meas_obj_names,
@@ -227,7 +262,7 @@ class ProcessingPipeline(list):
     def add_SingleQubitRBAnalysis_node(self, meas_obj_names, keys_in='previous',
                                        std_keys=None, **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
-            keys_in, meas_obj_names=meas_obj_names)
+            keys_in, meas_obj_names=meas_obj_names, **params)
         std_keys, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             std_keys, meas_obj_names=meas_obj_names)
         return {'node_type': 'SingleQubitRBAnalysis',

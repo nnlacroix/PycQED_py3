@@ -36,24 +36,31 @@ def get_params_from_hdf_file(data_dict, **params):
     if params_dict is None:
         raise ValueError('params_dict was not specified.')
 
-    extracted_params_dict = OrderedDict()
-
-    folder = params.get('folder', data_dict.get('folder', None))
+    # if folder is not specified, will take the last folder in the list
+    folder = params.get('folders', data_dict.get('folders', None)[-1])
     if folder is None:
         raise ValueError('No folder was found.')
     h5mode = get_param('h5mode', data_dict, default_value='r+', **params)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, h5mode)
 
-    if 'measurementstring' in params_dict:
-        extracted_params_dict['measurementstring'] = \
-            os.path.split(folder)[1][7:]
+    if 'measurementstrings' in params_dict:
+        # assumed data_dict['measurementstrings'] is a list
+        if 'measurementstrings' in data_dict:
+            data_dict['measurementstrings'] += [os.path.split(folder)[1][7:]]
+        else:
+            data_dict['measurementstrings'] = [os.path.split(folder)[1][7:]]
     if 'measured_data' in params_dict:
-        extracted_params_dict['measured_data'] = \
-            np.array(data_file['Experimental Data']['Data']).T
+        if 'measured_data' in data_dict:
+            data_dict['measured_data'] = np.concatenate(
+                (data_dict['measured_data'],
+                 np.array(data_file['Experimental Data']['Data']).T), axis=1)
+        else:
+            data_dict['measured_data'] = np.array(
+                data_file['Experimental Data']['Data']).T
 
     for save_par, file_par in params_dict.items():
-        epd = extracted_params_dict
+        epd = data_dict
         all_keys = save_par.split('.')
         for i in range(len(all_keys)-1):
             if all_keys[i] not in epd:
@@ -81,16 +88,10 @@ def get_params_from_hdf_file(data_dict, **params):
         if all_keys[-1] not in epd:
             log.warning(f'Parameter {file_par} was not found.')
             epd[all_keys[-1]] = 0
-        if isinstance(epd[all_keys[-1]], list) and \
-                len(epd[all_keys[-1]]) == 1:
-            if all_keys[-1] not in ['value_names', 'value_units']:
-                epd[all_keys[-1]] = epd[all_keys[-1]][0]
 
-    for par_name in extracted_params_dict:
+    for par_name in data_dict:
         if par_name in numeric_params:
-            extracted_params_dict[par_name] = np.double(
-                extracted_params_dict[par_name])
-    data_dict.update(extracted_params_dict)
+            data_dict[par_name] = np.double(data_dict[par_name])
     return data_dict
 
 
@@ -161,7 +162,7 @@ def get_param(name, data_dict, default_value=None, raise_error=False, **params):
     return value
 
 
-def add_param(name, value, data_dict, update=False, **params):
+def add_param(name, value, data_dict, update_key=False, **params):
     """
     Adds a new key-value pair to the data_dict, with key = name.
     If update, it will try data_dict[name].update(value), else raises KeyError.
@@ -181,13 +182,11 @@ def add_param(name, value, data_dict, update=False, **params):
             dd = dd[all_keys[i]]
 
     if all_keys[-1] in dd:
-        if update:
+        if update_key:
             if isinstance(value, dict):
                 dd[all_keys[-1]].update(value)
             else:
-                raise AttributeError(f'Value is not a dictionary, cannot update '
-                                     f'data_dict[{all_keys[-1]}].')
-
+                dd[all_keys[-1]] = value
         else:
             raise KeyError(f'{all_keys[-1]} already exists in data_dict.')
     else:
@@ -236,14 +235,11 @@ def get_qb_channel_map_from_file(data_dict, data_keys, **params):
     if qb_names is None:
         raise ValueError('Either channel_map or qb_names must be specified.')
 
-    folder = get_param('folder', data_dict, **params)
+    folder = get_param('folders', data_dict, **params)[-1]
     if folder is None:
-        if 'folder' in data_dict:
-            folder = data_dict['folder']
-        else:
-            raise ValueError('Path to file must be saved in '
-                             'data_dict[folder] in order to extract '
-                             'channel_map.')
+        raise ValueError('Path to file must be saved in '
+                         'data_dict[folders] in order to extract '
+                         'channel_map.')
 
     if file_type == 'hdf':
         qb_channel_map = a_tools.get_qb_channel_map_from_hdf(
