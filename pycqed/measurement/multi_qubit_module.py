@@ -2354,9 +2354,8 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
 
 
 def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
-                           qubits_to_measure=None, cal_points=True,
-                           analyze=True, upload=True, n_cal_points_per_state=1,
-                           cal_states='auto', prep_params=None,
+                           qubits_to_measure=None, analyze=True, upload=True,
+                           n_cal_points_per_state=1, cal_states='auto',
                            exp_metadata=None, classified=False, update=False,
                            reset_phases_before_measurement=True,
                            basis_rot_par=None, prepend_n_cz=0):
@@ -2382,12 +2381,9 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
         qb.prepare(drive='timedomain')
         MC = qbc.instr_mc.get_instr()
 
-        if cal_points:
-            cal_states = CalibrationPoints.guess_cal_states(cal_states)
-            cp = CalibrationPoints.single_qubit(
-                qb.name, cal_states, n_per_state=n_cal_points_per_state)
-        else:
-            cp = None
+        cal_states = CalibrationPoints.guess_cal_states(cal_states)
+        cp = CalibrationPoints.single_qubit(
+            qb.name, cal_states, n_per_state=n_cal_points_per_state)
 
         prep_params = qb.preparation_params()
         seq, hard_sweep_points = \
@@ -2407,10 +2403,9 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                                  else qb.int_avg_det)
         if exp_metadata is None:
             exp_metadata = {}
-        exp_metadata.update({'use_cal_points': cal_points,
-                             'preparation_params': prep_params,
+        exp_metadata.update({'preparation_params': prep_params,
                              'cal_points': repr(cp),
-                             'rotate': cal_points,
+                             'rotate': len(cal_states) != 0 and not classified,
                              'data_to_fit': {qb.name: 'pe'},
                              'cal_states_rotations':
                                  {qb.name: {'g': 0, 'e': 1}},
@@ -2420,7 +2415,8 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
         if analyze:
             flux_pulse_amp = None
             if 'amplitude' in qbc.get_operation_dict()[cz_pulse_name]:
-                flux_pulse_amp = qbc.get_operation_dict()[cz_pulse_name]['amplitude']
+                flux_pulse_amp = qbc.get_operation_dict()[
+                    cz_pulse_name]['amplitude']
             MA = tda.CZDynamicPhaseAnalysis(qb_names=[qb.name], options_dict={
                 'flux_pulse_length': qbc.get_operation_dict()[cz_pulse_name][
                     'pulse_length'],
@@ -2923,3 +2919,17 @@ def measure_pygsti(qubits, f_LO, pygsti_gateset=None,
                 title=label, verbosity=2)
 
     return MC
+
+
+def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None):
+
+    qb_names = [qb.name for qb in qubits]
+    if sweep_points is None:
+        if amps is None:
+            raise ValueError('Both "amps" and "sweep_points" cannot be None.')
+        else:
+            sweep_points = SweepPoints()
+            for qbn in qb_names:
+                sweep_points.add_sweep_parameter(
+                    param_name=f'amps_{qbn}', values=amps,
+                    unit='V', label='Pulse Amplitude')

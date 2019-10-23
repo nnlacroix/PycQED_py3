@@ -11,14 +11,13 @@ class SweepPoints(list):
                 param_label = param_name
             self.append({param_name: (values, unit, param_label)})
 
-    def add_sweep_parameter(self, param_name, values, unit='',
-                            param_label=None):
-        if param_label is None:
-            param_label = param_name
+    def add_sweep_parameter(self, param_name, values, unit='', label=None):
+        if label is None:
+            label = param_name
         if len(self) == 0:
-            self.append({param_name: (values, unit, param_label)})
+            self.append({param_name: (values, unit, label)})
         else:
-            self[-1].update({param_name: (values, unit, param_label)})
+            self[-1].update({param_name: (values, unit, label)})
 
     def add_sweep_dimension(self):
         self.append(dict())

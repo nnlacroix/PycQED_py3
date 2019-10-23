@@ -67,16 +67,18 @@ def rabi_seq_active_reset(amps, qb_name, operation_dict, cal_points,
                           upload=True, n=1, for_ef=False,
                           last_ge_pulse=False, prep_params=dict()):
     '''
-    Rabi sequence for a single qubit using the tektronix.
+    Rabi sequence for a single qubit.
     Args:
-        amps:            array of pulse amplitudes (V)
-        pulse_pars:      dict containing the pulse parameters
-        RO_pars:         dict containing the RO parameters
-        active_reset:    boolean flag specifying if active reset is used
-        n:               number of pulses (1 is conventional Rabi)
-        post_msmt_delay: extra wait time for resetless compatibility
-        cal_points:      whether to use calibration points or not
+        qb_name:        list of qubit names
+        operation_dict:  operation_dict for all qubit in qubit_names
+        sweep_points:    instance of SweepPoints class
+        cal_points:      instance of CalibrationPoints class
         upload:          whether to upload sequence to instrument or not
+        n:               number of pulses (1 is conventional Rabi)
+        for_ef:          whether to do rabi between ef transition
+        last_ge_pulse:   whether to use a ge pulse at the end of each segment
+            for a rabi between ef transition
+        prep_params:     qubit preparation params
     Returns:
         sequence (Sequence): sequence object
         segment_indices (list): array of range of n_segments including
@@ -124,12 +126,22 @@ def t1_active_reset(times, qb_name, operation_dict, cal_points,
                     upload=True, for_ef=False, last_ge_pulse=False,
                     prep_params=dict()):
     '''
-    T1 sequence for a single qubit using the tektronix.
-    SSB_Drag pulse is used for driving, simple modulation used for RO
-    Input pars:
-        times:       array of times to wait after the initial pi-pulse
-        pulse_pars:  dict containing the pulse parameters
-        RO_pars:     dict containing the RO parameters
+    T1 sequence for a single qubit.
+    Args:
+        qb_name:        list of qubit names
+        operation_dict:  operation_dict for all qubit in qubit_names
+        sweep_points:    instance of SweepPoints class
+        cal_points:      instance of CalibrationPoints class
+        upload:          whether to upload sequence to instrument or not
+        n:               number of pulses (1 is conventional Rabi)
+        for_ef:          whether to do T1 between ef transition
+        last_ge_pulse:   whether to use a ge pulse at the end of each segment
+            for a T1 between ef transition
+        prep_params:     qubit preparation params
+    Returns:
+        sequence (Sequence): sequence object
+        segment_indices (list): array of range of n_segments including
+            calibration_segments. To be used as sweep_points for the MC.
     '''
 
     if np.any(times>1e-3):
@@ -160,7 +172,8 @@ def t1_active_reset(times, qb_name, operation_dict, cal_points,
     pulses[delayed_pulse]['name'] = "Delayed_pulse"
 
     # vary delay of readout pulse or last ge pulse
-    swept_pulses = sweep_pulse_params(pulses, {'Delayed_pulse.pulse_delay': delays})
+    swept_pulses = sweep_pulse_params(pulses,
+                                      {'Delayed_pulse.pulse_delay': delays})
 
     # add preparation pulses
     swept_pulses_with_prep = \
@@ -537,10 +550,21 @@ def ramsey_active_reset(times, qb_name, operation_dict, cal_points, n=1,
                   artificial_detunings=0, upload=True,
                   for_ef=False, last_ge_pulse=False, prep_params=dict()):
     '''
-    Ramsey sequence for the second excited state
-    Input pars:
-        times:           array of delays (s)
-        n:               number of pulses (1 is conventional Ramsey)
+    Ramsey sequence for a single qubit.
+    Args:
+        qb_name:        list of qubit names
+        operation_dict:  operation_dict for all qubit in qubit_names
+        cal_points:      instance of CalibrationPoints class
+        artificial_detunings:   list or float. Detuning of second pi-half pulse.
+        upload:          whether to upload sequence to instrument or not
+        for_ef:          whether to do Ramsey between ef transition
+        last_ge_pulse:   whether to use a ge pulse at the end of each segment
+            for a Ramsey between ef transition
+        prep_params:     qubit preparation params
+    Returns:
+        sequence (Sequence): sequence object
+        segment_indices (list): array of range of n_segments including
+            calibration_segments. To be used as sweep_points for the MC.
     '''
     seq_name = 'Ramsey_sequence'
 
@@ -729,17 +753,20 @@ def qscale_active_reset(qscales, qb_name, operation_dict, cal_points,
     Applies X(pi/2)X(pi), X(pi/2)Y(pi), X(pi/2)Y(-pi) for each value of
     QScale factor.
 
-    Beware that the elements alternate, in order to perform these 3
-    measurements per QScale factor, the qscales sweep values must be
-    repeated 3 times. This was chosen to be more easily compatible with
-    standard detector functions and sweep pts.
-
-    Input pars:
-        qscales:             array of qscale factors
-        pulse_pars:          dict containing the DRAG pulse parameters
-        RO_pars:             dict containing the RO parameters
-        cal_points:          if True, replaces the last 3*4 segments with
-                             calibration points
+    Args:
+        qb_name:        list of qubit names
+        operation_dict:  operation_dict for all qubit in qubit_names
+        sweep_points:    instance of SweepPoints class
+        cal_points:      instance of CalibrationPoints class
+        upload:          whether to upload sequence to instrument or not
+        for_ef:          whether to calibrate the ef transition
+        last_ge_pulse:   whether to use a ge pulse at the end of each segment
+            when calibrating the ef transition
+        prep_params:     qubit preparation params
+    Returns:
+        sequence (Sequence): sequence object
+        segment_indices (list): array of range of n_segments including
+            calibration_segments. To be used as sweep_points for the MC.
     '''
     seq_name = f'QScale{"_ef" if for_ef else ""}_sequence'
 
@@ -747,7 +774,7 @@ def qscale_active_reset(qscales, qb_name, operation_dict, cal_points,
     qscale_base_ops = [['X90', 'X180'], ['X90', 'Y180'], ['X90', 'mY180']]
     final_pulses = []
 
-    for i, qscale_ops in enumerate(qscale_base_ops):
+    for qscale_ops in qscale_base_ops:
         qscale_ops = add_suffix(qscale_ops, "_ef" if for_ef else "")
         if for_ef:
             qscale_ops = ['X180'] + qscale_ops
