@@ -1340,14 +1340,16 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
             readouts for a single readout then n_readouts has to include them.
         channel_map: dictionary with qubit names as keys and channel channel
             names as values.
-        thresholds: dictionary with qubit names as keys and threshold values as
-            values.
+
     Optional options in the options_dict:
         observables: Dictionary with observable names as a key and observable
             as a value. Observable is a dictionary with name of the qubit as
-            key and boolean value indicating if it is selecting exited states.
+            key and boolean value indicating if it is selecting excited states.
             If the qubit is missing from the list of states it is averaged out.
         readout_names: used as y-axis labels for the default figure
+        thresholds: dictionary with qubit names as keys and threshold values as
+            values. If not specified, 'thresholded_shots' must be passed in.
+        thresholded_shots (dict): single shots thresholded keyed by qubit name.
     """
 
     def __init__(self, t_start: str=None, t_stop: str=None,
@@ -1362,15 +1364,32 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
 
         self.n_readouts = options_dict['n_readouts']
         self.kept_shots = 0
-        self.thresholds = options_dict['thresholds']
-        self.channel_map = options_dict['channel_map']
-        self.use_preselection = options_dict.get('use_preselection', False)
+        self.thresholds = options_dict.get('thresholds', None)
+        if self.thresholds is None and \
+            self.get_param_value('thresholded_shots') is None:
+            raise ValueError("Must provide 'thresholded_shots' in options_dict"
+                             "if no thresholds are provided")
+        self.channel_map = self.get_param_value('channel_map')
+        if self.channel_map is None:
+            assert self.get_param_value("qb_names") is not None, \
+                "qb_names should be specified in options_dict" \
+                "if the channel map is not specified"
+            value_names = self.raw_data_dict['value_names']
+            if 'w' in value_names[0]:
+                self.channel_map = a_tools.get_qb_channel_map_from_hdf(
+                    self.get_param_value('qb_names'), value_names=value_names,
+                    file_path=self.raw_data_dict['folder'])
+            else:
+                self.channel_map = {}
+                for qbn in self.get_param_value('qb_names'):
+                    self.channel_map[qbn] = value_names
         qubits = list(self.channel_map.keys())
+        self.use_preselection = options_dict.get('use_preselection', False)
 
         self.readout_names = options_dict.get('readout_names', None)
         if self.readout_names is None:
             # TODO Default values should come from the MC parameters
-            None
+            pass
 
         self.observables = options_dict.get('observables', None)
 
@@ -1411,13 +1430,15 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
     def process_data(self):
         shots_thresh = {}
         logging.info("Loading from file")
-
-        for qubit, channel in self.channel_map.items():
-            shots_cont = np.array(
-                self.raw_data_dict['measured_data'][channel])
-
-            shots_thresh[qubit] = (shots_cont > self.thresholds[qubit])
-        self.proc_data_dict['shots_thresholded'] = shots_thresh
+        if self.thresholds is not None:
+            for qubit, channel in self.channel_map.items():
+                shots_cont = np.array(
+                    self.raw_data_dict['measured_data'][channel])
+                shots_thresh[qubit] = (shots_cont > self.thresholds[qubit])
+            self.proc_data_dict['shots_thresholded'] = shots_thresh
+        else:
+            self.proc_data_dict['shots_thresholded'] = \
+                self.get_param_value('shots_thresholded')
 
         logging.info("Calculating observables")
         self.proc_data_dict['probability_table'] = self.probability_table(
