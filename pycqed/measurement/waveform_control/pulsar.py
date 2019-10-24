@@ -534,6 +534,9 @@ class HDAWG8Pulsar:
             codeword_el = set()
 
             current_segment = 'no_segment'
+
+            counter = 0
+
             for element in awg_sequence:
                 if awg_sequence[element] is None:
                     current_segment = element
@@ -578,7 +581,10 @@ class HDAWG8Pulsar:
                         ch_has_waveforms[ch2mid] |= wave[3] is not None
 
                     playback_strings += self._zi_playback_string(name=obj.name,
-                        device='hdawg', wave=wave, codeword=(nr_cw != 0))
+                        device='hdawg', wave=wave, codeword=(nr_cw != 0), 
+                        counter=counter)
+                    if nr_cw != 0:
+                        counter+=1
                 
             if not any([ch_has_waveforms[ch] 
                     for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
@@ -1290,7 +1296,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                     defined_waves.add(wc)
         return wave_definition
 
-    def _zi_playback_string(self, name, device, wave, acq=False, codeword=False):
+    def _zi_playback_string(self, name, device, wave, acq=False, codeword=False,
+                            counter=-1):
         playback_string = []
         w1, w2 = self._zi_waves_to_wavenames(wave)
         if not codeword:
@@ -1306,6 +1313,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                             [wn for wn in [w1, w2] if wn is not None])))
         
         trig_source = self.get('{}_trigger_source'.format(name))
+        if codeword and counter==0:
+            playback_string.append('waitDIOTrigger();')
         if trig_source == 'Dig1':
             playback_string.append(
                 'waitDigTrigger(1{});'.format(', 1' if device == 'uhf' else ''))
@@ -1320,6 +1329,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         
         if codeword:
             playback_string.append('playWaveDIO();')
+            playback_string.append('waitDIOTrigger();')
         else:
             if w1 is None and w2 is not None:
                 # This hack is needed due to a bug on the HDAWG. 
