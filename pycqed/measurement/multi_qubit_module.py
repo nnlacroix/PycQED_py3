@@ -3040,6 +3040,10 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
     exp_metadata.update({'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
+                         'meas_obj_sweep_points_map':
+                             sweep_points.get_sweep_points_map(qubit_names),
+                         'meas_obj_value_names_map':
+                             get_meas_obj_value_names_map(qubits, det_type),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
                          'last_ge_pulses': [last_ge_pulse],
@@ -3145,6 +3149,10 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
     exp_metadata.update({'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
+                         'meas_obj_sweep_points_map':
+                             sweep_points.get_sweep_points_map(qubit_names),
+                         'meas_obj_value_names_map':
+                             get_meas_obj_value_names_map(qubits, det_type),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
                          'last_ge_pulses': [last_ge_pulse],
@@ -3255,6 +3263,10 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
     exp_metadata.update({'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
+                         'meas_obj_sweep_points_map':
+                             sweep_points.get_sweep_points_map(qubit_names),
+                         'meas_obj_value_names_map':
+                             get_meas_obj_value_names_map(qubits, det_type),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
                          'last_ge_pulses': [last_ge_pulse],
@@ -3355,6 +3367,10 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
     exp_metadata.update({'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
+                         'meas_obj_sweep_points_map':
+                             sweep_points.get_sweep_points_map(qubit_names),
+                         'meas_obj_value_names_map':
+                             get_meas_obj_value_names_map(qubits, det_type),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
                          'last_ge_pulses': [last_ge_pulse],
@@ -3458,6 +3474,10 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
     exp_metadata.update({'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
+                         'meas_obj_sweep_points_map':
+                             sweep_points.get_sweep_points_map(qubit_names),
+                         'meas_obj_value_names_map':
+                             get_meas_obj_value_names_map(qubits, det_type),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
                          'last_ge_pulses': [last_ge_pulse],
