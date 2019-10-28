@@ -882,8 +882,8 @@ def measure_two_qubit_randomized_benchmarking(
         character_rb=False, net_clifford=0,
         clifford_decomposition_name='HZ', interleaved_gate=None,
         n_cal_points_per_state=2, cal_states=tuple(),
-        label=None, prep_params=None, upload=True, analyze_RB=True,
-        classified=True, correlated=False, thresholded=True, averaged=True):
+        det_type='int_avg_classif_det', label=None, prep_params=None,
+        upload=True, analyze=True, **kw):
 
     qb1n = qb1.name
     qb2n = qb2.name
@@ -931,14 +931,9 @@ def measure_two_qubit_randomized_benchmarking(
     MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
         hard_sweep_func, sequences, 'Nr. Seeds', ''))
     MC.set_sweep_points_2D(soft_sweep_points)
-    det_get_values_kws = {'classified': classified,
-                          'correlated': correlated,
-                          'thresholded': thresholded,
-                          'averaged': averaged}
-    det_type = 'int_avg_classif_det' if classified else 'dig_corr_det'
-    det_func = get_multiplexed_readout_detector_functions(
-        qubits, nr_averages=max(qb.acq_averages() for qb in qubits),
-        det_get_values_kws=det_get_values_kws)[det_type]
+
+    det_func = get_multiplexed_readout_detector_function(
+        qubits, det_type=det_type, **kw)
     MC.set_detector_function(det_func)
 
     # create sweep points
@@ -947,10 +942,14 @@ def measure_two_qubit_randomized_benchmarking(
     sp.add_sweep_parameter('cliffords', cliffords, '',
                            'Number of applied Cliffords, $m$')
 
-    qb_names = [qb1n, qb2n] + (['corr'] if (classified and correlated) else [])
+    classified = kw.get('classified', True)
+    correlated = kw.get('correlated', True)
+    qb_names = [qb1n, qb2n] + (['corr'] if (
+            det_type == 'int_avg_classif_det' and classified and correlated)
+                               else [])
     # create analysis pipeline object
     meas_obj_value_names_map = get_meas_obj_value_names_map(qubits, det_type)
-    if classified and correlated:
+    if det_type == 'int_avg_classif_det' and classified and correlated:
         # FIXME: do the proper thing (SEPT)
         meas_obj_value_names_map['corr'] = ['correlation ' + qb1.instr_uhf()]
     pp = ProcessingPipeline()
@@ -976,7 +975,7 @@ def measure_two_qubit_randomized_benchmarking(
                     'processing_pipe': pp}
     MC.run_2D(name=label, exp_metadata=exp_metadata)
 
-    if analyze_RB:
+    if analyze:
         pla.PipelineDataAnalysis()
 
 
