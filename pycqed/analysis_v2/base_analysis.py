@@ -237,7 +237,6 @@ class BaseDataAnalysis(object):
 
     def get_data_from_timestamp_list(self):
         raw_data_dict = []
-        print(self.timestamps)
         for timestamp in self.timestamps:
             raw_data_dict_ts = OrderedDict([(param, []) for param in
                                            self.params_dict])
@@ -303,7 +302,8 @@ class BaseDataAnalysis(object):
             sweep_points = measured_data[:-len(value_names)]
             if sweep_points.shape[0] > 1:
                 raw_data_dict['hard_sweep_points'] = np.unique(sweep_points[0])
-                raw_data_dict['soft_sweep_points'] = np.unique(sweep_points[1:])
+                raw_data_dict['soft_sweep_points'] = np.unique(sweep_points[1:],
+                                                               axis=1)
             else:
                 raw_data_dict['hard_sweep_points'] = np.unique(sweep_points[0])
 

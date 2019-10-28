@@ -23,6 +23,15 @@ class SweepPoints(list):
         self.append(dict())
 
     def get_sweep_points_map(self, keys_list):
+        """
+        Assumes the order of params in each sweep dimension corresponds to
+        the order of keys in keys_list
+
+        :param keys_list: list of strings to be used as keys in the returned
+            dictionary
+        :return: {keys[k]: list(d)[k] for d in self for k in keys_list}
+        """
+
         sweep_points_map = OrderedDict()
         if len(keys_list) != len(self[0]):
             raise ValueError('The number of keys and number of sweep parameters'
