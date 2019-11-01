@@ -267,22 +267,20 @@ def process_data(data_dict, processing_pipe):
 def add_measured_data(raw_data_dict):
     if 'measured_data' in raw_data_dict and \
             'value_names' in raw_data_dict['exp_metadata']:
+        value_names = raw_data_dict['exp_metadata']['value_names']
         measured_data = raw_data_dict.pop('measured_data')
-        data = measured_data[-len(raw_data_dict[
-                                      'exp_metadata']['value_names']):]
-        if data.shape[0] != len(raw_data_dict[
-                                    'exp_metadata']['value_names']):
+        data = measured_data[-len(value_names):]
+        if data.shape[0] != len(value_names):
             raise ValueError('Shape mismatch between data and ro channels.')
 
-        TD = help_func_mod.get_param('TwoD', raw_data_dict,
-                                     default_value=False)
-        for i, ro_ch in enumerate(raw_data_dict[
-                                      'exp_metadata']['value_names']):
-            if 'soft_sweep_points' in raw_data_dict and TD:
-                pass
-                # hsl = len(sweep_points[0][list(sweep_points[0])[0]][0])
-                # ssl = len(sweep_points[1][list(sweep_points[0])[0]][0])
-                # measured_data = np.reshape(data[i], (ssl, hsl)).T
+        TwoD = help_func_mod.get_param('TwoD', raw_data_dict,
+                                       default_value=False)
+        sweep_points = measured_data[:-len(value_names)]
+        for i, ro_ch in enumerate(value_names):
+            if sweep_points.shape[0] > 1 and TwoD:
+                hsl = len(np.unique(sweep_points[0]))
+                ssl = len(np.unique(sweep_points[1:], axis=1)[0])
+                measured_data = np.reshape(data[i], (ssl, hsl)).T
             else:
                 measured_data = data[i]
             raw_data_dict[ro_ch] = measured_data

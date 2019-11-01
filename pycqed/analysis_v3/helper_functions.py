@@ -37,9 +37,11 @@ def get_params_from_hdf_file(data_dict, **params):
         raise ValueError('params_dict was not specified.')
 
     # if folder is not specified, will take the last folder in the list
-    folder = params.get('folders', data_dict.get('folders', None)[-1])
+    folder = params.get('folders', data_dict.get('folders', None))
     if folder is None:
         raise ValueError('No folder was found.')
+    else:
+        folder = folder[-1]
     h5mode = get_param('h5mode', data_dict, default_value='r+', **params)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, h5mode)
@@ -193,40 +195,55 @@ def add_param(name, value, data_dict, update_key=False, **params):
         dd[all_keys[-1]] = value
 
 
-def get_cp_sp_spmap_vnmap_measobjn(data_dict, enforce_one_meas_obj=True,
-                                   **params):
+def get_measobj_properties(data_dict, props_to_extract='all', **params):
     """
     Extracts cal_points, sweep_points, meas_obj_sweep_points_map and
     meas_obj_names from experiment metadata or from params.
     :param data_dict: OrderedDict containing experiment metadata (exp_metadata)
-    :param enforce_one_meas_obj: checks if meas_obj_names contains more than
-        one element. If True, raises an error, else returns meas_obj_names[0].
     :param params: keyword arguments
+        enforce_one_meas_obj (default True): checks if meas_obj_names contains
+            more than one element. If True, raises an error, else returns
+            meas_obj_names[0].
     :return: cal_points, sweep_points, meas_obj_sweep_points_map and
     meas_obj_names
 
     Assumptions:
         - if cp or sp are strings, then it assumes they can be evaluated
     """
-    cp = get_param('cal_points', data_dict, raise_error=True, **params)
-    if isinstance(cp, str):
-        cp = eval(cp)
-    sp = get_param('sweep_points', data_dict, raise_error=True, **params)
-    if isinstance(sp, str):
-        sp = eval(sp)
-    meas_obj_sweep_points_map = get_param('meas_obj_sweep_points_map',
-                                          data_dict, raise_error=True, **params)
-    meas_obj_value_names_map = get_param('meas_obj_value_names_map',
-                                          data_dict, raise_error=True, **params)
-    mobjn = get_param('meas_obj_names', data_dict, raise_error=True, **params)
-    if enforce_one_meas_obj:
-        if isinstance(mobjn, list):
-            if len(mobjn) > 1:
-                raise ValueError(f'This node expects one measurement object, '
-                                 f'{len(mobjn)} were given.')
-            else:
-                mobjn = mobjn[0]
-    return cp, sp, meas_obj_sweep_points_map, meas_obj_value_names_map, mobjn
+    if props_to_extract == 'all':
+        props_to_extract = ['cp', 'sp', 'mospm', 'movnm', 'mobjn']
+
+    props_to_return = []
+    if 'cp' in props_to_extract:
+        cp = get_param('cal_points', data_dict, raise_error=True, **params)
+        if isinstance(cp, str):
+            cp = eval(cp)
+        props_to_return += [cp]
+    if 'sp' in props_to_extract:
+        sp = get_param('sweep_points', data_dict, raise_error=True, **params)
+        if isinstance(sp, str):
+            sp = eval(sp)
+        props_to_return += [sp]
+    if 'mospm' in props_to_extract:
+        meas_obj_sweep_points_map = get_param(
+            'meas_obj_sweep_points_map', data_dict, raise_error=True, **params)
+        props_to_return += [meas_obj_sweep_points_map]
+    if 'movnm' in props_to_extract:
+        meas_obj_value_names_map = get_param(
+            'meas_obj_value_names_map', data_dict, raise_error=True, **params)
+        props_to_return += [meas_obj_value_names_map]
+    if 'mobjn' in props_to_extract:
+        mobjn = get_param('meas_obj_names', data_dict,
+                          raise_error=True, **params)
+        if params.get('enforce_one_meas_obj', True):
+            if isinstance(mobjn, list):
+                if len(mobjn) > 1:
+                    raise ValueError(f'This node expects one measurement '
+                                     f'object, {len(mobjn)} were given.')
+                else:
+                    mobjn = mobjn[0]
+        props_to_return += [mobjn]
+    return props_to_return
 
 
 def get_qb_channel_map_from_file(data_dict, data_keys, **params):
@@ -260,6 +277,9 @@ def get_msmt_data(all_data, cal_points, qb_name):
     :param qb_name: qubit name
     :return: measured data without calibration points data
     """
+    if cal_points is None:
+        return all_data
+
     if isinstance(cal_points, str):
         cal_points = repr(cal_points)
     if qb_name in cal_points.qb_names:
@@ -282,6 +302,9 @@ def get_cal_data(all_data, cal_points, qb_name):
     :param qb_name: qubit name
     :return: Calibration points data
     """
+    if cal_points is None:
+        return np.array([])
+
     if isinstance(cal_points, str):
         cal_points = repr(cal_points)
     if qb_name in cal_points.qb_names:
@@ -303,6 +326,9 @@ def get_cal_sweep_points(sweep_points_array, cal_points, qb_name):
     :param cal_points: CalibrationPoints instance or its repr
     :param qb_name: qubit name
     """
+    if cal_points is None:
+        return np.array([])
+
     if isinstance(cal_points, str):
         cal_points = repr(cal_points)
     if qb_name in cal_points.qb_names:

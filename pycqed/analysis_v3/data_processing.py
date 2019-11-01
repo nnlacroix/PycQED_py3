@@ -97,9 +97,10 @@ def get_std_deviation(data_dict, keys_in, keys_out=None, **params):
             raise ValueError(f'{shape[0]} does not exactly divide '
                              f'data from ch {keyi} with length '
                              f'{len(data_to_proc_dict[keyi])}.')
-        help_func_mod.add_param(
-            keys_out[k], np.std(np.reshape(
-                data_to_proc_dict[keyi], shape), axis=averaging_axis),
+        data_for_std = data_to_proc_dict[keyi] if shape is None else \
+            np.reshape(data_to_proc_dict[keyi], shape)
+        help_func_mod.add_param(keys_out[k],
+                                np.std(data_for_std, axis=averaging_axis),
             data_dict, update_key=params.get('update_key', False))
     return data_dict
 
@@ -287,8 +288,7 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
     if keys_out is None:
         keys_out = [k + ' averaged' for k in keys_in]
-    shape = help_func_mod.get_param('shape', data_dict, raise_error=True,
-                                    **params)
+    shape = help_func_mod.get_param('shape', data_dict, **params)
     averaging_axis = help_func_mod.get_param('averaging_axis', data_dict,
                                              default_value=-1, **params)
     if len(keys_out) != len(data_to_proc_dict):
@@ -299,9 +299,10 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
             raise ValueError(f'{shape[0]} does not exactly divide '
                              f'data from ch {keyi} with length '
                              f'{len(data_to_proc_dict[keyi])}.')
-        help_func_mod.add_param(
-            keys_out[k], np.mean(np.reshape(
-                data_to_proc_dict[keyi], shape), axis=averaging_axis),
+        data_to_avg = data_to_proc_dict[keyi] if shape is None else \
+            np.reshape(data_to_proc_dict[keyi], shape)
+        help_func_mod.add_param(keys_out[k],
+                                np.mean(data_to_avg, axis=averaging_axis),
             data_dict, update_key=params.get('update_key', False))
     return data_dict
 
@@ -604,9 +605,10 @@ class RabiAnalysis(object):
         return self.data_dict
 
     def process_data(self, **params):
-        self.cp, self.sp, self.mospm, _, self.mobjn = \
-            help_func_mod.get_cp_sp_spmap_vnmap_measobjn(
-                self.data_dict, enforce_one_meas_obj=True, **params)
+        self.cp, self.sp, self.mospm, self.mobjn = \
+            help_func_mod.get_measobj_properties(
+                self.data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'],
+                enforce_one_meas_obj=True, **params)
         # Get from the hdf5 file any parameters specified in
         # params_dict and numeric_params.
         params_dict = {}
@@ -658,7 +660,7 @@ class RabiAnalysis(object):
                         self.physical_swpts, self.cp, self.mobjn)])
             swpts = np.repeat(swpts, self.reset_reps+1)
             swpts = np.arange(len(swpts))
-            plot_module.prepare_raw_data_plot_dicts(
+            plot_module.prepare_1d_raw_data_plot_dicts(
                 self.data_dict,
                 meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                 xvals=swpts, **params)
@@ -666,14 +668,14 @@ class RabiAnalysis(object):
             filtered_raw_keys = [k for k in self.data_dict.keys() if
                                  'filter' in k]
             if len(filtered_raw_keys) > 0:
-                plot_module.prepare_raw_data_plot_dicts(
+                plot_module.prepare_1d_raw_data_plot_dicts(
                     data_dict=self.data_dict,
                     keys_in=filtered_raw_keys,
                     fig_name='raw_data_filtered',
                     meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                     **params)
         else:
-            plot_module.prepare_raw_data_plot_dicts(
+            plot_module.prepare_1d_raw_data_plot_dicts(
                 self.data_dict,
                 meas_obj_names=params.pop('meas_obj_names', self.mobjn), **params)
 
@@ -969,9 +971,10 @@ class SingleQubitRBAnalysis(object):
         return self.data_dict
 
     def process_data(self, **params):
-        self.cp, self.sp, self.mospm, _, self.mobjn = \
-            help_func_mod.get_cp_sp_spmap_vnmap_measobjn(
-                self.data_dict, enforce_one_meas_obj=True, **params)
+        self.cp, self.sp, self.mospm, self.mobjn = \
+            help_func_mod.get_measobj_properties(
+                self.data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'],
+                enforce_one_meas_obj=True, **params)
         # Get from the hdf5 file any parameters specified in
         # params_dict and numeric_params.
         params_dict = {}
@@ -1072,8 +1075,9 @@ class SingleQubitRBAnalysis(object):
                     conf_level=self.conf_level,
                     epsilon_guess=epsilon_guess, d=2)
 
-                help_func_mod.add_param(keys, epsilon, self.data_dict,
-                                        update_key=params.get('update_key', False))
+                help_func_mod.add_param(
+                    keys, epsilon, self.data_dict,
+                    update_key=params.get('update_key', False))
                 # Run fit again with scale_covar=False, and weights = 1/epsilon
                 # if an entry in epsilon_sqrd is 0, replace it with half the
                 # minimum value in the epsilon_sqrd array
@@ -1153,7 +1157,7 @@ class SingleQubitRBAnalysis(object):
                             swpts, self.cp, self.mobjn)])
                 swpts_with_rst = np.repeat(swpts, self.reset_reps+1)
                 swpts_with_rst = np.arange(len(swpts_with_rst))
-                self.plot_dicts.update(plot_module.prepare_raw_data_plot_dicts(
+                self.plot_dicts.update(plot_module.prepare_1d_raw_data_plot_dicts(
                     self.data_dict,
                     meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                     xvals=swpts_with_rst, sp_name=self.mospm[self.mobjn][1],
@@ -1163,7 +1167,7 @@ class SingleQubitRBAnalysis(object):
                                      'filter' in k]
                 if len(filtered_raw_keys) > 0:
                     self.plot_dicts.update(
-                        plot_module.prepare_raw_data_plot_dicts(
+                        plot_module.prepare_1d_raw_data_plot_dicts(
                             data_dict=self.data_dict,
                             keys_in=filtered_raw_keys,
                             fig_name='raw_data_filtered',
@@ -1172,11 +1176,11 @@ class SingleQubitRBAnalysis(object):
                                                       self.mobjn),
                             **params))
             else:
-                self.plot_dicts.update(plot_module.prepare_raw_data_plot_dicts(
+                self.plot_dicts.update(plot_module.prepare_1d_raw_data_plot_dicts(
                     self.data_dict, sp_name=self.mospm[self.mobjn][1],
                     xvals=np.repeat(self.cliffords, self.nr_seeds)))
 
-        for keyi, data in self.data_to_proc_dict.items():
+        for keyi, keys in zip(self.data_to_proc_dict, self.std_keys):
             base_plot_name = 'RB_' + self.mobjn + keyi
             sp_name = self.mospm[self.mobjn][1]
 
@@ -1187,6 +1191,7 @@ class SingleQubitRBAnalysis(object):
                 fig_name=base_plot_name,
                 sp_name=sp_name,
                 meas_obj_names=params.pop('meas_obj_names', self.mobjn),
+                yerr=help_func_mod.get_param(keys, self.data_dict),
                 do_plotting=False, **params))
 
             if len(self.cp.states) != 0:
@@ -1209,14 +1214,15 @@ class SingleQubitRBAnalysis(object):
                     'plotfn': 'plot_fit',
                     'fit_res': fit_res,
                     'setlabel': 'fit',
-                    'color': 'r',
+                    'color': 'C0',
                     'do_legend': True,
                     'legend_ncol': 2,
                     'legend_bbox_to_anchor': (1, -0.15),
                     'legend_pos': 'upper right'}
 
-                if help_func_mod.get_param('plot_T1_lim', self.data_dict,
-                                           default_value=False, **params):
+                if help_func_mod.get_param(
+                        'plot_T1_lim', self.data_dict,
+                        default_value=False, **params) and 'pf' not in keyi:
                     # plot T1 limited curve
                     F_T1, p_T1 = self.calc_T1_limited_fidelity(
                         self.data_dict['T1_'+self.mobjn],
@@ -1235,21 +1241,28 @@ class SingleQubitRBAnalysis(object):
                         'plotfn': 'plot_line',
                         'xvals': clfs_fine,
                         'yvals': T1_limited_curve,
+                        'setlabel': 'coh-lim',
+                        'do_legend': True,
+                        'legend_ncol': 3,
+                        'legend_bbox_to_anchor': (1, -0.15),
+                        'legend_pos': 'upper right',
                         'linestyle': '--',
                         'marker': ''}
                 else:
                     F_T1 = None
 
                 # add texbox
-                textstr, ha, hp, va, vp = self.get_textbox_str(fit_res, F_T1,
-                                                               **params)
+                textstr, ha, hp, va, vp = self.get_textbox_str(
+                    fit_res, F_T1, va='top' if 'pg' in keyi else 'bottom',
+                    **params)
                 self.plot_dicts['text_msg_' + self.mobjn + keyi] = {
                     'fig_id': base_plot_name,
+                    'plotfn': 'plot_text',
                     'ypos': vp,
                     'xpos': hp,
                     'horizontalalignment': ha,
                     'verticalalignment': va,
-                    'plotfn': 'plot_text',
+                    'box_props': None,
                     'text_string': textstr}
 
         help_func_mod.add_param('plot_dicts', self.plot_dicts,
@@ -1257,12 +1270,14 @@ class SingleQubitRBAnalysis(object):
 
     @staticmethod
     def get_textbox_str(fit_res, F_T1=None, **params):
-        textstr = ('$r_{\mathrm{Cl}}$' + ' = {:.3f}% $\pm$ {:.2f}%'.format(
+        textstr = ('$r_{\mathrm{Cl}}$' + ' = {:.4f}% $\pm$ {:.3f}%'.format(
             (1-fit_res.params['fidelity_per_Clifford'].value)*100,
             (fit_res.params['fidelity_per_Clifford'].stderr)*100))
         if F_T1 is not None:
             textstr += ('\n$r_{\mathrm{coh-lim}}$  = ' +
                         '{:.3f}%'.format((1-F_T1)*100))
+        textstr += ('\n' + 'p = {:.4f}% $\pm$ {:.3f}%'.format(
+            fit_res.params['p'].value*100, fit_res.params['p'].stderr*100))
         textstr += ('\n' + r'$\langle \sigma_z \rangle _{m=0}$ = ' +
                     '{:.2f} $\pm$ {:.2f}'.format(
                         fit_res.params['Amplitude'].value +
@@ -1271,10 +1286,9 @@ class SingleQubitRBAnalysis(object):
                                 fit_res.params['Amplitude'].stderr**2)))
 
         ha = params.pop('ha', 'right')
-        hp = 0.45
+        hp = 0.975
         if ha == 'left':
             hp = 0.025
-
         va = params.pop('va', 'top')
         vp = 0.95
         if va == 'bottom':
@@ -1291,8 +1305,8 @@ class SingleQubitRBAnalysis(object):
             F_cl (float): decoherence limited fildelity
             p (float): decoherence limited depolarization parameter
         '''
-        #Np = 1.875  # Avg. number of gates per Clifford for XY decomposition
-        #Np = 0.9583  # Avg. number of gates per Clifford for HZ decomposition
+        # Np = 1.875  # Avg. number of gates per Clifford for XY decomposition
+        # Np = 0.9583  # Avg. number of gates per Clifford for HZ decomposition
         if gate_decomp == 'HZ':
             Np = 1.125
         elif gate_decomp == 'XY':

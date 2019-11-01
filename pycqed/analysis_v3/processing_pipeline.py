@@ -222,12 +222,36 @@ class ProcessingPipeline(list):
                 'do_plotting': do_plotting,
                 **params}
 
-    def add_prepare_raw_data_plot_dicts_node(
+    def add_prepare_2d_plot_dicts_node(
+            self, keys_in='previous', meas_obj_names='all', fig_name='',
+            do_plotting=True, **params):
+        keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
+            keys_in, meas_obj_names=meas_obj_names, **params)
+        return {'node_type': 'prepare_2d_plot_dicts',
+                'keys_in': keys_in,
+                'meas_obj_names': meas_obj_names,
+                'fig_name': fig_name,
+                'do_plotting': do_plotting,
+                **params}
+
+    def add_prepare_1d_raw_data_plot_dicts_node(
             self, keys_in='previous', meas_obj_names='all', fig_name=None,
             do_plotting=True, **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, meas_obj_names=meas_obj_names, **params)
-        return {'node_type': 'prepare_raw_data_plot_dicts',
+        return {'node_type': 'prepare_1d_raw_data_plot_dicts',
+                'keys_in': keys_in,
+                'meas_obj_names': meas_obj_names,
+                'fig_name': fig_name,
+                'do_plotting': do_plotting,
+                **params}
+
+    def add_prepare_2d_raw_data_plot_dicts_node(
+            self, keys_in='previous', meas_obj_names='all', fig_name=None,
+            do_plotting=True, **params):
+        keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
+            keys_in, meas_obj_names=meas_obj_names, **params)
+        return {'node_type': 'prepare_2d_raw_data_plot_dicts',
                 'keys_in': keys_in,
                 'meas_obj_names': meas_obj_names,
                 'fig_name': fig_name,

@@ -91,12 +91,12 @@ def fit_one_dict(fit_dict, **params):
 def prepare_cos_fit_dict(data_dict, keys_in=None, **params):
     fit_dicts = OrderedDict()
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
-    cp, sp, meas_obj_sweep_points_map, mobjn = \
-        help_func_mod.get_cp_sp_spmap_measobjn(data_dict, **params)
+    cp, sp, mospm, mobjn = help_func_mod.get_measobj_properties(
+        data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'], **params)
     indep_var_array = help_func_mod.get_param('indep_var_array', data_dict,
                                               raise_error=False, **params)
     if indep_var_array is None:
-        indep_var_array = sp[0][meas_obj_sweep_points_map[mobjn][0]][0]
+        indep_var_array = sp[0][mospm[mobjn][0]][0]
 
     for keyi, data in data_to_proc_dict.items():
         data_fit = help_func_mod.get_msmt_data(data, cp, mobjn)
