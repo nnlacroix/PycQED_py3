@@ -20,10 +20,11 @@ class CalibrationPoints:
         default_map = dict(g=['I '], e=["X180 "], f=['X180 ', "X180_ef "])
         self.pulse_label_map = kwargs.get("pulse_label_map", default_map)
 
-    def create_segments(self, operation_dict, pulse_modifs=dict(),
+    def create_segments(self, operation_dict, pulse_modifs=None,
                         **prep_params):
         segments = []
-
+        if pulse_modifs is None:
+            pulse_modifs = {}
         for i, seg_states in enumerate(self.states):
             pulse_list = []
             for j, qbn in enumerate(self.qb_names):
@@ -49,8 +50,15 @@ class CalibrationPoints:
                                                 [qbn for qbn in self.qb_names],
                                                 **prep_params)
 
+            seg = segment.Segment(f'calibration_{i}', pulse_list)
+
+            prep_pulse_length = seg.last_pulse_end()
+
             pulse_list += generate_mux_ro_pulse_list(self.qb_names,
-                                                     operation_dict)
+                                                     operation_dict,
+                                                     ref_point='start',
+                                                     pulse_delay=prep_pulse_length,
+                                                     ref_pulse='segment_start')
             seg = segment.Segment(f'calibration_{i}', pulse_list)
             segments.append(seg)
         return segments

@@ -150,7 +150,7 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter('RO', 'ro_nr_sigma', 'nr_sigma',
                                  initial_value=5, vals=vals.Numbers())
         self.add_pulse_parameter('RO', 'ro_phase_lock', 'phase_lock',
-                                 initial_value=True, vals=vals.Bool())                                 
+                                 initial_value=True, vals=vals.Bool())
         self.add_pulse_parameter('RO', 'ro_basis_rotation',
                                  'basis_rotation', initial_value={},
                                  docstring='Dynamic phase acquired by other '
@@ -158,6 +158,13 @@ class QuDev_transmon(Qubit):
                                            ' this qubit.',
                                  label='RO pulse basis rotation dictionary',
                                  vals=vals.Dict())
+        self.add_pulse_parameter('RO', 'ro_share',
+                                 'share', initial_value=False,
+                                 docstring='Enables shared readout pulses '
+                                            'for multiple qubits, tones with '
+                                            'identical frequencies will not be added.',
+                                 label='RO shared frequency boolean',
+                                 vals=vals.Bool())
 
         # acquisition parameters
         self.add_parameter('acq_I_channel', initial_value=0,
@@ -2883,7 +2890,7 @@ class QuDev_transmon(Qubit):
 
         return EC, EJ
 
-    def find_readout_frequency(self, freqs=None, update=False, MC=None,
+    def find_readout_frequency(self, freqs=None, state_dict=None, qubits=None, update=False, MC=None,
                                qutrit=False, **kw):
         """
         Find readout frequency at which contrast between the states of the
@@ -2923,7 +2930,17 @@ class QuDev_transmon(Qubit):
         if MC is None:
             MC = self.instr_mc.get_instr()
 
-        levels = ('g', 'e', 'f') if qutrit else ('g', 'e')
+        if state_dict is not None:
+            # state_dict should be of the form {'qb1': ('g','e','f'), 'qb2': ('g','e','f')}
+            # all combinations will be measured
+            state_tuples = [state_dict[qb.name] for qb in qubits]
+            states_list = [tuple(elem) for elem in list(itertools.product(*state_tuples))]
+            cp = CalibrationPoints([qb.name for qb in qubits], states_list, n_per_state=1)
+
+            # levels =
+        else:
+            # single qutrit implementation, all other qubits in g state
+            levels = ('g', 'e', 'f') if qutrit else ('g', 'e')
 
         self.measure_dispersive_shift(freqs, states=levels, analyze=False)
         labels = {l: '{}-spec'.format(l) + self.msmt_suffix for l in levels}

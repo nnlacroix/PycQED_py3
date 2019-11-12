@@ -104,6 +104,13 @@ class Segment:
         # called prior to generating the waveforms
         self.elements = odict()
 
+    def last_pulse_end(self):
+        """Returns the end-time of the last pulse in the segment in algorithm time"""
+        if len(self.elements) == 0:
+            self.resolve_timing()
+
+        return max([urp.pulse_obj.algorithm_time() + urp.pulse_obj.length for urp in self.unresolved_pulses])
+
     def resolve_segment(self):
         """
         Top layer method of Segment class. After having addded all pulses,

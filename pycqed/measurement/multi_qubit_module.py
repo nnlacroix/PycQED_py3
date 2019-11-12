@@ -363,59 +363,105 @@ def calculate_minimal_readout_spacing(qubits, ro_slack=10e-9, drive_pulses=0):
     return ro_spacing
 
 
-def measure_multiplexed_readout(qubits, liveplot=False,
-                                shots=5000,
-                                RO_spacing=None, preselection=True,
-                                thresholds=None, thresholded=False,
-                                analyse=True):
+def measure_multiplexed_readout(qubits, states_list=('g', 'e'), state_dict=None, specific_states=None, prepared_qubits=[],
+                                operation_dict=None, prep_params=None,
+                                analyse=True, upload=True, label=None,
+                                classified=True, correlated=False, averaged=False, thresholded=False):
     for qb in qubits:
         MC = qb.instr_mc.get_instr()
 
     for qb in qubits:
         qb.prepare(drive='timedomain')
 
-    if RO_spacing is None:
-        UHFQC = qubits[0].instr_uhf.get_instr()
-        RO_spacing = UHFQC.quex_wint_delay() * 2 / 1.8e9
-        RO_spacing += UHFQC.quex_wint_length() / 1.8e9
-        RO_spacing += 50e-9  # for slack
-        RO_spacing = np.ceil(RO_spacing * 225e6 / 3) / 225e6 * 3
+    if operation_dict==None:
+        operation_dict = get_operation_dict(qubits)
 
-    sf = awg_swf2.n_qubit_off_on(
-        [qb.get_ge_pars() for qb in qubits],
-        [qb.get_ro_pars() for qb in qubits],
-        preselection=preselection,
-        parallel_pulses=True,
-        RO_spacing=RO_spacing)
+    if prep_params is None:
+        prep_params = get_multi_qubit_prep_params([qb.preparation_params() for qb in qubits])
 
-    m = 2 ** (len(qubits))
-    if preselection:
-        m *= 2
-    if thresholded:
-        df = get_multiplexed_readout_detector_functions(qubits,
-                                                        nr_shots=shots)[
-            'dig_log_det']
+    if label==None:
+        label = 'Multiplexed_readout_{}'.format([qb.name for qb in qubits])
+
+    # generate cal points
+    if state_dict==None:
+        cp = CalibrationPoints.multi_qubit([qb.name for qb in qubits],
+                                            states_list,
+                                            n_per_state=1,
+                                            all_combinations=True)
+        states_combinations = [tuple(elem) for elem in list(itertools.product(*[states_list]*len(qubits)))]
+        state_dict_channels = None
+
+    elif specific_states is not None:
+        states_list=specific_states
+        cp = CalibrationPoints([qb.name for qb in prepared_qubits], states_list, n_per_state=1)
+        states_combinations = states_list
+        state_dict_channels = None
+        print(specific_states)
     else:
-        df = get_multiplexed_readout_detector_functions(qubits,
-                                                        nr_shots=shots)[
-            'int_log_det']
+        state_tuples = [state_dict[qb.name] for qb in qubits]
+        states_list =  [tuple(elem) for elem in list(itertools.product(*state_tuples))]
+        print(states_list)
+        cp = CalibrationPoints([qb.name for qb in qubits], states_list, n_per_state=1)
+        states_combinations = states_list
+        state_dict_channels = {str(qb.acq_I_channel())+str(qb.acq_Q_channel()) : state_dict[qb.name] for qb in qubits}
 
-    MC.live_plot_enabled(liveplot)
-    MC.soft_avg(1)
-    MC.set_sweep_function(sf)
-    MC.set_sweep_points(np.arange(m))
-    MC.set_detector_function(df)
-    MC.run('{}_multiplexed_ssro'.format('-'.join(
-        [qb.name for qb in qubits])))
+    seq, swp = mqs.n_qubit_cal_points(cp, operation_dict, prep_params, upload=False)
 
-    if analyse and thresholds is not None:
-        channel_map = {qb.name: qb.int_log_det.value_names[0]+' '+qb.instr_uhf() for qb in qubits}
-        ra.Multiplexed_Readout_Analysis(options_dict=dict(
-            n_readouts=(2 if preselection else 1) * 2 ** len(qubits),
-            thresholds=thresholds,
+    # return seq
+
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(
+        sequence=seq, upload=upload, parameter_name='multiplexed readout', unit=''))
+    MC.set_sweep_points(swp)
+
+    det_get_values_kws = {'classified': classified,
+                          'correlated': correlated,
+                          'averaged': averaged,
+                          'thresholded': thresholded,
+                          'state_dict' : state_dict_channels}
+    det_type = 'int_avg_classif_det' if classified else 'int_log_det'
+    det_func = get_multiplexed_readout_detector_functions(
+        qubits, nr_averages=max(qb.acq_averages() for qb in qubits),
+        det_get_values_kws=det_get_values_kws)[det_type]
+    MC.set_detector_function(det_func)
+
+    # return(det_func)
+
+    exp_metadata = {'sweep_points': swp,
+                    'preparation_params': prep_params,
+                    'assignment' : states_combinations}
+    MC.run(label, exp_metadata=exp_metadata)
+
+    if analyse:
+        if classified == False:
+            raise NotImplementedError(
+                'Analysis is incompatible with non-classified data and has been disabled automatically.')
+
+        if state_dict is not None: # this is quite hacky, why doesn't det.value_names already return the correct channels?
+            channel_map = {qb.name: [name+' '+qb.instr_uhf() for
+                                     name in qb.int_avg_classif_det.value_names[:len(state_dict[qb.name])]]
+                           for qb in qubits} #if classified else \
+           # {qb.name: [name + ' ' + qb.instr_uhf() for name in qb.dig_corr_det.value_names] for qb in qubits}
+        else:
+            channel_map = {qb.name: [name + ' ' + qb.instr_uhf() for name in
+                                     qb.int_avg_classif_det.value_names] for qb in
+                           qubits} #if classified else \
+               # {qb.name: [name + ' ' + qb.instr_uhf() for name in qb.dig_corr_det.value_names] for qb in qubits}
+        print(channel_map)
+        mqta = ra.MultiQutrit_SingleShot_Analysis(options_dict=dict(
             channel_map=channel_map,
-            use_preselection=preselection
-        ))
+            prep_params=prep_params,
+            n_readouts=len(swp),
+            states_prep=states_combinations,
+            states_meas=states_combinations, #[tuple(elem) for elem in list(itertools.product(*[('g','e','f')]*len(qubits)))],
+            state_dict_meas=None, # currently hard coded for qutrit readout on all qubits; add individual mapping here later
+            averaged=averaged
+        ), auto=False)
+        # print(channel_map)
+        # print(prep_params)
+        # print(states_combinations)
+        # print([tuple(elem) for elem in list(itertools.product(*[('g','e','f')]*len(qubits)))])
+        return(mqta)
+
 
 
 def measure_active_reset(qubits, shots=5000,

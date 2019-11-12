@@ -136,7 +136,7 @@ def Ramsey_with_flux_pulse_meas_seq(thetas, qb, X90_separation, verbose=False,
 
 
 def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
-                      cz_pulse_name, cal_points=None, prepend_n_cz=0,
+                      cz_pulse_name, cal_points=None,
                       upload=False, prep_params=dict()):
     '''
     Performs a Ramsey with interleaved Flux pulse
@@ -144,15 +144,13 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
                    |fluxpulse|
         |X90|  -------------------     |X90|  ---  |RO|
                                      sweep phase
-    Optional: prepend n Flux pulses before starting ramsey
     '''
 
     seq_name = 'Dynamic_phase_seq'
 
     ge_half_start = deepcopy(operation_dict['X90 ' + qb_name])
     ge_half_start['name'] = 'pi_half_start'
-    # ge_half_start['element_name'] = 'pi_half_start_el'
-    ge_half_start['element_name'] = 'pi'
+    ge_half_start['element_name'] = 'pi_half_start_el'
 
     flux_pulse = deepcopy(operation_dict[cz_pulse_name])
     flux_pulse['name'] = 'flux'
@@ -160,15 +158,11 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
 
     ge_half_end = deepcopy(operation_dict['X90 ' + qb_name])
     ge_half_end['name'] = 'pi_half_end'
-    # ge_half_end['element_name'] = 'pi_half_end_el'
-    ge_half_end['element_name'] = 'pi'
+    ge_half_end['element_name'] = 'pi_half_end_el'
 
     ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
 
-    pulse_list = [deepcopy(operation_dict[cz_pulse_name])
-                  for _ in range(prepend_n_cz)]
-
-    pulse_list += [ge_half_start, flux_pulse, ge_half_end, ro_pulse]
+    pulse_list = [ge_half_start, flux_pulse, ge_half_end, ro_pulse]
     hsl = len(list(hard_sweep_dict.values())[0]['values'])
     if 'amplitude' in flux_pulse:
         param_to_set = 'amplitude'
@@ -183,15 +177,13 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
     params.update({f'pi_half_end.{k}': v['values']
                    for k, v in hard_sweep_dict.items()})
     swept_pulses = sweep_pulse_params(pulse_list, params)
-    for k, p in enumerate(swept_pulses):
-        for prepended_cz_idx in range(prepend_n_cz):
-            fp = p[prepended_cz_idx]
-            fp['element_name'] = 'flux_el_{}'.format(k)
-        fp = p[prepend_n_cz + 1]
-        fp['element_name'] = 'flux_el_{}'.format(k)
+
     swept_pulses_with_prep = \
         [add_preparation_pulses(p, operation_dict, [qb_name], **prep_params)
          for p in swept_pulses]
+
+    from pprint import pprint
+    pprint(swept_pulses_with_prep)
     seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
 
     if cal_points is not None:
@@ -205,73 +197,57 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
     return seq, np.arange(seq.n_acq_elements())
 
 
-def Ramsey_time_with_flux_seq(qb_name, hard_sweep_dict, operation_dict,
-                            cz_pulse_name,
-                            artificial_detunings=0,
-                            cal_points=None,
-                            upload=False, prep_params=dict()):
-    '''
-    Performs a Ramsey with interleaved Flux pulse
-    Sequence
-      | ----------  fluxpulse  ---------------  |
-        |X90|  -------------------     |X90|  ---  |RO|
-                                     sweep time
-    '''
-
-    seq_name = 'Ramsey_flux_seq'
-
-    times = hard_sweep_dict['Delay']['values']
-
-    flux_pulse = deepcopy(operation_dict[cz_pulse_name])
-    flux_pulse['name'] = 'flux'
-    flux_pulse['element_name'] = 'flux_el'
-    flux_pulse['pulse_length'] = 4*np.max(times)
-    flux_pulse['pulse_delay'] = -0.5*np.max(times)
-    flux_pulse['ref_point'] = 'start'
-    flux_pulse['ref_pulse'] = 'Ramsey_x1'
-
-    print(flux_pulse)
-
-    ramsey_ops = ["X90"] * 2
-    ramsey_ops += ["RO"]
-    ramsey_ops = add_suffix(ramsey_ops, " " + qb_name)
 
 
-    # pulses
-    ramsey_pulses = [deepcopy(operation_dict[op]) for op in ramsey_ops]
+    # pulses = get_pulse_dict_from_pars(pulse_pars)
+    flux_pulse = deepcopy(operation_dict[CZ_pulse_name])
+    X90_2 = deepcopy(operation_dict['X90 ' + qb_name])
+    RO_pars = deepcopy(operation_dict['RO ' + qb_name])
+    #
+    # # putting control qb in |e> state:
+    # qbc_name = operation_dict[CZ_pulse_name]['target_qubit']
+    # X180_qbc = operation_dict['X180s ' + qbc_name]
 
-    ramsey_pulses += [flux_pulse]
+    # Used for checking dynamic phase compensation
+    # if flux_pulse['amplitude'] != 0:
+    #     flux_pulse['basis_rotation'] = {qb_name: -80.41028958782647}
 
-    # name and reference swept pulse
-    ramsey_pulses[0]["name"] = f"Ramsey_x1"
-    ramsey_pulses[1]["name"] = f"Ramsey_x2"
-    ramsey_pulses[1]['ref_point'] = 'start'
+    # for j, amp in enumerate([0, flux_pulse_amp]):
+    #     flux_pulse['amplitude'] = amp
+    #     elt_name_offset = j*len(thetas)
 
+    # flux_pulse['amplitude'] = flux_pulse_amp
+    pulse_list = [operation_dict['X90 ' + qb_name], flux_pulse]
+    for i, theta in enumerate(thetas):
+        if theta == thetas[-4]:
+            # after this point, we do not want the flux pulse
+            pulse_list = [operation_dict['X90 ' + qb_name]]
+        #     flux_pulse['amplitude'] = 0
+        #     if 'aux_channels_dict' in flux_pulse:
+        #         for ch in flux_pulse['aux_channels_dict']:
+        #             flux_pulse['aux_channels_dict'][ch] = 0
 
-    # compute dphase
-    a_d = artificial_detunings if np.ndim(artificial_detunings) == 1 \
-        else [artificial_detunings]
-    dphase = [((t - times[0]) * a_d[i % len(a_d)] * 360) % 360
-              for i, t in enumerate(times)]
-    # sweep pulses
-    params = {f'Ramsey_x2.pulse_delay': times}
-    params.update({f'Ramsey_x2.phase': dphase})
-    swept_pulses = sweep_pulse_params(ramsey_pulses, params)
-
-    swept_pulses_with_prep = \
-        [add_preparation_pulses(p, operation_dict, [qb_name], **prep_params)
-         for p in swept_pulses]
-    seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
-
-    if cal_points is not None:
-        # add calibration segments
-        seq.extend(cal_points.create_segments(operation_dict, **prep_params))
-
-    log.debug(seq)
+        if cal_points and (theta == thetas[-4] or theta == thetas[-3]):
+            el = multi_pulse_elt(i, station,
+                                 [operation_dict['I ' + qb_name],
+                                  RO_pars])
+        elif cal_points and (theta == thetas[-2] or theta == thetas[-1]):
+            el = multi_pulse_elt(i, station,
+                                 [operation_dict['X180 ' + qb_name],
+                                  RO_pars])
+        else:
+            X90_2['phase'] = theta * 180 / np.pi
+            pulse_list_complete = pulse_list + [X90_2, RO_pars]
+            el = multi_pulse_elt(i, station, pulse_list_complete)
+        el_list.append(el)
+        seq.append_element(el, trigger_wait=True)
     if upload:
-        ps.Pulsar.get_instance().program_awgs(seq)
+        station.pulsar.program_awgs(seq, *el_list, verbose=verbose)
 
-    return seq, np.arange(seq.n_acq_elements())
+    if return_seq:
+        return seq, el_list
+    else:
+        return seq_name
 
 
 def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
@@ -352,7 +328,7 @@ def fluxpulse_scope_sequence(
     seq_name = 'Fluxpulse_scope_sequence'
     ge_pulse = deepcopy(operation_dict['X180 ' + qb_name])
     ge_pulse['name'] = 'FPS_Pi'
-    ge_pulse['element_name'] = 'FPS_Pi_el'
+    # ge_pulse['element_name'] = 'FPS_Pi_el'
 
     flux_pulse = deepcopy(operation_dict[cz_pulse_name])
     flux_pulse['name'] = 'FPS_Flux'
@@ -515,12 +491,17 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
                          deepcopy(operation_dict['X90s ' + qbt_name])]
     initial_rotations[0]['name'] = 'cphase_init_pi_qbc'
     initial_rotations[1]['name'] = 'cphase_init_pihalf_qbt'
-    for rot_pulses in initial_rotations:
-        rot_pulses['element_name'] = 'cphase_initial_rots_el'
-
+    initial_rotations[1]['ref_pulse'] = "segment_start"
+    initial_rotations[0]['ref_pulse'] = "segment_start"
+    initial_rotations[1]['delay'] = 0
+    initial_rotations[0]['delay'] = 0
+    print(initial_rotations)
     flux_pulse = deepcopy(operation_dict[cz_pulse_name])
+    flux_pulse['ref_pulse'] = 'cphase_init_pihalf_qbt'
+    flux_pulse['pulse_delay'] = 0
     flux_pulse['name'] = 'cphase_flux'
-    flux_pulse['element_name'] = 'cphase_flux_el'
+    # flux_pulse['element_name'] = 'cphase_flux_el'
+    # DEBUG COMMENT: removed for flux pulse on same AWG, Michele 20190926
 
     final_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
                        deepcopy(operation_dict['X90s ' + qbt_name])]
@@ -529,8 +510,8 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
     # final_rotations = [deepcopy(operation_dict['X90 ' + qbt_name])]
     # final_rotations[0]['name'] = 'cphase_final_pihalf_qbt'
 
-    for rot_pulses in final_rotations:
-        rot_pulses['element_name'] = 'cphase_final_rots_el'
+    #for rot_pulses in final_rotations:
+    #    rot_pulses['element_name'] = 'cphase_final_rots_el'
 
     # set pulse delay of final_rotations[0] to max_flux_length
     if max_flux_length is None:
@@ -564,18 +545,17 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
         [final_rotations[0]['amplitude']*np.ones(hsl//2), np.zeros(hsl//2)])}
     params.update({f'cphase_final_pihalf_qbt.{k}': v['values']
                    for k, v in hard_sweep_dict.items()})
-
     ssl = len(list(soft_sweep_dict.values())[0]['values'])
     sequences = []
     for i in range(ssl):
-        fp_list = []
         flux_p = deepcopy(flux_pulse)
         flux_p.update({k: v['values'][i] for k, v in soft_sweep_dict.items()})
-        for j in range(num_cz_gates):
-            fp = deepcopy(flux_p)
-            fp['name'] = f'cphase_flux_{j}'
-            fp_list += [fp]
-        pulses = initial_rotations + fp_list + final_rotations + ro_pulses
+
+        pulses = initial_rotations + [flux_p] + final_rotations
+        for pulse in pulses:
+            pulse['element_name'] = 'awg_pulses'
+        pulses += ro_pulses
+
         swept_pulses = sweep_pulse_params(pulses, params)
         swept_pulses_with_prep = \
             [add_preparation_pulses(p, operation_dict, [qbc_name, qbt_name],
@@ -592,7 +572,3 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
         ps.Pulsar.get_instance().program_awgs(sequences[0])
 
     return sequences, np.arange(sequences[0].n_acq_elements()), np.arange(ssl)
-
-
-def add_suffix(operation_list, suffix):
-    return [op + suffix for op in operation_list]

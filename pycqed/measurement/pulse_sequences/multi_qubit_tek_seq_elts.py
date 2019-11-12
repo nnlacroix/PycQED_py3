@@ -94,6 +94,36 @@ def n_qubit_off_on(pulse_pars_list, RO_pars_list, return_seq=False,
         return seq_name
 
 
+def n_qubit_cal_points(cal_points, operation_dict, prep_params, upload=True, pulse_modifs=None):
+    """
+    Creates calibration point sequence for multiple qubits
+    :param cal_points: dictionnary of states to be prepared on each qubit
+    :param operation_dict:
+    :param prep_params:
+    :param upload:
+    :param pulse_modifs: dictionnary of individual modifiers for calibration pulses parameters, e.g. {'e_X180 qb3*.ref_pulse' : ['previous_pulse']}
+    :return:
+    """
+
+    seq_name = 'CalPoint_sequence_{}'.format(cal_points.qb_names)
+    seq = sequence.Sequence(seq_name)
+
+    seq.extend(cal_points.create_segments(operation_dict, pulse_modifs, **prep_params))
+
+    # reuse sequencer memory by repeating readout pattern
+    # 1. get all readout pulse names (if they are on different uhf,
+    # they will be applied to different channels)
+    ro_pulse_names = [f"RO {qbn}" for qbn in cal_points.qb_names]
+    # 2. repeat readout for each ro_pulse.
+    [seq.repeat_ro(pn, operation_dict) for pn in ro_pulse_names]
+
+    log.debug(seq)
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements())
+
+
 def two_qubit_randomized_benchmarking_seqs(
         qb1n, qb2n, operation_dict, cliffords, nr_seeds,
         max_clifford_idx=11520, cz_pulse_name=None, cal_points=None,
@@ -377,7 +407,7 @@ def n_qubit_reset(qb_names, operation_dict, prep_params=dict(), upload=True,
     # reuse sequencer memory by repeating readout pattern
     # 1. get all readout pulse names (if they are on different uhf,
     # they will be applied to different channels)
-    ro_pulse_names = [p["pulse_name"] for p in
+    ro_pulse_names = [p["name"] for p in
                       generate_mux_ro_pulse_list(qb_names, operation_dict)]
     # 2. repeat readout for each ro_pulse.
     [seq.repeat_ro(pn, operation_dict) for pn in ro_pulse_names]
@@ -1627,15 +1657,27 @@ def pygsti_seq(qb_names, pygsti_listOfExperiments, operation_dict,
 
 
 def generate_mux_ro_pulse_list(qubit_names, operation_dict, element_name='RO',
-                               ref_point='end', pulse_delay=0.0):
+                               ref_point='end', pulse_delay=0.0, ref_pulse=None):
     ro_pulses = []
+    shared_pulses = []
     for j, qb_name in enumerate(qubit_names):
         ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
-        ro_pulse['pulse_name'] = '{}_{}'.format(element_name, j)
+
+        # shared pulses between qubits will only be added once
+        # see docstring in ro_shared parameter
+        if ro_pulse['share'] == True:
+            if ro_pulse['mod_frequency'] in shared_pulses:
+                continue
+            else:
+                shared_pulses.append(ro_pulse['mod_frequency'])
+
+        ro_pulse['name'] = '{}_{}'.format(element_name, j)
         ro_pulse['element_name'] = element_name
         if j == 0:
             ro_pulse['pulse_delay'] = pulse_delay
             ro_pulse['ref_point'] = ref_point
+            if ref_pulse is not None:
+                ro_pulse['ref_pulse'] = ref_pulse
         else:
             ro_pulse['ref_point'] = 'start'
         ro_pulses.append(ro_pulse)

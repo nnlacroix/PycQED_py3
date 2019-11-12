@@ -973,12 +973,26 @@ def add_preparation_pulses(pulse_list, operation_dict, qb_names,
 
     elif preparation_type == 'preselection':
         preparation_pulses = []
+        shared_pulses = []
         for i, qbn in enumerate(qb_names):
-            preparation_pulses.append(deepcopy(operation_dict['RO ' + qbn]))
+            ro_pulse = deepcopy(operation_dict['RO ' + qbn])
+            print("preselection: pulse share for ", qbn)
+            print(ro_pulse['share'])
+            # shared pulses between qubits will only be added once
+            # see docstring in ro_shared parameter
+            if ro_pulse['share'] == True:
+                if ro_pulse['mod_frequency'] in shared_pulses:
+                    continue
+                else:
+                    shared_pulses.append(ro_pulse['mod_frequency'])
+
+            preparation_pulses.append(ro_pulse)
             preparation_pulses[-1]['ref_point'] = 'start'
             preparation_pulses[-1]['element_name'] = 'preselection_element'
         preparation_pulses[0]['ref_pulse'] = 'segment_start'
         preparation_pulses[0]['pulse_delay'] = -ro_separation
+
+        print(shared_pulses)
 
         return preparation_pulses + pulse_list
 

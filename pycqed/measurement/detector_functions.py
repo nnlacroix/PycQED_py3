@@ -1211,20 +1211,25 @@ class UHFQC_classifier_detector(UHFQC_Base):
 
         self.name = '{}_UHFQC_integration_logging_det'.format(
             result_logging_mode)
-        self.state_labels = ['pg', 'pe', 'pf']
+        self.state_dict = get_values_function_kwargs.get('state_dict', None)
         self.channels = channels
         self.correlated = get_values_function_kwargs.get('correlated', False)
 
-        # Currently doesn't work with single readout channel;
+            # Currently doesn't work with single readout channel;
         # assumes 2 channels per data point
         channel_strings = [str(ch) for ch in self.channels]
         self.channel_str_pairs = [''.join(channel_strings[2*j: 2*j+2]) for
                                   j in range(len(self.channels)//2)]
-        self.value_names = ['']*(
-                len(self.state_labels) * len(self.channel_str_pairs))
+
+        if self.state_dict is not None:
+            self.state_labels = {ch : ['p'+str(state) for state in self.state_dict[ch]] for ch in self.channel_str_pairs}
+        else:
+            self.state_labels = {ch : ['pg', 'pe', 'pf'] for ch in self.channel_str_pairs}
+
+        self.value_names = ['']*(sum([len(self.state_labels[ch]) for ch in self.channel_str_pairs]))
         idx = 0
         for ch_pair in self.channel_str_pairs:
-            for state in self.state_labels:
+            for state in self.state_labels[ch_pair]:
                 self.value_names[idx] = '{}_{} w{}'.format(UHFQC.name,
                     state, ch_pair)
                 idx += 1
@@ -1336,18 +1341,22 @@ class UHFQC_classifier_detector(UHFQC_Base):
         if classifier_params_list is None:
             raise ValueError('Please specify the classifier parameters list.')
 
-        nr_states = len(self.state_labels)
+        # nr_states = len(self.state_labels)
         if averaged:
             classified_data_length = self.nr_sweep_points
         else:
             classified_data_length = self.nr_sweep_points*self.nr_shots
         classified_data = np.zeros(
-            (nr_states*len(self.channel_str_pairs), classified_data_length))
+            (len(self.value_names), classified_data_length))
 
         clf_data_all = np.zeros((self.nr_sweep_points*self.nr_shots,
-                                nr_states*len(self.channel_str_pairs)))
+                               len(self.value_names)))
 
+        lastindex = 0
         for i in range(len(self.channel_str_pairs)):
+            # this looks a bit dangerous, how to ensure that channels will not be mixed up?
+
+            nr_states = len(self.state_labels[self.channel_str_pairs[i]])
             clf_data = a_tools.predict_gm_proba_from_clf(
                 data[2*i: 2*i+2, :].T, classifier_params_list[i])
             if thresholded:
@@ -1356,7 +1365,7 @@ class UHFQC_classifier_detector(UHFQC_Base):
                 clf_data = np.isclose(np.repeat([np.arange(nr_states)],
                                                 clf_data.shape[0], axis=0).T,
                                       np.argmax(clf_data, axis=1)).T
-            clf_data_all[:, nr_states*i: nr_states*i+nr_states] = clf_data
+            clf_data_all[:, lastindex: lastindex+nr_states] = clf_data
 
 
             if averaged:
@@ -1372,10 +1381,12 @@ class UHFQC_classifier_detector(UHFQC_Base):
             else:
                 log.info('not correcting data')
                 clf_data = clf_data.T
-            classified_data[nr_states * i: nr_states * i + nr_states, :] = \
+            classified_data[lastindex: lastindex + nr_states, :] = \
                 clf_data
+            lastindex += nr_states
 
         if correlated:
+            nr_states = len(self.state_labels[self.channel_str_pairs[0]]) # only works if all elements are qubits !
             # can only correlate corresponding probabilities on all channels;
             # it cannot correlate selected channels
             q = clf_data_all.shape[1] // nr_states
