@@ -307,38 +307,40 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
     return data_dict
 
 
-def arbitrary_mapping(data_dict, keys_in, keys_out, **params):
+def transform_data(data_dict, keys_in, keys_out, **params):
     """
-    Maps data in data_dict specified by data_keys_in using mapping callable
-    (can be any function).
+    Maps data in data_dict specified by data_keys_in using transform_func
+     callable (can be any function).
     :param data_dict: OrderedDict containing data to be processed and where
                     processed data is to be stored
-    :param data_keys_in: list of key names or dictionary keys paths in
+    :param keys_in: list of key names or dictionary keys paths in
                     data_dict for the data to be processed
-    :param data_keys_out: list of key names or dictionary keys paths in
+    :param keys_out: list of key names or dictionary keys paths in
                     data_dict for the processed data to be saved into
     :param params: keyword arguments.:
-        mapping (callable): string form of a callable or callable function
-        mapping_kwargs (dict): additional arguments to forward to
-        mapping function
+        transform_func (callable): string form of a callable or callable
+            function
+        transform_func_kwargs (dict): additional arguments to forward to
+            transform_func
 
     """
-    mapping = help_func_mod.get_param('mapping', data_dict, **params)
-    mapping_kwargs = help_func_mod.get_param('mapping_kwargs', data_dict,
-                               default_value=dict(), **params)
-    if mapping is None:
+    transform_func = help_func_mod.get_param('transform_func',
+                                             data_dict, **params)
+    tf_kwargs = help_func_mod.get_param('transform_func_kwargs', data_dict,
+                                        default_value=dict(), **params)
+    if transform_func is None:
         raise ValueError('mapping is not specified.')
-    elif isinstance(mapping, str):
-        mapping = eval(mapping)
+    elif isinstance(transform_func, str):
+        transform_func = eval(transform_func)
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
 
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('data_keys_out and data_keys_in do not have '
                          'the same length.')
 
-    for k, (keyi, keyo) in enumerate(zip(data_to_proc_dict, keys_out)):
+    for keyi, keyo in zip(data_to_proc_dict, keys_out):
         help_func_mod.add_param(
-            keyo, mapping(data_to_proc_dict[keyi], **mapping_kwargs),
+            keyo, transform_func(data_to_proc_dict[keyi], **tf_kwargs),
             data_dict, update_key=params.get('update_key', False))
     return data_dict
 
@@ -671,7 +673,7 @@ class RabiAnalysis(object):
                 plot_module.prepare_1d_raw_data_plot_dicts(
                     data_dict=self.data_dict,
                     keys_in=filtered_raw_keys,
-                    fig_name='raw_data_filtered',
+                    figure_name='raw_data_filtered',
                     meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                     **params)
         else:
@@ -687,7 +689,7 @@ class RabiAnalysis(object):
             plot_module.prepare_1d_plot_dicts(
                 data_dict=self.data_dict,
                 keys_in=[keyi],
-                fig_name=base_plot_name,
+                figure_name=base_plot_name,
                 sp_name=sp_name,
                 meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                 do_plotting=False, **params)
@@ -697,7 +699,7 @@ class RabiAnalysis(object):
                 plot_module.prepare_cal_states_plot_dicts(
                     data_dict=self.data_dict,
                     keys_in=[keyi],
-                    fig_name=base_plot_name,
+                    figure_name=base_plot_name,
                     sp_name=sp_name,
                     meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                     do_plotting=False, **params)
@@ -1042,10 +1044,16 @@ class SingleQubitRBAnalysis(object):
         guess_pars = rb_mod.make_params()
 
         for keyi, keys in zip(self.data_to_proc_dict, self.std_keys):
-            data_fit = help_func_mod.get_msmt_data(self.data_to_proc_dict[keyi],
-                                                   self.cp, self.mobjn)
-            model = deepcopy(rb_mod)
+            if 'pf' in keyi:
+                fit_module.prepare_rbleakagefit_dict(
+                    self.data_dict, [keyi], meas_obj_names=self.mobjn,
+                    indep_var_array=self.cliffords,
+                    fit_key='rbleak_fit_' + self.mobjn + keyi, **params)
+
             key = 'rb_fit_' + self.mobjn + keyi
+            data_fit = help_func_mod.get_msmt_data(
+                self.data_to_proc_dict[keyi], self.cp, self.mobjn)
+            model = deepcopy(rb_mod)
             fit_dicts[key] = {
                 'fit_fn': fit_mods.RandomizedBenchmarkingDecay,
                 'fit_xvals': {'numCliff': self.cliffords},
@@ -1062,8 +1070,8 @@ class SingleQubitRBAnalysis(object):
                 # Run once to get an estimate for the error per Clifford
                 fit_res = model.fit(data_fit, numCliff=self.cliffords,
                                     params=guess_pars)
-                # Use the found error per Clifford to standard errors for the
-                # data points fro Helsen et al. (2017)
+                # Use the found error per Clifford to standard errors for
+                # the data points fro Helsen et al. (2017)
                 epsilon_guess = help_func_mod.get_param('epsilon_guess',
                                                         self.data_dict,
                                                         default_value=0.01,
@@ -1078,9 +1086,10 @@ class SingleQubitRBAnalysis(object):
                 help_func_mod.add_param(
                     keys, epsilon, self.data_dict,
                     update_key=params.get('update_key', False))
-                # Run fit again with scale_covar=False, and weights = 1/epsilon
-                # if an entry in epsilon_sqrd is 0, replace it with half the
-                # minimum value in the epsilon_sqrd array
+                # Run fit again with scale_covar=False, and
+                # weights = 1/epsilon if an entry in epsilon_sqrd is 0,
+                # replace it with half the minimum value in the epsilon_sqrd
+                # array
                 idxs = np.where(epsilon == 0)[0]
                 epsilon[idxs] = min([eps for eps in epsilon if eps != 0])/2
                 fit_kwargs = {'scale_covar': False, 'weights': 1/epsilon}
@@ -1094,13 +1103,45 @@ class SingleQubitRBAnalysis(object):
             fit_dicts = self.data_dict['fit_dicts']
         else:
             raise KeyError('data_dict does not contain fit_dicts.')
-        rb_fit_res = OrderedDict()
+        ap_dict = OrderedDict()
         for keyi in self.data_to_proc_dict:
             fit_res = fit_dicts['rb_fit_' + self.mobjn + keyi]['fit_res']
-            rb_fit_res[self.mobjn+keyi] = fit_res.params
+            ap_dict['EPC_'+self.mobjn+keyi] = {
+                'value': fit_res.params['error_per_Clifford'].value,
+                'stderr': fit_res.params['fidelity_per_Clifford'].stderr}
+            if 'pf' in keyi:
+                A = fit_res.best_values['Amplitude']
+                Aerr = fit_res.params['Amplitude'].stderr
+                p = fit_res.best_values['p']
+                perr = fit_res.params['p'].stderr
+                A_idx = fit_res.var_names.index('Amplitude')
+                p_idx = fit_res.var_names.index('p')
+                cov = 0
+                if fit_res.covar is not None:
+                    cov = fit_res.covar[A_idx, p_idx]
+                ap_dict['L1_'+self.mobjn+keyi] = {
+                    'value': A*(1-p),
+                    'stderr': np.sqrt((A*perr)**2 + (Aerr*(p-1))**2)}
+                    # 'stderr': np.sqrt(Aerr**2 + perr**2 + (Aerr*p)**2 +
+                    #                   (perr*A)**2 + 2*A*p*cov**2)}
+                ap_dict['L2_'+self.mobjn+keyi] = {
+                    'value': (1-A)*(1-p),
+                    'stderr': np.sqrt((Aerr*(p-1))**2 + ((A-1)*perr)**2)}
+                    # 'stderr': np.sqrt(Aerr**2 + (Aerr*p)**2 + (perr*A)**2 -
+                    #                   2*A*p*cov**2)}
 
+                fit_res = fit_dicts['rbleak_fit_' + self.mobjn + keyi][
+                    'fit_res']
+                ap_dict['pu_'+self.mobjn+keyi] = {
+                    'value': fit_res.best_values['pu'],
+                    'stderr': fit_res.params['pu'].stderr}
+                ap_dict['pd_'+self.mobjn+keyi] = {
+                    'value': fit_res.best_values['pd'],
+                    'stderr': fit_res.params['pd'].stderr}
+
+        self.analysis_params_dict = ap_dict
         help_func_mod.add_param(
-            'analysis_params_dict', rb_fit_res, self.data_dict, update_key=True)
+            'analysis_params_dict', ap_dict, self.data_dict, update_key=True)
 
     @staticmethod
     def calculate_confidence_intervals(
@@ -1170,15 +1211,18 @@ class SingleQubitRBAnalysis(object):
                         plot_module.prepare_1d_raw_data_plot_dicts(
                             data_dict=self.data_dict,
                             keys_in=filtered_raw_keys,
-                            fig_name='raw_data_filtered',
+                            figure_name='raw_data_filtered',
                             xvals=swpts, sp_name=self.mospm[self.mobjn][1],
                             meas_obj_names=params.pop('meas_obj_names',
                                                       self.mobjn),
                             **params))
             else:
-                self.plot_dicts.update(plot_module.prepare_1d_raw_data_plot_dicts(
-                    self.data_dict, sp_name=self.mospm[self.mobjn][1],
-                    xvals=np.repeat(self.cliffords, self.nr_seeds)))
+                self.plot_dicts.update(
+                    plot_module.prepare_1d_raw_data_plot_dicts(
+                        self.data_dict, sp_name=self.mospm[self.mobjn][1],
+                        meas_obj_names=params.pop('meas_obj_names',
+                                                  self.mobjn),
+                        xvals=np.repeat(self.cliffords, self.nr_seeds)))
 
         for keyi, keys in zip(self.data_to_proc_dict, self.std_keys):
             base_plot_name = 'RB_' + self.mobjn + keyi
@@ -1188,7 +1232,7 @@ class SingleQubitRBAnalysis(object):
             self.plot_dicts.update(plot_module.prepare_1d_plot_dicts(
                 data_dict=self.data_dict,
                 keys_in=[keyi],
-                fig_name=base_plot_name,
+                figure_name=base_plot_name,
                 sp_name=sp_name,
                 meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                 yerr=help_func_mod.get_param(keys, self.data_dict),
@@ -1200,20 +1244,44 @@ class SingleQubitRBAnalysis(object):
                     plot_module.prepare_cal_states_plot_dicts(
                         data_dict=self.data_dict,
                         keys_in=[keyi],
-                        fig_name=base_plot_name,
+                        figure_name=base_plot_name,
                         sp_name=sp_name,
                         meas_obj_names=params.pop('meas_obj_names', self.mobjn),
                         do_plotting=False, **params))
 
             if 'fit_dicts' in self.data_dict:
                 fit_dicts = self.data_dict['fit_dicts']
-                # plot fit
+                # plot fits
+                L1_dict = None
+                L2_dict = None
+                textstr = ''
+                if 'pf' in keyi:
+                    fit_res = fit_dicts['rbleak_fit_' + self.mobjn + keyi][
+                        'fit_res']
+                    self.plot_dicts['leakfit_' + self.mobjn + keyi] = {
+                        'fig_id': base_plot_name,
+                        'plotfn': 'plot_fit',
+                        'fit_res': fit_res,
+                        'setlabel': 'fit - Google',
+                        'color': 'C1',
+                        'do_legend': True,
+                        'legend_ncol': 2,
+                        'legend_bbox_to_anchor': (1, -0.15),
+                        'legend_pos': 'upper right'}
+                    L1_dict = self.analysis_params_dict[
+                        f'L1_{self.mobjn}{keyi}']
+                    L2_dict = self.analysis_params_dict[
+                        f'L2_{self.mobjn}{keyi}']
+                    textstr = self.get_textbox_str(
+                        fit_res, for_leakage_google=True,
+                        L1_dict=L1_dict, L2_dict=L2_dict, **params)[0]
+
                 fit_res = fit_dicts['rb_fit_' + self.mobjn + keyi]['fit_res']
                 self.plot_dicts['fit_' + self.mobjn + keyi] = {
                     'fig_id': base_plot_name,
                     'plotfn': 'plot_fit',
                     'fit_res': fit_res,
-                    'setlabel': 'fit',
+                    'setlabel': 'fit - IBM' if 'pf' in keyi else 'fit',
                     'color': 'C0',
                     'do_legend': True,
                     'legend_ncol': 2,
@@ -1253,8 +1321,10 @@ class SingleQubitRBAnalysis(object):
 
                 # add texbox
                 textstr, ha, hp, va, vp = self.get_textbox_str(
-                    fit_res, F_T1, va='top' if 'pg' in keyi else 'bottom',
-                    **params)
+                    fit_res, F_T1=None if 'pf' in keyi else F_T1,
+                    va='top' if 'pg' in keyi else 'bottom',
+                    textstr=textstr,
+                    L1_dict=L1_dict, L2_dict=L2_dict, **params)
                 self.plot_dicts['text_msg_' + self.mobjn + keyi] = {
                     'fig_id': base_plot_name,
                     'plotfn': 'plot_text',
@@ -1269,21 +1339,42 @@ class SingleQubitRBAnalysis(object):
                                 self.data_dict, update_key=True)
 
     @staticmethod
-    def get_textbox_str(fit_res, F_T1=None, **params):
-        textstr = ('$r_{\mathrm{Cl}}$' + ' = {:.4f}% $\pm$ {:.3f}%'.format(
-            (1-fit_res.params['fidelity_per_Clifford'].value)*100,
-            (fit_res.params['fidelity_per_Clifford'].stderr)*100))
-        if F_T1 is not None:
-            textstr += ('\n$r_{\mathrm{coh-lim}}$  = ' +
-                        '{:.3f}%'.format((1-F_T1)*100))
-        textstr += ('\n' + 'p = {:.4f}% $\pm$ {:.3f}%'.format(
-            fit_res.params['p'].value*100, fit_res.params['p'].stderr*100))
-        textstr += ('\n' + r'$\langle \sigma_z \rangle _{m=0}$ = ' +
-                    '{:.2f} $\pm$ {:.2f}'.format(
-                        fit_res.params['Amplitude'].value +
-                        fit_res.params['offset'].value,
-                        np.sqrt(fit_res.params['offset'].stderr**2 +
-                                fit_res.params['Amplitude'].stderr**2)))
+    def get_textbox_str(fit_res, F_T1=None, for_leakage_google=False,
+                        textstr='', **params):
+        if for_leakage_google:
+            textstr += '\nGoogle paper:'
+            textstr += ('\n$p_{\\uparrow}$' + ' = {:.4f}% $\pm$ {:.3f}%'.format(
+                fit_res.params['pu'].value*100,
+                fit_res.params['pu'].stderr*100) +
+                       '\n$p_{\\downarrow}$' + ' = {:.4f}% $\pm$ {:.3f}%'.format(
+                        fit_res.params['pd'].value*100,
+                        fit_res.params['pd'].stderr*100) +
+                       '\n$p_0$' + ' = {:.2f}% $\pm$ {:.2f}%\n'.format(
+                        fit_res.params['p0'].value,  fit_res.params['p0'].stderr))
+        else:
+            textstr += ('\n$r_{\mathrm{Cl}}$' +
+                        ' = {:.4f}% $\pm$ {:.3f}%'.format(
+                (1-fit_res.params['fidelity_per_Clifford'].value)*100,
+                (fit_res.params['fidelity_per_Clifford'].stderr)*100))
+            if F_T1 is not None:
+                textstr += ('\n$r_{\mathrm{coh-lim}}$  = ' +
+                            '{:.3f}%'.format((1-F_T1)*100))
+            textstr += ('\n' + 'p = {:.4f}% $\pm$ {:.3f}%'.format(
+                fit_res.params['p'].value*100, fit_res.params['p'].stderr*100))
+            textstr += ('\n' + r'$\langle \sigma_z \rangle _{m=0}$ = ' +
+                        '{:.2f} $\pm$ {:.2f}'.format(
+                            fit_res.params['Amplitude'].value +
+                            fit_res.params['offset'].value,
+                            np.sqrt(fit_res.params['offset'].stderr**2 +
+                                    fit_res.params['Amplitude'].stderr**2)))
+
+            L1_dict = params.get('L1_dict', None)
+            L2_dict = params.get('L2_dict', None)
+            if L1_dict is not None and L1_dict is not None:
+                textstr += ('\n$L_1$' + ' = {:.4f}% $\pm$ {:.3f}%'.format(
+                    100*L1_dict['value'], 100*L1_dict['stderr']) +
+                            '\n$L_2$' + ' = {:.4f}% $\pm$ {:.3f}%'.format(
+                    100*L2_dict['value'], 100*L2_dict['stderr']))
 
         ha = params.pop('ha', 'right')
         hp = 0.975
@@ -1293,6 +1384,7 @@ class SingleQubitRBAnalysis(object):
         vp = 0.95
         if va == 'bottom':
             vp = 0.025
+
         return textstr, ha, hp, va, vp
 
     @staticmethod

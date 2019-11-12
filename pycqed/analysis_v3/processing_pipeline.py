@@ -21,6 +21,13 @@ class ProcessingPipeline(list):
             self.append(getattr(self, 'add_' + node_type + '_node')(**params))
         else:
             params['node_type'] = node_type
+            if 'keys_in' in params:
+                keys_in, keys_out, meas_obj_names, mobj_keys = \
+                    self.check_keys_mobjn(**params)
+                params['keys_in'] = keys_in
+                if 'keys_out' in params:
+                    params['keys_out'] = keys_out
+                params['meas_obj_names'] = meas_obj_names
             self.append(params)
 
     def check_keys_mobjn(self, keys_in, keys_out=(), meas_obj_names='all',
@@ -87,7 +94,11 @@ class ProcessingPipeline(list):
             else:
                 raise ValueError('This is the first node in the pipeline. '
                                  'keys_in cannot be "previous".')
-            
+            try:
+                keys_in.sort()
+            except AttributeError:
+                pass
+
         if keys_out is not None:
             if len(keys_out) == 0:
                 keys_out = []
@@ -126,7 +137,8 @@ class ProcessingPipeline(list):
     def add_filter_data_node(self, data_filter, keys_in='previous',
                              meas_obj_names='all', keys_out=(), **params):
         keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
-            keys_in, keys_out, meas_obj_names, keys_out_container='filter_data',
+            keys_in, keys_out, meas_obj_names,
+            keys_out_container=params.pop('keys_out_container', 'filter_data'),
             **params)
 
         return {'node_type': 'filter_data',
@@ -140,7 +152,8 @@ class ProcessingPipeline(list):
                               keys_out=(), **params):
         keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, keys_out, meas_obj_names,
-            keys_out_container='average_data', **params)
+            keys_out_container=params.pop('keys_out_container', 'average_data'),
+            **params)
 
         return {'node_type': 'average_data',
                 'keys_in': keys_in,
@@ -154,7 +167,9 @@ class ProcessingPipeline(list):
                                    keys_out=(), **params):
         keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, keys_out, meas_obj_names,
-            keys_out_container='get_std_deviation', **params)
+            keys_out_container=params.pop('keys_out_container',
+                                          'get_std_deviation'),
+            **params)
 
         return {'node_type': 'get_std_deviation',
                 'keys_in': keys_in,
@@ -169,7 +184,10 @@ class ProcessingPipeline(list):
             keys_in, keys_out, meas_obj_names, **params)
 
         if keys_out is not None:
-            keys_out = ['rotate_iq.' + ','.join(keys_in)]
+            keys_out_container = params.pop('keys_out_container', 'rotate_iq')
+            keys_out = [f'{keys_out_container}.' + ','.join([
+                k.split('.')[-1] for k in keys_in])]
+
         return {'node_type': 'rotate_iq',
                 'keys_in': keys_in,
                 'keys_out': keys_out,
@@ -180,7 +198,9 @@ class ProcessingPipeline(list):
                                  meas_obj_names='all', keys_out=(), **params):
         keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, keys_out, meas_obj_names,
-            keys_out_container='rotate_1d_array', **params)
+            keys_out_container=params.pop('keys_out_container',
+                                          'rotate_1d_array'),
+            **params)
 
         return {'node_type': 'rotate_1d_array',
                 'keys_in': keys_in,
@@ -195,8 +215,11 @@ class ProcessingPipeline(list):
             keys_in, keys_out, meas_obj_names, **params)
 
         if keys_out is not None:
-            keyo = keys_in[0] if len(keys_in) == 1 else ','.join(keys_in)
-            keys_out = [f'threshold_data.{keyo} state {s}' for s in
+            keys_out_container = params.pop('keys_out_container',
+                                            'threshold_data')
+            keyo = keys_in[0] if len(keys_in) == 1 else ','.join([
+                k.split('.')[-1] for k in keys_in])
+            keys_out = [f'{keys_out_container}.{keyo} state {s}' for s in
                         set(threshold_map.values())]
         return {'node_type': 'threshold_data',
                 'keys_in': keys_in,
@@ -205,68 +228,84 @@ class ProcessingPipeline(list):
                 'threshold_map': threshold_map,
                 **params}
 
+    def add_transform_data_node(self, transform_func, keys_in='previous',
+                                meas_obj_names='all', keys_out=(),
+                                transform_func_kwargs=dict(), **params):
+        keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
+            keys_in, keys_out, meas_obj_names,
+            keys_out_container=params.pop('keys_out_container',
+                                          'transform_data'),
+            **params)
+
+        return {'node_type': 'transform_data',
+                'keys_in': keys_in,
+                'keys_out': keys_out,
+                'transform_func': transform_func,
+                'transform_func_kwargs': transform_func_kwargs,
+                **params}
+
 
     ######################################
     #### plot dicts preparation nodes ####
     ######################################
 
     def add_prepare_1d_plot_dicts_node(
-            self, keys_in='previous', meas_obj_names='all', fig_name='',
+            self, keys_in='previous', meas_obj_names='all', figure_name='',
             do_plotting=True, **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, meas_obj_names=meas_obj_names, **params)
         return {'node_type': 'prepare_1d_plot_dicts',
                 'keys_in': keys_in,
                 'meas_obj_names': meas_obj_names,
-                'fig_name': fig_name,
+                'figure_name': figure_name,
                 'do_plotting': do_plotting,
                 **params}
 
     def add_prepare_2d_plot_dicts_node(
-            self, keys_in='previous', meas_obj_names='all', fig_name='',
+            self, keys_in='previous', meas_obj_names='all', figure_name='',
             do_plotting=True, **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, meas_obj_names=meas_obj_names, **params)
         return {'node_type': 'prepare_2d_plot_dicts',
                 'keys_in': keys_in,
                 'meas_obj_names': meas_obj_names,
-                'fig_name': fig_name,
+                'figure_name': figure_name,
                 'do_plotting': do_plotting,
                 **params}
 
     def add_prepare_1d_raw_data_plot_dicts_node(
-            self, keys_in='previous', meas_obj_names='all', fig_name=None,
+            self, keys_in='previous', meas_obj_names='all', figure_name=None,
             do_plotting=True, **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, meas_obj_names=meas_obj_names, **params)
         return {'node_type': 'prepare_1d_raw_data_plot_dicts',
                 'keys_in': keys_in,
                 'meas_obj_names': meas_obj_names,
-                'fig_name': fig_name,
+                'figure_name': figure_name,
                 'do_plotting': do_plotting,
                 **params}
 
     def add_prepare_2d_raw_data_plot_dicts_node(
-            self, keys_in='previous', meas_obj_names='all', fig_name=None,
+            self, keys_in='previous', meas_obj_names='all', figure_name=None,
             do_plotting=True, **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, meas_obj_names=meas_obj_names, **params)
         return {'node_type': 'prepare_2d_raw_data_plot_dicts',
                 'keys_in': keys_in,
                 'meas_obj_names': meas_obj_names,
-                'fig_name': fig_name,
+                'figure_name': figure_name,
                 'do_plotting': do_plotting,
                 **params}
 
     def add_prepare_cal_states_plot_dicts_node(
-            self, keys_in='previous', meas_obj_names='all', fig_name='',
+            self, keys_in='previous', meas_obj_names='all', figure_name='',
             do_plotting=True, **params):
         keys_in, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             keys_in, meas_obj_names=meas_obj_names, **params)
         return {'node_type': 'prepare_cal_states_plot_dicts',
                 'keys_in': keys_in,
                 'meas_obj_names': meas_obj_names,
-                'fig_name': fig_name,
+                'figure_name': figure_name,
                 'do_plotting': do_plotting,
                 **params}
 

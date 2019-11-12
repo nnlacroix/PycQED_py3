@@ -225,7 +225,7 @@ class PipelineDataAnalysis_multi_timestamp(object):
             help_func_mod.get_params_from_hdf_file(
                 raw_data_dict, params_dict=self.params_dict,
                 numeric_params=self.numeric_params,
-                folder=folder)
+                folder=folder, append_key=False, update_key=True)
         return raw_data_dict
 
 

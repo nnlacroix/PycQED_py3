@@ -25,7 +25,7 @@ def get_hdf_param_value(group, param_name):
         s = [s.decode('utf-8') for s in s]
     try:
         return eval(s)
-    except TypeError:
+    except Exception:
         return s
 
 
@@ -33,6 +33,11 @@ def get_params_from_hdf_file(data_dict, **params):
     params_dict = get_param('params_dict', data_dict, **params)
     numeric_params = get_param('numeric_params', data_dict,
                                default_value=[], **params)
+    append_key = get_param('append_key', data_dict, default_value=True,
+                           **params)
+    update_key = get_param('update_key', data_dict, default_value=False,
+                           **params)
+
     if params_dict is None:
         raise ValueError('params_dict was not specified.')
 
@@ -74,18 +79,24 @@ def get_params_from_hdf_file(data_dict, **params):
             par_name = file_par.split('.')[0]
             for group_name in data_file.keys():
                 if par_name in list(data_file[group_name].attrs):
-                    epd[all_keys[-1]] = \
-                        get_hdf_param_value(data_file[group_name], par_name)
+                    add_param(all_keys[-1],
+                              get_hdf_param_value(data_file[group_name],
+                                                  par_name),
+                              epd, append_key=append_key, update_key=update_key)
         else:
             group_name = '/'.join(file_par.split('.')[:-1])
             par_name = file_par.split('.')[-1]
             if group_name in data_file:
                 if par_name in list(data_file[group_name].attrs):
-                    epd[all_keys[-1]] = \
-                        get_hdf_param_value(data_file[group_name], par_name)
+                    add_param(all_keys[-1],
+                              get_hdf_param_value(data_file[group_name],
+                                                  par_name),
+                              epd, append_key=append_key, update_key=update_key)
                 elif par_name in list(data_file[group_name].keys()):
-                    epd[all_keys[-1]] = read_dict_from_hdf5(
-                        {}, data_file[group_name][par_name])
+                    add_param(all_keys[-1],
+                              read_dict_from_hdf5(
+                                  {}, data_file[group_name][par_name]),
+                              epd, append_key=append_key, update_key=update_key)
 
         if all_keys[-1] not in epd:
             log.warning(f'Parameter {file_par} was not found.')
@@ -93,7 +104,12 @@ def get_params_from_hdf_file(data_dict, **params):
 
     for par_name in data_dict:
         if par_name in numeric_params:
-            data_dict[par_name] = np.double(data_dict[par_name])
+            if hasattr(data_dict[par_name], '__iter__'):
+                data_dict[par_name] = [np.double(p) for p
+                                       in data_dict[par_name]]
+                data_dict[par_name] = np.asarray(data_dict[par_name])
+            else:
+                data_dict[par_name] = np.double(data_dict[par_name])
     return data_dict
 
 
@@ -164,7 +180,8 @@ def get_param(name, data_dict, default_value=None, raise_error=False, **params):
     return value
 
 
-def add_param(name, value, data_dict, update_key=False, **params):
+def add_param(name, value, data_dict, update_key=False, append_key=False,
+              **params):
     """
     Adds a new key-value pair to the data_dict, with key = name.
     If update, it will try data_dict[name].update(value), else raises KeyError.
@@ -189,6 +206,12 @@ def add_param(name, value, data_dict, update_key=False, **params):
                 dd[all_keys[-1]].update(value)
             else:
                 dd[all_keys[-1]] = value
+        elif append_key:
+            # print(all_keys[-1])
+            # print(dd.keys())
+            v = dd[all_keys[-1]]
+            dd[all_keys[-1]] = list(v)
+            dd[all_keys[-1]].append(value)
         else:
             raise KeyError(f'{all_keys[-1]} already exists in data_dict.')
     else:
@@ -243,6 +266,8 @@ def get_measobj_properties(data_dict, props_to_extract='all', **params):
                 else:
                     mobjn = mobjn[0]
         props_to_return += [mobjn]
+    if len(props_to_return) == 1:
+        props_to_return = props_to_return[0]
     return props_to_return
 
 
