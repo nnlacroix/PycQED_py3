@@ -75,19 +75,13 @@ def n_qubit_off_on(pulse_pars_list, RO_pars_list, return_seq=False,
         seg_list.append(seg)
         seq.add(seg)
 
-    uhfs_used = dict()
-    for RO_pars in RO_pars_list:
-        uhf = RO_pars['I_channel'][:4]
-        if uhf not in uhfs_used.keys():
-            uhfs_used[uhf] = []
-        uhfs_used[uhf].append(1)
-
     repeat_dict = {}
-    for uhf in uhfs_used:
-        repeat_dict[uhf] = ((1.0 + int(preselection))*len(pulse_combinations),1)
+    repeat_pattern = ((1.0 + int(preselection))*len(pulse_combinations),1)
+    for i, RO_pars in enumerate(RO_pars_list):
+        repeat_dict = seq.repeat(RO_pars, None, repeat_pattern)
 
     if upload:
-        ps.Pulsar.get_instance().program_awgs(seq, repeat_dict=repeat_dict)
+        ps.Pulsar.get_instance().program_awgs(seq)
     if return_seq:
         return seq, seg_list
     else:
