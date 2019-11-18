@@ -192,7 +192,7 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
         if return_timestamp is False:
             return os.path.join(search_dir, daydir, measdir)
         else:
-            return str(daydir)+str(measdir[:6]), os.path.join(
+            return str(daydir)+'_'+str(measdir[:6]), os.path.join(
                 search_dir, daydir, measdir)
 
 
@@ -350,13 +350,13 @@ def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r+'):
         ro_type = 'w'
 
     for qbn in qb_names:
+        uhf = instr_settings[qbn].attrs['instr_uhf']
         qbchs = [str(eval(instr_settings[qbn].attrs['acq_I_channel']))]
-        # eval because strings are saved as representations
         ro_acq_weight_type = eval(instr_settings[qbn].attrs['acq_weights_type'])
         if ro_acq_weight_type in ['SSB', 'DSB', 'optimal_qutrit']:
             qbchs += [str(eval(instr_settings[qbn].attrs['acq_Q_channel']))]
-        channel_map[qbn] = [ch for ch in value_names for nr in qbchs
-                            if ro_type+nr in ch]
+        channel_map[qbn] = [vn for vn in value_names for nr in qbchs
+                            if uhf+'_'+ro_type+nr in vn]
 
     all_values_empty = np.all([len(v) == 0 for v in channel_map.values()])
     if len(channel_map) == 0 or all_values_empty:
@@ -371,7 +371,7 @@ def get_qb_thresholds_from_file(qb_names, file_path, h5mode='r+'):
     for qbn in qb_names:
         ro_channel = eval(instr_settings[qbn].attrs['RO_acq_weight_function_I'])
         thresholds[qbn] = 1.5*eval(
-            instr_settings['UHFQC'].attrs['quex_thres_{}_level'.format(
+            instr_settings['UHFQC'].attrs['qas_0_thresholds_{}_level'.format(
                 ro_channel)])
     return thresholds
 
