@@ -1579,12 +1579,13 @@ class QuDev_transmon(Qubit):
         return a
 
     def calibrate_drive_mixer_carrier(self, update=True, x0=(0., 0.),
-                                      initial_stepsize=0.01, trigger_sep=5e-6):
+                                      initial_stepsize=0.01, trigger_sep=5e-6,
+                                      no_improv_break=50):
         MC = self.instr_mc.get_instr()
         ad_func_pars = {'adaptive_function': opti.nelder_mead,
                         'x0': x0,
                         'initial_step': [initial_stepsize, initial_stepsize],
-                        'no_improv_break': 15,
+                        'no_improv_break': no_improv_break,
                         'minimize': True,
                         'maxiter': 500}
         chI_par = self.instr_pulsar.get_instr().parameters['{}_offset'.format(
