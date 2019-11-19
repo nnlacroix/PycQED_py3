@@ -167,7 +167,7 @@ def get_multiplexed_readout_detector_function(qubits, det_type, **kw):
     nr_averages = max(qb.acq_averages() for qb in qubits)
     nr_shots = max(qb.acq_shots() for qb in qubits)
     correlations = kw.pop('correlations', None)
-    if correlations is None:
+    if correlations is None and 'corr' in det_type:
         if kw.pop('self_correlated', False):
             correlations = list(itertools.combinations_with_replacement(
                 [qb.acq_I_channel() for qb in qubits], r=2))
@@ -3291,7 +3291,7 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
                                                     for_ef=for_ef)
     cp = CalibrationPoints.multi_qubit(qubit_names, cal_states,
                                        n_per_state=n_cal_points_per_state)
-    seq, sweep_points = mqs.n_qubit_rabi_seq(
+    seq, sp = mqs.n_qubit_rabi_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
         upload=upload, n=n, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
         prep_params=prep_params)
@@ -3299,7 +3299,7 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
         sequence=seq, upload=upload,
         parameter_name=list(sweep_points[0].values())[0][2],
         unit=list(sweep_points[0].values())[0][1]))
-    MC.set_sweep_points(sweep_points)
+    MC.set_sweep_points(sp)
 
     det_func = get_multiplexed_readout_detector_function(
         qubits, det_type=det_type, **kw)
@@ -3399,7 +3399,7 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
                                                     for_ef=for_ef)
     cp = CalibrationPoints.multi_qubit(qubit_names, cal_states,
                                        n_per_state=n_cal_points_per_state)
-    seq, sweep_points = mqs.n_qubit_ramsey_seq(
+    seq, sp = mqs.n_qubit_ramsey_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
         artificial_detuning=artificial_detuning, upload=upload, for_ef=for_ef,
         last_ge_pulse=last_ge_pulse, prep_params=prep_params)
@@ -3407,7 +3407,7 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
         sequence=seq, upload=upload,
         parameter_name=list(sweep_points[0].values())[0][2],
         unit=list(sweep_points[0].values())[0][1]))
-    MC.set_sweep_points(sweep_points)
+    MC.set_sweep_points(sp)
 
     fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
     det_func = get_multiplexed_readout_detector_function(
@@ -3419,6 +3419,7 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
     exp_metadata.update({'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
+                         'artificial_detuning': artificial_detuning,
                          'meas_obj_sweep_points_map':
                              sweep_points.get_sweep_points_map(qubit_names),
                          'meas_obj_value_names_map':
@@ -3514,7 +3515,7 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
                                                     for_ef=for_ef)
     cp = CalibrationPoints.multi_qubit(qubit_names, cal_states,
                                        n_per_state=n_cal_points_per_state)
-    seq, sweep_points = mqs.n_qubit_qscale_seq(
+    seq, sp = mqs.n_qubit_qscale_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
         upload=upload, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
         prep_params=prep_params)
@@ -3522,7 +3523,7 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
         sequence=seq, upload=upload,
         parameter_name=list(sweep_points[0].values())[0][2],
         unit=list(sweep_points[0].values())[0][1]))
-    MC.set_sweep_points(sweep_points)
+    MC.set_sweep_points(sp)
 
     det_func = get_multiplexed_readout_detector_function(
         qubits, det_type=det_type, **kw)
@@ -3618,7 +3619,7 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
                                                     for_ef=for_ef)
     cp = CalibrationPoints.multi_qubit(qubit_names, cal_states,
                                        n_per_state=n_cal_points_per_state)
-    seq, sweep_points = mqs.n_qubit_t1_seq(
+    seq, sp = mqs.n_qubit_t1_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
         upload=upload, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
         prep_params=prep_params)
@@ -3626,7 +3627,7 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
         sequence=seq, upload=upload,
         parameter_name=list(sweep_points[0].values())[0][2],
         unit=list(sweep_points[0].values())[0][1]))
-    MC.set_sweep_points(sweep_points)
+    MC.set_sweep_points(sp)
 
     det_func = get_multiplexed_readout_detector_function(
         qubits, det_type=det_type, **kw)
@@ -3724,7 +3725,7 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
                                                     for_ef=for_ef)
     cp = CalibrationPoints.multi_qubit(qubit_names, cal_states,
                                        n_per_state=n_cal_points_per_state)
-    seq, sweep_points = mqs.n_qubit_echo_seq(
+    seq, sp = mqs.n_qubit_echo_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
         artificial_detuning=artificial_detuning, upload=upload, for_ef=for_ef,
         last_ge_pulse=last_ge_pulse, prep_params=prep_params)
@@ -3732,7 +3733,7 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
         sequence=seq, upload=upload,
         parameter_name=list(sweep_points[0].values())[0][2],
         unit=list(sweep_points[0].values())[0][1]))
-    MC.set_sweep_points(sweep_points)
+    MC.set_sweep_points(sp)
 
     fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
     det_func = get_multiplexed_readout_detector_function(

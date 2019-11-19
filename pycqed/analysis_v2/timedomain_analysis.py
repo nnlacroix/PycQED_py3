@@ -3844,8 +3844,8 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
         self.fit_dicts = OrderedDict()
         for qbn in self.qb_names:
             for msmt_label in ['_xx', '_xy', '_xmy']:
-                sweep_points = self.proc_data_dict['qscale_data'][qbn][
-                    'sweep_points' + msmt_label]
+                sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
+                    'msmt_sweep_points']
                 data = self.proc_data_dict['qscale_data'][qbn][
                     'data' + msmt_label]
 
@@ -3911,7 +3911,7 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                 'qscale_stderr'] = optimal_qscale_stderr
 
     def prepare_plots(self):
-        super().prepare_plots()
+        # super().prepare_plots()
 
         color_dict = {'_xx': '#365C91',
                       '_xy': '#683050',
@@ -3922,8 +3922,8 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
         for qbn in self.qb_names:
             base_plot_name = 'Qscale_' + qbn
             for msmt_label in ['_xx', '_xy', '_xmy']:
-                sweep_points = self.proc_data_dict['qscale_data'][qbn][
-                    'sweep_points' + msmt_label]
+                sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
+                'msmt_sweep_points']
                 data = self.proc_data_dict['qscale_data'][qbn][
                     'data' + msmt_label]
                 if msmt_label == '_xx':
@@ -3932,13 +3932,16 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                     plot_name = 'data' + msmt_label + '_' + qbn
 
                 # plot data
+                print(len(sweep_points))
+                print(len(data))
                 try:
                     xunit = self.metadata["sweep_unit"]
                     xlabel = self.metadata["sweep_name"]
                 except KeyError:
-                    xlabel = self.raw_data_dict['sweep_parameter_names'][0]
-                    xunit = self.raw_data_dict['sweep_parameter_units'][0]
-
+                    xlabel = self.raw_data_dict['sweep_parameter_names']
+                    xunit = self.raw_data_dict['sweep_parameter_units']
+                if np.ndim(xunit) > 0:
+                    xunit = xunit[0]
                 self.plot_dicts[plot_name] = {
                     'plotfn': self.plot_line,
                     'xvals': sweep_points,
