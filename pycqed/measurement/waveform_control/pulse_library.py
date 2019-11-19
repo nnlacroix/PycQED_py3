@@ -503,6 +503,122 @@ class NZBufferedCZPulse(Pulse):
         hashlist += [self.gaussian_filter_sigma, self.alpha]
         return hashlist
 
+class BufferedHalfwayPulse(Pulse):
+    def __init__(self, ch_qb1, ch_qb2, element_name, aux_channels_dict=None,
+                 name='Buffered Halfway Pulse', **kw):
+        super().__init__(name, element_name)
+
+        self.ch_qb1 = ch_qb1
+        self.ch_qb2 = ch_qb2
+        self.channels = [self.ch_qb1, self.ch_qb2]
+
+        self.amps = {ch_qb1: kw.pop('amplitude', 0), ch_qb2: kw.pop('amplitude2', 0)}
+        
+        alpha1 = kw.pop('alpha', 1)
+        alpha2 = kw.pop('alpha2', alpha1)
+        self.alphas = {ch_qb1: alpha1, ch_qb2: alpha2} 
+        self.pulse_length = kw.pop('pulse_length', 0)
+        self.length1 = {ch_qb1: alpha1*self.pulse_length/(alpha1 + 1),
+                        ch_qb2: alpha2*self.pulse_length/(alpha2 + 1)}
+
+        # delay of pulse on qb2 wrt pulse on qb1
+        self.delay = kw.pop('channel_relative_delay',0) 
+
+        # negative delay means the qb1 pulse happens after qb2 pulse
+        if self.delay < 0:
+            self.buffer_length_start = \
+                       {ch_qb1: kw.get('buffer_length_start', 0) - self.delay,
+                        ch_qb2: kw.pop('buffer_length_start', 0)}
+            self.buffer_length_end = \
+                        {ch_qb1: kw.get('buffer_length_end', 0),
+                         ch_qb2: kw.pop('buffer_length_end', 0) - self.delay}
+        else:
+            self.buffer_length_start = \
+                       {ch_qb1: kw.get('buffer_length_start', 0),
+                        ch_qb2: kw.pop('buffer_length_start', 0) + self.delay}
+            self.buffer_length_end = \
+                        {ch_qb1: kw.get('buffer_length_end', 0) + self.delay,
+                         ch_qb2: kw.pop('buffer_length_end', 0)}
+
+        self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma', 0)
+        self.length = self.pulse_length + self.buffer_length_start[ch_qb1] + \
+                      self.buffer_length_end[ch_qb1]
+
+        # these are here so that we can use the CZ pulse dictionary that is
+        # created by add_CZ_pulse in QuDev_transmon.py
+        self.frequency = kw.pop('frequency', 0)
+        self.phase = kw.pop('phase', 0.)
+
+        self.codeword = kw.pop('codeword', 'no_codeword')
+
+    #FIXME
+    # def __call__(self, **kw):
+    #     self.amp1 = kw.pop('amp1', self.amp1)
+    #     self.amp2 = kw.pop('amp2', self.amp2)
+    #     self.alpha = kw.pop('alpha', self.alpha)
+    #     self.pulse_length = kw.pop('pulse_length', self.pulse_length)
+    #     self.length1 = self.alpha*self.pulse_length/(self.alpha + 1)
+    #     self.delay = kw.pop('delay', self.delay)
+    #     buffer_length_start = kw.pop('buffer_length_start',
+    #                                        self.buffer_length_start)
+    #     buffer_length_end = kw.pop('buffer_length_end', 
+    #                                      self.buffer_length_end2)
+        
+    #     self.buffer_length_end1 = self.buffer_length_end2 + self.delay
+    #     self.buffer_length_start2 = self.buffer_length_start1 + self.delay + \
+    #                                 self.buffer_length_start1
+    #     self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse',
+    #                                          self.extra_buffer_aux_pulse)
+    #     self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma',
+    #                                         self.gaussian_filter_sigma)
+    #     self.length = self.pulse_length + self.buffer_length_start1 + \
+    #                   self.buffer_length_end1
+    #     self.channels = kw.pop('channels', self.channels)
+    #     return self
+
+    def chan_wf(self, chan, tvals):
+        
+        amp1 = self.amps[chan]
+        amp2 = -amp1*self.alphas[chan]
+        buffer_start = self.buffer_length_start[chan]
+        pulse_length = self.pulse_length
+        l1 = self.length1[chan]
+
+        if self.gaussian_filter_sigma == 0:
+            wave1 = np.ones_like(tvals)*amp1
+            wave1 *= (tvals >= tvals[0] + buffer_start)
+            wave1 *= (tvals < tvals[0] + buffer_start + l1)
+
+            wave2 = np.ones_like(tvals)*amp2
+            wave2 *= (tvals >= tvals[0] + buffer_start + l1)
+            wave2 *= (tvals < tvals[0] + buffer_start + pulse_length)
+
+            wave = wave1 + wave2
+        else:
+            tstart = tvals[0] + buffer_start
+            tend = tvals[0] + buffer_start + l1
+            tend2 = tvals[0] + buffer_start + pulse_length
+            scaling = 1/np.sqrt(2)/self.gaussian_filter_sigma
+            wave = 0.5*(amp1*sp.special.erf((tvals - tstart)*scaling) -
+                        amp1*sp.special.erf((tvals - tend)*scaling) +
+                        amp2*sp.special.erf((tvals - tend)*scaling) -
+                        amp2*sp.special.erf((tvals - tend2)*scaling))
+        return wave
+
+    def hashables(self, tstart, channel):
+        if channel not in self.channels:
+            return []
+        hashlist = [type(self), self.algorithm_time() - tstart]
+
+        amp = self.amps[channel]
+        buffer_start = self.buffer_length_start[channel]
+        buffer_end = self.buffer_length_end[channel]
+        pulse_length = self.pulse_length
+
+        hashlist += [amp, pulse_length, buffer_start, buffer_end]
+        hashlist += [self.gaussian_filter_sigma, self.alphas[channel]]
+        return hashlist
+
 class NZMartinisGellarPulse(Pulse):
     def __init__(self, channel, element_name, wave_generation_func,
                  aux_channels_dict=None,
