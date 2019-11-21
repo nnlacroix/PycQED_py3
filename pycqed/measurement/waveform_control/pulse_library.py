@@ -504,22 +504,22 @@ class NZBufferedCZPulse(Pulse):
         return hashlist
 
 class BufferedHalfwayPulse(Pulse):
-    def __init__(self, ch_qb1, ch_qb2, element_name, aux_channels_dict=None,
+    def __init__(self, channel, channel2, element_name, aux_channels_dict=None,
                  name='Buffered Halfway Pulse', **kw):
         super().__init__(name, element_name)
 
-        self.ch_qb1 = ch_qb1
-        self.ch_qb2 = ch_qb2
-        self.channels = [self.ch_qb1, self.ch_qb2]
+        self.channel = channel
+        self.channel2 = channel2
+        self.channels = [self.channel, self.channel2]
 
-        self.amps = {ch_qb1: kw.pop('amplitude', 0), ch_qb2: kw.pop('amplitude2', 0)}
+        self.amps = {channel: kw.pop('amplitude', 0), channel2: kw.pop('amplitude2', 0)}
         
         alpha1 = kw.pop('alpha', 1)
         alpha2 = kw.pop('alpha2', alpha1)
-        self.alphas = {ch_qb1: alpha1, ch_qb2: alpha2} 
+        self.alphas = {channel: alpha1, channel2: alpha2} 
         self.pulse_length = kw.pop('pulse_length', 0)
-        self.length1 = {ch_qb1: alpha1*self.pulse_length/(alpha1 + 1),
-                        ch_qb2: alpha2*self.pulse_length/(alpha2 + 1)}
+        self.length1 = {channel: alpha1*self.pulse_length/(alpha1 + 1),
+                        channel2: alpha2*self.pulse_length/(alpha2 + 1)}
 
         # delay of pulse on qb2 wrt pulse on qb1
         self.delay = kw.pop('channel_relative_delay',0) 
@@ -527,22 +527,22 @@ class BufferedHalfwayPulse(Pulse):
         # negative delay means the qb1 pulse happens after qb2 pulse
         if self.delay < 0:
             self.buffer_length_start = \
-                       {ch_qb1: kw.get('buffer_length_start', 0) - self.delay,
-                        ch_qb2: kw.pop('buffer_length_start', 0)}
+                       {channel: kw.get('buffer_length_start', 0) - self.delay,
+                        channel2: kw.pop('buffer_length_start', 0)}
             self.buffer_length_end = \
-                        {ch_qb1: kw.get('buffer_length_end', 0),
-                         ch_qb2: kw.pop('buffer_length_end', 0) - self.delay}
+                        {channel: kw.get('buffer_length_end', 0),
+                         channel2: kw.pop('buffer_length_end', 0) - self.delay}
         else:
             self.buffer_length_start = \
-                       {ch_qb1: kw.get('buffer_length_start', 0),
-                        ch_qb2: kw.pop('buffer_length_start', 0) + self.delay}
+                       {channel: kw.get('buffer_length_start', 0),
+                        channel2: kw.pop('buffer_length_start', 0) + self.delay}
             self.buffer_length_end = \
-                        {ch_qb1: kw.get('buffer_length_end', 0) + self.delay,
-                         ch_qb2: kw.pop('buffer_length_end', 0)}
+                        {channel: kw.get('buffer_length_end', 0) + self.delay,
+                         channel2: kw.pop('buffer_length_end', 0)}
 
         self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma', 0)
-        self.length = self.pulse_length + self.buffer_length_start[ch_qb1] + \
-                      self.buffer_length_end[ch_qb1]
+        self.length = self.pulse_length + self.buffer_length_start[channel] + \
+                      self.buffer_length_end[channel]
 
         # these are here so that we can use the CZ pulse dictionary that is
         # created by add_CZ_pulse in QuDev_transmon.py

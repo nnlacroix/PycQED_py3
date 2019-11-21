@@ -3543,9 +3543,7 @@ def add_CZ_pulse(qbc, qbt):
                                                'BufferedHalfwayPulse'))
         qbc.add_pulse_parameter(op_name, ps_name + '_channel', 'channel',
                                 initial_value='', vals=vals.Strings())
-        qbc.add_pulse_parameter(op_name, ps_name + '_ch_qb1', 'channel',
-                                initial_value='', vals=vals.Strings())
-        qbc.add_pulse_parameter(op_name, ps_name + '_ch_qb2', 'channel',
+        qbc.add_pulse_parameter(op_name, ps_name + '_channel2', 'channel2',
                                 initial_value='', vals=vals.Strings())
         qbc.add_pulse_parameter(op_name, ps_name + '_aux_channels_dict',
                                 'aux_channels_dict',
