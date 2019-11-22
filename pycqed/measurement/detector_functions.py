@@ -415,7 +415,7 @@ class UHFQC_Base(Hard_Detector):
         else:
             # in multi uhf mode several detectors are passed.
             self.detectors = [p[1] for p in sorted(
-                [(d.UHFQC._device, d) for d in detectors], reverse=True)]
+                [(d.UHFQC, d) for d in detectors], reverse=True)]
         self.AWG = None
 
         self.UHFs = [d.UHFQC for d in self.detectors]
@@ -639,7 +639,7 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
             # value corrsponds to the peak voltage of a cosine with the
             # demodulation frequency.
             self.value_units = ['Vpeak']*len(self.channels)
-            self.scaling_factor = 1/(1.8e9*integration_length*nr_averages)
+            self.scaling_factor = 1/(1.8e9*integration_length)
         elif result_logging_mode == 'lin_trans':
             self.value_units = ['a.u.']*len(self.channels)
             self.scaling_factor = 1/nr_averages
@@ -808,8 +808,6 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
         # Do not enable the rerun button; the AWG program uses userregs/0 to
         # define the number of iterations in the loop
         self.UHFQC.awgs_0_single(1)
-        print(self.nr_sweep_points)
-        print(self.nr_averages)
         self.UHFQC.qas_0_integration_length(int(self.integration_length*(1.8e9)))
         self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
         self.UHFQC.qudev_acquisition_initialize(channels=self.channels, 
@@ -1060,7 +1058,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
                 '{}_{} w{}'.format(UHFQC.name, result_logging_mode, channel)
         if result_logging_mode == 'raw':
             self.value_units = ['V']*len(self.channels)
-            self.scaling_factor = 1  # /(1.8e9*integration_length)
+            self.scaling_factor = 1  /(1.8e9*integration_length)
         else:
             self.value_units = ['']*len(self.channels)
             self.scaling_factor = 1
@@ -1323,9 +1321,15 @@ class UHFQC_classifier_detector(UHFQC_Base):
         classified_data = np.zeros(
             (nr_states*len(self.channel_str_pairs), self.nr_sweep_points))
 
-        clf_data_all = np.zeros((self.nr_sweep_points*self.nr_shots,
-                                nr_states*len(self.channel_str_pairs)))
+        if averaged:
+            classified_data_length = self.nr_sweep_points
+        else:
+            classified_data_length = self.nr_sweep_points * self.nr_shots
+        classified_data = np.zeros(
+        (nr_states * len(self.channel_str_pairs), classified_data_length))
 
+        clf_data_all = np.zeros((self.nr_sweep_points * self.nr_shots,
+                                 nr_states * len(self.channel_str_pairs)))
         for i in range(len(self.channel_str_pairs)):
             clf_data = a_tools.predict_gm_proba_from_clf(
                 data[2*i: 2*i+2, :].T, classifier_params_list[i])
@@ -1337,11 +1341,11 @@ class UHFQC_classifier_detector(UHFQC_Base):
                                       np.argmax(clf_data, axis=1)).T
             clf_data_all[:, nr_states*i: nr_states*i+nr_states] = clf_data
 
-            # reshape into (nr_shots, nr_sweep_points, nr_data_columns)
-            clf_data = np.reshape(
-                clf_data, (self.nr_shots, self.nr_sweep_points,
-                                  clf_data.shape[-1]))
             if averaged:
+                # reshape into (nr_shots, nr_sweep_points, nr_data_columns)
+                clf_data = np.reshape(
+                    clf_data, (self.nr_shots, self.nr_sweep_points,
+                               clf_data.shape[-1]))
                 clf_data = np.mean(clf_data, axis=0)
             if state_prob_mtx_list is not None:
                 clf_data = np.linalg.inv(
