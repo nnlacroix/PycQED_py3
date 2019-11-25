@@ -241,14 +241,23 @@ def CosFunc(t, amplitude, frequency, phase, offset):
     return amplitude * np.cos(2 * np.pi * frequency * t + phase) + offset
 
 
-def ResidZZFunc(t, amplitude, tau, alpha, x, frequency, phase,
-                offset):
+def ResidZZFuncJoint(t, amplitude, amplitude1, tau, alpha, t11, frequency,
+                     phase, offset):
+    x = t11*alpha
     without_pulse = amplitude * np.exp(-t/tau)*np.cos(
         2*np.pi*frequency*t + phase) + offset
-    with_pulse = amplitude * np.exp(-t/tau)*(x*np.exp(-t*alpha/x)*np.cos(
-        2*np.pi*(frequency-alpha)*t + phase) + np.sin(
+    with_pulse = amplitude1 * np.exp(-t/tau)*(x*np.exp(-t*alpha/x)*np.cos(
+        2*np.pi*(frequency+alpha)*t + phase) - np.sin(
         2*np.pi*frequency*t + phase))/np.sqrt(1+x**2) + offset
     return without_pulse, with_pulse
+    # return amplitude * np.exp(-(t / tau) ** n) * (np.cos(
+    #     2 * np.pi * frequency * t + phase) + oscillation_offset) + \
+    #        exponential_offset
+
+def ResidZZFunc(t, amplitude, tau, alpha, x, frequency, phase, offset):
+    return amplitude * np.exp(-t/tau)*(x*np.exp(-t*alpha/x)*np.cos(
+        2*np.pi*(frequency+alpha)*t + phase) - np.sin(
+        2*np.pi*frequency*t + phase))/np.sqrt(1+x**2) + offset
 
 
 def ExpDecayFunc(t, tau, amplitude, offset, n):

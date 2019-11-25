@@ -824,8 +824,8 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
 
         self.proc_data_dict['analysis_params']['state_prob_mtx'] = fm
         self.proc_data_dict['analysis_params']['n_shots'] = X.shape[0]
-        self.proc_data_dict['analysis_params'] \
-                           ['classifier_params'] = clf_params
+        self.proc_data_dict['analysis_params'][
+            'classifier_params'] = clf_params
 
         if self.pre_selection:
             prep_states = []
@@ -851,6 +851,8 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
                                ['state_prob_mtx_masked'] = fm
             self.proc_data_dict['analysis_params']['n_shots_masked'] = \
                 X.shape[0]
+
+        self.save_processed_data(key='analysis_params')
 
     def _filter(self, data):
         """

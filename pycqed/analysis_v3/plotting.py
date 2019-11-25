@@ -16,7 +16,8 @@ from pycqed.measurement.calibration_points import CalibrationPoints
 from pycqed.analysis.analysis_toolbox import get_color_order as gco
 from pycqed.analysis.analysis_toolbox import get_color_list
 from pycqed.analysis.tools.plotting import (
-    set_axis_label, flex_colormesh_plot_vs_xy, flex_color_plot_vs_x)
+    set_axis_label, flex_colormesh_plot_vs_xy, flex_color_plot_vs_x,
+    SI_prefix_and_scale_factor)
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import datetime
 import sys
@@ -735,17 +736,43 @@ def prepare_fit_plot_dicts(data_dict, figure_name, **params):
     fit_dicts = data_dict['fit_dicts']
     plot_dicts = {}
     for fit_name, fit_dict in fit_dicts.items():
-        fit_res = fit_dicts[fit_name]['fit_res']
+        fit_res = fit_dict['fit_res']
+        legend_label = help_func_mod.get_param('legend_label', fit_dict,
+                                               default_value=labels)
+        fit_line_color = help_func_mod.get_param('fit_line_color', fit_dict,
+                                               default_value='C0')
         plot_dicts[fit_name] = {
             'fig_id': figure_name,
             'plotfn': 'plot_fit',
             'fit_res': fit_res,
-            'setlabel': labels,
-            'color': 'C0',
+            'setlabel': legend_label,
+            'color': fit_line_color,
             'do_legend': True,
             'legend_ncol': 2,
             'legend_bbox_to_anchor': (1, -0.15),
             'legend_pos': 'upper right', **params}
+
+        pois = help_func_mod.get_param('params_to_print', fit_dict)
+        if pois is not None:
+            textstr = ''
+            for i, poi in enumerate(pois):
+                params_val = fit_res.params[poi[0]].value
+                params_stderr = fit_res.params[poi[0]].stderr
+                scale_factor, unit = SI_prefix_and_scale_factor(
+                    params_val, poi[1])
+                textstr += '' if i == 0 else '\n'
+                textstr += f'{poi[2]}={params_val*scale_factor:.3f}' \
+                           f'$\\pm${params_stderr*scale_factor:.3f} {unit}'
+            plot_dicts[fit_name + '_textstr'] = {
+                'fig_id': figure_name,
+                'ypos': -0.2,
+                'xpos': -0.05,
+                'box_props': None,
+                'horizontalalignment': 'left',
+                'verticalalignment': 'top',
+                'plotfn': 'plot_text',
+                'text_string': textstr}
+
     help_func_mod.add_param('plot_dicts', plot_dicts, data_dict,
                             update_key=True)
     if params.get('do_plotting', False):

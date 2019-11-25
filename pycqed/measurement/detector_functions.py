@@ -1374,9 +1374,17 @@ class UHFQC_classifier_detector(UHFQC_Base):
             # can only correlate corresponding probabilities on all channels;
             # it cannot correlate selected channels
             q = clf_data_all.shape[1] // nr_states
+            # get a list of two size=nr_shots arrays, containing the index
+            # (0, 1, 2) of the maximum entry on each row in clf_data_all (ie
+            # the state g, e, or f where the qutrit is most likely to be
             qb_states_list = [np.argmax(
                 clf_data_all[:, i*nr_states: i*nr_states + nr_states],
                 axis=1) for i in range(q)]
+            # take mod 2 of each entry in each list in qb_states_list. This
+            # essentially considers all f states to be g states.
+            # Then sum the arrays in qb_states_list to get one array of
+            # size = nr_shots. Take another mod 2 in order to get the ZZ
+            # correlations for each shot
             corr_data = np.sum(np.array(qb_states_list) % 2, axis=0) % 2
             if averaged:
                 corr_data = np.reshape(

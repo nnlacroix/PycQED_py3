@@ -828,24 +828,28 @@ def get_timestamps_in_range(timestamp_start, timestamp_end=None,
         all_measdirs = [d for d in all_measdirs if not d.startswith('.')]
 
         if np.all([l is not None for l in label]):
+            matched_measdirs = []
             for each_label in label:
                 if exact_label_match:
-                    all_measdirs = [x for x in all_measdirs if label == x]
+                    matched_measdirs += [x for x in all_measdirs if label == x]
                 else:
-                    all_measdirs = [x for x in all_measdirs if each_label in x]
+                    matched_measdirs += [x for x in all_measdirs if
+                                         each_label in x]
+        else:
+            matched_measdirs = all_measdirs
         if (date.date() - datetime_start.date()).days == 0:
             # Check if newer than starting timestamp
             timemark_start = timemark_from_datetime(datetime_start)
-            all_measdirs = [dirname for dirname in all_measdirs
+            matched_measdirs = [dirname for dirname in matched_measdirs
                             if int(dirname[:6]) >= int(timemark_start)]
 
         if (date.date() - datetime_end.date()).days == 0:
             # Check if older than ending timestamp
             timemark_end = timemark_from_datetime(datetime_end)
-            all_measdirs = [dirname for dirname in all_measdirs if
+            matched_measdirs = [dirname for dirname in matched_measdirs if
                             int(dirname[:6]) <= int(timemark_end)]
         timestamps = ['{}_{}'.format(datemark, dirname[:6])
-                      for dirname in all_measdirs]
+                      for dirname in matched_measdirs]
         timestamps.reverse()
         all_timestamps += timestamps
     # Ensures the order of the timestamps is ascending

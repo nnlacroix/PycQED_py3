@@ -335,12 +335,38 @@ def transform_data(data_dict, keys_in, keys_out, **params):
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
 
     if len(keys_out) != len(data_to_proc_dict):
-        raise ValueError('data_keys_out and data_keys_in do not have '
-                         'the same length.')
+        raise ValueError('keys_out and keys_in do not have the same length.')
 
     for keyi, keyo in zip(data_to_proc_dict, keys_out):
         help_func_mod.add_param(
             keyo, transform_func(data_to_proc_dict[keyi], **tf_kwargs),
+            data_dict, update_key=params.get('update_key', False))
+    return data_dict
+
+
+def correct_readout(data_dict, keys_in, keys_out, state_prob_mtx, **params):
+    """
+    Maps data in data_dict specified by data_keys_in using transform_func
+     callable (can be any function).
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+    :param keys_out: list of key names or dictionary keys paths in
+                    data_dict for the processed data to be saved into
+    :param state_prob_mtx: correct state assignment probability matrix
+    :param params: keyword arguments.
+    """
+    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+
+    if len(keys_out) != len(data_to_proc_dict):
+        raise ValueError('keys_out and keys_in do not have the same length.')
+
+    uncorrected_data = np.stack(list(data_to_proc_dict.values()))
+    corrected_data = (np.linalg.inv(state_prob_mtx).T @ uncorrected_data).T
+    for i, keyo in enumerate(keys_out):
+        help_func_mod.add_param(
+            keyo, corrected_data[:, i],
             data_dict, update_key=params.get('update_key', False))
     return data_dict
 
@@ -1045,7 +1071,7 @@ class SingleQubitRBAnalysis(object):
 
         for keyi, keys in zip(self.data_to_proc_dict, self.std_keys):
             if 'pf' in keyi:
-                fit_module.prepare_rbleakagefit_dict(
+                fit_module.prepare_rbleakage_fit_dict(
                     self.data_dict, [keyi], meas_obj_names=self.mobjn,
                     indep_var_array=self.cliffords,
                     fit_key='rbleak_fit_' + self.mobjn + keyi, **params)

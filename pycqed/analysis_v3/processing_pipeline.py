@@ -244,6 +244,20 @@ class ProcessingPipeline(list):
                 'transform_func_kwargs': transform_func_kwargs,
                 **params}
 
+    def add_correct_readout_node(self, state_prob_mtx, keys_in='previous',
+                                 meas_obj_names='all', keys_out=(), **params):
+        keys_in, keys_out, meas_obj_names, mobj_keys = self.check_keys_mobjn(
+            keys_in, keys_out, meas_obj_names,
+            keys_out_container=params.pop('keys_out_container',
+                                          'correct_readout'),
+            **params)
+
+        return {'node_type': 'correct_readout',
+                'keys_in': keys_in,
+                'keys_out': keys_out,
+                'state_prob_mtx': state_prob_mtx,
+                **params}
+
 
     ######################################
     #### plot dicts preparation nodes ####
