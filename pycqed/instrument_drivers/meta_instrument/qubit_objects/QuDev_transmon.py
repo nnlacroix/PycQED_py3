@@ -3473,6 +3473,67 @@ class QuDev_transmon(Qubit):
                                                    options_dict=dict(TwoD=True))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)
+    
+    def measure_decay_freq(self, amplitudes, times, cz_pulse_name,
+                           analyze=True,
+                           upload=True, label=None, flux_length=None, 
+                           exp_metadata=None):
+        '''
+        Flux pulse amplitude measurement used to determine the qubits energy in
+        dependence of flux pulse amplitude.
+
+        Timings of sequence
+
+       |          ---|X180|  ------------------------------|RO|
+       |          --------| --------- fluxpulse ---------- |
+
+
+        Args:
+            freqs (numpy array): array of drive frequencies
+            amplitudes (numpy array): array of amplitudes of the flux pulse
+            delay (float): flux pulse delay
+            MC (MeasurementControl): if None, then the self.MC is taken
+
+        Returns: None
+
+        '''
+        if label is None:
+            label = 'Decay_frequency{}'.format(self.name)
+        MC = self.instr_mc.get_instr()
+        self.prepare(drive='timedomain')
+
+        # amplitudes = self.get_flux_amplitude(freqs)
+
+        seq, _ = \
+            fsqs.decay_freq_seq(
+                amplitudes=amplitudes, qb_name=self.name,
+                operation_dict=self.get_operation_dict(), flux_length=flux_length,
+                cz_pulse_name=cz_pulse_name, upload=False)
+        MC.set_sweep_function(awg_swf.SegmentHardSweep(
+            sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
+        MC.set_sweep_points(amplitudes)
+        MC.set_sweep_function_2D(swf.Elapsed_Time_Sweep())
+        MC.set_sweep_points_2D(times)
+        MC.set_detector_function(self.int_avg_det)
+        if exp_metadata is None:
+            exp_metadata = {}
+        exp_metadata.update({'sweep_points_dict': {self.name: amplitudes},
+                             'sweep_points_dict_2D': {self.name: times},
+                             'use_cal_points': False,
+                             'preparation_params': "",
+                             'cal_points': "",
+                             'rotate': False,
+                             'data_to_fit': {self.name: 'pe'},
+                             "sweep_name": "Frequency",
+                             "sweep_unit": "s"})
+        MC.run_2D(label, exp_metadata=exp_metadata)
+
+        if analyze:
+            try:
+                tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name],
+                                                   options_dict=dict(TwoD=True))
+            except Exception:
+                ma.MeasurementAnalysis(TwoD=True)    
 
     def measure_flux_pulse_scope_nzcz_alpha(
             self, nzcz_alphas, delays, CZ_pulse_name=None,

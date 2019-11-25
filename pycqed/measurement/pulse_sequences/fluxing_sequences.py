@@ -479,6 +479,53 @@ def fluxpulse_amplitude_sequence(amplitudes,
     return seq, np.arange(seq.n_acq_elements()), freqs
 
 
+def decay_freq_seq(amplitudes,
+                   qb_name,
+                   operation_dict,
+                   cz_pulse_name,
+                   flux_length,
+                   upload=True):
+    '''
+    Performs a X180 pulse before changing the qubit frequency with the flux
+
+    Timings of sequence
+
+       |          ---|X180|  ------------------------------|RO|
+       |          --------| --------- fluxpulse ---------- |
+    '''
+
+    seq_name = 'Decay_freq_sequence'
+    ge_pulse = deepcopy(operation_dict['X180 ' + qb_name])
+    ge_pulse['name'] = 'DF_Pi'
+    ge_pulse['element_name'] = 'DF_Pi_el'
+
+    flux_pulse = deepcopy(operation_dict[cz_pulse_name])
+    flux_pulse['name'] = 'DF_Flux'
+    flux_pulse['ref_pulse'] = 'DF_Pi'
+    flux_pulse['ref_point'] = 'end'
+    flux_pulse['pulse_length'] = flux_pulse
+    flux_pulse['pulse_delay'] = 0  #-flux_pulse.get('buffer_length_start', 0)
+
+    ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
+    ro_pulse['name'] = 'DF_Ro'
+    ro_pulse['ref_pulse'] = 'DF_Flux'
+    ro_pulse['ref_point'] = 'end'
+
+    ro_pulse['pulse_delay'] = flux_pulse.get('buffer_length_end', 0)
+
+    pulses = [ge_pulse, flux_pulse, ro_pulse]
+
+    swept_pulses = sweep_pulse_params(pulses,
+                                      {'FPA_Flux.amplitude': amplitudes})
+
+    seq = pulse_list_list_seq(swept_pulses, seq_name, upload=False)
+
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements())
+
+
 def cz_bleed_through_phase_seq(phases,
                                qb_name,
                                CZ_pulse_name,
