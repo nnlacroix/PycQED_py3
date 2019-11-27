@@ -1636,7 +1636,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
         try:
             cal_points_list = convert_channel_names_to_index(
                 self.options_dict.get('cal_points'), self.n_readouts,
-                self.raw_data_dict['value_names'][0]
+                self.raw_data_dict['value_names']
             )
         except KeyError:
             cal_points_list = convert_channel_names_to_index(
@@ -1659,6 +1659,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
 
             val_list = [self.proc_data_dict['probability_table'][idx_ro]
                         [observabele_idxs] for idx_ro in cal_point[0]]
+            print('val_list ', val_list)
             means[i] = np.mean(val_list, axis=0)
 
         # find the means for all the products of the operators and the average

@@ -981,7 +981,7 @@ class SingleQubitRBAnalysis(object):
             do_plotting = params.pop('do_plotting', True)
             self.process_data(**params)
             if prepare_fitting:
-                self.prepare_fitting()
+                self.prepare_fitting(d=params.get('d', 2))
                 if do_fitting:
                     getattr(fit_module, 'run_fitting')(
                         self.data_dict, keys_in=list(
@@ -1049,12 +1049,16 @@ class SingleQubitRBAnalysis(object):
                     'reset_reps', 0)
 
     def prepare_fitting(self, **params):
+        d = help_func_mod.get_param('d', self.data_dict, default_value=2,
+                                    **params)
+        print('d: ', d)
         fit_dicts = OrderedDict()
         rb_mod = lmfit.Model(fit_mods.RandomizedBenchmarkingDecay)
         rb_mod.set_param_hint('Amplitude', value=0)
         rb_mod.set_param_hint('p', value=.99)
         rb_mod.set_param_hint('offset', value=.5)
-        rb_mod.set_param_hint('fidelity_per_Clifford', expr='(p + (1-p)/2)')
+        rb_mod.set_param_hint('fidelity_per_Clifford',
+                              expr=f'1-(({d}-1)*(1-p)/{d})')
         rb_mod.set_param_hint('error_per_Clifford',
                               expr='1-fidelity_per_Clifford')
 
