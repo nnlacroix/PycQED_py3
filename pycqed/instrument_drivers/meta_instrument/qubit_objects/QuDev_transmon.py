@@ -3525,10 +3525,12 @@ def add_CZ_pulse(qbc, qbt):
                                 vals=vals.Numbers(0))
         qbc.add_pulse_parameter(op_name, ps_name + '_chevron_func',
                                 'chevron_func', initial_value=None,
-                                vals=vals.Callable(),
-                                docstring="Callable required when using "
+                                vals=vals.Strings(),
+                                docstring="String representation of callable "
+                                          "required when using "
                                           "effective time CZ pulse to "
-                                          "straighten Chevron.")
+                                          "straighten Chevron. Will be called by"
+                                          " eval(chevron_func)(*args)")
 
 
 def add_CZ_MG_pulse(qbc, qbt):

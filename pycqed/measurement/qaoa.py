@@ -1,8 +1,11 @@
 from pprint import pprint
 
 import numpy as np
+from numpy import array # Do not remove, used in eval(str_with_array)
 from copy import deepcopy
 import pycqed.measurement.waveform_control.sequence as sequence
+import pycqed.analysis_v2.tomography_qudev as tomo
+from pycqed.measurement.pulse_sequences.multi_qubit_tek_seq_elts import get_tomography_pulses
 from pycqed.measurement.pulse_sequences.single_qubit_tek_seq_elts import \
     get_pulse_dict_from_pars, add_preparation_pulses, pulse_list_list_seq, prepend_pulses
 import pycqed.measurement.waveform_control.segment as segment
@@ -10,6 +13,7 @@ from pycqed.measurement.waveform_control.block import Block
 from pycqed.measurement.waveform_control import pulsar as ps
 import itertools
 
+# TODO: Move this function to more meaningfull place where others can use it
 def correlate_qubits(qubit_states, correlations='all', correlator='z',
                      average=True):
     """
@@ -57,6 +61,16 @@ def correlate_qubits(qubit_states, correlations='all', correlator='z',
 
     return np.mean(correlated_output, axis=0) if average else correlated_output
 
+def average_sigmaz(qubit_states):
+    """
+     Returns average sigmaz on the given qubit_states,
+     i.e average state of a qubit
+    Args:
+        qubit_states (array): (n_shots, n_qubits) where each digit is the
+            assigned state of a qubit (0 or 1).
+    """
+    return np.mean(qubit_states, axis=0)
+
 class ProblemHamiltonians:
 
     @staticmethod
@@ -72,8 +86,33 @@ class ProblemHamiltonians:
         """
         return np.sum([Ci * (1 - corr)
                        for Ci, corr in zip(C, avg_sigma_z_sigma_z_corr)])
+    @staticmethod
 
+    def ising_with_field(avg_sigma_z_sigma_z_corr, avg_sigmaz, C, h):
+        """
+        $H = \sum_{i<j}^{M} C_{i,j} \langle\sigma_{z_i} \sigma_{z_j}\rangle +
+        \sum_{i}^N h_i \langle\sigma_{z_i}\rangle$
+        Sum of M two qubit terms and N single qubit terms weighted by Cs and hs.
+        Args:
+            avg_sigma_z_sigma_z_corr (array/list): shape (M,) average correlations
+            C (array/list): corresponding weighting factor for each of M correlations
+            avg_sigmaz (array/list): shape (N,) average single qubit term
+            h (array/list): corresponding weighting factor for each of the  N qubits
+        Returns:
 
+        """
+        assert len(C) == len(avg_sigma_z_sigma_z_corr), \
+            f"Inconsistent number of correlations and weights (C):" \
+                f" {avg_sigma_z_sigma_z_corr} vs {len(C)} "
+        assert len(h) == len(avg_sigmaz), \
+            f"Inconsistent number of single qubit terms and weights (h):" \
+                f" {avg_sigmaz} vs {len(h)} "
+        two_qb_terms = np.sum([Ci * corr
+                               for Ci, corr in zip(C, avg_sigma_z_sigma_z_corr)])
+        single_qb_terms = np.sum([hi * qbi for hi, qbi in zip(h, avg_sigmaz)])
+        return two_qb_terms + single_qb_terms
+
+# TODO: move this function to more meaningful place
 def basis_transformation(qb_array_in_01_basis):
     """
     Transforms qubit string to qubits encoded in 2^n_qubits basis. Eg for 2 qubits:
@@ -106,32 +145,52 @@ def basis_transformation(qb_array_in_01_basis):
 
 def qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info, operation_dict,
                   init_state='0', cphase_implementation='hardware',
-                  prep_params=None, upload=True):
+                  single_qb_terms=None,
+                  tomography=False, tomo_basis=tomo.DEFAULT_BASIS_ROTS,
+                  cal_points=None, prep_params=None, upload=True):
 
     # create sequence, segment and builder
     seq_name = f'QAOA_{cphase_implementation}_cphase_{qb_names}'
-    seg_name = f'segment_0'
+
     seq = sequence.Sequence(seq_name)
-    seg = segment.Segment(seg_name)
+
     builder = QAOAHelper(qb_names, operation_dict)
 
     prep_params = {} if prep_params is None else prep_params
 
-    # # initialize qubits
-    seg.extend(builder.initialize(init_state, prep_params=prep_params).build())
-    # pprint(builder.initialize(init_state, prep_params=prep_params).build())
-    # # QAOA Unitaries
-    for k, (gamma, beta) in enumerate(zip(gammas, betas)):
-        # # Uk
-        seg.extend(builder.U(f"U_{k}", two_qb_gates_info,
-                   gamma, cphase_implementation).build())
-        # # Dk
-        seg.extend(builder.D(f"D_{k}", beta).build())
+    # tomography pulses
+    tomography_segments = (None,)
+    if tomography:
+        tomography_segments = \
+            get_tomography_pulses(*qb_names, basis_pulses=tomo_basis)
 
-    # readout qubits
-    seg.extend(builder.mux_readout().build())
+    for i, ts in enumerate(tomography_segments):
+        seg_name = f'segment_{i}' if ts is None else  f'segment_{i}_tomo_{i}'
+        seg = segment.Segment(seg_name)
 
-    seq.add(seg)
+        # initialize qubits
+        seg.extend(builder.initialize(init_state, prep_params=prep_params).build())
+
+        # QAOA Unitaries
+        for k, (gamma, beta) in enumerate(zip(gammas, betas)):
+            # # Uk
+            seg.extend(builder.U(f"U_{k}", two_qb_gates_info,
+                       gamma, cphase_implementation, single_qb_terms).build())
+            # # Dk
+            seg.extend(builder.D(f"D_{k}", beta).build())
+
+        # add tomography pulses if required
+        if ts is not None:
+            seg.extend(builder.block_from_ops(f"tomography_{i}", ts).build())
+
+        # readout qubits
+        seg.extend(builder.mux_readout().build())
+
+        seq.add(seg)
+
+    # add calibration points
+    if cal_points is not None:
+        seq.extend(cal_points.create_segments(operation_dict, **prep_params))
 
     if upload:
         ps.Pulsar.get_instance().program_awgs(seq)
@@ -227,10 +286,6 @@ class HelperBase:
             # if i == 0:
             #     pulse['ref_pulse'] = 'segment_start'
             pulses.append(pulse)
-
-        # # TODO: note, add prep pulses could be in this class also.
-        # pulses_with_prep = add_preparation_pulses(pulses, self.operation_dict,
-        #                                           qubits, **prep_params)
         return Block(block_name, pulses)
 
     def prepare(self, qubits='all', ref_pulse='start', preparation_type='wait',
@@ -409,7 +464,8 @@ class HelperBase:
 
         return pulses[0] if single_qb_given else pulses
 
-    def block_from_ops(self, block_name, operations, fill_values=None):
+    def block_from_ops(self, block_name, operations, fill_values=None,
+                       pulse_modifs=None):
         """
         Returns a block with the given operations.
         Eg.
@@ -421,15 +477,30 @@ class HelperBase:
         :param operations: list of operations (str), which can be preformatted
             and later filled with values in the dictionary fill_values
         :param fill_values (dict): optional fill values for operations.
+        :param pulse_modifs (dict): keys are the index of the pulses on which the pulse
+            modifications should be made, values are dictionaries of modifications
+            Eg. ops = ["X180 qb1", "Y90 qb2"],
+            pulse_modifs = {1: {"ref_point": "start"}}
+            This will modify the pulse "Y90 qb2" and reference it to the start
+            of the first one.
         :return:
         """
-        return Block(block_name,
-                     [self.get_pulse(op.format(**fill_values), True)
-                      for op in operations])
+        if fill_values is None:
+            fill_values = {}
+        if pulse_modifs is None:
+            pulse_modifs = {}
+
+        pulses = [self.get_pulse(op.format(**fill_values), True)
+                  for op in operations]
+
+        # modify pulses given the modifications
+        [pulses[i].update(pm) for i, pm in pulse_modifs.items()]
+        return Block(block_name, pulses)
 
 class QAOAHelper(HelperBase):
 
-    def U(self, name, gate_sequence_info, gamma, cphase_implementation):
+    def U(self, name, gate_sequence_info, gamma, cphase_implementation,
+          single_qb_terms=None):
         """
         Returns Unitary propagator pulse sequence (as a Block).
         :param name: name of the block
@@ -440,31 +511,37 @@ class QAOAHelper(HelperBase):
             - qbt: target qubit
             - gate_name: name of the 2 qb gate
             - C: coupling btw the two qubits
-            - (arb_phase_func): only required when using hardware implementation
+            - (phase_func) (str): String representation of function predicting
+                amplitude and dynamic phase for given target conditional phase.
+                Only required when using hardware implementation
                of arbitrary phase gate.
+            - (zero_angle_strategy):
+                'skip_gate': skips the two qb gate
+                'zero_amplitude': forces flux amplitude to zero
+                 dict with keys "amplitude", "dynamic_phase": overwrite ampl and dynphase
+                 not specified: treated as any other angle with phase_func
             All dictionaries within the same sub list are executed simultaneously
             Example:
             >>> [
             >>>     # first set of 2qb gates to run together
             >>>     [dict(qbc='qb1', qbt='qb2', gate_name='upCZ qb2 qb1', C=1,
-            >>>           arb_phase_func=func_qb1_qb2),
+            >>>           phase_func=func_qb1_qb2),
             >>>      dict(qbc='qb4', qbt='qb3', gate_name='upCZ qb4 qb3', C=1,
-            >>>           arb_phase_func=func_qb4_qb3)],
+            >>>           phase_func=func_qb4_qb3)],
             >>>     # second set of 2qb gates
             >>>     [dict(qbc='qb3', qbt='qb2', gate_name='upCZ qb2 qb3', C=1,
-            >>>        arb_phase_func=func_qb3_qb2)]
+            >>>        phase_func=func_qb3_qb2)]
             >>> ]
         :param gamma: rotation angle (in rad)
         :param cphase_implementation: implementation of arbitrary phase gate.
             "software" --> gate is decomposed into single qb gates and 2x CZ gate
             "hardware" --> hardware arbitrary phase gate
+        :param single_qb_terms (dict): keys are all qubits of experiment
+            and values are the h weighting factor for that qubit.
         :return: Unitary U (Block)
         """
 
         assert cphase_implementation in ("software", "hardware")
-
-        if cphase_implementation == "software":
-            raise NotImplementedError()
 
         U = Block(name, [])
         for i, two_qb_gates_same_timing in enumerate(gate_sequence_info):
@@ -477,34 +554,95 @@ class QAOAHelper(HelperBase):
                 gate_name = two_qb_gates_info['gate_name']
                 C = two_qb_gates_info["C"]
 
-                #virtual gate on qb 0
-                z_qbc = self.Z_gate(2 * gamma * C * 180 / np.pi, qbc)
+                if cphase_implementation == "software":
+                    two_qb_block = \
+                        self._U_qb_pair_software_decomposition(
+                            qbc, qbt, gamma, C, gate_name,
+                            f"software qbc:{qbc} qbt:{qbt}")
+                elif cphase_implementation == "hardware":
+                    # TODO: clean up in function just as above
+                    #virtual gate on qb 0
+                    z_qbc = self.Z_gate(-2 * gamma * C * 180 / np.pi, qbc)
 
-                # virtual gate on qb 1
-                z_qbt = self.Z_gate(2 * gamma * C * 180 / np.pi, qbt)
+                    # virtual gate on qb 1
+                    z_qbt = self.Z_gate(-2 * gamma * C * 180 / np.pi, qbt)
 
-                #arbitrary phase gate
-                c_arb_pulse = self.operation_dict[gate_name]
-                #get amplitude and dynamic phase from model
-                ampl, dyn_phase = two_qb_gates_info['arb_phase_func'](-4 * gamma * C)
-                c_arb_pulse['amplitude'] = ampl
-                c_arb_pulse['element_name'] = "flux_arb_gate"
-                c_arb_pulse['basis_rotation'].update(
-                    {two_qb_gates_info['qbc']: dyn_phase})
+                    #arbitrary phase gate
+                    c_arb_pulse = self.operation_dict[gate_name]
+                    #get amplitude and dynamic phase from model
+                    angle = -4 * gamma * C
+                    angle = angle % (2*np.pi)
+                    ampl, dyn_phase = eval(two_qb_gates_info['phase_func'])(angle)
 
-                two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
-                                     [z_qbc, z_qbt, c_arb_pulse])
+                    # overwrite angles for angle % 2 pi  == 0
+                    if angle == 0:
+                        strategy = two_qb_gates_info.get("zero_angle_strategy", None)
+                        if strategy == "zero_amplitude":
+                            ampl, dyn_phase = 0, 0
+                        elif strategy == "skip_gate":
+                            two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
+                                                 [z_qbc, z_qbt])
+                            simultaneous.extend(two_qb_block.build(ref_pulse=f"start"))
+                            continue
+                        elif isinstance(strategy, dict):
+                            ampl = strategy.get("amplitude", ampl)
+                            dyn_phase = strategy.get("dynamic_phase", dyn_phase)
+                        elif strategy is None:
+                            pass
+                        else:
+                            raise ValueError(f"Zero angle strategy {strategy} not "
+                                             f"understood")
+                    print(f"{name}:\nphase angle: {angle}\nAmpl: {ampl}\ndyn_phase: {dyn_phase}")
+                    c_arb_pulse['amplitude'] = ampl
+                    c_arb_pulse['element_name'] = "flux_arb_gate"
+                    c_arb_pulse['basis_rotation'].update(
+                        {two_qb_gates_info['qbc']: dyn_phase})
 
-                # FIXME: not that nice that we have to add the "runtime"name of the ref
-                #  block i.e. prepending all higher level block. I guess a solution
-                #  would be to check recursively all reference to the pulse before
-                #  changing its name but this might be slow.
+                    two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
+                                         [z_qbc, z_qbt, c_arb_pulse])
+
                 simultaneous.extend(
                     two_qb_block.build(ref_pulse=f"start"))
             # add block referenced to start of U_k
             U.extend(simultaneous.build())
 
+        # add single qb z rotation for single qb terms of hamiltonian
+        if single_qb_terms is not None:
+            for qb, h in single_qb_terms.items():
+                U.extend([self.Z_gate(2 * gamma * h * 180 / np.pi, qb)])
+
         return U
+
+    def _U_qb_pair_software_decomposition(self, qbc, qbt, gamma, C, cz_gate_name,
+                                          block_name):
+        """
+        Performs the software decomposition of the QAOA two qubit unitary:
+        diag({i phi, -i phi, -i phi, i phi}) where phi = C * gamma.
+
+        Efficient decomposition by Christian :
+
+        H_qbt---CZ---H_qbt---RZ_qbt(2*phi)---H_qbt---CZ---H_qbt
+        where:
+            H_qbt is a Hadamard gate on qbt (implemented using Y90 + Z180)
+            CZ is the control pi-phase gate between qbc and qbt
+            RZ_qb(x) is a z rotation of angle x on qb
+
+        :param qbc:
+        :param qbt:
+        :param gamma:
+        :param C:
+        :param cz_gate_name:
+        :return:
+        """
+        ops = ["Y90 {qbt:}", "Z180 {qbt:}", cz_gate_name, "Y90 {qbt:}",
+               "Z180 {qbt:}", "Z{two_phi:} {qbt:}", "Y90 {qbt:}", "Z180 {qbt:}",
+               cz_gate_name, "Y90 {qbt:}", "Z180 {qbt:}"]
+        fill_values = dict(qbt=qbt, two_phi=2 * gamma * C * 180/np.pi)
+
+        # put flux pulses in same element
+        pulse_modifs = {2: dict(element_name="flux_cz_gate"),
+                        8: dict(element_name="flux_cz_gate")}
+        return self.block_from_ops(block_name, ops, fill_values, pulse_modifs)
 
     def D(self, name, beta, qubits='all'):
         if qubits == 'all':
@@ -520,7 +658,7 @@ class QAOAHelper(HelperBase):
         return Block(name, pulses)
 
     @staticmethod
-    def get_corr_and_coupl_info(two_qb_gates_info):
+    def get_corr_and_coupl_info(two_qb_gates_info, qb_names=None):
         """
         Helper function to get correlations and couplings used in the sequence
         Correlations are defined as tuples of zero-indexed of qubits: eg.
@@ -534,17 +672,27 @@ class QAOAHelper(HelperBase):
             - qbt: target qubit
             - gate_name: name of the 2 qb gate
             - C: coupling btw the two qubits
-            - (arb_phase_func): only required when using hardware implementation
+            - (phase_func) (str): String representation of function predicting
+                amplitude and dynamic phase for given target conditional phase.
+                Only required when using hardware implementation
                of arbitrary phase gate.
-
+            qb_names (list): list of qubit names. if given will return
+            correlations based on indices instead of qubit names. Useful to
+            apply correlations directly onto an array of states where qubits
+            are ordered in the same way
         Returns:
-            corr_info (list): list of tuples indicating qubits to correlate
+            corr_info (list): list of tuples indicating qubits to correlate:
+                by name if qubits not given else by index.
             couplings (list): corresponding coupling for each correlation
 
         """
         flattened_info = deepcopy([i for info in two_qb_gates_info for i in info])
 
-        corr_info = [(int(i['qbc'][-1]) - 1, int(i['qbt'][-1]) - 1)
-                for i in flattened_info]
+        if qb_names is not None:
+            print(qb_names)
+            corr_info = [(qb_names.index(i['qbc']), qb_names.index(i['qbt']))
+                         for i in flattened_info]
+        else:
+            corr_info = [(i['qbc'], i['qbt']) for i in flattened_info]
         couplings = [i['C'] for i in flattened_info]
         return corr_info, couplings

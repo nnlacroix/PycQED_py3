@@ -9,6 +9,7 @@ try:
 except ImportError as e:
     logging.warning('Could not import qutip, tomo code will not work')
 
+DEFAULT_BASIS_ROTS = ('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90')
 # General state tomography functions
 
 def least_squares_tomography(mus: np.ndarray, Fs: List[qtp.Qobj],
