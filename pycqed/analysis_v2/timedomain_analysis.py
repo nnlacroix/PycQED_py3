@@ -2009,10 +2009,11 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         self.proc_data_dict['meas_results'] = all_mus
 
         rho_ls = tomo.least_squares_tomography(all_mus, all_Fs, all_Omegas)
+        print(self.options_dict['mle'])
         self.proc_data_dict['rho_ls'] = rho_ls
         self.proc_data_dict['rho'] = rho_ls
         if self.options_dict.get('mle', False):
-            rho_mle = tomo.mle_tomography(all_mus, all_Fs, all_Omegas,
+            rho_mle = tomo.mle_tomography(all_mus, all_Fs, None, #all_Omegas,
                                           rho_guess=rho_ls)
             self.proc_data_dict['rho_mle'] = rho_mle
             self.proc_data_dict['rho'] = rho_mle

@@ -668,8 +668,8 @@ class Segment:
 
         for pulse in self.elements[element]:
             if pulse.codeword != 'no_codeword':
-                samples = 2048
-
+                # samples = 2048
+                pass
         self.element_start_end[element][awg] = [t_start, samples]
 
         return [t_start, samples]
@@ -967,8 +967,7 @@ class Segment:
                                     ch in channels.get(instr, []):
                                 tvals = \
                                 self.tvals([f"{instr}_{ch}"], elem_name[1])[
-                                    f"{instr}_{ch}"] \
-                                - delays.get(instr, 0)
+                                    f"{instr}_{ch}"] - delays.get(instr, 0)
                                 ax[i, 0].plot(tvals * 1e6, wf,
                                               label=f"{elem_name[1]}_{k}_{ch}",
                                               linewidth=0.7)

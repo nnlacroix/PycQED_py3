@@ -3,6 +3,7 @@ Library containing pulse shapes.
 """
 
 import numpy as np
+from numpy import array # do not delete; used in eval
 import scipy as sp
 from pycqed.measurement.waveform_control.pulse import Pulse, apply_modulation
 from pycqed.utilities.general import int_to_bin
@@ -320,7 +321,7 @@ class BufferedCZPulseEffectiveTime(Pulse):
         self.pulse_length = kw.pop('pulse_length', 0)
         # physical length of pulse, computed using the model in chevron_func,
         # which is the true length of the pulse
-        self.pulse_physical_length = self.chevron_func(self.amplitude,
+        self.pulse_physical_length = eval(self.chevron_func)(self.amplitude,
                                                        self.pulse_length)
         self.buffer_length_start = kw.pop('buffer_length_start', 0)
         self.buffer_length_end = kw.pop('buffer_length_end', 0)
