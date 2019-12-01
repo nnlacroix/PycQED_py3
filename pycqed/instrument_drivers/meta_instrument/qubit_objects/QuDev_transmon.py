@@ -31,6 +31,7 @@ from pycqed.measurement import optimization as opti
 from pycqed.measurement import mc_parameter_wrapper
 import pycqed.analysis_v2.spectroscopy_analysis as sa
 from pycqed.utilities import math
+import pycqed.analysis.fitting_models as fms
 
 try:
     import pycqed.simulations.readout_mode_simulations_for_CLEAR_pulse \
@@ -244,6 +245,10 @@ class QuDev_transmon(Qubit):
         self.add_parameter('ge_Q_offset', unit='V', initial_value=0,
                            parameter_class=ManualParameter,
                            label='DC offset for the drive line Q channel')
+        # qubit ge frequency fit parameters
+        self.add_parameter('ge_freq_fit_para', 
+                           label='Qubit frequency fit parameters',
+                           initial_value={}, parameter_class=ManualParameter)
         # add drive pulse parameters
         self.add_operation('X180')
         self.add_pulse_parameter('X180', 'ge_pulse_type', 'pulse_type',
@@ -3401,12 +3406,12 @@ class QuDev_transmon(Qubit):
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)
 
-    def measure_flux_pulse_amplitude(self, freqs, amplitudes, cz_pulse_name,
+    def find_flux_pulse_amplitude(self, freqs, amplitudes, cz_pulse_name,
                                      analyze=True, cal_points=True,
                                      upload=True, label=None,
                                      n_cal_points_per_state=2, delay=None,
                                      cal_states='auto', prep_params=None, 
-                                     exp_metadata=None):
+                                     exp_metadata=None, update=False):
         '''
         Flux pulse amplitude measurement used to determine the qubits energy in
         dependence of flux pulse amplitude.
@@ -3464,20 +3469,25 @@ class QuDev_transmon(Qubit):
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
                              "sweep_name": "Amplitude",
-                             "sweep_unit": "V"})
+                             "sweep_unit": "V",
+                             "global_PCA": True})
         MC.run_2D(label, exp_metadata=exp_metadata)
 
         if analyze:
             try:
-                tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name],
-                                                   options_dict=dict(TwoD=True))
+                MA = tda.FluxAmplitudeSweepAnalysis(qb_names = [self.name], 
+                                               options_dict=dict(TwoD=True))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)
+                
+        if update:
+            freq_fit_pars = MA.fit_res['freq_fit_{self.name}']
+            self.ge_freq_fit_pars = freq_fit_pars
     
-    def measure_decay_freq(self, amplitudes, times, cz_pulse_name,
-                           analyze=True,
-                           upload=True, label=None, flux_length=None, 
-                           exp_metadata=None):
+    def measure_T1_freq_sweep(self, freqs=None, amplitudes=None, times, 
+                              cz_pulse_name,analyze=True,
+                              upload=True, label=None, flux_length=None, 
+                              exp_metadata=None):
         '''
         Flux pulse amplitude measurement used to determine the qubits energy in
         dependence of flux pulse amplitude.
@@ -3497,6 +3507,13 @@ class QuDev_transmon(Qubit):
         Returns: None
 
         '''
+        fit_paras = deepcopy(self.ge_freq_fit_pars)
+        if freqs is not None:
+            amplitudes = fms.Qubit_freq_to_dac(freqs, fit_paras**)
+        
+        if amplitudes is None:
+            raise ValueError('Either freqs or amplitudes need to be specified')
+
         if label is None:
             label = 'Decay_frequency{}'.format(self.name)
         MC = self.instr_mc.get_instr()

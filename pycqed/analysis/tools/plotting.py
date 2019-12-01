@@ -8,7 +8,8 @@ from matplotlib import cm
 import numpy as np
 
 SI_PREFIXES = 'yzafpnμm kMGTPEZY'
-SI_UNITS = 'm,s,g,W,J,V,A,F,T,Hz,Ohm,S,N,C,px,b,B,K,Bar,Vpeak,Vpp,Vp,Vrms'.split(',')
+SI_UNITS = 'm,s,g,W,J,V,A,F,T,Hz,Ohm,S,N,C,px,b,B,K,Bar,Vpeak,Vpp,Vp,Vrms'.split(
+    ',')
 
 
 def set_axis_label(axis_type, axes, label, unit=None, **kw):
@@ -44,12 +45,12 @@ def set_axis_label(axis_type, axes, label, unit=None, **kw):
         scale_factor, unit = SI_prefix_and_scale_factor(
             val=max(abs(ticks)), unit=unit)
 
-        formatter = matplotlib.ticker.FuncFormatter(
-            lambda x, pos: float('{:.4f}'.format(x*scale_factor)))
+        formatter = matplotlib.ticker.FuncFormatter(lambda x, pos: float(
+            '{:.4f}'.format(x * scale_factor)))
 
         axis.set_major_formatter(formatter)
 
-        set_label(label+' ({})'.format(unit), **kw)
+        set_label(label + ' ({})'.format(unit), **kw)
     else:
         set_label(label, **kw)
     return axes
@@ -87,13 +88,13 @@ def SI_prefix_and_scale_factor(val, unit=None):
         else:
             # The defined prefixes go down to -24 but this is below
             # the numerical precision of python
-            prefix_power = np.clip(-15, (np.log10(abs(val))//3 * 3), 24)
+            prefix_power = np.clip(-15, (np.log10(abs(val)) // 3 * 3), 24)
         # Determine SI prefix, number 8 corresponds to no prefix
-        SI_prefix_idx = int(prefix_power/3 + 8)
+        SI_prefix_idx = int(prefix_power / 3 + 8)
         prefix = SI_PREFIXES[SI_prefix_idx]
         # Convert the unit
         scale_factor = 10**-prefix_power
-        unit = prefix+unit
+        unit = prefix + unit
     else:
         scale_factor = 1
 
@@ -103,7 +104,7 @@ def SI_prefix_and_scale_factor(val, unit=None):
     return scale_factor, unit
 
 
-def SI_val_to_msg_str(val: float, unit: str=None, return_type=str):
+def SI_val_to_msg_str(val: float, unit: str = None, return_type=str):
     """
     Takes in a value  with optional unit and returns a string tuple consisting
     of (value_str, unit) where the value and unit are rescaled according to
@@ -117,13 +118,13 @@ def SI_val_to_msg_str(val: float, unit: str=None, return_type=str):
         else:
             # The defined prefixes go down to -24 but this is below
             # the numerical precision of python
-            prefix_power = np.clip(-15, (np.log10(abs(val))//3 * 3), 24)
+            prefix_power = np.clip(-15, (np.log10(abs(val)) // 3 * 3), 24)
         # Determine SI prefix, number 8 corresponds to no prefix
-        SI_prefix_idx = int(prefix_power/3 + 8)
+        SI_prefix_idx = int(prefix_power / 3 + 8)
         prefix = SI_PREFIXES[SI_prefix_idx]
         # Convert the unit
-        val = val*10**-prefix_power
-        unit = prefix+unit
+        val = val * 10**-prefix_power
+        unit = prefix + unit
 
     value_str = return_type(val)
     # To ensure right type of return value
@@ -132,8 +133,10 @@ def SI_val_to_msg_str(val: float, unit: str=None, return_type=str):
     return value_str, unit
 
 
-def data_to_table_png(data: list, filename: str, title: str='',
-                      close_fig: bool=True):
+def data_to_table_png(data: list,
+                      filename: str,
+                      title: str = '',
+                      close_fig: bool = True):
     """
     Takes in a list of list containing the data to be
     put in a table and saves this as a png.
@@ -143,12 +146,11 @@ def data_to_table_png(data: list, filename: str, title: str='',
     hcell, wcell = 0.3, 2.
     hpad, wpad = 0.5, 0
 
-    fig = plt.figure(figsize=(ncols*wcell+wpad, nrows*hcell+hpad))
+    fig = plt.figure(figsize=(ncols * wcell + wpad, nrows * hcell + hpad))
     ax = fig.add_subplot(111)
     ax.axis('off')
     # make the table
-    table = ax.table(cellText=data,
-                     loc='center')
+    table = ax.table(cellText=data, loc='center')
     # rescale to make it more readable
     table.scale(1, 1.5)
     ax.set_title(title)
@@ -158,8 +160,14 @@ def data_to_table_png(data: list, filename: str, title: str='',
         plt.close(fig)
 
 
-def annotate_point_pair(ax, text, xy_start, xy_end, xycoords='data',
-                        text_offset=(-10, -5), arrowprops=None, **kw):
+def annotate_point_pair(ax,
+                        text,
+                        xy_start,
+                        xy_end,
+                        xycoords='data',
+                        text_offset=(-10, -5),
+                        arrowprops=None,
+                        **kw):
     '''
     Annotates two points by connecting them with an arrow.
     The annotation text is placed near the center of the arrow.
@@ -174,15 +182,19 @@ def annotate_point_pair(ax, text, xy_start, xy_end, xycoords='data',
 
     assert isinstance(text, str)
 
-    xy_text = ((xy_start[0] + xy_end[0])/2., (xy_start[1] + xy_end[1])/2.)
-    arrow_vector = xy_end[0]-xy_start[0] + (xy_end[1] - xy_start[1]) * 1j
+    xy_text = ((xy_start[0] + xy_end[0]) / 2., (xy_start[1] + xy_end[1]) / 2.)
+    arrow_vector = xy_end[0] - xy_start[0] + (xy_end[1] - xy_start[1]) * 1j
     arrow_angle = np.angle(arrow_vector)
-    text_angle = arrow_angle - 0.5*np.pi
+    text_angle = arrow_angle - 0.5 * np.pi
 
     ax.annotate(
-        '', xy=xy_end, xycoords=xycoords,
-        xytext=xy_start, textcoords=xycoords,
-        arrowprops=arrowprops, **kw)
+        '',
+        xy=xy_end,
+        xycoords=xycoords,
+        xytext=xy_start,
+        textcoords=xycoords,
+        arrowprops=arrowprops,
+        **kw)
 
     label = ax.annotate(
         text,
@@ -192,7 +204,8 @@ def annotate_point_pair(ax, text, xy_start, xy_end, xycoords='data',
                 text_offset[1] * np.sin(text_angle),
                 text_offset[0] * np.sin(text_angle) +
                 text_offset[1] * np.cos(text_angle)),
-        textcoords='offset points', **kw)
+        textcoords='offset points',
+        **kw)
     return label
 
 
@@ -203,16 +216,20 @@ def get_color_order(i, max_num, cmap='viridis'):
     print('It is recommended to use the updated function "get_color_cycle".')
     if isinstance(cmap, str):
         cmap = cm.get_cmap(cmap)
-    return cmap((i/max_num) % 1)
+    return cmap((i / max_num) % 1)
 
 
 def get_color_from_cmap(i, max_num):
     pass
 
 
-def flex_color_plot_vs_x(xvals, yvals, zvals, ax=None,
+def flex_color_plot_vs_x(xvals,
+                         yvals,
+                         zvals,
+                         ax=None,
                          xwidth=None,
-                         normalize=False, log=False,
+                         normalize=False,
+                         log=False,
                          save_name=None,
                          cmap='viridis',
                          clim=[None, None],
@@ -234,16 +251,16 @@ def flex_color_plot_vs_x(xvals, yvals, zvals, ax=None,
     # x coordinates
     if xwidth is None:
         xvals = np.array(xvals)
-        xvertices = np.zeros(np.array(xvals.shape)+1)
+        xvertices = np.zeros(np.array(xvals.shape) + 1)
 
-        dx = abs(np.max(xvals)-np.min(xvals))/len(xvals)
-        xvertices[1:-1] = (xvals[:-1]+xvals[1:])/2.
-        xvertices[0] = xvals[0] - dx/2
-        xvertices[-1] = xvals[-1] + dx/2
+        dx = abs(np.max(xvals) - np.min(xvals)) / len(xvals)
+        xvertices[1:-1] = (xvals[:-1] + xvals[1:]) / 2.
+        xvertices[0] = xvals[0] - dx / 2
+        xvertices[-1] = xvals[-1] + dx / 2
     else:
         xvertices = []
         for xval in xvals:
-            xvertices.append(xval+np.array([-0.5, 0.5])*xwidth)
+            xvertices.append(xval + np.array([-0.5, 0.5]) * xwidth)
     # y coordinates
     yvertices = []
     for xx in range(len(xvals)):
@@ -252,45 +269,61 @@ def flex_color_plot_vs_x(xvals, yvals, zvals, ax=None,
         yvals[xx] = yvals[xx][sorted_yarguments]
         zvals[xx] = zvals[xx][sorted_yarguments]
 
-        yvertices.append(np.zeros(np.array(yvals[xx].shape)+1))
-        yvertices[xx][1:-1] = (yvals[xx][:-1]+yvals[xx][1:])/2.
-        yvertices[xx][0] = yvals[xx][0] - (yvals[xx][1]-yvals[xx][0])/2
-        yvertices[xx][-1] = yvals[xx][-1] + (yvals[xx][-1]-yvals[xx][-2])/2
+        yvertices.append(np.zeros(np.array(yvals[xx].shape) + 1))
+        yvertices[xx][1:-1] = (yvals[xx][:-1] + yvals[xx][1:]) / 2.
+        yvertices[xx][0] = yvals[xx][0] - (yvals[xx][1] - yvals[xx][0]) / 2
+        yvertices[xx][-1] = yvals[xx][-1] + (yvals[xx][-1] - yvals[xx][-2]) / 2
 
         # normalized plot
         if normalize:
             zvals[xx] /= np.mean(zvals[xx])
         # logarithmic plot
         if log:
-            zvals[xx] = np.log(zvals[xx])/np.log(10)
-
-
+            zvals[xx] = np.log(zvals[xx]) / np.log(10)
 
     # add blocks to plot
     colormaps = []
     for xx in range(len(xvals)):
-        tempzvals = np.array(
-            [np.append(zvals[xx], np.array(0)),
-             np.append(zvals[xx], np.array(0))]).transpose()
+        tempzvals = np.array([
+            np.append(zvals[xx], np.array(0)),
+            np.append(zvals[xx], np.array(0))
+        ]).transpose()
 
         if xwidth is None:
-            colormaps.append(ax.pcolor(xvertices[xx:xx+2],
-                                        yvertices[xx],
-                                        tempzvals,
-                                        cmap=cmap, vmin=clim[0], vmax=clim[1],
-                                        alpha=alpha))
+            colormaps.append(
+                ax.pcolor(
+                    xvertices[xx:xx + 2],
+                    yvertices[xx],
+                    tempzvals,
+                    cmap=cmap,
+                    vmin=clim[0],
+                    vmax=clim[1],
+                    alpha=alpha))
         else:
             colormaps.append(
-                ax.pcolor(xvertices[xx], yvertices[xx], tempzvals, cmap=cmap,
-                          alpha=alpha))
+                ax.pcolor(
+                    xvertices[xx],
+                    yvertices[xx],
+                    tempzvals,
+                    cmap=cmap,
+                    alpha=alpha))
 
-    return {'fig': ax.figure, 'ax': ax,
-            'cmap': colormaps[0], 'cmaps': colormaps}
+    return {
+        'fig': ax.figure,
+        'ax': ax,
+        'cmap': colormaps[0],
+        'cmaps': colormaps
+    }
 
 
-def flex_colormesh_plot_vs_xy(xvals, yvals, zvals, ax=None,
-                              normalize=False, log=False,
-                              save_name=None, **kw):
+def flex_colormesh_plot_vs_xy(xvals,
+                              yvals,
+                              zvals,
+                              ax=None,
+                              normalize=False,
+                              log=False,
+                              save_name=None,
+                              **kw):
     """
     Add a rectangular block to a color plot using pcolormesh.
     xvals and yvals should be single vectors with values for the
@@ -309,7 +342,7 @@ def flex_colormesh_plot_vs_xy(xvals, yvals, zvals, ax=None,
     xvals = xvals[sorted_x_arguments]
     sorted_y_arguments = yvals.argsort()
     yvals = yvals[sorted_y_arguments]
-    zvals = zvals[:,  sorted_x_arguments]
+    zvals = zvals[:, sorted_x_arguments]
     zvals = zvals[sorted_y_arguments, :]
 
     # create a figure and set of axes
@@ -323,15 +356,15 @@ def flex_colormesh_plot_vs_xy(xvals, yvals, zvals, ax=None,
 
     # calculate coordinates for corners of color blocks
     # x coordinates
-    xvertices = np.zeros(np.array(xvals.shape)+1)
-    xvertices[1:-1] = (xvals[:-1]+xvals[1:])/2.
-    xvertices[0] = xvals[0] - (xvals[1]-xvals[0])/2
-    xvertices[-1] = xvals[-1] + (xvals[-1]-xvals[-2])/2
+    xvertices = np.zeros(np.array(xvals.shape) + 1)
+    xvertices[1:-1] = (xvals[:-1] + xvals[1:]) / 2.
+    xvertices[0] = xvals[0] - (xvals[1] - xvals[0]) / 2
+    xvertices[-1] = xvals[-1] + (xvals[-1] - xvals[-2]) / 2
     # y coordinates
-    yvertices = np.zeros(np.array(yvals.shape)+1)
-    yvertices[1:-1] = (yvals[:-1]+yvals[1:])/2.
-    yvertices[0] = yvals[0] - (yvals[1]-yvals[0])/2
-    yvertices[-1] = yvals[-1] + (yvals[-1]-yvals[-2])/2
+    yvertices = np.zeros(np.array(yvals.shape) + 1)
+    yvertices[1:-1] = (yvals[:-1] + yvals[1:]) / 2.
+    yvertices[0] = yvals[0] - (yvals[1] - yvals[0]) / 2
+    yvertices[-1] = yvals[-1] + (yvals[-1] - yvals[-2]) / 2
 
     xgrid, ygrid = np.meshgrid(xvertices, yvertices)
 
@@ -345,18 +378,21 @@ def flex_colormesh_plot_vs_xy(xvals, yvals, zvals, ax=None,
     # logarithmic plot
     if log:
         for xx in range(len(xvals)):
-            zvals[xx] = np.log(zvals[xx])/np.log(10)
+            zvals[xx] = np.log(zvals[xx]) / np.log(10)
 
     # add blocks to plot
     do_transpose = kw.pop('transpose', False)
     if do_transpose:
-        colormap = ax.pcolormesh(ygrid.transpose(),
-                                 xgrid.transpose(),
-                                 zvals.transpose(),
-                                 cmap=cmap, vmin=clim[0], vmax=clim[1])
+        colormap = ax.pcolormesh(
+            ygrid.transpose(),
+            xgrid.transpose(),
+            zvals.transpose(),
+            cmap=cmap,
+            vmin=clim[0],
+            vmax=clim[1])
     else:
-        colormap = ax.pcolormesh(xgrid, ygrid, zvals, cmap=cmap,
-                                 vmin=clim[0], vmax=clim[1])
+        colormap = ax.pcolormesh(
+            xgrid, ygrid, zvals, cmap=cmap, vmin=clim[0], vmax=clim[1])
 
     return {'fig': ax.figure, 'ax': ax, 'cmap': colormap}
 
@@ -367,6 +403,10 @@ def autolabel_barplot(ax, rects, rotation=90):
     """
     for rect in rects:
         height = rect.get_height()
-        ax.text(rect.get_x() + rect.get_width()/2., 0.5*height,
-                '%.2f' % (height),
-                ha='center', va='bottom', rotation=rotation)
+        ax.text(
+            rect.get_x() + rect.get_width() / 2.,
+            0.5 * height,
+            '%.2f' % (height),
+            ha='center',
+            va='bottom',
+            rotation=rotation)

@@ -332,8 +332,22 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         # create projected_data_dict
         self.data_to_fit = self.get_param_value('data_to_fit')
-        if self.cal_states_rotations is not None:
+        if self.cal_states_rotations is not None \
+            and not self.metadata['global_PCA']:
             self.cal_states_analysis()
+        elif self.metadata['global_PCA']:
+            self.cal_states_dict_for_rotation = {qb: [] for qb in self.qb_names}
+            if self.get_param_value('TwoD', default_value=False):
+                self.proc_data_dict['projected_data_dict'] = \
+                    self.rotate_data_TwoD(
+                        self.proc_data_dict['meas_results_per_qb'],
+                        self.channel_map, self.cal_states_dict_for_rotation,
+                        self.data_to_fit, global_PCA=True)
+            else:
+                raise NotImplementedError('Global PCA is not implemented for \
+                                           1D sweeps!')
+            self.num_cal_points = np.array(list(
+                self.cal_states_dict.values())).flatten().size
         else:
             # this assumes data obtained with classifier detector!
             # ie pg, pe, pf are expected to be in the value_names
@@ -512,7 +526,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     @staticmethod
     def rotate_data_TwoD(meas_results_per_qb, channel_map,
-                         cal_states_dict, data_to_fit):
+                         cal_states_dict, data_to_fit, global_PCA=False):
         rotated_data_dict = OrderedDict()
         for qb_name, meas_res_dict in meas_results_per_qb.items():
             if len(cal_states_dict[qb_name]) == 0:
@@ -523,6 +537,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 cal_one_points = list(cal_states_dict[qb_name].values())[1]
             rotated_data_dict[qb_name] = OrderedDict()
             if len(meas_res_dict) == 1:
+                if global_PCA:
+                    raise NotImplementedError('Global PCA is not implemented \
+                                            for one channel RO!')
                 # one RO channel per qubit
                 raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
                 rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
@@ -538,15 +555,26 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
                 rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
                     deepcopy(raw_data_arr.transpose())
-                for col in range(raw_data_arr.shape[1]):
+                if not global_PCA:
+                    for col in range(raw_data_arr.shape[1]):
+                        data_array = np.array(
+                            [v[:, col] for v in meas_res_dict.values()])
+                        rotated_data_dict[qb_name][
+                                data_to_fit[qb_name]][col], _, _ = \
+                            a_tools.rotate_and_normalize_data_IQ(
+                                data=data_array,
+                                cal_zero_points=cal_zero_points,
+                                cal_one_points=cal_one_points)
+                else:
                     data_array = np.array(
-                        [v[:, col] for v in meas_res_dict.values()])
+                        [v.flatten() for v in meas_res_dict.values()])
                     rotated_data_dict[qb_name][
-                            data_to_fit[qb_name]][col], _, _ = \
+                            data_to_fit[qb_name]], _, _ = \
                         a_tools.rotate_and_normalize_data_IQ(
                             data=data_array,
                             cal_zero_points=cal_zero_points,
                             cal_one_points=cal_one_points)
+                
             else:
                 # multiple readouts per qubit per channel
                 if isinstance(channel_map[qb_name], str):
@@ -2995,6 +3023,162 @@ class RODynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
                     'verticalalignment': 'top',
                     'plotfn': self.plot_text,
                     'text_string': textstr}
+
+class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
+    def process_data(self):
+        super().process_data()
+        
+        pdd = self.proc_data_dict
+        nr_sp = {qb: len(pdd['sweep_points_dict'][qb]['sweep_points']) \
+            for qb in self.qb_names}
+        nr_sp2d = {qb: len(pdd['sweep_points_2D_dict'][qb])\
+            for qb in self.qb_names}
+        nr_cp = self.num_cal_points
+
+        # make matrix out of vector
+        data_reshaped = {qb: \
+            np.reshape(deepcopy(pdd['data_to_fit'][qb]),(nr_sp[qb], nr_sp2d[qb])) \
+            for qb in self.qb_names}
+        
+        # remove calibration points from data
+        data_no_cp = {qb: \
+            np.array([data_reshaped[qb][i,:] for i in range(nr_sp[qb]-nr_cp)]) \
+            for qb in self.qb_names}
+
+        pdd['data_no_cp'] = data_no_cp
+        pdd['data_reshaped'] = data_reshaped
+                
+
+    def prepare_fitting(self):
+        pdd = self.proc_data_dict
+        self.fit_dicts = OrderedDict()
+
+        gauss_mod = fit_mods.GaussianModel()
+        for qb in self.qb_names:
+            for i in range(pdd['data_no_cp'][qb].shape[0]):
+                data = pdd['data_no_cp'][qb][i,:]
+                self.fit_dicts[f'gauss_fit_{qb}_{i}'] = {
+                    'model': gauss_mod,
+                    'fit_xvals': {'x': pdd['sweep_points_2D_dict'][qb]},
+                    'fit_yvals': {'data': data}
+                    }
+
+    def analyze_fit_results(self):
+        pdd = self.proc_data_dict
+
+        pdd['gauss_amps'] = {}
+        pdd['gauss_center'] = {}
+        pdd['gauss_center_err'] = {}
+        pdd['filtered_center'] = {}
+        pdd['filtered_amps'] = {}
+
+        for qb in self.qb_names:
+            pdd['gauss_amps'][qb] = np.array([
+                self.fit_res[f'gauss_fit_{qb}_{i}'].best_values['amplitude']
+                for i in range(pdd['data_no_cp'][qb].shape[0])])
+            pdd['gauss_center'][qb] = np.array([
+                self.fit_res[f'gauss_fit_{qb}_{i}'].best_values['center']
+                for i in range(pdd['data_no_cp'][qb].shape[0])])
+            pdd['gauss_center_err'][qb] = np.array([
+                self.fit_res[f'gauss_fit_{qb}_{i}'].params['center'].stderr
+                for i in range(pdd['data_no_cp'][qb].shape[0])])
+            
+            # filter out points with too high stderr
+            pdd['filtered_center'][qb] = []
+            pdd['filtered_amps'][qb] = []
+            for i, stderr in enumerate(pdd['gauss_center_err'][qb]):
+                try:
+                    if stderr < 1e6:
+                        pdd['filtered_center'][qb].append(\
+                                                    pdd['gauss_center'][qb][i])
+                        pdd['filtered_amps'][qb].append(\
+                            pdd['sweep_points_dict'][qb]\
+                            ['sweep_points'][:-self.num_cal_points][i])
+                except:
+                    continue
+
+            pdd['filtered_amps'][qb] = np.array(pdd['filtered_amps'][qb])
+            pdd['filtered_center'][qb] = np.array(pdd['filtered_center'][qb])
+
+            freq_mod = lmfit.Model(fit_mods.Qubit_dac_to_freq)
+            freq_mod.guess = fit_mods.Qubit_dac_arch_guess.__get__(freq_mod, freq_mod.__class__)
+
+            self.fit_dicts[f'freq_fit_{qb}'] = {
+                'model': freq_mod,
+                'fit_xvals': {'dac_voltage': pdd['filtered_amps'][qb]},
+                'fit_yvals': {'data': pdd['filtered_center'][qb]}}
+
+            self.run_fitting()
+
+    def prepare_plots(self):
+        pdd = self.proc_data_dict
+        rdd = self.raw_data_dict
+    
+        for qb in self.qb_names:
+            self.plot_dicts[f'data_2d_{qb}'] = {
+                'title': rdd['measurementstring'] +
+                            '\n' + rdd['timestamp'],
+                'ax_id': f'data_2d_{qb}',
+                'plotfn': self.plot_colorxy,
+                'xvals': pdd['sweep_points_dict'][qb]['sweep_points'],
+                'yvals': pdd['sweep_points_2D_dict'][qb],
+                'zvals': np.transpose(-pdd['data_reshaped'][qb]),
+                'xlabel': r'Flux pulse amplitude',
+                'xunit': 'V',
+                'ylabel': r'Qubit drive frequency',
+                'yunit': 'Hz',
+                'zlabel': 'Excited state population',
+            }
+
+            # colormap = self.options_dict.get('colormap', mpl.cm.plasma)
+            # for i, amp in enumerate(pdd['amps_reshaped']):
+            #     color = colormap(i/(len(pdd['amps_reshaped'])-1))
+            #     label = f'cos_data_{qb}_{i}'
+            #     self.plot_dicts[label] = {
+            #         'title': rdd['measurementstring'] +
+            #                  '\n' + rdd['timestamp'],
+            #         'ax_id': f'amplitude_crossections_{qb}',
+            #         'plotfn': self.plot_line,
+            #         'xvals': pdd['phases_reshaped'][i],
+            #         'yvals': pdd['data_reshaped'][qb][i],
+            #         'xlabel': r'Pulse phase, $\phi$',
+            #         'xunit': 'deg',
+            #         'ylabel': 'Excited state population',
+            #         'linestyle': '',
+            #         'color': color,
+            #         'setlabel': f'amp={amp:.4f}',
+            #         'do_legend': True,
+            #         'legend_bbox_to_anchor': (1, 1),
+            #         'legend_pos': 'upper left',
+            #     }
+            if self.do_fitting:
+                # color = colormap(i/(len(pdd['amps_reshaped'])-1))
+                label = f'freq_fit_{qb}'
+                self.plot_dicts[label] = {
+                    'ax_id': f'data_2d_{qb}',
+                    'plotfn': self.plot_fit,
+                    'fit_res': self.fit_res[label],
+                    'plot_init': self.options_dict.get('plot_init', False),
+                    # 'xlabel': r'Flux pulse amplitude',
+                    # 'xunit': 'V',
+                    # 'ylabel': r'Qubit drive frequency',
+                    # 'yunit': 'Hz',
+                    'color': 'red',
+                    # 'setlabel': f'fit, amp={amp:.4f}',
+                }
+
+                label = f'freq_scatter_{qb}'
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] +
+                            '\n' + rdd['timestamp'],
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['filtered_amps'][qb],
+                    'yvals': pdd['filtered_center'][qb],
+                    'xlabel': r'Flux pulse amplitude',
+                    'xunit': 'V',
+                    'ylabel': r'Qubit drive frequency',
+                    'yunit': 'Hz',
+                }
 
 class MeasurementInducedDephasingAnalysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):
