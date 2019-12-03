@@ -356,6 +356,11 @@ def correct_readout(data_dict, keys_in, keys_out, state_prob_mtx, **params):
                     data_dict for the processed data to be saved into
     :param state_prob_mtx: correct state assignment probability matrix
     :param params: keyword arguments.
+
+    Assumptions:
+        - keys_in correspond to the data in the correct order with respect to
+        the order of the rows and columns in the state_prob_mtx (usually
+        'g', 'e', 'f').
     """
     data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
 
@@ -1054,8 +1059,8 @@ class SingleQubitRBAnalysis(object):
         print('d: ', d)
         fit_dicts = OrderedDict()
         rb_mod = lmfit.Model(fit_mods.RandomizedBenchmarkingDecay)
-        rb_mod.set_param_hint('Amplitude', value=0)
-        rb_mod.set_param_hint('p', value=.99)
+        rb_mod.set_param_hint('Amplitude', value=0.5)
+        rb_mod.set_param_hint('p', value=.9)
         rb_mod.set_param_hint('offset', value=.5)
         rb_mod.set_param_hint('fidelity_per_Clifford',
                               expr=f'1-(({d}-1)*(1-p)/{d})')
@@ -1083,6 +1088,7 @@ class SingleQubitRBAnalysis(object):
             key = 'rb_fit_' + self.mobjn + keyi
             data_fit = help_func_mod.get_msmt_data(
                 self.data_to_proc_dict[keyi], self.cp, self.mobjn)
+
             model = deepcopy(rb_mod)
             fit_dicts[key] = {
                 'fit_fn': fit_mods.RandomizedBenchmarkingDecay,
