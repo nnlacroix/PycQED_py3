@@ -93,7 +93,7 @@ def TwinLorentzFunc(f, A_gf_over_2, A, f0_gf_over_2, f0,
     return val
 
 
-def Qubit_dac_to_freq(dac_voltage, f_max, E_c,
+def Qubit_dac_to_freq(dac_voltage, f_max,
                       dac_sweet_spot, V_per_phi0=None,
                       dac_flux_coefficient=None,
                       asymmetry=0):
@@ -107,6 +107,9 @@ def Qubit_dac_to_freq(dac_voltage, f_max, E_c,
     dac_sweet_spot (V): voltage at which the sweet-spot is found
     asym (dimensionless asymmetry param) = abs((EJ1-EJ2)/(EJ1+EJ2)),
     '''
+
+    E_c = 0
+
     if V_per_phi0 is None and dac_flux_coefficient is None:
         raise ValueError('Please specify "V_per_phi0".')
 
@@ -157,7 +160,7 @@ def Qubit_dac_to_detun(dac_voltage, f_max, E_c, dac_sweet_spot, V_per_phi0,
                                      asymmetry=asymmetry)
 
 
-def Qubit_freq_to_dac(frequency, f_max, E_c,
+def Qubit_freq_to_dac(frequency, f_max,
                       dac_sweet_spot, V_per_phi0=None,
                       dac_flux_coefficient=None, asymmetry=0,
                       branch='positive'):
@@ -176,6 +179,7 @@ def Qubit_freq_to_dac(frequency, f_max, E_c,
     if V_per_phi0 is None and dac_flux_coefficient is None:
         raise ValueError('Please specify "V_per_phi0".')
 
+    E_c = 0
     # asymm_term = (asymmetry**2 + (1-asymmetry**2))
     # dac_term = np.arccos(((frequency+E_c)/((f_max+E_c) * asymm_term))**2)
 
@@ -893,16 +897,14 @@ def Resonator_dac_arch_guess(model, freq, dac_voltage, f_max_qubit: float = None
 
 
 def Qubit_dac_arch_guess(model, data, dac_voltage):
-    E_c = 260e6
     f_max, dac_ss = np.max(data), dac_voltage[np.argmax(data)]
     f_min, dac_lss = np.min(data), dac_voltage[np.argmin(data)]
-    V_per_phi0 = 2*(dac_ss-dac_lss)
-    d = (f_min+E_c)**2/(f_max+E_c)**2
+    V_per_phi0 = abs(2*(dac_ss-dac_lss))
+    d = (f_min)**2/(f_max)**2
     model.set_param_hint('f_max', value=f_max, min=0)
     model.set_param_hint('dac_sweet_spot', value=dac_ss, min=-3, max=3)
     model.set_param_hint('V_per_phi0', value=V_per_phi0, min=0)
     model.set_param_hint('asymmetry', value=d, min=0, max=1)
-    model.set_param_hint('E_c', value=E_c, min=0)
 
     params = model.make_params()
     return params

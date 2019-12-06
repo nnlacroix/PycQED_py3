@@ -2280,7 +2280,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
 
     det_get_values_kws = {'classified': classified,
                           'correlated': False,
-                          'thresholded': True,
+                          'thresholded': False,
                           'averaged': True}
     det_name = 'int_avg{}_det'.format('_classif' if classified else '')
     det_func = get_multiplexed_readout_detector_functions(

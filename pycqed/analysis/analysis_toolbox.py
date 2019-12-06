@@ -350,8 +350,7 @@ def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r+'):
         if ro_acq_weight_type in ['SSB', 'DSB', 'optimal_qutrit']:
             qbchs += [str(instr_settings[qbn].attrs['acq_Q_channel'])]
         channel_map[qbn] = [vn for vn in value_names for nr in qbchs
-                            if uhf+'_'+ro_type+nr in vn]
-
+                            if ro_type+nr in vn]
     all_values_empty = np.all([len(v) == 0 for v in channel_map.values()])
     if len(channel_map) == 0 or all_values_empty:
         raise ValueError('Did not find any channels. qb_channel_map is empty.')

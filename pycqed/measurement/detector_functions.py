@@ -1374,7 +1374,7 @@ class UHFQC_classifier_detector(UHFQC_Base):
     def classify_shots(self, data, classifier_params_list,
                        state_prob_mtx_list=None, averaged=False,
                        thresholded=True):
-
+        print(classifier_params_list)
         if classifier_params_list is None:
             raise ValueError('Please specify the classifier parameters list.')
 

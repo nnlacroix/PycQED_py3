@@ -445,15 +445,17 @@ def fluxpulse_amplitude_sequence(amplitudes,
     flux_pulse['name'] = 'FPA_Flux'
     flux_pulse['ref_pulse'] = 'FPA_Pi'
     flux_pulse['ref_point'] = 'middle'
-    flux_pulse['pulse_delay'] = -flux_pulse.get('buffer_length_start', 0)
+
+    if delay is None:
+        delay = flux_pulse['pulse_length'] / 2
+
+    flux_pulse['pulse_delay'] = -flux_pulse.get('buffer_length_start', 0)-delay
 
     ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
     ro_pulse['name'] = 'FPA_Ro'
     ro_pulse['ref_pulse'] = 'FPA_Pi'
     ro_pulse['ref_point'] = 'middle'
 
-    if delay is None:
-        delay = flux_pulse['pulse_length'] / 2
 
     ro_pulse['pulse_delay'] = flux_pulse['pulse_length'] - delay + \
                               flux_pulse.get('buffer_length_end', 0)
@@ -484,6 +486,7 @@ def decay_freq_seq(amplitudes,
                    operation_dict,
                    cz_pulse_name,
                    flux_length,
+                   cal_points=None,
                    upload=True):
     '''
     Performs a X180 pulse before changing the qubit frequency with the flux
@@ -503,7 +506,7 @@ def decay_freq_seq(amplitudes,
     flux_pulse['name'] = 'DF_Flux'
     flux_pulse['ref_pulse'] = 'DF_Pi'
     flux_pulse['ref_point'] = 'end'
-    flux_pulse['pulse_length'] = flux_pulse
+    flux_pulse['pulse_length'] = flux_length
     flux_pulse['pulse_delay'] = 0  #-flux_pulse.get('buffer_length_start', 0)
 
     ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
@@ -516,9 +519,13 @@ def decay_freq_seq(amplitudes,
     pulses = [ge_pulse, flux_pulse, ro_pulse]
 
     swept_pulses = sweep_pulse_params(pulses,
-                                      {'FPA_Flux.amplitude': amplitudes})
+                                      {'DF_Flux.amplitude': amplitudes})
 
     seq = pulse_list_list_seq(swept_pulses, seq_name, upload=False)
+
+    if cal_points is not None:
+        # add calibration segments
+        seq.extend(cal_points.create_segments(operation_dict))
 
     if upload:
         ps.Pulsar.get_instance().program_awgs(seq)
@@ -669,6 +676,7 @@ def cz_bleed_through_phase_seq(phases,
 
 def cphase_seqs(qbc_name,
                 qbt_name,
+                # qbf_name,
                 hard_sweep_dict,
                 soft_sweep_dict,
                 operation_dict,
@@ -682,6 +690,13 @@ def cphase_seqs(qbc_name,
     assert num_cz_gates % 2 != 0
 
     seq_name = 'Cphase_sequence'
+    #
+    # if qbf_name == qb1_name:
+    #     qbc_name = qb1_name
+    #     qbt_name = qb2_name
+    # else:
+    #     qbt_name = qb1_name
+    #     qbc_name = qb2_name
 
     initial_rotations = [
         deepcopy(operation_dict['X180 ' + qbc_name]),

@@ -515,8 +515,9 @@ class BufferedHalfwayPulse(Pulse):
         self.amps = {channel: kw.pop('amplitude', 0), channel2: kw.pop('amplitude2', 0)}
         
         alpha1 = kw.pop('alpha', 1)
-        alpha2 = kw.pop('alpha2', alpha1)
-        self.alphas = {channel: alpha1, channel2: alpha2} 
+        # alpha2 = kw.pop('alpha2', alpha1)
+        alpha2 = alpha1
+        self.alphas = {channel: alpha1, channel2: alpha2}
         self.pulse_length = kw.pop('pulse_length', 0)
         self.length1 = {channel: alpha1*self.pulse_length/(alpha1 + 1),
                         channel2: alpha2*self.pulse_length/(alpha2 + 1)}

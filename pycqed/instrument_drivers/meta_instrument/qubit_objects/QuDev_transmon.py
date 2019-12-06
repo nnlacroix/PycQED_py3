@@ -246,8 +246,9 @@ class QuDev_transmon(Qubit):
                            parameter_class=ManualParameter,
                            label='DC offset for the drive line Q channel')
         # qubit ge frequency fit parameters
-        self.add_parameter('ge_freq_fit_para', 
-                           label='Qubit frequency fit parameters',
+        self.add_parameter('fit_ge_freq_from_flux_pulse_amp',
+                           label='Parameters for frequency vs flux pulse '
+                                 'amplitude fit',
                            initial_value={}, parameter_class=ManualParameter)
         # add drive pulse parameters
         self.add_operation('X180')
@@ -3481,12 +3482,13 @@ class QuDev_transmon(Qubit):
                 ma.MeasurementAnalysis(TwoD=True)
                 
         if update:
-            freq_fit_pars = MA.fit_res['freq_fit_{self.name}']
-            self.ge_freq_fit_pars = freq_fit_pars
+            self.fit_ge_freq_from_flux_pulse_amp(MA.fit_res['freq_fit_{'
+                                                            'self.name}'].best_values)
     
-    def measure_T1_freq_sweep(self, freqs=None, amplitudes=None, times, 
-                              cz_pulse_name,analyze=True,
-                              upload=True, label=None, flux_length=None, 
+    def measure_T1_freq_sweep(self, times, cz_pulse_name, flux_length,
+                              freqs=None, amplitudes=None,
+                              analyze=True,cal_states='auto', cal_points=False,
+                              upload=True, label=None,n_cal_points_per_state=2,
                               exp_metadata=None):
         '''
         Flux pulse amplitude measurement used to determine the qubits energy in
@@ -3507,9 +3509,21 @@ class QuDev_transmon(Qubit):
         Returns: None
 
         '''
-        fit_paras = deepcopy(self.ge_freq_fit_pars)
+        fit_paras = deepcopy(self.fit_ge_freq_from_flux_pulse_amp())
         if freqs is not None:
-            amplitudes = fms.Qubit_freq_to_dac(freqs, fit_paras**)
+            amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
+
+        if np.any((amplitudes > 2.5)):
+            amplitudes -= fit_paras['V_per_phi0']
+        elif np.any((amplitudes < -2.5)):
+            amplitudes += fit_paras['V_per_phi0']
+
+        if np.any((amplitudes > 2.5)+(amplitudes > 2.5)):
+            raise ValueError('Specified sweep exceeds AWG output range!')
+
+        if np.any(np.isnan(amplitudes)):
+            raise ValueError('Specified frequencies resulted in nan amplitude. '
+                             'Check frequency range!')
         
         if amplitudes is None:
             raise ValueError('Either freqs or amplitudes need to be specified')
@@ -3521,28 +3535,37 @@ class QuDev_transmon(Qubit):
 
         # amplitudes = self.get_flux_amplitude(freqs)
 
-        seq, _ = \
+        if cal_points:
+            cal_states = CalibrationPoints.guess_cal_states(cal_states)
+            cp = CalibrationPoints.single_qubit(
+                self.name, cal_states, n_per_state=n_cal_points_per_state)
+        else:
+            cp = None
+
+        seq, sweep_points = \
             fsqs.decay_freq_seq(
                 amplitudes=amplitudes, qb_name=self.name,
                 operation_dict=self.get_operation_dict(), flux_length=flux_length,
-                cz_pulse_name=cz_pulse_name, upload=False)
+                cz_pulse_name=cz_pulse_name, upload=False, cal_points=cp)
         MC.set_sweep_function(awg_swf.SegmentHardSweep(
             sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
-        MC.set_sweep_points(amplitudes)
+        MC.set_sweep_points(sweep_points)
         MC.set_sweep_function_2D(swf.Elapsed_Time_Sweep())
         MC.set_sweep_points_2D(times)
         MC.set_detector_function(self.int_avg_det)
         if exp_metadata is None:
             exp_metadata = {}
-        exp_metadata.update({'sweep_points_dict': {self.name: amplitudes},
+        exp_metadata.update({'sweep_points_dict': {self.name: amplitudes if\
+                                                   freqs is None else freqs},
                              'sweep_points_dict_2D': {self.name: times},
-                             'use_cal_points': False,
+                             'use_cal_points': cal_points,
                              'preparation_params': "",
-                             'cal_points': "",
-                             'rotate': False,
+                             'cal_points': repr(cp),
+                             'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
-                             "sweep_name": "Frequency",
-                             "sweep_unit": "s"})
+                             "sweep_name": "Amplitude" if freqs is None else \
+                                           "Frequency",
+                             "sweep_unit": "Hz" if freqs is not None else "V"})
         MC.run_2D(label, exp_metadata=exp_metadata)
 
         if analyze:
