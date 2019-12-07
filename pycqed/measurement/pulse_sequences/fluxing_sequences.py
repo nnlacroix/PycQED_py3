@@ -604,8 +604,8 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
             print(f'max_pulse_length = {max_flux_length*1e9:.2f} ns, '
                   f'from pulse dict.')
     # add buffers to this delay
-    delay = max_flux_length + flux_pulse.get('buffer_length_start', 0) + \
-        flux_pulse.get('buffer_length_end', 0)
+    delay = (max_flux_length + flux_pulse.get('buffer_length_start', 0) +
+        flux_pulse.get('buffer_length_end', 0))*num_cz_gates
     # # ensure the delay is commensurate with 16/2.4e9
     # comm_const = (16/2.4e9)
     # if delay % comm_const > 1e-15:
