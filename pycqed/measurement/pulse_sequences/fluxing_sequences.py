@@ -449,7 +449,8 @@ def fluxpulse_amplitude_sequence(amplitudes,
     if delay is None:
         delay = flux_pulse['pulse_length'] / 2
 
-    flux_pulse['pulse_delay'] = -flux_pulse.get('buffer_length_start', 0)-delay
+    flux_pulse['pulse_delay'] = -flux_pulse.get('buffer_length_start',
+                                                0) - delay
 
     ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
     ro_pulse['name'] = 'FPA_Ro'
@@ -485,7 +486,7 @@ def decay_freq_seq(amplitudes,
                    qb_name,
                    operation_dict,
                    cz_pulse_name,
-                   flux_length,
+                   flux_lengths,
                    cal_points=None,
                    upload=True):
     '''
@@ -497,6 +498,10 @@ def decay_freq_seq(amplitudes,
        |          --------| --------- fluxpulse ---------- |
     '''
 
+    len_amp = len(amplitudes)
+    amplitudes = np.repeat(amplitudes, len(flux_lengths))
+    flux_lengths = np.tile(flux_lengths, len_amp)
+
     seq_name = 'Decay_freq_sequence'
     ge_pulse = deepcopy(operation_dict['X180 ' + qb_name])
     ge_pulse['name'] = 'DF_Pi'
@@ -506,7 +511,6 @@ def decay_freq_seq(amplitudes,
     flux_pulse['name'] = 'DF_Flux'
     flux_pulse['ref_pulse'] = 'DF_Pi'
     flux_pulse['ref_point'] = 'end'
-    flux_pulse['pulse_length'] = flux_length
     flux_pulse['pulse_delay'] = 0  #-flux_pulse.get('buffer_length_start', 0)
 
     ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
@@ -518,8 +522,10 @@ def decay_freq_seq(amplitudes,
 
     pulses = [ge_pulse, flux_pulse, ro_pulse]
 
-    swept_pulses = sweep_pulse_params(pulses,
-                                      {'DF_Flux.amplitude': amplitudes})
+    swept_pulses = sweep_pulse_params(pulses, {
+        'DF_Flux.amplitude': amplitudes,
+        'DF_Flux.pulse_length': flux_lengths
+    })
 
     seq = pulse_list_list_seq(swept_pulses, seq_name, upload=False)
 
@@ -674,18 +680,19 @@ def cz_bleed_through_phase_seq(phases,
         return seq_name
 
 
-def cphase_seqs(qbc_name,
-                qbt_name,
-                # qbf_name,
-                hard_sweep_dict,
-                soft_sweep_dict,
-                operation_dict,
-                cz_pulse_name,
-                num_cz_gates=1,
-                max_flux_length=None,
-                cal_points=None,
-                upload=True,
-                prep_params=dict()):
+def cphase_seqs(
+        qbc_name,
+        qbt_name,
+        # qbf_name,
+        hard_sweep_dict,
+        soft_sweep_dict,
+        operation_dict,
+        cz_pulse_name,
+        num_cz_gates=1,
+        max_flux_length=None,
+        cal_points=None,
+        upload=True,
+        prep_params=dict()):
 
     assert num_cz_gates % 2 != 0
 

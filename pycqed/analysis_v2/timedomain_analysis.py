@@ -344,8 +344,11 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         self.channel_map, self.cal_states_dict_for_rotation,
                         self.data_to_fit, global_PCA=True)
             else:
-                raise NotImplementedError('Global PCA is not implemented for \
-                                           1D sweeps!')
+                self.proc_data_dict['projected_data_dict'] =\
+                    self.rotate_data(self.proc_data_dict['meas_results_per_qb'],
+                        self.channel_map, self.cal_states_dict_for_rotation,
+                        self.data_to_fit)
+
             self.num_cal_points = np.array(list(
                 self.cal_states_dict.values())).flatten().size
         else:
@@ -493,6 +496,13 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         data=np.array([v for v in meas_res_dict.values()]),
                         cal_zero_points=cal_zero_points,
                         cal_one_points=cal_one_points)
+                mean = np.mean(
+                    rotated_data_dict[qb_name][data_to_fit[qb_name]])
+                middle = (np.max(
+                    rotated_data_dict[qb_name][data_to_fit[qb_name]]) + 
+                    np.min(rotated_data_dict[qb_name][data_to_fit[qb_name]]))/2
+                rotated_data_dict[qb_name][data_to_fit[qb_name]]*=np.sign(
+                                                                middle-mean)
             else:
                 # multiple readouts per qubit per channel
                 if isinstance(channel_map[qb_name], str):
@@ -3215,6 +3225,68 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
                     'ylabel': r'Qubit drive frequency',
                     'yunit': 'Hz',
                 }
+
+class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
+    def process_data(self):
+        super().process_data()
+
+        pdd = self.proc_data_dict
+        nr_cp = self.num_cal_points
+        nr_amps = len(self.metadata['amplitudes'])
+        nr_lengths = len(self.metadata['flux_lengths'])
+
+        # make matrix out of vector
+        data_reshaped_no_cp = {qb: \
+            np.reshape(deepcopy(pdd['data_to_fit'][qb][:-nr_cp]),(\
+                nr_amps,nr_lengths)) for qb in self.qb_names}
+
+        pdd['data_reshaped_no_cp'] = data_reshaped_no_cp
+
+    def prepare_fitting(self):
+        pdd = self.proc_data_dict
+
+        self.fit_dicts = OrderedDict()
+        exp_mod = fit_mods.ExponentialModel()
+        for qb in self.qb_names:
+            for i, data in enumerate(pdd['data_reshaped_no_cp'][qb]):
+                self.fit_dicts[f'exp_fit_{qb}_amp_{i}'] = {
+                    'model': exp_mod,
+                    'fit_xvals': {'x': self.metadata['flux_lengths']},
+                    'fit_yvals': {'data': data}}
+
+    def analyze_fit_results(self):
+        pdd = self.proc_data_dict
+
+        pdd['T1'] = {}
+        pdd['T1_err'] = {}
+
+        for qb in self.qb_names:
+            pdd['T1'][qb] = np.array([
+                self.fit_res[f'exp_fit_{qb}_amp_{i}'].best_values['tau']
+                for i in range(len(self.metadata['amplitudes']))])
+            pdd['gauss_center_err'][qb] = np.array([
+                self.fit_res[f'exp_fit_{qb}_amp_{i}'].params['tau'].stderr
+                for i in range(len(self.metadata['amplitudes']))])
+    
+    def prepare_plots(self):
+        pdd = self.proc_data_dict
+
+        for qb in self.qb_names:
+            label = f'T1_fit_{qb}'
+            xvals = self.metadata['amplitudes'] if \
+                self.metadata['frequencies'] is None else \
+                self.metadata['frequencies']
+            self.plot_dicts[label] = {
+                'plotfn': self.line_plot,
+                'linestyle': '',
+                'xvals': xvals,
+                'yvals': pdd['T1'][qb],
+                'xlabel': r'Flux pulse amplitude',
+                'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
+                'ylabel': r'T1',
+                'yunit': 's',
+                'color': 'blue',
+            }
 
 class MeasurementInducedDephasingAnalysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):
