@@ -533,6 +533,8 @@ def decay_freq_seq(amplitudes,
         # add calibration segments
         seq.extend(cal_points.create_segments(operation_dict))
 
+    seq.repeat_ro('RO ' + qb_name, operation_dict)
+
     if upload:
         ps.Pulsar.get_instance().program_awgs(seq)
 

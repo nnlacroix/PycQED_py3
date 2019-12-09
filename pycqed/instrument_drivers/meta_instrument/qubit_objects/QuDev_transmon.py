@@ -3534,7 +3534,7 @@ class QuDev_transmon(Qubit):
         self.prepare(drive='timedomain')
 
         amplitudes = np.array(amplitudes)
-        flux_lengths = np.arrray(flux_lengths)
+        flux_lengths = np.array(flux_lengths)
 
         if cal_points:
             cal_states = CalibrationPoints.guess_cal_states(cal_states)
@@ -3561,19 +3561,18 @@ class QuDev_transmon(Qubit):
                              'frequencies': freqs,
                              'flux_lengths': flux_lengths,
                              'use_cal_points': cal_points,
-                             'preparation_params': "",
                              'cal_points': repr(cp),
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
                             #  "sweep_name": "Amplitude" if freqs is None else \
                             #                "Frequency",
                             #  "sweep_unit": "Hz" if freqs is not None else "V",
-                             "global_PCA": True})
+                             "global_PCA": not cal_points})
         MC.run(label, exp_metadata=exp_metadata)
 
         if analyze:
             try:
-                tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name],
+                tda.T1FrequencySweepAnalysis(qb_names=[self.name],
                                                    options_dict=dict(TwoD=False))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=False)    

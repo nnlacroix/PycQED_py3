@@ -316,7 +316,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     self.proc_data_dict['sweep_points_dict'][qbn][
                         'sweep_points'], qbn)} for qbn in self.qb_names}
             self.proc_data_dict['sweep_points_dict'] = sweep_points_w_calpts
-        except TypeError as e:
+        except (TypeError, AttributeError) as e:
             log.error(e)
             log.warning("Failed retrieving cal point objects or states. "
                         "Please update measurement to provide cal point object "
@@ -3237,8 +3237,17 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
 
         # make matrix out of vector
         data_reshaped_no_cp = {qb: \
-            np.reshape(deepcopy(pdd['data_to_fit'][qb][:-nr_cp]),(\
+            np.reshape(deepcopy(pdd['data_to_fit'][qb]\
+                [:len(pdd['data_to_fit']['qb2'])-nr_cp]),(\
                 nr_amps,nr_lengths)) for qb in self.qb_names}
+
+        # p_g = {qb: (pdd['data_to_fit'][qb][-4]+pdd['data_to_fit'][qb][-3])/2 for
+        #        qb in self.qb_names}
+        # p_e = {qb: (pdd['data_to_fit'][qb][-2]+pdd['data_to_fit'][qb][-1])/2 for
+        #        qb in self.qb_names}
+        #
+        # pdd['data_reshaped_no_cp'] ={qb: (data_reshaped_no_cp[qb] - p_g[qb])/\
+        #                                  (p_e[qb]-p_g[qb]) for qb in self.qb_names}
 
         pdd['data_reshaped_no_cp'] = data_reshaped_no_cp
 
@@ -3259,28 +3268,38 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
 
         pdd['T1'] = {}
         pdd['T1_err'] = {}
+        pdd['mask'] = {}
 
         for qb in self.qb_names:
             pdd['T1'][qb] = np.array([
-                self.fit_res[f'exp_fit_{qb}_amp_{i}'].best_values['tau']
+                abs(self.fit_res[f'exp_fit_{qb}_amp_{i}'].best_values['decay'])
                 for i in range(len(self.metadata['amplitudes']))])
-            pdd['gauss_center_err'][qb] = np.array([
-                self.fit_res[f'exp_fit_{qb}_amp_{i}'].params['tau'].stderr
-                for i in range(len(self.metadata['amplitudes']))])
+
+            pdd['mask'][qb] = []
+            for i in range(len(self.metadata['amplitudes'])):
+                try:
+                    if self.fit_res[f'exp_fit_{qb}_amp_{i}']\
+                                            .params['decay'].stderr < 1e-5:
+                        pdd['mask'][qb].append(True)
+                    else:
+                        pdd['mask'][qb].append(False)
+                except TypeError:
+                    pdd['mask'][qb].append(False)
     
     def prepare_plots(self):
         pdd = self.proc_data_dict
 
         for qb in self.qb_names:
+            mask = pdd['mask'][qb]
             label = f'T1_fit_{qb}'
-            xvals = self.metadata['amplitudes'] if \
+            xvals = self.metadata['amplitudes'][mask] if \
                 self.metadata['frequencies'] is None else \
-                self.metadata['frequencies']
+                self.metadata['frequencies'][mask]
             self.plot_dicts[label] = {
-                'plotfn': self.line_plot,
-                'linestyle': '',
+                'plotfn': self.plot_line,
+                'linestyle': '-',
                 'xvals': xvals,
-                'yvals': pdd['T1'][qb],
+                'yvals': pdd['T1'][qb][mask],
                 'xlabel': r'Flux pulse amplitude',
                 'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
                 'ylabel': r'T1',

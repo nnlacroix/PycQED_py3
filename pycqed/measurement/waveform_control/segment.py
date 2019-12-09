@@ -316,12 +316,9 @@ class Segment:
 
             self.elements[last_element].append(pulse)
 
+
         for (el, awg) in longest_pulse:
-            length_comp = longest_pulse[(el, awg)]
-            el_start = self.get_element_start(el, awg)
-            new_end = t_end + length_comp
-            new_samples = self.time2sample(new_end - el_start, awg=awg)
-            self.element_start_end[el][awg][1] = new_samples
+            self.element_start_length(el, awg)
 
     def gen_refpoint_dict(self):
         """
@@ -432,7 +429,7 @@ class Segment:
 
             for element in self.elements_on_awg[awg]:
                 # Calculate the trigger pulse time
-                [el_start, _] = self.element_start_length(element, awg)
+                el_start, _ = self.element_start_length(element, awg)
 
                 trigger_pulse_time = el_start - \
                                      - self.pulsar.get('{}_delay'.format(awg))\
@@ -656,13 +653,13 @@ class Segment:
         if samples % gran != 0:
             samples += gran - samples % gran
 
-        for pulse in self.elements[element]:
-            if pulse.codeword != 'no_codeword':
-                samples = 2048
+        # for pulse in self.elements[element]:
+        #     if pulse.codeword != 'no_codeword':
+        #         samples = 2048
 
-        self.element_start_end[element][awg] = [t_start, samples]
+        self.element_start_end[element][awg] = (t_start, samples)
 
-        return [t_start, samples]
+        return (t_start, samples)
 
     def waveforms(self, awgs=None, elements=None, channels=None, 
                         codewords=None):
