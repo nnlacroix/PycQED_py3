@@ -496,12 +496,16 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         data=np.array([v for v in meas_res_dict.values()]),
                         cal_zero_points=cal_zero_points,
                         cal_one_points=cal_one_points)
-                mean = np.mean(
-                    rotated_data_dict[qb_name][data_to_fit[qb_name]])
-                middle = (np.max(
-                    rotated_data_dict[qb_name][data_to_fit[qb_name]]) + 
-                    np.min(rotated_data_dict[qb_name][data_to_fit[qb_name]]))/2
-                rotated_data_dict[qb_name][data_to_fit[qb_name]]*=np.sign(
+
+                # if no calibration points are used rotate data manually
+                if len(cal_states_dict[qb_name]) == 0:
+                    mean = np.mean(
+                        rotated_data_dict[qb_name][data_to_fit[qb_name]])
+                    middle = (np.max(
+                        rotated_data_dict[qb_name][data_to_fit[qb_name]]) +
+                              np.min(rotated_data_dict[qb_name][
+                                         data_to_fit[qb_name]])) / 2
+                    rotated_data_dict[qb_name][data_to_fit[qb_name]]*=np.sign(
                                                                 middle-mean)
             else:
                 # multiple readouts per qubit per channel
