@@ -507,11 +507,10 @@ class QAOAHelper(HelperBase):
         :param gate_sequence_info (list) : list of list of information
             dictionaries. Dictionaries contain information about a two QB gate:
             assumes the following keys:
-            - qbc: control qubit
-            - qbt: target qubit
-            - gate_name: name of the 2 qb gate
+            - qbs: 2-tuple of logical qubit indices
+            - gate_name: name of the 2 qb gate type
             - C: coupling btw the two qubits
-            - (phase_func) (str): String representation of function predicting
+            - (phase_func): Dictionary of string representations of functions predicting
                 amplitude and dynamic phase for given target conditional phase.
                 Only required when using hardware implementation
                of arbitrary phase gate.
@@ -524,19 +523,19 @@ class QAOAHelper(HelperBase):
             Example:
             >>> [
             >>>     # first set of 2qb gates to run together
-            >>>     [dict(qbc='qb1', qbt='qb2', gate_name='upCZ qb2 qb1', C=1,
-            >>>           phase_func=func_qb1_qb2),
-            >>>      dict(qbc='qb4', qbt='qb3', gate_name='upCZ qb4 qb3', C=1,
-            >>>           phase_func=func_qb4_qb3)],
+            >>>     [dict(qbs=(0,1), gate_name='upCZ', C=1,
+            >>>           phase_func=arb_phase_func_dict),
+            >>>      dict(qbs(2,3), gate_name='upCZ', C=1,
+            >>>           phase_func=arb_phase_func_dict)],
             >>>     # second set of 2qb gates
-            >>>     [dict(qbc='qb3', qbt='qb2', gate_name='upCZ qb2 qb3', C=1,
-            >>>        phase_func=func_qb3_qb2)]
+            >>>     [dict(qbs=(2,1), gate_name='upCZ', C=1,
+            >>>        phase_func=arb_phase_func_dict)]
             >>> ]
         :param gamma: rotation angle (in rad)
         :param cphase_implementation: implementation of arbitrary phase gate.
             "software" --> gate is decomposed into single qb gates and 2x CZ gate
             "hardware" --> hardware arbitrary phase gate
-        :param single_qb_terms (dict): keys are all qubits of experiment
+        :param single_qb_terms (dict): keys are all logical qubit indices of experiment
             and values are the h weighting factor for that qubit.
         :return: Unitary U (Block)
         """
@@ -549,34 +548,52 @@ class QAOAHelper(HelperBase):
             simultaneous = Block(simult_bname, [])
             for two_qb_gates_info in two_qb_gates_same_timing:
                 #gate info
-                qbc = two_qb_gates_info["qbc"]
-                qbt = two_qb_gates_info["qbt"]
-                gate_name = two_qb_gates_info['gate_name']
                 C = two_qb_gates_info["C"]
+                strategy = two_qb_gates_info.get("zero_angle_strategy", None)
+                doswap = two_qb_gates_info.get("swap", False);
+                if abs((2 * gamma * C) % (2*np.pi))<1e-10 and strategy == "skip_gate" and not doswap:
+                    continue
+                qbc = self.qb_names[two_qb_gates_info['qbs'][0]]
+                qbt = self.qb_names[two_qb_gates_info['qbs'][1]]
+                gate_name = f"{two_qb_gates_info['gate_name']} {qbt} {qbc}";
+                if gate_name not in self.operation_dict:
+                    qbc, qbt = qbt, qbc
+                    gate_name = f"{two_qb_gates_info['gate_name']} {qbt} {qbc}";
+                assert gate_name in self.operation_dict, \
+                    f"The logical qubits {two_qb_gates_info['qbs']} are currently " \
+                        f"not connected by a {two_qb_gates_info['gate_name']} gate!"
+
+                #virtual gate on qb 0
+                z_qbc = self.Z_gate(-2 * gamma * C * 180 / np.pi, qbc)
+                # virtual gate on qb 1
+                z_qbt = self.Z_gate(-2 * gamma * C * 180 / np.pi, qbt)
 
                 if cphase_implementation == "software":
-                    two_qb_block = \
-                        self._U_qb_pair_software_decomposition(
-                            qbc, qbt, gamma, C, gate_name,
-                            f"software qbc:{qbc} qbt:{qbt}")
+                    if doswap:
+                        two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}", [z_qbc, z_qbt])
+                        two_qb_block.extend(
+                            self._U_qb_pair_fermionic_simulation(
+                                qbc, qbt, np.pi - 4 * gamma * C, gate_name,
+                                f"FSIM").build())
+                    else:
+                        two_qb_block = \
+                            self._U_qb_pair_software_decomposition(
+                                qbc, qbt, gamma, C, gate_name,
+                                f"software qbc:{qbc} qbt:{qbt}")
                 elif cphase_implementation == "hardware":
                     # TODO: clean up in function just as above
-                    #virtual gate on qb 0
-                    z_qbc = self.Z_gate(-2 * gamma * C * 180 / np.pi, qbc)
-
-                    # virtual gate on qb 1
-                    z_qbt = self.Z_gate(-2 * gamma * C * 180 / np.pi, qbt)
 
                     #arbitrary phase gate
                     c_arb_pulse = self.operation_dict[gate_name]
                     #get amplitude and dynamic phase from model
                     angle = -4 * gamma * C
+                    if doswap:
+                        angle+= np.pi; # correct phase since a fermionic swap gate is used instead of a swap gate
                     angle = angle % (2*np.pi)
-                    ampl, dyn_phase = eval(two_qb_gates_info['phase_func'])(angle)
+                    ampl, dyn_phase = eval(two_qb_gates_info['phase_func'][qbt+qbc])(angle)
 
                     # overwrite angles for angle % 2 pi  == 0
-                    if angle == 0:
-                        strategy = two_qb_gates_info.get("zero_angle_strategy", None)
+                    if abs(angle) < 1e-10:
                         if strategy == "zero_amplitude":
                             ampl, dyn_phase = 0, 0
                         elif strategy == "skip_gate":
@@ -596,20 +613,26 @@ class QAOAHelper(HelperBase):
                     c_arb_pulse['amplitude'] = ampl
                     c_arb_pulse['element_name'] = "flux_arb_gate"
                     c_arb_pulse['basis_rotation'].update(
-                        {two_qb_gates_info['qbc']: dyn_phase})
+                        {qbc: dyn_phase})
 
                     two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                          [z_qbc, z_qbt, c_arb_pulse])
+                    if doswap:
+                        two_qb_block.extend(self._U_qb_pair_fermionic_swap(qbc, qbt, gate_name, f"FSWAP").build())
 
                 simultaneous.extend(
                     two_qb_block.build(ref_pulse=f"start"))
             # add block referenced to start of U_k
             U.extend(simultaneous.build())
+            if doswap:
+                self.qb_names[two_qb_gates_info['qbs'][0]],self.qb_names[two_qb_gates_info['qbs'][1]] \
+                    = self.qb_names[two_qb_gates_info['qbs'][1]],self.qb_names[two_qb_gates_info['qbs'][0]]
+            print(self.qb_names)
 
         # add single qb z rotation for single qb terms of hamiltonian
         if single_qb_terms is not None:
             for qb, h in single_qb_terms.items():
-                U.extend([self.Z_gate(2 * gamma * h * 180 / np.pi, qb)])
+                U.extend([self.Z_gate(2 * gamma * h * 180 / np.pi, self.qb_names[qb])])
 
         return U
 
@@ -644,6 +667,69 @@ class QAOAHelper(HelperBase):
                         8: dict(element_name="flux_cz_gate")}
         return self.block_from_ops(block_name, ops, fill_values, pulse_modifs)
 
+    def _U_qb_pair_fermionic_simulation(self, qbc, qbt, phi, cz_gate_name,
+                                          block_name):
+        """
+        Performs the software decomposition of the fermionic simulation gate:
+        [[1,0,0,0] , [0,0,1,0] , [0,1,0,0] , [0,0,0,-exp(-i phi)]].
+        (decomposition by Christoph)
+
+        :param qbc:
+        :param qbt:
+        :param phi:
+        :param cz_gate_name:
+        :return:
+        """
+        ops = ["Z180 {qbt:}", "Z{angle:} {qbt:}", "Y90 {qbt:}", "Z180 {qbt:}", 
+                cz_gate_name, "Z90 {qbc:}", "Z{angle:} {qbc:}", "Y90 {qbc:}",
+                "mY90 {qbt:}", "Z{angle:} {qbt:}", "Y90 {qbt:}", "Z90 {qbt:}",
+                cz_gate_name, "Z180 {qbc:}", "Z180 {qbt:}", "Y90 {qbc:}", "Y90 {qbt:}", "Z90 {qbc:}",
+                cz_gate_name, "Z180 {qbc:}", "Z180 {qbt:}", "Y90 {qbc:}", "Y90 {qbt:}"]
+
+        # fermionic simulation gate:
+        # @(angle) kron (H, H) * CZ * kron (RZ (pi / 2), I) * kron (RY (pi / 2), RY (pi / 2)) * kron (Z, Z) * CZ *
+        # kron (RY (pi / 2), RY (angle)) * kron (RZ (pi / 2) * RZ (angle), RZ (pi / 2)) * CZ *
+        # kron (I, Z) * kron (I, RY (pi / 2)) * kron (I, RZ (pi) * RZ (angle))
+        # with angle = pi+phi/2
+        # where RY(angle) has to be decomposed into RZ(pi/2)*RY(pi/2)*RZ(angle)*RY(-pi/2)*RZ(-pi/2)
+
+        fill_values = dict(qbc=qbc, qbt=qbt, angle=180 + 1/2 * (phi * 180/np.pi) )
+
+        # put flux pulses in same element, simultaneous Y gates
+        pulse_modifs = {4: dict(element_name="flux_cz_gate"),
+                        12: dict(element_name="flux_cz_gate"),
+                        18: dict(element_name="flux_cz_gate"),
+                        8: dict(ref_point="start"),
+                        16: dict(ref_point="start"),
+                        22: dict(ref_point="start")}
+        return self.block_from_ops(block_name, ops, fill_values, pulse_modifs)
+
+    def _U_qb_pair_fermionic_swap(self, qbc, qbt, cz_gate_name, block_name):
+        """
+        Performs a fermionic swap:
+        [[1,0,0,0] , [0,0,1,0] , [0,1,0,0] , [0,0,0,-1]]
+
+        Decomposition:
+
+        (H_qbt, H_qbc)---CZ---(H_qbt, H_qbc)---CZ---(H_qbt, H_qbc)
+        where:
+            H_qbt/H_qbc is a Hadamard gate on qbt/qbc (implemented using Z180 + Y90)
+            CZ is the control pi-phase gate between qbc and qbt
+
+        :param qbc:
+        :param qbt:
+        :param cz_gate_name:
+        :return:
+        """
+        pulses = []
+        opsH = ["Z180 {qbc:}", "Z180 {qbt:}", "Y90 {qbc:}", "Y90 {qbt:}"] # Hadamard gate
+        for i in range(3):
+            pulses.extend(self.block_from_ops(f"Had{i}", opsH, dict(qbc=qbc, qbt=qbt), {3: dict(ref_point="start")}).build())
+            if i < 2:
+                pulses.extend(self.block_from_ops(f"CZ{i}", [cz_gate_name],
+                    {}, {0: dict(element_name="flux_arb_gate")}).build())
+        return Block(block_name, pulses)
+
     def D(self, name, beta, qubits='all'):
         if qubits == 'all':
             qubits = self.qb_names
@@ -658,7 +744,7 @@ class QAOAHelper(HelperBase):
         return Block(name, pulses)
 
     @staticmethod
-    def get_corr_and_coupl_info(two_qb_gates_info, qb_names=None):
+    def get_corr_and_coupl_info(two_qb_gates_info):
         """
         Helper function to get correlations and couplings used in the sequence
         Correlations are defined as tuples of zero-indexed of qubits: eg.
@@ -668,31 +754,21 @@ class QAOAHelper(HelperBase):
             two_qb_gates_info: list of list of information
             dictionaries. Dictionaries contain information about a two QB gate:
             assumes the following keys:
-            - qbc: control qubit
-            - qbt: target qubit
-            - gate_name: name of the 2 qb gate
+            - qbs: 2-tuple of logical qubit indices
+            - gate_name: name of the 2 qb gate type
             - C: coupling btw the two qubits
-            - (phase_func) (str): String representation of function predicting
+            - (phase_func): Dictionary of string representations of functions predicting
                 amplitude and dynamic phase for given target conditional phase.
                 Only required when using hardware implementation
                of arbitrary phase gate.
-            qb_names (list): list of qubit names. if given will return
-            correlations based on indices instead of qubit names. Useful to
-            apply correlations directly onto an array of states where qubits
-            are ordered in the same way
         Returns:
             corr_info (list): list of tuples indicating qubits to correlate:
-                by name if qubits not given else by index.
+                by logical qubit index.
             couplings (list): corresponding coupling for each correlation
 
         """
         flattened_info = deepcopy([i for info in two_qb_gates_info for i in info])
 
-        if qb_names is not None:
-            print(qb_names)
-            corr_info = [(qb_names.index(i['qbc']), qb_names.index(i['qbt']))
-                         for i in flattened_info]
-        else:
-            corr_info = [(i['qbc'], i['qbt']) for i in flattened_info]
+        corr_info = [(i['qbcs'][0], i['qbs'][1]) for i in flattened_info]
         couplings = [i['C'] for i in flattened_info]
         return corr_info, couplings

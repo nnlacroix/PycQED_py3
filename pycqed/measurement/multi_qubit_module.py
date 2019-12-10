@@ -529,19 +529,19 @@ def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
         qb_states_filtered = a.proc_data_dict['qubit_states_filtered']
         # correlate
         c_info, coupl = \
-            qaoa.QAOAHelper.get_corr_and_coupl_info(two_qb_gates_info, qb_names)
+            qaoa.QAOAHelper.get_corr_and_coupl_info(two_qb_gates_info)
         correlations = qaoa.correlate_qubits(qb_states_filtered, c_info)
         a.proc_data_dict['correlations'] = {'names': c_info,
                                             'values': correlations}
         avg_sigmaz = qaoa.average_sigmaz(qb_states_filtered)
-        a.proc_data_dict['avg_sigmaz'] = {qbn: avg_sigmaz[i]
+        a.proc_data_dict['avg_sigmaz'] = {str(i)+'_'+qbn: avg_sigmaz[i]
                                           for i, qbn in enumerate(qb_names)}
         if problem_hamiltonian == "ising":
             energy = qaoa.ProblemHamiltonians.ising(correlations, coupl)
         elif problem_hamiltonian == "ising_with_field":
             energy = qaoa.ProblemHamiltonians.ising_with_field(
                 correlations, avg_sigmaz, coupl,
-                [single_qb_terms[i] for i in qb_names])
+                [single_qb_terms[i] for i, qbn in enumerate(qb_names)])
         else:
             raise ValueError(f"Problem hamiltonian {problem_hamiltonian} "
                              f"not known")
