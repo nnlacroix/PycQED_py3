@@ -3139,12 +3139,13 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 except:
                     continue
 
-            if len(pdd['filtered_amps'][qb]) == 0:
+            # if len(pdd['filtered_amps'][qb]) == 0:
+            if True:
                 for qb in self.qb_names:
                     freqs = np.array([])
                     for i in range(pdd['data_masked'][qb].shape[0]):
                         freqs = np.append(freqs, pdd['freqs_masked'][qb]\
-                            [np.argmin(pdd['data_masked'][qb][i,:])])
+                            [np.argmax(pdd['data_masked'][qb][i,:])])
                     pdd['filtered_center'][qb] = freqs
                     pdd['filtered_amps'][qb] = pdd['amps_masked'][qb]
 
@@ -3200,6 +3201,21 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
             #         'legend_pos': 'upper left',
             #     }
             if self.do_fitting:
+                label = f'freq_scatter_{qb}'
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'],
+                    'ax_id': f'data_2d_{qb}',
+                    'plotfn': self.plot_line,
+                    'linestyle': '',
+                    'xvals': pdd['filtered_amps'][qb],
+                    'yvals': pdd['filtered_center'][qb],
+                    'xlabel': r'Flux pulse amplitude',
+                    'xunit': 'V',
+                    'ylabel': r'Qubit drive frequency',
+                    'yunit': 'Hz',
+                    'color': 'yellow'
+                }
                 # color = colormap(i/(len(pdd['amps_reshaped'])-1))
                 label = f'freq_fit_{qb}'
                 self.plot_dicts[label] = {
@@ -3213,21 +3229,6 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
                     # 'yunit': 'Hz',
                     'color': 'red',
                     # 'setlabel': f'fit, amp={amp:.4f}',
-                }
-
-                label = f'freq_scatter_{qb}'
-                self.plot_dicts[label] = {
-                    'title': rdd['measurementstring'] +
-                            '\n' + rdd['timestamp'],
-                    'ax_id': f'data_2d_{qb}',
-                    'plotfn': self.plot_line,
-                    'linestyle': '',
-                    'xvals': pdd['filtered_amps'][qb],
-                    'yvals': pdd['filtered_center'][qb],
-                    'xlabel': r'Flux pulse amplitude',
-                    'xunit': 'V',
-                    'ylabel': r'Qubit drive frequency',
-                    'yunit': 'Hz',
                 }
 
 class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):

@@ -3513,12 +3513,13 @@ class QuDev_transmon(Qubit):
         if freqs is not None:
             amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
 
-        if np.any((amplitudes > 2.5)):
+        if np.any((amplitudes > abs(fit_paras['dac_sweet_spot']))):
             amplitudes -= fit_paras['V_per_phi0']
-        elif np.any((amplitudes < -2.5)):
+        elif np.any((amplitudes < -abs(fit_paras['dac_sweet_spot']))):
             amplitudes += fit_paras['V_per_phi0']
 
-        if np.any((amplitudes > 2.5)+(amplitudes > 2.5)):
+        if np.any((amplitudes > abs(fit_paras['dac_sweet_spot']))+
+                  (amplitudes < -abs(fit_paras['dac_sweet_spot']))):
             raise ValueError('Specified sweep exceeds AWG output range!')
 
         if np.any(np.isnan(amplitudes)):
@@ -3575,7 +3576,101 @@ class QuDev_transmon(Qubit):
                 tda.T1FrequencySweepAnalysis(qb_names=[self.name],
                                                    options_dict=dict(TwoD=False))
             except Exception:
-                ma.MeasurementAnalysis(TwoD=False)    
+                ma.MeasurementAnalysis(TwoD=False)
+
+    def measure_T2_freq_sweep(self, cz_pulse_name, flux_lengths,
+                              freqs=None, amplitudes=None,
+                              analyze=True, cal_states='auto', cal_points=False,
+                              upload=True, label=None, n_cal_points_per_state=2,
+                              exp_metadata=None):
+        '''
+        Flux pulse amplitude measurement used to determine the qubits energy in
+        dependence of flux pulse amplitude.
+
+        Timings of sequence
+
+       |          ----|X90| --------------------------- |X90|--|RO|
+       |          --------| --------- fluxpulse ------- |
+
+
+        Args:
+            freqs (numpy array): array of drive frequencies
+            amplitudes (numpy array): array of amplitudes of the flux pulse
+            delay (float): flux pulse delay
+            MC (MeasurementControl): if None, then the self.MC is taken
+
+        Returns: None
+
+        '''
+        fit_paras = deepcopy(self.fit_ge_freq_from_flux_pulse_amp())
+        if freqs is not None:
+            amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
+
+        if np.any((amplitudes > abs(fit_paras['dac_sweet_spot']))):
+            amplitudes -= fit_paras['V_per_phi0']
+        elif np.any((amplitudes < -abs(fit_paras['dac_sweet_spot']))):
+            amplitudes += fit_paras['V_per_phi0']
+
+        if np.any((amplitudes > abs(fit_paras['dac_sweet_spot'])) +
+                  (amplitudes < -abs(fit_paras['dac_sweet_spot']))):
+            raise ValueError('Specified sweep exceeds AWG output range!')
+
+        if np.any(np.isnan(amplitudes)):
+            raise ValueError('Specified frequencies resulted in nan amplitude. '
+                             'Check frequency range!')
+
+        if amplitudes is None:
+            raise ValueError('Either freqs or amplitudes need to be specified')
+
+        if label is None:
+            label = 'Decay_frequency{}'.format(self.name)
+        MC = self.instr_mc.get_instr()
+        self.prepare(drive='timedomain')
+
+        amplitudes = np.array(amplitudes)
+        flux_lengths = np.array(flux_lengths)
+
+        if cal_points:
+            cal_states = CalibrationPoints.guess_cal_states(cal_states)
+            cp = CalibrationPoints.single_qubit(
+                self.name, cal_states, n_per_state=n_cal_points_per_state)
+        else:
+            cp = None
+
+        seq, sweep_points = \
+            fsqs.decay_freq_seq(
+                amplitudes=amplitudes, qb_name=self.name,
+                operation_dict=self.get_operation_dict(),
+                flux_lengths=flux_lengths,
+                cz_pulse_name=cz_pulse_name, upload=False, cal_points=cp)
+        MC.set_sweep_function(awg_swf.SegmentHardSweep(
+            sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
+        MC.set_sweep_points(sweep_points)
+        MC.set_detector_function(self.int_avg_det)
+        if exp_metadata is None:
+            exp_metadata = {}
+        exp_metadata.update({
+            #  'sweep_points_dict': {self.name: amplitudes if\
+            #                        freqs is None else freqs},
+            'amplitudes': amplitudes,
+            'frequencies': freqs,
+            'flux_lengths': flux_lengths,
+            'use_cal_points': cal_points,
+            'cal_points': repr(cp),
+            'rotate': cal_points,
+            'data_to_fit': {self.name: 'pe'},
+            #  "sweep_name": "Amplitude" if freqs is None else \
+            #                "Frequency",
+            #  "sweep_unit": "Hz" if freqs is not None else "V",
+            "global_PCA": not cal_points})
+        MC.run(label, exp_metadata=exp_metadata)
+
+        if analyze:
+            try:
+                tda.T1FrequencySweepAnalysis(qb_names=[self.name],
+                                             options_dict=dict(TwoD=False))
+            except Exception:
+                ma.MeasurementAnalysis(TwoD=False)
 
     def measure_flux_pulse_scope_nzcz_alpha(
             self, nzcz_alphas, delays, CZ_pulse_name=None,
