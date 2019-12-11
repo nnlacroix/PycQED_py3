@@ -680,8 +680,8 @@ class QAOAHelper(HelperBase):
         fill_values = dict(qbt=qbt, two_phi=2 * gamma * C * 180/np.pi)
 
         # put flux pulses in same element
-        pulse_modifs = {2: dict(element_name="flux_cz_gate"),
-                        8: dict(element_name="flux_cz_gate")}
+        pulse_modifs = {2: dict(element_name="flux_arb_gate"),
+                        8: dict(element_name="flux_arb_gate")}
         return self.block_from_ops(block_name, ops, fill_values, pulse_modifs)
 
     def _U_qb_pair_fermionic_simulation(self, qbc, qbt, phi, cz_gate_name,
@@ -713,9 +713,9 @@ class QAOAHelper(HelperBase):
         fill_values = dict(qbc=qbc, qbt=qbt, angle=180 + 1/2 * (phi * 180/np.pi) )
 
         # put flux pulses in same element, simultaneous Y gates
-        pulse_modifs = {4: dict(element_name="flux_cz_gate"),
-                        12: dict(element_name="flux_cz_gate"),
-                        18: dict(element_name="flux_cz_gate"),
+        pulse_modifs = {4: dict(element_name="flux_arb_gate"),
+                        12: dict(element_name="flux_arb_gate"),
+                        18: dict(element_name="flux_arb_gate"),
                         8: dict(ref_point="start"),
                         16: dict(ref_point="start"),
                         22: dict(ref_point="start")}
