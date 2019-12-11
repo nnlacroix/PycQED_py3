@@ -3579,7 +3579,7 @@ class QuDev_transmon(Qubit):
                 ma.MeasurementAnalysis(TwoD=False)
 
     def measure_T2_freq_sweep(self, cz_pulse_name, flux_lengths,
-                              freqs=None, amplitudes=None,
+                              freqs=None, amplitudes=None, phases=[0,30,60]
                               analyze=True, cal_states='auto', cal_points=False,
                               upload=True, label=None, n_cal_points_per_state=2,
                               exp_metadata=None):
@@ -3623,12 +3623,13 @@ class QuDev_transmon(Qubit):
             raise ValueError('Either freqs or amplitudes need to be specified')
 
         if label is None:
-            label = 'Decay_frequency{}'.format(self.name)
+            label = 'T2_Frequency_Sweep{}'.format(self.name)
         MC = self.instr_mc.get_instr()
         self.prepare(drive='timedomain')
 
         amplitudes = np.array(amplitudes)
         flux_lengths = np.array(flux_lengths)
+        phases = np.array(phases)
 
         if cal_points:
             cal_states = CalibrationPoints.guess_cal_states(cal_states)
@@ -3638,10 +3639,10 @@ class QuDev_transmon(Qubit):
             cp = None
 
         seq, sweep_points = \
-            fsqs.decay_freq_seq(
+            fsqs.T2_freq_sweep_seq(
                 amplitudes=amplitudes, qb_name=self.name,
                 operation_dict=self.get_operation_dict(),
-                flux_lengths=flux_lengths,
+                flux_lengths=flux_lengths, phases = phases,
                 cz_pulse_name=cz_pulse_name, upload=False, cal_points=cp)
         MC.set_sweep_function(awg_swf.SegmentHardSweep(
             sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
@@ -3650,24 +3651,20 @@ class QuDev_transmon(Qubit):
         if exp_metadata is None:
             exp_metadata = {}
         exp_metadata.update({
-            #  'sweep_points_dict': {self.name: amplitudes if\
-            #                        freqs is None else freqs},
             'amplitudes': amplitudes,
             'frequencies': freqs,
+            'phases': phases,
             'flux_lengths': flux_lengths,
             'use_cal_points': cal_points,
             'cal_points': repr(cp),
             'rotate': cal_points,
             'data_to_fit': {self.name: 'pe'},
-            #  "sweep_name": "Amplitude" if freqs is None else \
-            #                "Frequency",
-            #  "sweep_unit": "Hz" if freqs is not None else "V",
-            "global_PCA": not cal_points})
+            'global_PCA': not cal_points})
         MC.run(label, exp_metadata=exp_metadata)
 
         if analyze:
             try:
-                tda.T1FrequencySweepAnalysis(qb_names=[self.name],
+                tda.T2FrequencySweepAnalysis(qb_names=[self.name],
                                              options_dict=dict(TwoD=False))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=False)

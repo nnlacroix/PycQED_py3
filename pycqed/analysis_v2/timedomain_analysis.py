@@ -3243,7 +3243,7 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
         # make matrix out of vector
         data_reshaped_no_cp = {qb: \
             np.reshape(deepcopy(pdd['data_to_fit'][qb]\
-                [:len(pdd['data_to_fit']['qb2'])-nr_cp]),(\
+                [:len(pdd['data_to_fit'][qb])-nr_cp]),(\
                 nr_amps,nr_lengths)) for qb in self.qb_names}
 
         # p_g = {qb: (pdd['data_to_fit'][qb][-4]+pdd['data_to_fit'][qb][-3])/2 for
@@ -3308,6 +3308,98 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 'xlabel': r'Flux pulse amplitude',
                 'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
                 'ylabel': r'T1',
+                'yunit': 's',
+                'color': 'blue',
+            }
+
+class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
+    def process_data(self):
+        super().process_data()
+
+        pdd = self.proc_data_dict
+        nr_cp = self.num_cal_points
+        nr_amps = len(self.metadata['amplitudes'])
+        nr_lengths = len(self.metadata['flux_lengths'])
+        nr_phases = len(self.metadata['phases'])
+
+        # make matrix out of vector
+        data_reshaped_no_cp = {qb: \
+            np.reshape(deepcopy(pdd['data_to_fit'][qb]\
+                [:len(pdd['data_to_fit'][qb])-nr_cp]),(\
+                nr_amps, nr_lengths, nr_phases)) for qb in self.qb_names}
+
+        pdd['data_reshaped_no_cp'] = data_reshaped_no_cp
+
+    def prepare_fitting(self):
+        pdd = self.proc_data_dict
+
+        self.fit_dicts = OrderedDict()
+
+        nr_amps = len(self.metadata['amplitudes'])
+        nr_lengths = len(self.metadata['flux_lengths'])
+
+        cos_mod = fit_mods.CosModel
+        for qb in self.qb_names:
+            for i in range(nr_amps):
+                for j, data in enumerate(pdd['data_reshaped_no_cp'][qb][i]):
+                    self.fit_dicts[f'cos_fit_{qb}_{i}_{j}'] = {
+                        'model': cos_mod,
+                        'fit_xvals': {'t': self.metadata['phases']},
+                        'guess_dict': {'frequency': {'value': 1/360,
+                                                 'vary': False}},
+                        'fit_yvals': {'data': data}}
+
+        exp_mod = fit_mods.ExponentialModel()
+        for qb in self.qb_names:
+            for i, data in enumerate(nr_amps):
+                self.fit_dicts[f'exp_fit_{qb}_{i}'] = {
+                    'model': exp_mod,
+                    'fit_xvals': {'x': self.metadata['flux_lengths']},
+                    'fit_yvals': {'data': lambda :np.array([self.fit_res[
+                                            f'cos_fit_{qb}_{i}_{j}'
+                                            ].best_values['amplitude']
+                                            for j in range(nr_lengths)])}}
+
+    def analyze_fit_results(self):
+        pdd = self.proc_data_dict
+
+        pdd['T2'] = {}
+        pdd['T2_err'] = {}
+        pdd['mask'] = {}
+
+        for qb in self.qb_names:
+            pdd['T2'][qb] = np.array([
+                abs(self.fit_res[f'exp_fit_{qb}_{i}'].best_values['decay'])
+                for i in range(len(self.metadata['amplitudes']))])
+
+            pdd['mask'][qb] = []
+            for i in range(len(self.metadata['amplitudes'])):
+                try:
+                    if self.fit_res[f'exp_fit_{qb}_{i}']\
+                                            .params['decay'].stderr < 1e-5:
+                        pdd['mask'][qb].append(True)
+                    else:
+                        pdd['mask'][qb].append(False)
+                except TypeError:
+                    pdd['mask'][qb].append(False)
+    
+    def prepare_plots(self):
+        pdd = self.proc_data_dict
+
+        for qb in self.qb_names:
+            mask = pdd['mask'][qb]
+            label = f'T2_fit_{qb}'
+            xvals = self.metadata['amplitudes'][mask] if \
+                self.metadata['frequencies'] is None else \
+                self.metadata['frequencies'][mask]
+            self.plot_dicts[label] = {
+                'plotfn': self.plot_line,
+                'linestyle': '-',
+                'xvals': xvals,
+                'yvals': pdd['T1'][qb][mask],
+                'xlabel': r'Flux pulse amplitude',
+                'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
+                'ylabel': r'T2',
                 'yunit': 's',
                 'color': 'blue',
             }

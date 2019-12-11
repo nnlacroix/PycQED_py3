@@ -482,6 +482,77 @@ def fluxpulse_amplitude_sequence(amplitudes,
     return seq, np.arange(seq.n_acq_elements()), freqs
 
 
+def T2_freq_sweep_seq(amplitudes,
+                      qb_name,
+                      operation_dict,
+                      cz_pulse_name,
+                      flux_lengths,
+                      phases,
+                      cal_points=None,
+                      upload=True):
+    '''
+    Performs a X180 pulse before changing the qubit frequency with the flux
+
+    Timings of sequence
+
+       |          ---|X180|  ------------------------------|RO|
+       |          --------| --------- fluxpulse ---------- |
+    '''
+
+    len_amp = len(amplitudes)
+    len_flux = len(flux_lengths)
+    len_phase = len(phases)
+    amplitudes = np.repeat(amplitudes, len_flux * len_phase)
+    flux_lengths = np.tile(np.repeat(flux_lengths, len_phase), len_amp)
+    phases = np.tile(phases, len_flux * len_amp)
+
+    seq_name = 'T2_freq_sweep_seq'
+    ge_pulse = deepcopy(operation_dict['X90 ' + qb_name])
+    ge_pulse['name'] = 'DF_X90'
+    ge_pulse['element_name'] = 'DF_X90_el'
+
+    flux_pulse = deepcopy(operation_dict[cz_pulse_name])
+    flux_pulse['name'] = 'DF_Flux'
+    flux_pulse['ref_pulse'] = 'DF_X90'
+    flux_pulse['ref_point'] = 'end'
+    flux_pulse['pulse_delay'] = 0  #-flux_pulse.get('buffer_length_start', 0)
+
+    ge_pulse2 = deepcopy(operation_dict['X90 ' + qb_name])
+    ge_pulse2['name'] = 'DF_X90_2'
+    ge_pulse2['ref_pulse'] = 'DF_Flux'
+    ge_pulse2['ref_point'] = 'end'
+    ge_pulse2['pulse_delay'] = flux_pulse.get('buffer_length_end', 0)
+    ge_pulse2['element_name'] = 'DF_X90_el2'
+
+    ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
+    ro_pulse['name'] = 'DF_Ro'
+    ro_pulse['ref_pulse'] = 'DF_X90_2'
+    ro_pulse['ref_point'] = 'end'
+    ro_pulse['pulse_delay'] = 0
+
+    pulses = [ge_pulse, flux_pulse, ge_pulse2, ro_pulse]
+
+    swept_pulses = sweep_pulse_params(
+        pulses, {
+            'DF_Flux.amplitude': amplitudes,
+            'DF_Flux.pulse_length': flux_lengths,
+            'DF_X90_2.phase': phases
+        })
+
+    seq = pulse_list_list_seq(swept_pulses, seq_name, upload=False)
+
+    if cal_points is not None:
+        # add calibration segments
+        seq.extend(cal_points.create_segments(operation_dict))
+
+    seq.repeat_ro('RO ' + qb_name, operation_dict)
+
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements())
+
+
 def decay_freq_seq(amplitudes,
                    qb_name,
                    operation_dict,
