@@ -3513,6 +3513,8 @@ class QuDev_transmon(Qubit):
         if freqs is not None:
             amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
 
+        amplitudes = np.array(amplitudes)
+
         if np.any((amplitudes > abs(fit_paras['dac_sweet_spot']))):
             amplitudes -= fit_paras['V_per_phi0']
         elif np.any((amplitudes < -abs(fit_paras['dac_sweet_spot']))):
@@ -3573,13 +3575,13 @@ class QuDev_transmon(Qubit):
 
         if analyze:
             try:
-                tda.T1FrequencySweepAnalysis(qb_names=[self.name],
+                tda.T2FrequencySweepAnalysis(qb_names=[self.name],
                                                    options_dict=dict(TwoD=False))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=False)
 
     def measure_T2_freq_sweep(self, cz_pulse_name, flux_lengths,
-                              freqs=None, amplitudes=None, phases=[0,30,60]
+                              freqs=None, amplitudes=None, phases=[0,30,60],
                               analyze=True, cal_states='auto', cal_points=False,
                               upload=True, label=None, n_cal_points_per_state=2,
                               exp_metadata=None):
@@ -3623,7 +3625,7 @@ class QuDev_transmon(Qubit):
             raise ValueError('Either freqs or amplitudes need to be specified')
 
         if label is None:
-            label = 'T2_Frequency_Sweep{}'.format(self.name)
+            label = 'T2_Frequency_Sweep_{}'.format(self.name)
         MC = self.instr_mc.get_instr()
         self.prepare(drive='timedomain')
 

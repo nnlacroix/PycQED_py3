@@ -521,7 +521,7 @@ def T2_freq_sweep_seq(amplitudes,
     ge_pulse2['name'] = 'DF_X90_2'
     ge_pulse2['ref_pulse'] = 'DF_Flux'
     ge_pulse2['ref_point'] = 'end'
-    ge_pulse2['pulse_delay'] = flux_pulse.get('buffer_length_end', 0)
+    ge_pulse2['pulse_delay'] = 0
     ge_pulse2['element_name'] = 'DF_X90_el2'
 
     ro_pulse = deepcopy(operation_dict['RO ' + qb_name])

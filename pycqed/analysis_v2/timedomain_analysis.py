@@ -3329,6 +3329,9 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 nr_amps, nr_lengths, nr_phases)) for qb in self.qb_names}
 
         pdd['data_reshaped_no_cp'] = data_reshaped_no_cp
+        if self.metadata['use_cal_points']:
+            pdd['cal_point_data'] = {qb: deepcopy(pdd['data_to_fit'][qb]\
+                    [len(pdd['data_to_fit'][qb])-nr_cp:]) for qb in self.qb_names}
 
     def prepare_fitting(self):
         pdd = self.proc_data_dict
@@ -3336,9 +3339,10 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
         self.fit_dicts = OrderedDict()
 
         nr_amps = len(self.metadata['amplitudes'])
-        nr_lengths = len(self.metadata['flux_lengths'])
 
-        cos_mod = fit_mods.CosModel
+
+        cos_mod = lmfit.Model(fit_mods.CosFunc)
+        cos_mod.guess = fit_mods.Cos_guess.__get__(cos_mod, cos_mod.__class__)
         for qb in self.qb_names:
             for i in range(nr_amps):
                 for j, data in enumerate(pdd['data_reshaped_no_cp'][qb][i]):
@@ -3349,25 +3353,37 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                                                  'vary': False}},
                         'fit_yvals': {'data': data}}
 
-        exp_mod = fit_mods.ExponentialModel()
-        for qb in self.qb_names:
-            for i, data in enumerate(nr_amps):
-                self.fit_dicts[f'exp_fit_{qb}_{i}'] = {
-                    'model': exp_mod,
-                    'fit_xvals': {'x': self.metadata['flux_lengths']},
-                    'fit_yvals': {'data': lambda :np.array([self.fit_res[
-                                            f'cos_fit_{qb}_{i}_{j}'
-                                            ].best_values['amplitude']
-                                            for j in range(nr_lengths)])}}
-
     def analyze_fit_results(self):
         pdd = self.proc_data_dict
 
         pdd['T2'] = {}
         pdd['T2_err'] = {}
         pdd['mask'] = {}
+        pdd['phase_contrast'] = {}
+        nr_lengths = len(self.metadata['flux_lengths'])
+        nr_amps = len(self.metadata['amplitudes'])
 
         for qb in self.qb_names:
+            pdd['phase_contrast'][qb] = {}
+            exp_mod = fit_mods.ExponentialModel()
+            for i in range(nr_amps):
+                pdd['phase_contrast'][qb][f'amp_{i}'] = np.array([self.fit_res[
+                                                        f'cos_fit_{qb}_{i}_{j}'
+                                                    ].best_values['amplitude']
+                                                    for j in
+                                                    range(nr_lengths)])
+
+                self.fit_dicts[f'exp_fit_{qb}_{i}'] = {
+                    'model': exp_mod,
+                    'fit_xvals': {'x': self.metadata['flux_lengths']},
+                    'fit_yvals': {'data': np.array([self.fit_res[
+                                                        f'cos_fit_{qb}_{i}_{j}'
+                                                    ].best_values['amplitude']
+                                                    for j in
+                                                    range(nr_lengths)])}}
+
+            self.run_fitting()
+
             pdd['T2'][qb] = np.array([
                 abs(self.fit_res[f'exp_fit_{qb}_{i}'].best_values['decay'])
                 for i in range(len(self.metadata['amplitudes']))])
@@ -3396,7 +3412,7 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 'plotfn': self.plot_line,
                 'linestyle': '-',
                 'xvals': xvals,
-                'yvals': pdd['T1'][qb][mask],
+                'yvals': pdd['T2'][qb][mask],
                 'xlabel': r'Flux pulse amplitude',
                 'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
                 'ylabel': r'T2',
