@@ -567,18 +567,49 @@ class QAOAHelper(HelperBase):
                 C = two_qb_gates_info["C"]
                 strategy = two_qb_gates_info.get("zero_angle_strategy", None)
                 doswap = two_qb_gates_info.get("swap", False);
+                nbody = (len(two_qb_gates_info['qbs'])>2)
+                assert not (nbody and doswap), \
+                    f"Combination of n-body interaction and swap is not implemented!"
                 zero_angle_threshold = two_qb_gates_info.get("zero_angle_threshold", global_zero_angle_threshold)
                 if abs((2 * gamma * C) % (2*np.pi))<zero_angle_threshold and strategy == "skip_gate" and not doswap:
                     continue
-                qbc = self.qb_names[two_qb_gates_info['qbs'][0]]
-                qbt = self.qb_names[two_qb_gates_info['qbs'][1]]
-                gate_name = f"{two_qb_gates_info['gate_name']} {qbt} {qbc}";
-                if gate_name not in self.operation_dict:
-                    qbc, qbt = qbt, qbc
-                    gate_name = f"{two_qb_gates_info['gate_name']} {qbt} {qbc}";
-                assert gate_name in self.operation_dict, \
+                for qbx in [self.qb_names[qb_ind] for qb_ind in two_qb_gates_info['qbs']]:
+                    for qby_tmp in [self.qb_names[qb_ind] for qb_ind in two_qb_gates_info['qbs']]:
+                        if qby_tmp == qbx:
+                            continue
+                        qby = qby_tmp
+                        qbt,qbc = qbx,qby
+                        gate_name = f"{two_qb_gates_info['gate_name']} {qbt} {qbc}";
+                        if gate_name not in self.operation_dict:
+                            qbt,qbc = qby,qbx
+                            gate_name = f"{two_qb_gates_info['gate_name']} {qbt} {qbc}";
+                            if gate_name not in self.operation_dict:
+                                break
+                    else:
+                        break
+                else:
+                    assert False, \
                     f"The logical qubits {two_qb_gates_info['qbs']} are currently " \
                         f"not connected by a {two_qb_gates_info['gate_name']} gate!"
+                if nbody:
+                    opsH = ["Z180 {qbx:}", "Y90 {qbx:}"] # Hadamard gate
+                    nbody_start = self.block_from_ops(f"Had", opsH, dict(qbx=qbx), {}).build()
+                    nbody_end = []
+                    if cphase_implementation != "software":
+                        nbody_end = self.block_from_ops(f"Had", opsH, dict(qbx=qbx), {}).build()
+                    for qbz in [self.qb_names[qb_ind] for qb_ind in two_qb_gates_info['qbs']]:
+                        if qbz==qbx or qbz==qby:
+                            continue
+                        qbz_gate_name = f"{two_qb_gates_info['gate_name']} {qbx} {qbz}";
+                        if gate_name not in self.operation_dict:
+                            qbz_gate_name = f"{two_qb_gates_info['gate_name']} {qbz} {qbx}";
+                        nbody_cz = self.block_from_ops(f"CZ {qbz}", [qbz_gate_name],
+                            {}, {0: dict(element_name="flux_arb_gate")}).build();
+                        nbody_start.extend(nbody_cz)
+                        nbody_end.extend(nbody_cz)
+                    if cphase_implementation != "software":
+                        nbody_start.extend(self.block_from_ops(f"Had2", opsH, dict(qbx=qbx), {}).build())
+                    nbody_end.extend(self.block_from_ops(f"Had2", opsH, dict(qbx=qbx), {}).build())
 
                 #virtual gate on qb 0
                 z_qbc = self.Z_gate(-2 * gamma * C * 180 / np.pi, qbc)
@@ -596,7 +627,7 @@ class QAOAHelper(HelperBase):
                         two_qb_block = \
                             self._U_qb_pair_software_decomposition(
                                 qbc, qbt, gamma, C, gate_name,
-                                f"software qbc:{qbc} qbt:{qbt}")
+                                f"software qbc:{qbc} qbt:{qbt}", nbody)
                 elif cphase_implementation == "hardware":
                     # TODO: clean up in function just as above
 
@@ -616,7 +647,12 @@ class QAOAHelper(HelperBase):
                         elif strategy == "skip_gate":
                             two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                                  [z_qbc, z_qbt])
-                            simultaneous.extend(two_qb_block.build(ref_pulse=f"start"))
+                            if nbody:
+                                simultaneous.extend(Block(f"{qbx} nbody_start", nbody_start).build(ref_pulse=f"start"))
+                                simultaneous.extend(two_qb_block.build())
+                                simultaneous.extend(Block(f"{qbx} nbody_end", nbody_end).build())
+                            else:
+                                simultaneous.extend(two_qb_block.build(ref_pulse=f"start"))
                             continue
                         elif isinstance(strategy, dict):
                             ampl = strategy.get("amplitude", ampl)
@@ -637,8 +673,12 @@ class QAOAHelper(HelperBase):
                     if doswap:
                         two_qb_block.extend(self._U_qb_pair_fermionic_swap(qbc, qbt, gate_name, f"FSWAP").build())
 
-                simultaneous.extend(
-                    two_qb_block.build(ref_pulse=f"start"))
+                if nbody:
+                    simultaneous.extend(Block(f"{qbx} nbody_start", nbody_start).build(ref_pulse=f"start"))
+                    simultaneous.extend(two_qb_block.build())
+                    simultaneous.extend(Block(f"{qbx} nbody_end", nbody_end).build())
+                else:
+                    simultaneous.extend(two_qb_block.build(ref_pulse=f"start"))
             # add block referenced to start of U_k
             U.extend(simultaneous.build())
             if doswap:
@@ -654,7 +694,7 @@ class QAOAHelper(HelperBase):
         return U
 
     def _U_qb_pair_software_decomposition(self, qbc, qbt, gamma, C, cz_gate_name,
-                                          block_name):
+                                          block_name, remove_had=False):
         """
         Performs the software decomposition of the QAOA two qubit unitary:
         diag({i phi, -i phi, -i phi, i phi}) where phi = C * gamma.
@@ -672,16 +712,22 @@ class QAOAHelper(HelperBase):
         :param gamma:
         :param C:
         :param cz_gate_name:
+        :param remove_had: optional. If true, the outermost Hadamard gates are removed (default: false)
         :return:
         """
-        ops = ["Y90 {qbt:}", "Z180 {qbt:}", cz_gate_name, "Y90 {qbt:}",
+        ops = [cz_gate_name, "Y90 {qbt:}",
                "Z180 {qbt:}", "Z{two_phi:} {qbt:}", "Y90 {qbt:}", "Z180 {qbt:}",
-               cz_gate_name, "Y90 {qbt:}", "Z180 {qbt:}"]
+               cz_gate_name]
+        if remove_had:
+            # put flux pulses in same element
+            pulse_modifs = {0: dict(element_name="flux_arb_gate"),
+                            6: dict(element_name="flux_arb_gate")}
+        else:
+            ops = ["Y90 {qbt:}", "Z180 {qbt:}"] + ops + ["Y90 {qbt:}", "Z180 {qbt:}"]
+            # put flux pulses in same element
+            pulse_modifs = {2: dict(element_name="flux_arb_gate"),
+                            8: dict(element_name="flux_arb_gate")}
         fill_values = dict(qbt=qbt, two_phi=2 * gamma * C * 180/np.pi)
-
-        # put flux pulses in same element
-        pulse_modifs = {2: dict(element_name="flux_arb_gate"),
-                        8: dict(element_name="flux_arb_gate")}
         return self.block_from_ops(block_name, ops, fill_values, pulse_modifs)
 
     def _U_qb_pair_fermionic_simulation(self, qbc, qbt, phi, cz_gate_name,
