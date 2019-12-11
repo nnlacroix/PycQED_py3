@@ -172,9 +172,16 @@ def qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info, operation_dict,
         seg.extend(builder.initialize(init_state, prep_params=prep_params).build())
 
         # QAOA Unitaries
+        two_qb_gates_info_all = deepcopy(two_qb_gates_info);
+        if 'gate_order' not in two_qb_gates_info_all:
+            two_qb_gates_info_all['gate_order'] = [[i] for i in range(len(two_qb_gates_info_all['gate_list']))]
+        two_qb_gates_info_p = deepcopy(two_qb_gates_info_all);
         for k, (gamma, beta) in enumerate(zip(gammas, betas)):
             # # Uk
-            seg.extend(builder.U(f"U_{k}", two_qb_gates_info,
+            if isinstance(two_qb_gates_info_all['gate_order'][0][0],list):
+                two_qb_gates_info_p['gate_order'] = deepcopy(
+                    two_qb_gates_info_all['gate_order'][k % (len(two_qb_gates_info_all['gate_order']))])
+            seg.extend(builder.U(f"U_{k}", two_qb_gates_info_p,
                        gamma, cphase_implementation, single_qb_terms).build())
             # # Dk
             seg.extend(builder.D(f"D_{k}", beta).build())
@@ -504,33 +511,41 @@ class QAOAHelper(HelperBase):
         """
         Returns Unitary propagator pulse sequence (as a Block).
         :param name: name of the block
-        :param gate_sequence_info (list) : list of list of information
-            dictionaries. Dictionaries contain information about a two QB gate:
-            assumes the following keys:
-            - qbs: 2-tuple of logical qubit indices
-            - gate_name: name of the 2 qb gate type
-            - C: coupling btw the two qubits
+        :param gate_sequence_info (dict): has to contain the following keys
+            - gate_list: a list of dictionaries, each containing
+                information about a two QB gate:
+                - qbs: 2-tuple of logical qubit indices
+                - gate_name: name of the 2 qb gate type
+                - C: coupling btw the two qubits
+                - (zero_angle_strategy):
+                    'skip_gate': skips the two qb gate
+                    'zero_amplitude': forces flux amplitude to zero
+                     dict with keys "amplitude", "dynamic_phase": overwrite ampl and dynphase
+                     not specified: treated as any other angle with phase_func
+                - (zero_angle_threshold): threshold for considering an angle to be zero  (in rad)
+                    (default: use global value)
+            - gate_order: list of lists of indices from the gate_list
+                All gates in the same sublist are executed simultaneously.
             - (phase_func): Dictionary of string representations of functions predicting
                 amplitude and dynamic phase for given target conditional phase.
                 Only required when using hardware implementation
-               of arbitrary phase gate.
-            - (zero_angle_strategy):
-                'skip_gate': skips the two qb gate
-                'zero_amplitude': forces flux amplitude to zero
-                 dict with keys "amplitude", "dynamic_phase": overwrite ampl and dynphase
-                 not specified: treated as any other angle with phase_func
-            All dictionaries within the same sub list are executed simultaneously
+                of arbitrary phase gate.
+            - (zero_angle_threshold): global threshold for considering an angle to be zero (in rad)
+                default: 1e-10
             Example:
-            >>> [
+            >>> dict(
+            >>>     phase_func=arb_phase_func_dict,
+            >>>     gate_list = [
+            >>>      dict(qbs=(0,1), gate_name='upCZ', C=1),
+            >>>      dict(qbs=(2,1), gate_name='upCZ', C=1),
+            >>>      dict(qbs=(2,3), gate_name='upCZ', C=1)]
+            >>>     gate_order = [
             >>>     # first set of 2qb gates to run together
-            >>>     [dict(qbs=(0,1), gate_name='upCZ', C=1,
-            >>>           phase_func=arb_phase_func_dict),
-            >>>      dict(qbs(2,3), gate_name='upCZ', C=1,
-            >>>           phase_func=arb_phase_func_dict)],
+            >>>         [0,2],
             >>>     # second set of 2qb gates
-            >>>     [dict(qbs=(2,1), gate_name='upCZ', C=1,
-            >>>        phase_func=arb_phase_func_dict)]
-            >>> ]
+            >>>         [1]
+            >>>     ]
+            >>> )
         :param gamma: rotation angle (in rad)
         :param cphase_implementation: implementation of arbitrary phase gate.
             "software" --> gate is decomposed into single qb gates and 2x CZ gate
@@ -541,17 +556,19 @@ class QAOAHelper(HelperBase):
         """
 
         assert cphase_implementation in ("software", "hardware")
+        global_zero_angle_threshold = gate_sequence_info.get("zero_angle_threshold", 1e-10)
 
         U = Block(name, [])
-        for i, two_qb_gates_same_timing in enumerate(gate_sequence_info):
+        for i, two_qb_gates_same_timing in enumerate(gate_sequence_info['gate_order']):
             simult_bname = f"simultanenous_{i}"
             simultaneous = Block(simult_bname, [])
-            for two_qb_gates_info in two_qb_gates_same_timing:
+            for two_qb_gates_info in [gate_sequence_info['gate_list'][i] for i in two_qb_gates_same_timing]:
                 #gate info
                 C = two_qb_gates_info["C"]
                 strategy = two_qb_gates_info.get("zero_angle_strategy", None)
                 doswap = two_qb_gates_info.get("swap", False);
-                if abs((2 * gamma * C) % (2*np.pi))<1e-10 and strategy == "skip_gate" and not doswap:
+                zero_angle_threshold = two_qb_gates_info.get("zero_angle_threshold", global_zero_angle_threshold)
+                if abs((2 * gamma * C) % (2*np.pi))<zero_angle_threshold and strategy == "skip_gate" and not doswap:
                     continue
                 qbc = self.qb_names[two_qb_gates_info['qbs'][0]]
                 qbt = self.qb_names[two_qb_gates_info['qbs'][1]]
@@ -590,10 +607,10 @@ class QAOAHelper(HelperBase):
                     if doswap:
                         angle+= np.pi; # correct phase since a fermionic swap gate is used instead of a swap gate
                     angle = angle % (2*np.pi)
-                    ampl, dyn_phase = eval(two_qb_gates_info['phase_func'][qbt+qbc])(angle)
+                    ampl, dyn_phase = eval(gate_sequence_info['phase_func'][qbt+qbc])(angle)
 
                     # overwrite angles for angle % 2 pi  == 0
-                    if abs(angle) < 1e-10:
+                    if abs(angle) < zero_angle_threshold:
                         if strategy == "zero_amplitude":
                             ampl, dyn_phase = 0, 0
                         elif strategy == "skip_gate":
@@ -722,7 +739,7 @@ class QAOAHelper(HelperBase):
         :return:
         """
         pulses = []
-        opsH = ["Z180 {qbc:}", "Z180 {qbt:}", "Y90 {qbc:}", "Y90 {qbt:}"] # Hadamard gate
+        opsH = ["Z180 {qbc:}", "Z180 {qbt:}", "Y90 {qbc:}", "Y90 {qbt:}"] # 2 Hadamard gates
         for i in range(3):
             pulses.extend(self.block_from_ops(f"Had{i}", opsH, dict(qbc=qbc, qbt=qbt), {3: dict(ref_point="start")}).build())
             if i < 2:
