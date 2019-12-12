@@ -568,7 +568,7 @@ class QAOAHelper(HelperBase):
                     z_qbt = self.Z_gate(-2 * gamma * C * 180 / np.pi, qbt)
 
                     #arbitrary phase gate
-                    c_arb_pulse = self.operation_dict[gate_name]
+                    c_arb_pulse = deepcopy(self.operation_dict[gate_name])
                     #get amplitude and dynamic phase from model
                     angle = -4 * gamma * C
                     angle = angle % (2*np.pi)
@@ -634,10 +634,10 @@ class QAOAHelper(HelperBase):
         :param cz_gate_name:
         :return:
         """
-        ops = ["Y90 {qbt:}", "Z180 {qbt:}", cz_gate_name, "Y90 {qbt:}",
-               "Z180 {qbt:}", "Z{two_phi:} {qbt:}", "Y90 {qbt:}", "Z180 {qbt:}",
-               cz_gate_name, "Y90 {qbt:}", "Z180 {qbt:}"]
-        fill_values = dict(qbt=qbt, two_phi=2 * gamma * C * 180/np.pi)
+        ops = [ "Z180 {qbt:}","Y90 {qbt:}", cz_gate_name,
+               "Z180 {qbt:}", "Y90 {qbt:}", "Z{two_phi:} {qbt:}", "Z180 {qbt:}",
+                "Y90 {qbt:}", cz_gate_name, "Z180 {qbt:}", "Y90 {qbt:}"]
+        fill_values = dict(qbt=qbt, two_phi= -2*gamma * C * 180/np.pi)
 
         # put flux pulses in same element
         pulse_modifs = {2: dict(element_name="flux_cz_gate"),
