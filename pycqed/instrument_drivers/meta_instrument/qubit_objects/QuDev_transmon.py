@@ -3608,6 +3608,8 @@ class QuDev_transmon(Qubit):
         if freqs is not None:
             amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
 
+        amplitudes = np.array(amplitudes)
+
         if np.any((amplitudes > abs(fit_paras['dac_sweet_spot']))):
             amplitudes -= fit_paras['V_per_phi0']
         elif np.any((amplitudes < -abs(fit_paras['dac_sweet_spot']))):
