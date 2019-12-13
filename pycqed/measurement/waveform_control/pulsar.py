@@ -441,6 +441,9 @@ class HDAWG8Pulsar:
         self.add_parameter('{}_compensation_pulse_delay'.format(name), 
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
+        self.add_parameter('{}_internal_modulation'.format(name), 
+                           initial_value=False, vals=vals.Bool(),
+                           parameter_class=ManualParameter)
     
     def _hdawg_create_marker_channel_parameters(self, id, name, awg):
         self.add_parameter('{}_id'.format(name), get_cmd=lambda _=id: _)
@@ -497,6 +500,22 @@ class HDAWG8Pulsar:
             raise NotImplementedError('Unknown parameter {}'.format(par))
         return g 
 
+    def get_divisor(self, chid, awg):
+        '''
+        Divisor is 1 for non modulated channels and 2 for modulated non 
+        marker channels.
+        '''
+
+        if chid[-1]=='m':
+            return 1
+
+        name = self._id_channel(self, chid, awg)
+        if self.get(f"{name}_internal_modulation"):
+            return 2
+        else: 
+            return 1
+
+    
     def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
             return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
@@ -504,12 +523,16 @@ class HDAWG8Pulsar:
         if not self._zi_waves_cleared:
             _zi_clear_waves()
             self._zi_waves_cleared = True
-        waves_to_upload = {h: waveforms[h]
+        
+        chids = [f'ch{i+1}{m}' for i in range(8) for m in ['','m']]
+        divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
+        
+        waves_to_upload = {h: waveforms[h][::divisor[chid]]
                                for codewords in awg_sequence.values() 
                                    if codewords is not None 
                                for cw, chids in codewords.items() 
                                    if cw != 'metadata'
-                               for h in chids.values()}
+                               for chid, h in chids.items()}
         self._zi_write_waves(waves_to_upload)
         
         ch_has_waveforms = {'ch{}{}'.format(i + 1, m): False 

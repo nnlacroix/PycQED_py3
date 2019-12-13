@@ -62,7 +62,7 @@ class Segment:
                 len(self.unresolved_pulses))
         self._pulse_names.add(pars_copy['name'])
 
-        # Makes sure that element name is unique within sequence of 
+        # Makes sure that element name is unique within sequence of
         # segments by appending the segment name to the element name
         # and that RO pulses have their own elements if no element_name
         # was provided
@@ -77,12 +77,10 @@ class Segment:
         else:
             pars_copy['element_name'] += '_' + self.name
 
-        
         # add element to set of acquisition elements
         if pars_copy.get('operation_type', None) == 'RO':
             if pars_copy['element_name'] not in self.acquisition_elements:
                 self.acquisition_elements.add(pars_copy['element_name'])
-        
 
         new_pulse = UnresolvedPulse(pars_copy)
 
@@ -244,8 +242,8 @@ class Segment:
                     if c in pulse_area:
                         pulse_area[c][0] += pulse.pulse_area(
                             c, tvals[c][pulse_start:pulse_end])
-                        # Overwrite this entry for all elements. The last 
-                        # element on that channel will be the one that 
+                        # Overwrite this entry for all elements. The last
+                        # element on that channel will be the one that
                         # is saved.
                         pulse_area[c][1] = element
                     else:
@@ -256,7 +254,7 @@ class Segment:
 
         # Add all compensation pulses to the last element after the last pulse
         # of the segment and for each element with a compensation pulse save
-        # the pulse with the greatest length to determine the new length 
+        # the pulse with the greatest length to determine the new length
         # of the element
         i = 1
         comp_i = 1
@@ -316,7 +314,6 @@ class Segment:
 
             self.elements[last_element].append(pulse)
 
-
         for (el, awg) in longest_pulse:
             self.element_start_length(el, awg)
 
@@ -356,8 +353,11 @@ class Segment:
                         self.elements_on_awg[awg] = [element]
 
     def find_awg_hierarchy(self):
-        masters = {awg for awg in self.pulsar.awgs
-            if len(self.pulsar.get('{}_trigger_channels'.format(awg))) == 0}
+        masters = {
+            awg
+            for awg in self.pulsar.awgs
+            if len(self.pulsar.get('{}_trigger_channels'.format(awg))) == 0
+        }
 
         # generate dictionary triggering_awgs (keys are trigger AWGs and
         # values triggered AWGs) and tirggered_awgs (keys are triggered AWGs
@@ -418,7 +418,7 @@ class Segment:
         for awg in awg_hierarchy:
             if awg not in self.elements_on_awg:
                 continue
-            
+
             # for master AWG no trigger_pulse has to be added
             if len(self.pulsar.get('{}_trigger_channels'.format(awg))) == 0:
                 continue
@@ -640,11 +640,10 @@ class Segment:
         # we round the start time down
         start_gran = self.pulsar.get(
             '{}_element_start_granularity'.format(awg))
-        sample_time = 1/self.pulsar.clock(awg=awg)
+        sample_time = 1 / self.pulsar.clock(awg=awg)
         if start_gran is not None:
             t_start = math.floor((t_start + 0.5*sample_time) / start_gran) \
                       * start_gran
-
 
         # make sure that element length is multiple of
         # sample granularity
@@ -661,8 +660,11 @@ class Segment:
 
         return (t_start, samples)
 
-    def waveforms(self, awgs=None, elements=None, channels=None, 
-                        codewords=None):
+    def waveforms(self,
+                  awgs=None,
+                  elements=None,
+                  channels=None,
+                  codewords=None):
         """
         After all the pulses have been added, the timing resolved and the 
         trigger pulses added, the waveforms of the segment can be compiled.
@@ -734,7 +736,7 @@ class Segment:
                     for channel in pulse_channels:
                         chan_tvals[channel] = tvals[channel].copy(
                         )[pulse_start:pulse_end]
-                    
+
                     # calculate pulse waveforms
                     pulse_wfs = pulse.get_wfs(chan_tvals)
 
@@ -742,7 +744,6 @@ class Segment:
                     for channel in pulse_channels:
                         wfs[pulse.codeword][channel][
                             pulse_start:pulse_end] += pulse_wfs[channel]
-
 
                 # for codewords: add the pulses that do not have a codeword to
                 # all codewords
@@ -756,7 +757,6 @@ class Segment:
                                 else:
                                     wfs[codeword][channel] = wfs[
                                         'no_codeword'][channel]
-
 
                 # do predistortion
                 for codeword in wfs:
@@ -822,7 +822,7 @@ class Segment:
                                 wfs[codeword][channel])
 
         return awg_wfs
-    
+
     def get_element_codewords(self, element, awg=None):
         codewords = set()
         if awg is not None:
@@ -847,26 +847,28 @@ class Segment:
     def calculate_hash(self, elname, codeword, channel):
         if not self.pulsar.reuse_waveforms():
             return (self.name, elname, codeword, channel)
-        
+
         awg = self.pulsar.get(f'{channel}_awg')
-        tstart, length = self.element_start_end[elname][awg] 
+        tstart, length = self.element_start_end[elname][awg]
         hashlist = []
         hashlist.append(length)  # element length in samples
         if self.pulsar.get(f'{channel}_type') == 'analog' and \
                 self.pulsar.get(f'{channel}_distortion') == 'precalculate':
-            # don't compare the kernels, just assume that all channels' 
+            # don't compare the kernels, just assume that all channels'
             # distortion kernels are different
-            hashlist.append(channel) 
+            hashlist.append(channel)
         else:
             hashlist.append(self.pulsar.clock(channel=channel))  # clock rate
-            for par in ['type', 'amp']:
-                hashlist.append(self.pulsar.get(f'{channel}_{par}'))
-        
+            for par in ['type', 'amp', 'internal_modulation']:
+                try:
+                    hashlist.append(self.pulsar.get(f'{channel}_{par}'))
+                except KeyError:
+                    hashlist.append(False)
+
         for pulse in self.elements[elname]:
             if pulse.codeword in {'no_codeword', codeword}:
                 hashlist += pulse.hashables(tstart, channel)
         return tuple(hashlist)
-        
 
     def tvals(self, channel_list, element):
         """
@@ -911,8 +913,14 @@ class Segment:
         """
         return samples / self.pulsar.clock(**kw)
 
-    def plot(self, instruments=None, channels=None, legend=True,
-             delays=dict(), savefig=False, cmap=None, frameon=True):
+    def plot(self,
+             instruments=None,
+             channels=None,
+             legend=True,
+             delays=dict(),
+             savefig=False,
+             cmap=None,
+             frameon=True):
         """
         Plots a segment. Can only be done if the segment can be resolved.
 
@@ -933,9 +941,11 @@ class Segment:
             self.resolve_segment()
             wfs = self.waveforms(awgs=instruments, channels=None)
             n_instruments = len(wfs)
-            fig, ax = plt.subplots(nrows=n_instruments, sharex=True,
-                                   squeeze=False,
-                                   figsize=(16, n_instruments * 3))
+            fig, ax = plt.subplots(
+                nrows=n_instruments,
+                sharex=True,
+                squeeze=False,
+                figsize=(16, n_instruments * 3))
             if cmap is None:
                 cmap = plt.get_cmap('Paired')
             for i, instr in enumerate(wfs):
@@ -956,9 +966,11 @@ class Segment:
                                 self.tvals([f"{instr}_{ch}"], elem_name[1])[
                                     f"{instr}_{ch}"] \
                                 - delays.get(instr, 0)
-                                ax[i, 0].plot(tvals * 1e6, wf,
-                                              label=f"{elem_name[1]}_{k}_{ch}",
-                                              linewidth=0.7)
+                                ax[i, 0].plot(
+                                    tvals * 1e6,
+                                    wf,
+                                    label=f"{elem_name[1]}_{k}_{ch}",
+                                    linewidth=0.7)
                 if legend:
                     ax[i, 0].legend(loc=[1.02, 0], prop={'size': 8})
 
@@ -973,6 +985,7 @@ class Segment:
         except Exception as e:
             log.error(f"Could not plot: {self.name}")
             raise e
+
     def __repr__(self):
         string_repr = f"---- {self.name} ----\n"
 
@@ -998,7 +1011,8 @@ class UnresolvedPulse:
         elif pulse_pars.get('ref_point', 'end') == 'start':
             self.ref_point = 0
         else:
-            raise ValueError('Passed invalid value for ref_point. Allowed '
+            raise ValueError(
+                'Passed invalid value for ref_point. Allowed '
                 'values are: start, end, middle. Default value: end')
 
         if pulse_pars.get('ref_point_new', 'start') == 'start':
@@ -1008,7 +1022,8 @@ class UnresolvedPulse:
         elif pulse_pars.get('ref_point_new', 'start') == 'end':
             self.ref_point_new = 1
         else:
-            raise ValueError('Passed invalid value for ref_point_new. Allowed '
+            raise ValueError(
+                'Passed invalid value for ref_point_new. Allowed '
                 'values are: start, end, middle. Default value: start')
 
         self.delay = pulse_pars.get('pulse_delay', 0)
