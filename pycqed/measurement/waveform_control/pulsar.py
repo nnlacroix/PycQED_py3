@@ -509,7 +509,7 @@ class HDAWG8Pulsar:
         if chid[-1]=='m':
             return 1
 
-        name = self._id_channel(self, chid, awg)
+        name = self._id_channel(chid, awg)
         if self.get(f"{name}_internal_modulation"):
             return 2
         else: 
@@ -527,7 +527,7 @@ class HDAWG8Pulsar:
         chids = [f'ch{i+1}{m}' for i in range(8) for m in ['','m']]
         divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
         
-        waves_to_upload = {h: waveforms[h][::divisor[chid]]
+        waves_to_upload = {h: divisor[chid]*waveforms[h][::divisor[chid]]
                                for codewords in awg_sequence.values() 
                                    if codewords is not None 
                                for cw, chids in codewords.items() 
@@ -554,7 +554,7 @@ class HDAWG8Pulsar:
             ch1mid = 'ch{}m'.format(awg_nr * 2 + 1)
             ch2id = 'ch{}'.format(awg_nr * 2 + 2)
             ch2mid = 'ch{}m'.format(awg_nr * 2 + 2)
-            chids = [ch1id, ch1mid, ch2id, ch2mid]
+            chids = [ch1id, ch2id]
 
             channels = [self._id_channel(chid, obj.name) for chid in chids]
 
@@ -1388,11 +1388,11 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                               'to be defined')
         
         wname = f'wave{counter}'
-        interleaves = f'wave {wname} = interleaved({w1}, {w2})'
+        interleaves = [f'wave {wname} = interleave({w1}, {w2});']
 
         if not codeword:
             if not acq:
-                playback_string.append(f'prefetch({wname},{wname};')
+                playback_string.append(f'prefetch({wname},{wname});')
         
         trig_source = self.get('{}_trigger_source'.format(name))
         if trig_source == 'Dig1':

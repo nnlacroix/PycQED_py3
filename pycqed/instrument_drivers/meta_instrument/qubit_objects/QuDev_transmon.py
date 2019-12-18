@@ -3567,15 +3567,12 @@ class QuDev_transmon(Qubit):
                              'cal_points': repr(cp),
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
-                            #  "sweep_name": "Amplitude" if freqs is None else \
-                            #                "Frequency",
-                            #  "sweep_unit": "Hz" if freqs is not None else "V",
                              "global_PCA": not cal_points})
         MC.run(label, exp_metadata=exp_metadata)
 
         if analyze:
             try:
-                tda.T2FrequencySweepAnalysis(qb_names=[self.name],
+                tda.T1FrequencySweepAnalysis(qb_names=[self.name],
                                                    options_dict=dict(TwoD=False))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=False)

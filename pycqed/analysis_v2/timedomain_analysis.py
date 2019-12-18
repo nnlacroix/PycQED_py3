@@ -3246,7 +3246,7 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 for i in range(len(self.metadata['amplitudes']))])
             
             pdd['T1_err'][qb] = np.array([
-                abs(self.fit_res[f'exp_fit_{qb}_amp_{i}'].params['decay'].stderr)
+                self.fit_res[f'exp_fit_{qb}_amp_{i}'].params['decay'].stderr
                 for i in range(len(self.metadata['amplitudes']))])
 
             pdd['mask'][qb] = []
@@ -3281,7 +3281,7 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 'linestyle': '-',
                 'xvals': xvals,
                 'yvals': pdd['T1'][qb][mask],
-                'yerr': pdd['T1_err'][qb],
+                'yerr': pdd['T1_err'][qb][mask],
                 'xlabel': xlabel,
                 'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
                 'ylabel': r'T1',
