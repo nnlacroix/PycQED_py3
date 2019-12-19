@@ -1928,6 +1928,8 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         covar_matrix: (optional) The covariance matrix of the measurement
                       operators as a 2d numpy array. Overrides the one found
                       from the calibration points.
+        use_covar_matrix (bool): Flag to define whether to use the
+            covariance matrix
         basis_rots_str: A list of standard PycQED pulse names that were
                              applied to qubits before measurement
         basis_rots: As an alternative to single_qubit_pulses, the basis
@@ -2008,8 +2010,10 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         self.proc_data_dict['covar_matrix'] = all_Omegas
         self.proc_data_dict['meas_results'] = all_mus
 
-        rho_ls = tomo.least_squares_tomography(all_mus, all_Fs, all_Omegas)
-        print(self.options_dict['mle'])
+        rho_ls = tomo.least_squares_tomography(
+            all_mus, all_Fs,
+            all_Omegas if self.get_param_value('use_covariance_matrix', False)
+            else None )
         self.proc_data_dict['rho_ls'] = rho_ls
         self.proc_data_dict['rho'] = rho_ls
         if self.options_dict.get('mle', False):

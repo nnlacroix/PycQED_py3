@@ -632,7 +632,7 @@ class QAOAHelper(HelperBase):
                     # TODO: clean up in function just as above
 
                     #arbitrary phase gate
-                    c_arb_pulse = self.operation_dict[gate_name]
+                    c_arb_pulse = deepcopy(self.operation_dict[gate_name])
                     #get amplitude and dynamic phase from model
                     angle = -4 * gamma * C
                     if doswap:
@@ -715,19 +715,19 @@ class QAOAHelper(HelperBase):
         :param remove_had: optional. If true, the outermost Hadamard gates are removed (default: false)
         :return:
         """
-        ops = [cz_gate_name, "Y90 {qbt:}",
-               "Z180 {qbt:}", "Z{two_phi:} {qbt:}", "Y90 {qbt:}", "Z180 {qbt:}",
-               cz_gate_name]
+        ops = [cz_gate_name, "Z180 {qbt:}",
+               "Y90 {qbt:}", "Z{two_phi:} {qbt:}", "Z180 {qbt:}",
+               "Y90 {qbt:}", cz_gate_name]
         if remove_had:
             # put flux pulses in same element
             pulse_modifs = {0: dict(element_name="flux_arb_gate"),
                             6: dict(element_name="flux_arb_gate")}
         else:
-            ops = ["Y90 {qbt:}", "Z180 {qbt:}"] + ops + ["Y90 {qbt:}", "Z180 {qbt:}"]
+            ops = ["Z180 {qbt:}", "Y90 {qbt:}"] + ops + ["Z180 {qbt:}", "Y90 {qbt:}"]
             # put flux pulses in same element
             pulse_modifs = {2: dict(element_name="flux_arb_gate"),
                             8: dict(element_name="flux_arb_gate")}
-        fill_values = dict(qbt=qbt, two_phi=2 * gamma * C * 180/np.pi)
+        fill_values = dict(qbt=qbt, two_phi= -2*gamma * C * 180/np.pi)
         return self.block_from_ops(block_name, ops, fill_values, pulse_modifs)
 
     def _U_qb_pair_fermionic_simulation(self, qbc, qbt, phi, cz_gate_name,

@@ -428,7 +428,7 @@ def measure_multiplexed_readout(qubits, liveplot=False,
 def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
                  maxfev=None, optimizer_method="Nelder-Mead",
                  optimizer_kwargs=None, betas=(np.pi,), gammas=(np.pi,),
-                 problem_hamiltonian="ising", tomography=(), tomography_options=None,
+                 problem_hamiltonian="ising", tomography=False, tomography_options=None,
                  analyze=True, exp_metadata=None,
                  init_state="+", cphase_implementation="hardware",
                  prep_params=None, upload=True, label=None,
@@ -450,6 +450,8 @@ def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
 
     if single_qb_terms is None:
         single_qb_terms =  {}
+    if tomography_options is None:
+        tomography_options = {}
 
     operation_dict = get_operation_dict(qubits)
     MC = qubits[0].instr_mc.get_instr()
@@ -459,9 +461,16 @@ def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
         qb.prepare(drive='timedomain')
 
     # sequence
+    cp = None
+    if tomography:
+        cp = CalibrationPoints.multi_qubit(qb_names, 'ge', 1, True)
     seq, swp = qaoa.qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info,
                                   operation_dict, init_state=init_state,
-                                  tomography=False, single_qb_terms=single_qb_terms,
+                                  cal_points=cp,
+                                  tomography=tomography,
+                                  tomo_basis=tomography_options.get("basis_rots",
+                                                  tomo.DEFAULT_BASIS_ROTS),
+                                  single_qb_terms=single_qb_terms,
                                   cphase_implementation=cphase_implementation,
                                   prep_params=prep_params, upload=False)
     if custom_sequence:
@@ -493,7 +502,9 @@ def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
                     'cphase_implementation': cphase_implementation,
                     # 'optimizer_method': optimizer_method,
                     'shots': max(qb.acq_shots() for qb in qubits)})
-
+    if tomography:
+        exp_metadata.update(dict(basis_rots=tomography_options.get("basis_rots",
+                                            tomo.DEFAULT_BASIS_ROTS)))
     MC.run(name=label, exp_metadata=exp_metadata)
 
     if analyze:
@@ -527,35 +538,68 @@ def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
         a.proc_data_dict['qubit_states_filtered'] = \
             np.array(qubit_states).T[filter]
         qb_states_filtered = a.proc_data_dict['qubit_states_filtered']
-        # correlate
-        c_info, coupl = \
-            qaoa.QAOAHelper.get_corr_and_coupl_info(two_qb_gates_info)
-        correlations = qaoa.correlate_qubits(qb_states_filtered, c_info)
-        a.proc_data_dict['correlations'] = {'names': c_info,
-                                            'values': correlations}
-        avg_sigmaz = qaoa.average_sigmaz(qb_states_filtered)
-        a.proc_data_dict['avg_sigmaz'] = {str(i)+'_'+qbn: avg_sigmaz[i]
-                                          for i, qbn in enumerate(qb_names)}
-        if problem_hamiltonian == "ising":
-            energy = qaoa.ProblemHamiltonians.ising(correlations, coupl)
-        elif problem_hamiltonian == "ising_with_field":
-            energy = qaoa.ProblemHamiltonians.ising_with_field(
-                correlations, avg_sigmaz, coupl,
-                [single_qb_terms[i] for i, qbn in enumerate(qb_names)])
-        else:
-            raise ValueError(f"Problem hamiltonian {problem_hamiltonian} "
-                             f"not known")
-        a.proc_data_dict['analysis_params_dict']['energy'] = energy
-
-        # save
         a.save_processed_data()
+        if tomography and tomography_options.get("analyze", True):
+            # tomography analysis
+            options = dict(
+                n_readouts=len(seq.segments),  # number of segments
+                data_type="singleshot",
+                # give thresholded shots
+                shots_thresholded={qbn: np.array(qubit_states[i])
+                                   for i, qbn in enumerate(qb_names)},
+                shot_filter=filter,  # filter specific shots out
+                qb_names=qb_names,  # to construct channel map automatically
+                basis_rots_str=
+                tomography_options.get("basis_rots",
+                                       tomo.DEFAULT_BASIS_ROTS),
+                # filter cal points from data
+                data_filter=lambda prob_table: prob_table[:-len(cp.states)],
+                mle=tomography_options.get("mle", False))
+            if not tomography_options.get("cal_points_correction", True):
+                # ideal measurement operators
+                meas_operators = []
+                for i in range(2 ** len(qubits)):
+                    basis_state = np.zeros(2 ** len(qubits))
+                    basis_state[i] = 1
+                    meas_operators.append(np.diag(basis_state))
+                # overwrite if provided by user
+                meas_operators = tomography_options.get("meas_operators",
+                                                        meas_operators)
+                options.update(dict(meas_operators=meas_operators))
+            if tomography_options.get('analyze', True):
+                ta = tda.StateTomographyAnalysis(options_dict=options)
+                ta.save_processed_data('rho')
+        else:
+            # correlate
+            c_info, coupl = \
+                qaoa.QAOAHelper.get_corr_and_coupl_info(two_qb_gates_info)
+            correlations = qaoa.correlate_qubits(qb_states_filtered, c_info)
+            a.proc_data_dict['correlations'] = {'names': c_info,
+                                                'values': correlations}
+            avg_sigmaz = qaoa.average_sigmaz(qb_states_filtered)
+            a.proc_data_dict['avg_sigmaz'] = {str(i)+'_'+qbn: avg_sigmaz[i]
+                                              for i, qbn in enumerate(qb_names)}
+            if problem_hamiltonian == "ising":
+                energy = qaoa.ProblemHamiltonians.ising(correlations, coupl)
+            elif problem_hamiltonian == "ising_with_field":
+                energy = qaoa.ProblemHamiltonians.ising_with_field(
+                    correlations, avg_sigmaz, coupl,
+                    [single_qb_terms[i] for i, qbn in enumerate(qb_names)])
+            else:
+                raise ValueError(f"Problem hamiltonian {problem_hamiltonian} "
+                                 f"not known")
+            a.proc_data_dict['analysis_params_dict']['energy'] = energy
+
+            # save
+            a.save_processed_data()
         return a
 
 def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
                  maxfev=None, optimizer_method="Nelder-Mead",
                  optimizer_kwargs=None, betas_init=(np.pi,), gammas_init=(np.pi,),
                  depth=1, tomography=(), tomography_options=None,
-                 analyze=True, exp_metadata=None,
+                 analyze=True, exp_metadata=None, problem_hamiltonian="ising",
+                 single_qb_terms=None,
                  init_state="+", cphase_implementation="hardware",
                  prep_params=None, upload=True, label=None):
     """
@@ -628,7 +672,7 @@ def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
             log.info(f"Gammas: {g}\nBetas : {b}")
 
             # prepare qubits
-            (qb.prepare(drive='timedomain') for qb in qubits)
+            [qb.prepare(drive='timedomain') for qb in qubits]
 
             cp = CalibrationPoints.multi_qubit(qb_names, 'ge', 1, True)
             # sequence
@@ -638,6 +682,7 @@ def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
                 tomo_basis=tomography_options.get("basis_rots",
                                                   tomo.DEFAULT_BASIS_ROTS),
                 prep_params=prep_params, upload=False,
+                single_qb_terms=single_qb_terms,
                 cphase_implementation=cphase_implementation)
             det_get_values_kws = {'classified': True,
                                   'correlated': False,
@@ -662,11 +707,17 @@ def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
                             'gammas': g,
                             'iteration': iteration[-1],
                             'init': init_state,
+                            'basis_rots': tomography_options.get("basis_rots",
+                                                  tomo.DEFAULT_BASIS_ROTS),
                             'two_qb_gates_info': str(two_qb_gates_info),
+                            "single_qb_terms": single_qb_terms,
                             'cphase_implementation': cphase_implementation,
                             'shots': max(qb.acq_shots() for qb in qubits)}
 
-            MC.run(name=f"tomography_iter_{iteration[-1]}", exp_metadata=exp_metadata)
+            MC.run(name=
+                   tomography_options.pop("label",
+                                         f"tomography_iter_{iteration[-1]}"),
+                   exp_metadata=exp_metadata)
             if analyze:
                 # analyze
                 channel_map = {qb.name: qb.int_avg_classif_det.value_names
@@ -729,7 +780,8 @@ def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
                                                            meas_operators)
                     options.update(dict(meas_operators=meas_operators))
                 if tomography_options.get('analyze', True):
-                    tda.StateTomographyAnalysis(options_dict=options)
+                    ta = tda.StateTomographyAnalysis(options_dict=options)
+                    ta.save_processed_data('rho')
         iteration.append(iteration[-1] + 1)
 
 
@@ -741,7 +793,7 @@ def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
     MC = qubits[0].instr_mc.get_instr()
     iteration = [0]
     func_eval = [0]
-
+    exp_metadata['optimizer_kwargs'] = optimizer_kwargs
     #analysis dictionary
     a = {}
 
@@ -758,99 +810,24 @@ def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
         exp_metadata.update(dict(iteration=iter, function_evaluation=feval,
                                  optimizer_method=optimizer_method))
         a[feval] = measure_qaoa(qubits, two_qb_gates_info, betas=betas_feval,
-                     gammas=gammas_feval, analyze=True,
+                                single_qb_terms=single_qb_terms,
+                                gammas=gammas_feval, analyze=True,
+                                problem_hamiltonian=problem_hamiltonian,
                      exp_metadata=exp_metadata, init_state=init_state,
                      cphase_implementation=cphase_implementation,
                      prep_params=prep_params, upload=upload, label=label)
-        # #prepare qubits
-        # for qb in qubits:
-        #     qb.prepare(drive='timedomain')
-        #
-        # #sequence
-        # seq, swp = qaoa.qaoa_sequence(qb_names, betas_feval, gammas_feval, two_qb_gates_info,
-        #                               operation_dict, init_state=init_state,
-        #                               tomography=False,
-        #                               cphase_implementation=cphase_implementation,
-        #                               prep_params=prep_params, upload=False)
-        # # set detector and sweep functions
-        # det_get_values_kws = {'classified': True,
-        #                       'correlated': False,
-        #                       'thresholded': False,
-        #                       'averaged': False}
-        # df = get_multiplexed_readout_detector_functions(
-        #     qubits, nr_shots=max(qb.acq_shots() for qb in qubits),
-        #     nr_averages=max(qb.acq_averages() for qb in qubits),
-        #     det_get_values_kws=det_get_values_kws)['int_avg_classif_det']
-        # MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq, upload=upload))
-        # MC.set_sweep_points(swp)
-        # MC.set_detector_function(df)
-        #
-        # # metadata and run experiment
-        # exp_metadata = {'preparation_params': prep_params,
-        #                 'data_to_fit': {},
-        #                 'rotate': False,
-        #                 'betas': betas_feval,
-        #                 'gammas': gammas_feval,
-        #                 'iteration': iter,
-        #                 'function_evaluation': feval,
-        #                 'init': init_state,
-        #                 'two_qb_gates_info': str(two_qb_gates_info),
-        #                 'cphase_implementation': cphase_implementation,
-        #                 'optimizer_method': optimizer_method,
-        #                 'shots': max(qb.acq_shots() for qb in qubits)}
-        #
-        # MC.run(name=f"{label}_iter_{iter}_feval_{feval}", exp_metadata=exp_metadata)
-        #
-        # # analyze
-        # channel_map = {qb.name: qb.int_avg_classif_det.value_names for qb in
-        #                 qubits}
-        # options = dict(channel_map=channel_map, plot_proj_data=False,
-        #                plot_raw_data=False)
-        # a[feval] = tda.MultiQubit_TimeDomain_Analysis(
-        #     qb_names=qb_names,
-        #     options_dict=options,
-        #     auto=False)
-        # a[feval].extract_data()
-        # a[feval].process_data()
-        # # additional processing
-        # qubit_states = []
-        # filter = np.ones(exp_metadata['shots'], dtype=bool)
-        # a[feval].proc_data_dict['analysis_params_dict'] = {}
-        # a[feval].proc_data_dict['analysis_params_dict']["leakage"] = {}
-        # leakage = a[feval].proc_data_dict['analysis_params_dict']["leakage"]
-        # for qb in qb_names:
-        #     qb_probs = \
-        #         a[feval].proc_data_dict['meas_results_per_qb'][qb].values()
-        #     qb_probs = np.asarray(list(qb_probs)).T # (n_shots, (pg,pe,pf))
-        #     states = np.argmax(qb_probs, axis=1)
-        #     qubit_states.append(states)
-        #     leaked_shots = states == 2
-        #     leakage.update({qb: np.sum(leaked_shots) / exp_metadata['shots']})
-        #     filter = np.logical_and(filter, states != 2)
-        # a[feval].proc_data_dict['qubit_states'] = np.array(qubit_states).T
-        # a[feval].proc_data_dict['qubit_states_filtered'] = \
-        #     np.array(qubit_states).T[filter]
-        # qb_states_filtered = a[feval].proc_data_dict['qubit_states_filtered']
-        # # correlate
-        # c_info, coupl = qaoa.QAOAHelper.get_corr_and_coupl_info(two_qb_gates_info)
-        # correlations = qaoa.correlate_qubits(qb_states_filtered, c_info)
-        # a[feval].proc_data_dict['correlations'] = {'names': c_info,
-        #                                           'values': correlations}
-        # energy = qaoa.ProblemHamiltonians.ising(correlations, coupl)
-        # a[feval].proc_data_dict['analysis_params_dict']['energy'] = energy
-        #
-        # #save
-        # a[feval].save_processed_data()
+
         func_eval.append(func_eval[-1] + 1)
         return a[feval].proc_data_dict['analysis_params_dict']['energy']
 
     try:
+        if -1 in tomography: # do initial tomography  if needed
+            iteration = [-1]
+            update_iter(np.ravel([gammas_init, betas_init]))
         opt_res = optimize.minimize(minimize_energy, [gammas_init, betas_init],
                                     args=(label, exp_metadata),
                           **optimizer_kwargs)
-        if -1 in tomography: # do last tomography  if needed
-            tomography = tomography + (iteration[-1],) # set last iteration
-            update_iter(np.ravel(opt_res.x))
+
         return opt_res, a
     except KeyboardInterrupt:
         return None, a
@@ -2540,6 +2517,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                    hard_sweep_params=None, max_flux_length=None,
                    num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
                    prep_params=None, exp_metadata=None, label=None,
+                    leakage_qb=None,
                    analyze=True, upload=True, for_ef=True, **kw):
     '''
     method to measure the leakage and the phase acquired during a flux pulse
@@ -2552,6 +2530,8 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
     Args:
         qbc (QuDev_transmon): control qubit / fluxed qubit
         qbt (QuDev_transmon): target qubit / non-fluxed qubit
+        leakage qb: qubit which goes into the f level and therefore the leakage
+            analysis is performed upon. defaults to qbc.
     '''
     plot_all_traces = kw.get('plot_all_traces', True)
     plot_all_probs = kw.get('plot_all_probs', True)
@@ -2582,20 +2562,26 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
         MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
+    if leakage_qb is None:
+        leakage_qb = qbc # FIXME: assuming the leaking qb is the fluxed one.
+                         #  How to have a better behavior?
+        cphase_qb = qbt
+    else:
+        cphase_qb = (qbc if qbt == leakage_qb else qbt)
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
                                                     for_ef=for_ef)
-    cp = CalibrationPoints.multi_qubit([qbc.name, qbt.name], cal_states,
+    cp = CalibrationPoints.multi_qubit([leakage_qb.name, cphase_qb.name], cal_states,
                                         n_per_state=n_cal_points_per_state)
 
     if max_flux_length is not None:
         log.debug(f'max_flux_length = {max_flux_length*1e9:.2f} ns, set by user')
     operation_dict = get_operation_dict([qbc, qbt])
-    print(qbc, qbt)
+
     sequences, hard_sweep_points, soft_sweep_points = \
         fsqs.cphase_seqs(
             hard_sweep_dict=hard_sweep_params,
             soft_sweep_dict=soft_sweep_params,
-            qbc_name=qbc.name, qbt_name=qbt.name,
+            qbc_name=leakage_qb.name, qbt_name=cphase_qb.name,
             cz_pulse_name=cz_pulse_name,
             operation_dict=operation_dict,
             cal_points=cp, upload=False, prep_params=prep_params,
@@ -2624,17 +2610,17 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'leakage_qbname': qbc.name,
-                         'cphase_qbname': qbt.name,
+    exp_metadata.update({'leakage_qbname': leakage_qb.name,
+                         'cphase_qbname': cphase_qb.name,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'classified_ro': classified,
                          'rotate': len(cal_states) != 0 and not classified,
                          'cal_states_rotations':
-                             {qbc.name: {'g': 0, 'f': 1},
-                              qbt.name: {'g': 0, 'e': 1}} if
+                             {leakage_qb.name: {'g': 0, 'f': 1},
+                              cphase_qb.name: {'g': 0, 'e': 1}} if
                              (len(cal_states) != 0 and not classified) else None,
-                         'data_to_fit': {qbc.name: 'pf', qbt.name: 'pe'},
+                         'data_to_fit': {leakage_qb.name: 'pf', cphase_qb.name: 'pe'},
                          'hard_sweep_params': hard_sweep_params,
                          'soft_sweep_params': soft_sweep_params})
     MC.run_2D(label, exp_metadata=exp_metadata)
@@ -2650,7 +2636,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                                      qb.int_avg_det.value_names]
                            for qb in [qbc, qbt]}
         flux_pulse_tdma = tda.CPhaseLeakageAnalysis(
-            qb_names=[qbc.name, qbt.name],
+            qb_names=[leakage_qb.name, cphase_qb.name],
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
                           'plot_all_probs': plot_all_probs,
                           'channel_map': channel_map})
@@ -2666,6 +2652,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
 
 def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
         soft_sweep_params=dict(), measure_dynamic_phase=False,
+        qubits_to_measure=None, leakage_qb=None,
         measure_conditional_phase=True, hard_sweep_params=None,
         num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
         classified_ro=True, prep_params=None, exp_metadata=None, label=None,
@@ -2681,14 +2668,19 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
     Args:
         qbc (QuDev_transmon): control qubit / fluxed qubit
         qbt (QuDev_transmon): target qubit / non-fluxed qubit
+        measure_dynamic_phase (bool/list): whether to measure or not the
+            dynamic phase.
+        qubits_to_measure (list):  measures  dynamic phase of qubits in
+            the list. Defaults to [qbc]
         phase_func_str (string): string representation of function with input the target phase, returning
          (flux pulse amplitude, dyn_phase). Is called using eval(phase_func_str)
+
 
     '''
 
     if label is None:
         label = 'Arbitrary_Phase_{}_{}'.format(qbc.name, qbt.name)
-    assert qbc.get_operation_dict()[cz_pulse_name]['pulse_type'] == \
+    assert get_operation_dict([qbc, qbt])[cz_pulse_name]['pulse_type'] == \
         'BufferedCZPulseEffectiveTime', "Arbritrary phase measurement requires" \
             "'BufferedCZPulseEffectiveTime' pulse type but pulse type is '{}'" \
         .format(qbc.get_operation_dict()[cz_pulse_name]['pulse_type'])
@@ -2706,7 +2698,7 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
     if measure_conditional_phase:
         cphases, population_losses, leakage, flux_pulse_tdma = \
             measure_cphase(qbc=qbc, qbt=qbt, soft_sweep_params=soft_sweep_params,
-                           cz_pulse_name=cz_pulse_name,
+                           cz_pulse_name=cz_pulse_name, leakage_qb=leakage_qb,
                            hard_sweep_params=hard_sweep_params,
                            num_cz_gates=num_cz_gates,
                            n_cal_points_per_state=n_cal_points_per_state,
@@ -2758,6 +2750,8 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
             results['cphases_diff'] = diff_phases
 
     if measure_dynamic_phase:
+        if qubits_to_measure is None:
+            qubits_to_measure = [qbc]
         dyn_phases = []
         # FIXME: infering amplitude parameter from pulse name, but if naming
         #  protocol changes this might fail
@@ -2767,14 +2761,14 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
                     (getattr(qbc, ampl_param_name), amp)):
                 dyn_phases.append(
                     measure_dynamic_phases(qbc, qbt, cz_pulse_name, update=False,
-                                           qubits_to_measure=[qbc],
+                                           qubits_to_measure=qubits_to_measure,
                                            reset_phases_before_measurement=True))
 
         if analyze:
             a = ma.MeasurementAnalysis(auto=False)
             a.get_naming_and_values()
             save_folder = a.folder
-            dyn_phases = np.array([d[qbc.name] for d in dyn_phases])
+            dyn_phases = np.array([d[qubits_to_measure[0].name] for d in dyn_phases])
 
             if kw.get("wrap_phase", True):
                 dyn_phases[dyn_phases < 0 ] = dyn_phases[dyn_phases < 0] + 360
@@ -2797,6 +2791,8 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
             fig.savefig(os.path.join(save_folder, "dynamic_phase.png"))
             results['dphases'] = dyn_phases
             results['dphases_diff'] = diff_dyn_phases
+            np.save(save_folder + "\\results.npy", [results] )
+            # FIXME: hack to save to file, should instead save into analysis via analysis_v2
 
     return results
 
@@ -2841,7 +2837,7 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
         seq, hard_sweep_points = \
             fsqs.dynamic_phase_seq(
                 qb_name=qb.name, hard_sweep_dict=hard_sweep_params,
-                operation_dict=get_operation_dict(qubits_to_measure),
+                operation_dict=get_operation_dict([qbc, qbt]),
                 cz_pulse_name=cz_pulse_name, cal_points=cp,
                 prepend_n_cz=prepend_n_cz,
                 upload=False, prep_params=prep_params)
