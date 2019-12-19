@@ -634,11 +634,10 @@ class QAOAHelper(HelperBase):
         :param cz_gate_name:
         :return:
         """
-        ops = [ "Z180 {qbt:}","Y90 {qbt:}", cz_gate_name,
-               "Z180 {qbt:}", "Y90 {qbt:}", "Z{two_phi:} {qbt:}", "Z180 {qbt:}",
-                "Y90 {qbt:}", cz_gate_name, "Z180 {qbt:}", "Y90 {qbt:}"]
+        ops = ["Z180 {qbt:}", "Y90 {qbt:}", cz_gate_name,"Z180 {qbt:}",
+               "Y90 {qbt:}", "Z{two_phi:} {qbt:}", "Z180 {qbt:}",
+               "Y90 {qbt:}", cz_gate_name, "Z180 {qbt:}", "Y90 {qbt:}"]
         fill_values = dict(qbt=qbt, two_phi= -2*gamma * C * 180/np.pi)
-
         # put flux pulses in same element
         pulse_modifs = {2: dict(element_name="flux_cz_gate"),
                         8: dict(element_name="flux_cz_gate")}

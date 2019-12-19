@@ -450,6 +450,8 @@ def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
 
     if single_qb_terms is None:
         single_qb_terms =  {}
+    if tomography_options is None:
+        tomography_options = {}
 
     operation_dict = get_operation_dict(qubits)
     MC = qubits[0].instr_mc.get_instr()
