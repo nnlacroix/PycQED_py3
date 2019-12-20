@@ -23,22 +23,20 @@ def correlate_qubits(qubit_states, correlations='all', correlator='z',
             assigned state of a qubit (0 or 1).
         coorelations (list): list of tuples indicating which qubits have to be
             correlated, where each tuple indicates the column index of the qubit.
-            Eg. [(0,1),(1,2)] will correlate qb0 and qb1, and then qb1 and qb2
-            for qubit_states where qi is the ith column of qubit_states.
+            Eg. [(0,1),(1,2,3)] will correlate logical qubits 0 and 1, and then
+            calculate the 3-body correlation between logical qubits 1, 2, and 3
+            (assuming that the ith column of qubit_states corresponds to the
+            ith logical qubit).
             defaults to "all" which takes all two qubit correlators
-        correlator: 'z' corresponding to sigma_z pauli matrix. Function can
-            easily be extended to support other correlators.
-
+        correlator: 'z' corresponding to sigma_z pauli matrix. Function could
+            later be extended to support other correlators.
 
     Returns:
         correlations_output (array): (n_shots, n_correlations) if average == True
             else (n_correlations,)
     """
     if correlator == 'z':
-        pauli_mtx = np.array([[1, 0], [0, -1]])  # sigma_z matrix
-        # correlator matrix for 2 qubits correlator. Can be extended to more
-        # qubits by recursively taking tensor product
-        corr_mtx = np.kron(pauli_mtx, pauli_mtx)  # sigma_z tensorproduct sigma_z
+        pass
     else:
         raise NotImplementedError("non 'z' correlators are not yet supported.")
 
@@ -51,13 +49,7 @@ def correlate_qubits(qubit_states, correlations='all', correlator='z',
         qb_states_to_correlate = []
         for i in corr:
             qb_states_to_correlate.append(qubit_states[:, i])
-        # transform to 2 qb basis ie 00 --> 1000, 10 = 0100,...
-        qb_states_to_correlate = basis_transformation(np.array(qb_states_to_correlate))
-        # < phi | corr_mtx | phi> for all phis simultaneously
-        correlated_shots = (qb_states_to_correlate.T @ corr_mtx) @ qb_states_to_correlate
-        # only elements on diagonal are relevant
-        correlated_shots = correlated_shots[np.eye(n_shots, dtype=bool)]
-        correlated_output[:, j] = correlated_shots
+        correlated_output[:, j] = np.prod(1 - np.array(qb_states_to_correlate) * 2, axis=0)
 
     return np.mean(correlated_output, axis=0) if average else correlated_output
 
@@ -830,8 +822,8 @@ class QAOAHelper(HelperBase):
             couplings (list): corresponding coupling for each correlation
 
         """
-        flattened_info = deepcopy([i for info in two_qb_gates_info for i in info])
+        flattened_info = deepcopy(two_qb_gates_info['gate_list'])
 
-        corr_info = [(i['qbcs'][0], i['qbs'][1]) for i in flattened_info]
+        corr_info = [i['qbs'] for i in flattened_info]
         couplings = [i['C'] for i in flattened_info]
         return corr_info, couplings
