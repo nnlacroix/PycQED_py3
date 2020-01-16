@@ -34,8 +34,8 @@ class SweepPoints(list):
 
         sweep_points_map = OrderedDict()
         if len(keys_list) != len(self[0]):
-            raise ValueError('The number of keys and number of sweep parameters'
-                             'do not match.')
+            raise ValueError('The number of keys and number of sweep '
+                             'parameters do not match.')
 
         for i, key in enumerate(keys_list):
             sweep_points_map[key] = [list(d)[i] for d in self]
