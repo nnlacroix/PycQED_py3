@@ -343,65 +343,6 @@ class calibrate_n_qubits(swf.Hard_Sweep):
                                          return_seq=self.return_seq)
 
 
-class GST_experiment_sublist_swf(swf.Soft_Sweep):
-
-    def __init__(self, hard_swf, pygsti_sublistOfExperiments):
-
-        super().__init__()
-        self.hard_swf = hard_swf
-        self.pygsti_sublistOfExperiments = pygsti_sublistOfExperiments
-        self.is_first_sweeppoint = True
-
-        self.name = 'pyGSTi experiment sublist sweep'
-        self.parameter_name = 'Points'
-        self.unit = '#'
-
-    def set_parameter(self, val, **kw):
-
-        self.hard_swf.pygsti_listOfExperiments = \
-            self.pygsti_sublistOfExperiments[val]
-        self.hard_swf.upload = True
-        self.hard_swf.prepare(upload_all=self.is_first_sweeppoint)
-        self.is_first_sweeppoint = False
-
-
-class GST_swf(swf.Hard_Sweep):
-
-    def __init__(self, qb_names, pygsti_listOfExperiments,
-                 operation_dict,
-                 preselection=True, ro_spacing=1e-6, seq_name=None,
-                 upload=True, return_seq=False, verbose=False):
-
-        super().__init__()
-        self.qb_names = qb_names
-        self.pygsti_listOfExperiments = pygsti_listOfExperiments
-        self.operation_dict = operation_dict
-        self.preselection = preselection
-        self.ro_spacing = ro_spacing
-        self.seq_name = seq_name
-        self.upload = upload
-        self.return_seq = return_seq
-        self.verbose = verbose
-
-        self.name = 'pyGSTi experiment list sweep'
-        self.parameter_name = 'Segment number'
-        self.unit = '#'
-
-    def prepare(self, upload_all=True, **kw):
-        if self.upload:
-            sqs2.pygsti_seq(
-                qb_names=self.qb_names,
-                pygsti_listOfExperiments=self.pygsti_listOfExperiments,
-                operation_dict=self.operation_dict,
-                preselection=self.preselection,
-                ro_spacing=self.ro_spacing,
-                seq_name=self.seq_name,
-                upload=True,
-                upload_all=upload_all,
-                return_seq=self.return_seq,
-                verbose=self.verbose)
-
-
 class RO_dynamic_phase_swf(swf.Hard_Sweep):
     def __init__(self, qbp_name, qbr_names,
                  phases, operation_dict,

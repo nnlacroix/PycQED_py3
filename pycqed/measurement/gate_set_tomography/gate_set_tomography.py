@@ -613,11 +613,11 @@ def create_experiment_list_pyGSTi_qudev(filename, qb_names=[''],
         sequences = experiments.read().split("\n")
     else:
         sequences = pygstiGateList
-
-    if len(qb_names) == 1:
-        RO_str = "RO " + qb_names[0]
-    else:
-        RO_str = "RO mux"
+    #
+    # if len(qb_names) == 1:
+    #     RO_str = "RO " + qb_names[0]
+    # else:
+    #     RO_str = "RO mux"
 
     experimentlist = []
     for i in range(len(sequences)):
@@ -626,7 +626,7 @@ def create_experiment_list_pyGSTi_qudev(filename, qb_names=[''],
         gateseq = []
 
         if "{}" in clean_seq or clean_seq == '':
-            gateseq.insert(0, RO_str)
+            # gateseq.insert(0, RO_str)
             experimentlist.append(gateseq)
 
         if "(" in clean_seq:
@@ -652,7 +652,7 @@ def create_experiment_list_pyGSTi_qudev(filename, qb_names=[''],
             if len(measfiducial) != 0:
                 gateseq.append(measfiducial)
 
-            gateseq.append([RO_str])
+            # gateseq.append([RO_str])
             gateseq = list(flatten_list(gateseq))
             experimentlist.append(gateseq)
         elif ("Gi" in clean_seq) or ("Gx" in clean_seq) or ("Gy" in clean_seq) \
@@ -661,7 +661,7 @@ def create_experiment_list_pyGSTi_qudev(filename, qb_names=[''],
             append_pycqed_gate(clean_seq, loopseq, qb_names)
 
             gateseq.append(loopseq)
-            gateseq.append([RO_str])
+            # gateseq.append([RO_str])
             gateseq = list(flatten_list(gateseq))
             experimentlist.append(gateseq)
 

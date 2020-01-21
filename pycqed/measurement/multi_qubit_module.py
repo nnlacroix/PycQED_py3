@@ -2812,61 +2812,43 @@ def measure_ramsey_add_pulse_sweep_phase(
                                qb_name=measured_qubit.name)
 
 
-def measure_pygsti(qubits, f_LO, pygsti_gateset=None,
-                   upload=True, nr_shots_per_seg=2 ** 12,
-                   thresholded=True, analyze_shots=True, analyze_pygsti=True,
-                   preselection=True, ro_spacing=1e-6, label=None,
-                   MC=None, UHFQC=None, pulsar=None, run=True, **kw):
-    if UHFQC is None:
-        UHFQC = qubits[0].UHFQC
-        log.warning("Unspecified UHFQC instrument. Using {}.UHFQC.".format(
-            qubits[0].name))
-    if pulsar is None:
-        pulsar = qubits[0].AWG
-        log.warning("Unspecified pulsar instrument. Using {}.AWG.".format(
-            qubits[0].name))
-    if MC is None:
-        MC = qubits[0].MC
-        log.warning("Unspecified MC object. Using {}.MC.".format(
-            qubits[0].name))
+def measure_pygsti(qubits, pygsti_gateset=None,
+                   nr_shots_per_seg=2**12, label=None,
+                   det_type='int_log_det', upload=True, prep_params=None,
+                   cal_states='auto', n_cal_points_per_state=2,
+                   analyze_shots=True, analyze_pygsti=True, **kw):
 
     if len(qubits) == 2:
-        log.warning('Make sure the first qubit in the list is the '
-                    'control qubit!')
-    # Generate list of experiments with pyGSTi
+        print('Make sure the first qubit in the list is the control qubit!')
+
     qb_names = [qb.name for qb in qubits]
 
+    # Generate list of experiments with pyGSTi
     maxLengths = kw.pop('maxLengths', [1, 2])
-    linear_GST = kw.pop('linear_GST', True)
+    linear_GST = kw.pop('linear_GST', False)
     if pygsti_gateset is not None:
         prep_fiducials = pygsti_gateset.prepStrs
         meas_fiducials = pygsti_gateset.effectStrs
         germs = pygsti_gateset.germs
-        gs_target = pygsti_gateset.gs_target
+        target_model = pygsti_gateset.target_model()
         if linear_GST:
-            listOfExperiments = pygsti.construction.list_lgst_gatestrings(
-                prep_fiducials, meas_fiducials, gs_target)
+            listOfExperiments = pygsti.construction.list_lgst_circuits(
+                prep_fiducials, meas_fiducials, target_model.operations.keys())
         else:
             listOfExperiments = constr.make_lsgst_experiment_list(
-                gs_target, prep_fiducials, meas_fiducials, germs, maxLengths)
+                target_model.operations.keys(), prep_fiducials,
+                meas_fiducials, germs, maxLengths)
     else:
         prep_fiducials = kw.pop('prep_fiducials', None)
         meas_fiducials = kw.pop('meas_fiducials', None)
         germs = kw.pop('germs', None)
-        gs_target = kw.pop('gs_target', None)
+        target_model = kw.pop('target_model', None)
         listOfExperiments = kw.pop('listOfExperiments', None)
-        # if np.any(np.array([prep_fiducials, meas_fiducials, germs,
-        #                     gs_target]) == None):
-        #     raise ValueError('Please provide either pyGSTi gate set or the '
-        #                      'kwargs "prep_fiducials", "meas_fiducials", '
-        #                      '"germs", "gs_target".')
-        # listOfExperiments = constr.make_lsgst_experiment_list(
-        #     gs_target, prep_fiducials, meas_fiducials, germs, maxLengths)
-
     nr_exp = len(listOfExperiments)
 
     # Set label
     if label is None:
+        gst_gates = [s.strip() for s in target_model.operations.keys()]
         label = ''
         if pygsti_gateset is not None:
             if linear_GST:
@@ -2875,94 +2857,58 @@ def measure_pygsti(qubits, f_LO, pygsti_gateset=None,
                 label += 'LongSeq'
         if len(qubits) == 1:
             label += 'GST_{}{}'.format(
-                '-'.join([s[1::] for s in gs_target.gates]),
-                qubits[0].msmt_suffix)
+                '-'.join([g[1::] for g in gst_gates]), qubits[0].msmt_suffix)
         else:
             label += 'GST_{}_qbs{}'.format(
-                '-'.join([s[1::] for s in gs_target.gates]),
+                '-'.join([g[1::] for g in gst_gates]),
                 ''.join([qb.name[-1] for qb in qubits]))
 
-    # Set detector function
-    key = 'int'
-    if thresholded:
-        key = 'dig'
-        log.warning('This is a thresholded measurement. Make sure you '
-              'have set the threshold values!')
-        label += '_thresh'
-
-    # Prepare qubits and readout pulse
+    # Prepare qubits
     for qb in qubits:
-        qb.prepare_for_timedomain(multiplexed=True)
-    multiplexed_pulse(qubits, f_LO, upload=True)
+        MC = qb.instr_mc.get_instr()
+        qb.prepare(drive='timedomain')
 
-    MC_run_mode = '1D'
+    if prep_params is None:
+        prep_params = get_multi_qubit_prep_params(
+            [qb.preparation_params() for qb in qubits])
+
+    cal_states = CalibrationPoints.guess_cal_states(cal_states)
+    cp = CalibrationPoints.multi_qubit(qb_names, cal_states,
+                                       n_per_state=n_cal_points_per_state)
+
     # Check if there are too many experiments to do
-    max_exp_len = kw.pop('max_exp_len', 800)
-    if nr_exp > max_exp_len:
-        nr_subexp = nr_exp // max_exp_len
-        pygsti_sublistOfExperiments = [listOfExperiments[
-                                       i * max_exp_len:(i + 1) * max_exp_len] for
-                                       i in range(nr_subexp)]
-        remaining_exps = nr_exp - max_exp_len * nr_subexp
-        if remaining_exps > 0:
-            pygsti_sublistOfExperiments += [listOfExperiments[-remaining_exps::]]
-        # Set detector function
-        nr_shots = nr_shots_per_seg * max_exp_len * (2 if preselection else 1)
-        det_func = get_multiplexed_readout_detector_functions(
-            qubits, nr_shots=nr_shots, values_per_point=2,
-            values_per_point_suffex=['_presel', '_measure'])[key + '_log_det']
+    max_exp_len = kw.pop('max_exp_len', 50)
+    nr_subexp = nr_exp // max_exp_len
+    pygsti_sublistOfExperiments = [
+        listOfExperiments[i * max_exp_len:(i + 1) * max_exp_len] for
+        i in range(nr_subexp)]
+    remaining_exps = nr_exp - max_exp_len * nr_subexp
+    if remaining_exps > 0:
+        pygsti_sublistOfExperiments += [listOfExperiments[-remaining_exps::]]
 
-        # Define hard sweep
-        # hard_sweep_points = np.repeat(np.arange(max_exp_len),
-        #                             nr_shots_per_seg*(2 if preselection else 1))
-        hard_sweep_points = np.arange(max_exp_len * nr_shots_per_seg *
-                                      (2 if preselection else 1))
+    operation_dict = get_operation_dict(qubits)
+    sequences, hard_sweep_points, soft_sweep_points = \
+        mqs.pygsti_seq(qb_names, pygsti_sublistOfExperiments, operation_dict,
+                       upload=False, cal_points=cp, prep_params=prep_params)
 
-        hard_sweep_func = \
-            awg_swf2.GST_swf(qb_names,
-                             pygsti_listOfExperiments=
-                             pygsti_sublistOfExperiments[0],
-                             operation_dict=get_operation_dict(qubits),
-                             preselection=preselection,
-                             ro_spacing=ro_spacing,
-                             upload=False)
-
-        # Define hard sweep
-        soft_sweep_points = np.arange(len(pygsti_sublistOfExperiments))
-        soft_sweep_func = awg_swf2.GST_experiment_sublist_swf(
-            hard_sweep_func,
-            pygsti_sublistOfExperiments)
-        MC_run_mode = '2D'
-    else:
-        # Set detector function
-        nr_shots = nr_shots_per_seg * nr_exp * (2 if preselection else 1)
-        det_func = get_multiplexed_readout_detector_functions(
-            qubits, nr_shots=nr_shots, values_per_point=2,
-            values_per_point_suffex=['_presel', '_measure'])[key + '_log_det']
-        # Define hard sweep
-        # hard_sweep_points = np.repeat(np.arange(nr_exp),
-        #                             nr_shots_per_seg*(2 if preselection else 1))
-        hard_sweep_points = np.arange(max_exp_len * nr_shots_per_seg *
-                                      (2 if preselection else 1))
-        hard_sweep_func = \
-            awg_swf2.GST_swf(qb_names,
-                             pygsti_listOfExperiments=listOfExperiments,
-                             operation_dict=get_operation_dict(qubits),
-                             preselection=preselection,
-                             ro_spacing=ro_spacing,
-                             upload=upload)
-
+    hard_sweep_func = awg_swf.SegmentHardSweep(
+        sequence=sequences[0], upload=upload,
+        parameter_name='Gate Set Nr.', unit='')
     MC.set_sweep_function(hard_sweep_func)
     MC.set_sweep_points(hard_sweep_points)
-    if MC_run_mode == '2D':
-        MC.set_sweep_function_2D(soft_sweep_func)
-        MC.set_sweep_points_2D(soft_sweep_points)
+
+    MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
+        hard_sweep_func, sequences, 'Subexperiment Nr.', ''))
+    MC.set_sweep_points_2D(soft_sweep_points)
+
+    det_func = get_multiplexed_readout_detector_function(
+        qubits, det_type=det_type, **kw)
     MC.set_detector_function(det_func)
 
     exp_metadata = {'pygsti_gateset': pygsti_gateset,
                     'linear_GST': linear_GST,
-                    'preselection': preselection,
-                    'thresholded': thresholded,
+                    'preparation_params': prep_params,
+                    'cal_points': repr(cp),
                     'nr_shots_per_seg': nr_shots_per_seg,
                     'nr_exp': nr_exp}
     reduction_type = kw.pop('reduction_type', None)
@@ -2972,22 +2918,23 @@ def measure_pygsti(qubits, f_LO, pygsti_gateset=None,
         exp_metadata.update({'max_exp_len': max_exp_len})
     if not linear_GST:
         exp_metadata.update({'maxLengths': maxLengths})
-    if preselection:
-        exp_metadata.update({'ro_spacing': ro_spacing})
-    if run:
-        MC.run(name=label, mode=MC_run_mode, exp_metadata=exp_metadata)
+    MC.run(name=label, mode='2D', exp_metadata=exp_metadata)
 
     # Analysis
     if analyze_shots:
+        preparation_type = prep_fiducials.get('preparation_type', 'wait')
+        preselection = (preparation_type == 'preselection')
+        thresholded = ('dig' in det_type)
+
         if thresholded:
-            MA = ma.MeasurementAnalysis(TwoD=(MC_run_mode == '2D'))
+            MA = ma.MeasurementAnalysis(TwoD=True)
         else:
-            thresholds = {qb.name: 1.5 * UHFQC.get(
+            thresholds = {qb.name: 1.5 * qb.UHFQC.get(
                 'qas_0_thresholds_{}_level'.format(
-                    qb.RO_acq_weight_function_I())) for qb in qubits}
+                    qb.acq_I_channel())) for qb in qubits}
             channel_map = {qb.name: det_func.value_names[0] for qb in qubits}
             MA = ra.MultiQubit_SingleShot_Analysis(options_dict=dict(
-                TwoD=(MC_run_mode == '2D'),
+                TwoD=True,
                 n_readouts=(2 if preselection else 1) * nr_exp,
                 thresholds=thresholds,
                 channel_map=channel_map
@@ -3021,15 +2968,15 @@ def measure_pygsti(qubits, f_LO, pygsti_gateset=None,
             dataset.done_adding_data()
             # Get results
             if linear_GST:
-                results = pygsti.do_linear_gst(dataset, gs_target,
-                                               prep_fiducials, meas_fiducials,
-                                               verbosity=3)
+                results = pygsti.do_linear_gst(
+                    dataset, target_model, prep_fiducials, meas_fiducials,
+                    memLimit=3*(1024**3), verbosity=3,
+                    gaugeOptParams={'itemWeights': {'spam': 0.1, 'gates': 1.0}})
             else:
-                results = pygsti.do_long_sequence_gst(dataset, gs_target,
-                                                      prep_fiducials,
-                                                      meas_fiducials,
-                                                      germs, maxLengths,
-                                                      verbosity=3)
+                results = pygsti.do_long_sequence_gst(
+                    dataset, target_model, prep_fiducials, meas_fiducials,
+                    germs, maxLengths, memLimit=3*(1024**3), verbosity=3,
+                    gaugeOptParams={'itemWeights': {'spam': 0.1, 'gates': 1.0}})
             # Save analysis report
             filename = os.path.abspath(os.path.join(
                 MA.folder, label))
@@ -3037,8 +2984,6 @@ def measure_pygsti(qubits, f_LO, pygsti_gateset=None,
                 results,
                 filename=filename,
                 title=label, verbosity=2)
-
-    return MC
 
 
 def measure_multi_parity_multi_round(ancilla_qubits, data_qubits,

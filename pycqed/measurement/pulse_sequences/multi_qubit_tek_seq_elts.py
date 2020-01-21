@@ -1623,75 +1623,46 @@ def get_DD_pulse_list(operation_dict, qb_names, DD_time,
     return pulse_dict_list
 
 
-def pygsti_seq(qb_names, pygsti_listOfExperiments, operation_dict,
-               preselection=True, ro_spacing=1e-6,
-               seq_name=None, upload=True, upload_all=True,
-               return_seq=False, verbose=False):
+def pygsti_seq(qb_names, pygsti_exp_list_list, operation_dict,
+               upload=True, cal_points=None, prep_params=dict()):
 
-    if seq_name is None:
-        seq_name = 'GST_sequence'
-    seq = sequence.Sequence(seq_name)
-    el_list = []
+    seq_name = 'GST_sequence'
+    sequences = []
+    for i, pygsti_exp_list in enumerate(pygsti_exp_list_list):
+        tup_lst = [g.tup for g in pygsti_exp_list]
+        str_lst = []
+        for t1 in tup_lst:
+            s = ''
+            for t in t1:
+                s += str(t)
+            str_lst += [s]
+        exp_gate_lists = get_exp_list(filename='', pygstiGateList=str_lst,
+                                      qb_names=qb_names)
 
-    tup_lst = [g.tup for g in pygsti_listOfExperiments]
-    str_lst = []
-    for t1 in tup_lst:
-        s = ''
-        for t in t1:
-            s += str(t)
-        str_lst += [s]
-    experiment_lists = get_exp_list(filename='',
-                                    pygstiGateList=str_lst,
-                                    qb_names=qb_names)
-    if preselection:
-        RO_str = 'RO' if len(qb_names) == 1 else 'RO mux'
-        operation_dict[RO_str+'_presel'] = \
-            operation_dict[experiment_lists[0][-1]].copy()
-        operation_dict[RO_str+'_presel']['pulse_delay'] = -ro_spacing
-        operation_dict[RO_str+'_presel']['refpoint'] = 'start'
-        operation_dict[RO_str+'presel_dummy'] = {
-            'pulse_type': 'SquarePulse',
-            'channel': operation_dict[
-                experiment_lists[0][-1]]['acq_marker_channel'],
-            'amplitude': 0.0,
-            'length': ro_spacing,
-            'pulse_delay': 0}
+        pulse_list_list_all = []
+        for exp_lst in exp_gate_lists:
+            pulse_list = [operation_dict[p] for p in exp_lst]
+            pulse_list += generate_mux_ro_pulse_list(qb_names, operation_dict)
+            pulse_list_w_prep = add_preparation_pulses(
+                pulse_list, operation_dict, qb_names, **prep_params)
+            pulse_list_list_all.append(pulse_list_w_prep)
+        seq = pulse_list_list_seq(pulse_list_list_all, seq_name+f'_subexp{i}',
+                                  upload=False)
+        if cal_points is not None:
+            seq.extend(cal_points.create_segments(operation_dict,
+                                                  **prep_params))
+        sequences.append(seq)
 
-    if upload_all:
-        upload_AWGs = 'all'
-    else:
-        upload_AWGs = ['AWG1']
+    # reuse sequencer memory by repeating readout pattern
+    for s in sequences:
         for qbn in qb_names:
-            X90_pulse = deepcopy(operation_dict['X90 ' + qbn])
-            upload_AWGs += [station.pulsar.get(X90_pulse['I_channel'] + '_AWG'),
-                           station.pulsar.get(X90_pulse['Q_channel'] + '_AWG')]
-        if len(qb_names) > 1:
-            CZ_pulse_name = 'CZ {} {}'.format(qb_names[1], qb_names[0])
-            if len([i for i in experiment_lists if CZ_pulse_name in i]) > 0:
-                CZ_pulse = operation_dict[CZ_pulse_name]
-                upload_AWGs += [station.pulsar.get(CZ_pulse['channel'] + '_AWG')]
-                for ch in CZ_pulse['aux_channels_dict']:
-                    upload_AWGs += [station.pulsar.get(ch + '_AWG')]
-        upload_AWGs = list(set(upload_AWGs))
-    for i, exp_lst in enumerate(experiment_lists):
-        pulse_lst = [operation_dict[p] for p in exp_lst]
-        if preselection:
-            pulse_lst.append(operation_dict[RO_str+'_presel'])
-            pulse_lst.append(operation_dict[RO_str+'presel_dummy'])
-        el = multi_pulse_elt(i, station, pulse_lst)
-        el_list.append(el)
-        seq.append_element(el, trigger_wait=True)
+            s.repeat_ro(f"RO {qbn}", operation_dict)
 
     if upload:
-        station.pulsar.program_awgs(seq, *el_list,
-                                    AWGs=upload_AWGs,
-                                    channels='all',
-                                    verbose=verbose)
+        ps.Pulsar.get_instance().program_awgs(sequences[0])
 
-    if return_seq:
-        return seq, el_list
-    else:
-        return seq_name
+    return sequences, np.arange(sequences[0].n_acq_elements()), \
+           np.arange(len(pygsti_exp_list_list))
 
 
 def generate_mux_ro_pulse_list(qubit_names, operation_dict, element_name='RO',
