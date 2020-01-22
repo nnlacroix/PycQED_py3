@@ -294,7 +294,6 @@ def Ramsey_time_with_flux_seq(qb_name,
 
 def chevron_seqs(qbc_name,
                  qbt_name,
-                 qbr_name,
                  hard_sweep_dict,
                  soft_sweep_dict,
                  operation_dict,

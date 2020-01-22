@@ -3465,6 +3465,71 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 'color': 'blue',
             }
 
+            # Plot rotated integrated average in dependece of flux pulse 
+            # amplitude and length
+            label = f'T2_color_plot_{qb}'
+            xvals = self.metadata['amplitudes'][mask] if \
+                self.metadata['frequencies'] is None else \
+                self.metadata['frequencies'][mask]
+            xlabel = r'Flux pulse amplitude' if \
+                self.metadata['frequencies'] is None else \
+                r'Derived qubit frequency'
+            self.plot_dicts[label] = {
+                'title': rdd['measurementstring'] +
+                            '\n' + rdd['timestamp'],
+                'plotfn': self.plot_colorxy,
+                'linestyle': '-',
+                'xvals': xvals,
+                'yvals': self.metadata['flux_lengths'],
+                'zvals': np.transpose(pdd['phase_contrast'][qb]),
+                'xlabel': xlabel,
+                'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
+                'ylabel': r'Flux pulse length',
+                'yunit': 's',
+                'zlabel': r'Excited state population'
+            }
+
+            # Plot all fits in single figure
+            if not self.options_dict.get('all_fits', False):
+                continue
+
+            # colormap = self.options_dict.get('colormap', mpl.cm.plasma)
+            # for i in range(len(self.metadata['amplitudes'])):
+            #     color = colormap(i/(len(self.metadata['frequencies'])-1))
+            #     label = f'exp_fit_{qb}_amp_{i}'
+            #     freqs = self.metadata['frequencies'] is not None
+            #     fitid = self.metadata.get('frequencies', 
+            #                               self.metadata['amplitudes'])[i]
+            #     self.plot_dicts[label] = {
+            #         'title': rdd['measurementstring'] +
+            #                 '\n' + rdd['timestamp'],
+            #         'ax_id': f'T2_fits_{qb}',
+            #         'xlabel': r'Flux pulse length',
+            #         'xunit': 's',
+            #         'ylabel': r'Excited state population',
+            #         'plotfn': self.plot_fit,
+            #         'fit_res': self.fit_res[label],
+            #         'plot_init': self.options_dict.get('plot_init', False),
+            #         'color': color,
+            #         'setlabel': f'freq={fitid:.4f}' if freqs 
+            #                             else f'amp={fitid:.4f}',
+            #         'do_legend': False,
+            #         'legend_bbox_to_anchor': (1, 1),
+            #         'legend_pos': 'upper left',
+            #         }
+                
+            #     label = f'freq_scatter_{qb}_{i}'
+            #     self.plot_dicts[label] = {
+            #         'ax_id': f'T2_fits_{qb}',
+            #         'plotfn': self.plot_line,
+            #         'xvals': self.metadata['phases'],
+            #         'linestyle': '',
+            #         'yvals': pdd['data_reshaped_no_cp'][qb][i,:],
+            #         'color': color,
+            #         'setlabel': f'freq={fitid:.4f}' if freqs 
+            #                             else f'amp={fitid:.4f}',
+            #     }
+
 class MeasurementInducedDephasingAnalysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):
         super().process_data()

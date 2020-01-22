@@ -545,11 +545,6 @@ class BufferedHalfwayPulse(Pulse):
         self.length = self.pulse_length + self.buffer_length_start[channel] + \
                       self.buffer_length_end[channel]
 
-        # these are here so that we can use the CZ pulse dictionary that is
-        # created by add_CZ_pulse in QuDev_transmon.py
-        self.frequency = kw.pop('frequency', 0)
-        self.phase = kw.pop('phase', 0.)
-
         self.codeword = kw.pop('codeword', 'no_codeword')
 
     #FIXME
