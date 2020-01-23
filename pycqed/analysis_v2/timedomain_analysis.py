@@ -351,6 +351,22 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             self.num_cal_points = np.array(list(
                 self.cal_states_dict.values())).flatten().size
 
+            # correct probabilities given calibration matrix
+            if self.get_param_value("correction_matrix") is not None:
+                self.proc_data_dict['projected_data_dict_corrected'] = OrderedDict()
+                for qbn, data_dict in self.proc_data_dict[
+                    'meas_results_per_qb'].items():
+                    self.proc_data_dict['projected_data_dict'][qbn] = OrderedDict()
+                    probas_raw = np.asarray([data_dict[k] for k in data_dict
+                                             for state_prob in ['pg', 'pe', 'pf'] if
+                                             state_prob in k])
+                    corr_mtx = self.get_param_value("correction_matrix")[qbn]
+                    probas_corrected = np.linalg.inv(corr_mtx).T @ probas_raw
+                    for state_prob in ['pg', 'pe', 'pf']:
+                        self.proc_data_dict['projected_data_dict_corrected'][qbn].update(
+                            {state_prob: data for key, data in
+                             zip(["pg", "pe", "pf"], probas_corrected)})
+
         # get data_to_fit
         self.proc_data_dict['data_to_fit'] = OrderedDict()
         for qbn, prob_data in self.proc_data_dict[
