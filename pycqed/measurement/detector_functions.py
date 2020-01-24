@@ -504,7 +504,7 @@ class UHFQC_multi_detector(UHFQC_Base):
                 d.AWG = None
         # to be used in MC.get_percdone()
         self.acq_data_len_scaling = \
-            self.detectors[0].acquired_data_len_scaling
+            self.detectors[0].acq_data_len_scaling
 
         # currently only has support for classifier detector data
         self.correlated = kw.get('correlated', False)
