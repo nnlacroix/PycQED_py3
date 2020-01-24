@@ -70,7 +70,6 @@ import pycqed
 
 import pycqed.instrument_drivers.physical_instruments.ZurichInstruments.ZI_base_instrument as zibase
 import pycqed.instrument_drivers.physical_instruments.ZurichInstruments.ZI_HDAWG_core as zicore
-import pycqed.instrument_drivers.physical_instruments.QuTech_CCL as qtccl
 
 from qcodes.utils import validators
 from qcodes.instrument.parameter import ManualParameter
@@ -483,9 +482,6 @@ while (1) {
     def calibrate_CCL_dio_protocol(self, CCL=None, verbose=False, repetitions=1):
         log.info('Calibrating DIO delays')
         if verbose: print("Calibrating DIO delays")
-
-        if CCL is None:
-            CCL = qtccl.CCL('CCL', address='192.168.0.11', port=5025)
 
         cs_filepath = os.path.join(pycqed.__path__[0],
             'measurement',
