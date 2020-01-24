@@ -481,6 +481,13 @@ class UHFQC_Base(Hard_Detector):
 
         return data_raw
 
+    def finish(self):
+        if self.AWG is not None:
+            self.AWG.stop()
+
+        for d in self.detectors:
+            d.UHFQC.acquisition_finalize()
+
 
 class UHFQC_multi_detector(UHFQC_Base):
     """
@@ -589,19 +596,15 @@ class UHFQC_multi_detector(UHFQC_Base):
         return corr_data
 
     def finish(self):
-        if self.AWG is not None:
-            self.AWG.stop()
-
         for d in self.detectors:
             d.finish()
 
 
 class UHFQC_input_average_detector(UHFQC_Base):
 
-    '''
-    Detector used for acquiring averaged input traces withe the UHFQC
-
-    '''
+    """
+    Detector used for acquiring averaged timetraces withe the UHFQC
+    """
 
     def __init__(self, UHFQC, AWG=None, channels=(0, 1),
                  nr_averages=1024, nr_samples=4096, **kw):
@@ -640,30 +643,13 @@ class UHFQC_input_average_detector(UHFQC_Base):
                                           loop_cnt=int(self.nr_averages),
                                           mode='iavg')
 
-    def finish(self):
-        if self.AWG is not None:
-            self.AWG.stop()
-
 
 class UHFQC_integrated_average_detector(UHFQC_Base):
 
-    '''
+    """
     Detector used for integrated average results with the UHFQC
 
-    '''
-
-    def __init__(self, UHFQC, AWG=None,
-                 integration_length: float=1e-6, nr_averages: int=1024,
-                 channels: list=(0, 1, 2, 3), result_logging_mode: str='raw',
-                 real_imag: bool=True,
-                 seg_per_point: int =1, single_int_avg: bool =False,
-                 chunk_size: int=None,
-                 values_per_point: int=1, values_per_point_suffex: list=None,
-                 always_prepare: bool=False,
-                 prepare_function=None, prepare_function_kwargs: dict=None,
-                 **kw):
-        """
-        Args:
+    Args:
         UHFQC (instrument) : data acquisition device
         AWG   (instrument) : device responsible for starting and stopping
                 the experiment, can also be a central controller
@@ -701,7 +687,19 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
             first call the prepare statement. This is particularly important
             when it is both a single_int_avg detector and acquires multiple
             segments per point.
-        """
+    """
+
+    def __init__(self, UHFQC, AWG=None,
+                 integration_length: float=1e-6, nr_averages: int=1024,
+                 channels: list=(0, 1, 2, 3), result_logging_mode: str='raw',
+                 real_imag: bool=True,
+                 seg_per_point: int =1, single_int_avg: bool =False,
+                 chunk_size: int=None,
+                 values_per_point: int=1, values_per_point_suffex: list=None,
+                 always_prepare: bool=False,
+                 prepare_function=None, prepare_function_kwargs: dict=None,
+                 **kw):
+
         super().__init__(UHFQC)
 
         self.name = '{}_UHFQC_integrated_average'.format(result_logging_mode)
@@ -892,20 +890,16 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
                                           loop_cnt=int(self.nr_averages),
                                           mode='rl')
 
-    def finish(self):
-        if self.AWG is not None:
-            self.AWG.stop()
-        self.UHFQC.acquisition_finalize()
 
 
 class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
-    '''
+    """
     Detector used for correlation mode with the UHFQC.
     The argument 'correlations' is a list of tuples specifying which channels
     are correlated, and on which channel the correlated signal is output.
     For instance, 'correlations=[(0, 1, 3)]' will put the correlation of
     channels 0 and 1 on channel 3.
-    '''
+    """
 
     def __init__(self, UHFQC, AWG=None, integration_length=1e-6,
                  nr_averages=1024,  real_imag=True,
@@ -1086,22 +1080,10 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
 
 class UHFQC_integration_logging_det(UHFQC_Base):
 
-    '''
-    Detector used for integrated average results with the UHFQC
+    """
+    Detector used for integrated single-shot results with the UHFQC
 
-    '''
-
-    def __init__(self, UHFQC, AWG=None,
-                 integration_length: float=1e-6,
-                 nr_shots: int=4094,
-                 channels: list=(0, 1),
-                 result_logging_mode: str='raw',
-                 always_prepare: bool=False,
-                 prepare_function=None,
-                 prepare_function_kwargs: dict=None,
-                 **kw):
-        """
-        Args:
+    Args:
         UHFQC (instrument) : data acquisition device
         AWG   (instrument) : device responsible for starting and stopping
                              the experiment, can also be a central controller.
@@ -1121,7 +1103,18 @@ class UHFQC_integration_logging_det(UHFQC_Base):
             first call the prepare statement. This is particularly important
             when it is both a single_int_avg detector and acquires multiple
             segments per point.
-        """
+    """
+
+    def __init__(self, UHFQC, AWG=None,
+                 integration_length: float=1e-6,
+                 nr_shots: int=4094,
+                 channels: list=(0, 1),
+                 result_logging_mode: str='raw',
+                 always_prepare: bool=False,
+                 prepare_function=None,
+                 prepare_function_kwargs: dict=None,
+                 **kw):
+
         super().__init__(UHFQC)
 
         self.name = '{}_UHFQC_integration_logging_det'.format(
@@ -1211,29 +1204,10 @@ class UHFQC_integration_logging_det(UHFQC_Base):
                     'qas_0_trans_offset_weightfunction_{}'.format(channel))
         return data
 
-    def finish(self):
-        if self.AWG is not None:
-            self.AWG.stop()
-
 
 class UHFQC_classifier_detector(UHFQC_Base):
-
-    '''
-    Detector used for integrated average results with the UHFQC
-
-    '''
-
-    def __init__(self, UHFQC, AWG=None,
-                 integration_length: float=1e-6,
-                 nr_shots: int=4094,
-                 channels: list=(0, 1),
-                 result_logging_mode: str='raw',
-                 always_prepare: bool=False,
-                 prepare_function=None,
-                 prepare_function_kwargs: dict=None,
-                 get_values_function_kwargs: dict=None, **kw):
-        """
-        Args:
+    """
+    Args:
         UHFQC (instrument) : data acquisition device
         AWG   (instrument) : device responsible for starting and stopping
                              the experiment, can also be a central controller.
@@ -1266,7 +1240,18 @@ class UHFQC_classifier_detector(UHFQC_Base):
             sate_prob_mtx (default: None): state assignment probability matrix
                 (or list of matrices if multiple qubits) used to correct for
                 RO errors. No correction is applied if None.
-        """
+    """
+
+    def __init__(self, UHFQC, AWG=None,
+                 integration_length: float=1e-6,
+                 nr_shots: int=4094,
+                 channels: list=(0, 1),
+                 result_logging_mode: str='raw',
+                 always_prepare: bool=False,
+                 prepare_function=None,
+                 prepare_function_kwargs: dict=None,
+                 get_values_function_kwargs: dict=None, **kw):
+
         super().__init__(UHFQC)
 
         self.name = '{}_UHFQC_classifier_det'.format(
@@ -1439,7 +1424,3 @@ class UHFQC_classifier_detector(UHFQC_Base):
         #     classified_data = np.concatenate([classified_data, corr_data],
         #                                      axis=0)
         return classified_data.T
-
-    def finish(self):
-        if self.AWG is not None:
-            self.AWG.stop()
