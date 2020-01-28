@@ -14,12 +14,7 @@ except FileExistsError:
 
 class CliffordLookuptables():
     def __init__(self):
-        # create single_qubit_hash_lut.txt if it is not in the hash_dir
-        if 'single_qubit_hash_lut.txt' not in listdir(hash_dir):
-            self.generate_single_qubit_hash_table()
-        # create two_qubit_hash_lut.txt if it is not in the hash_dir
-        if 'two_qubit_hash_lut.txt' not in listdir(hash_dir):
-            self.generate_two_qubit_hash_table()
+        self.create_lut_files()
 
     def __call__(self, pauli_transfer_matrix):
         unique_hash = crc32(pauli_transfer_matrix.astype(int))
@@ -32,6 +27,14 @@ class CliffordLookuptables():
         idx = hash_table.index(unique_hash)
 
         return idx
+
+    def create_lut_files(self):
+        # create single_qubit_hash_lut.txt if it is not in the hash_dir
+        if 'single_qubit_hash_lut.txt' not in listdir(hash_dir):
+            self.generate_single_qubit_hash_table()
+        # create two_qubit_hash_lut.txt if it is not in the hash_dir
+        if 'two_qubit_hash_lut.txt' not in listdir(hash_dir):
+            self.generate_two_qubit_hash_table()
 
     def get_single_qubit_clifford_hash_table(self):
         """

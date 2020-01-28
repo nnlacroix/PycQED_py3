@@ -125,7 +125,7 @@ def two_qubit_randomized_benchmarking_seqs(
     sequences = []
     for nCl in cliffords:
         pulse_list_list_all = []
-        for i in nr_seeds:
+        for _ in nr_seeds:
             cl_seq = rb.randomized_benchmarking_sequence_new(
                 nCl,
                 number_of_qubits=2,

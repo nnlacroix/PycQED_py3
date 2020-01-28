@@ -692,7 +692,7 @@ def randomized_renchmarking_seqs(
     sequences = []
     for nCl in cliffords:
         pulse_list_list_all = []
-        for i in nr_seeds:
+        for _ in nr_seeds:
             cl_seq = rb.randomized_benchmarking_sequence(
                 nCl, desired_net_cl=net_clifford,
                 interleaved_gate=interleaved_gate)
