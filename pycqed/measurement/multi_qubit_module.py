@@ -2839,11 +2839,16 @@ def measure_pygsti(qubits, pygsti_gateset=None,
                 target_model.operations.keys(), prep_fiducials,
                 meas_fiducials, germs, maxLengths)
     else:
+        target_model = kw.pop('target_model', None)
+        listOfExperiments = kw.pop('listOfExperiments', None)
+        if target_model is None:
+            raise ValueError('Please provide target_model.')
+        if listOfExperiments is None:
+            raise ValueError('Please provide listOfExperiments.')
+        # only needed for analysis
         prep_fiducials = kw.pop('prep_fiducials', None)
         meas_fiducials = kw.pop('meas_fiducials', None)
         germs = kw.pop('germs', None)
-        target_model = kw.pop('target_model', None)
-        listOfExperiments = kw.pop('listOfExperiments', None)
     nr_exp = len(listOfExperiments)
 
     # Set label

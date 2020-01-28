@@ -1629,19 +1629,19 @@ def pygsti_seq(qb_names, pygsti_exp_list_list, operation_dict,
     seq_name = 'GST_sequence'
     sequences = []
     for i, pygsti_exp_list in enumerate(pygsti_exp_list_list):
-        tup_lst = [g.tup for g in pygsti_exp_list]
-        str_lst = []
-        for t1 in tup_lst:
-            s = ''
-            for t in t1:
-                s += str(t)
-            str_lst += [s]
+        str_lst = [s.str for s in pygsti_exp_list]
         exp_gate_lists = get_exp_list(filename='', pygstiGateList=str_lst,
                                       qb_names=qb_names)
 
         pulse_list_list_all = []
         for exp_lst in exp_gate_lists:
-            pulse_list = [operation_dict[p] for p in exp_lst]
+            pulse_list = []
+            for p in exp_lst:
+                if 'RO mux' in p:
+                    pulse_list += generate_mux_ro_pulse_list(
+                        qb_names, operation_dict)
+                else:
+                    pulse_list += [operation_dict[p]]
             pulse_list += generate_mux_ro_pulse_list(qb_names, operation_dict)
             pulse_list_w_prep = add_preparation_pulses(
                 pulse_list, operation_dict, qb_names, **prep_params)

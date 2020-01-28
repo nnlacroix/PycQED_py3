@@ -613,7 +613,7 @@ def create_experiment_list_pyGSTi_qudev(filename, qb_names=[''],
         sequences = experiments.read().split("\n")
     else:
         sequences = pygstiGateList
-    #
+
     # if len(qb_names) == 1:
     #     RO_str = "RO " + qb_names[0]
     # else:
@@ -629,6 +629,10 @@ def create_experiment_list_pyGSTi_qudev(filename, qb_names=[''],
             # gateseq.insert(0, RO_str)
             experimentlist.append(gateseq)
 
+        # if 'Iz' in clean_seq:
+        #     gateseq.insert(0, RO_str)
+        #     experimentlist.append(gateseq)
+        # print("(" in clean_seq)
         if "(" in clean_seq:
             prepfiducial = []
             germs = []
@@ -686,57 +690,63 @@ def append_pycqed_gate(pygsti_gate_str, gate_list, qb_names=['']):
 
     if len(qb_names) == 1:
         qb_name = qb_names[0]
-        regsplit = pygsti_gate_str.split('G')[1::]
-        for i in range(len(regsplit)):
-            if regsplit[i] == "i":
-                gate_list.append("I " + qb_name)
-            elif regsplit[i] == "x":
-                gate_list.append("X90 " + qb_name)
-            elif regsplit[i] == "y":
-                gate_list.append("Y90 " + qb_name)
-            elif regsplit[i] == "z":
-                gate_list.append("Z90 " + qb_name)
-            else:
-                raise ValueError('Unknown pygsti gate type "{}"'.format(
-                    pygsti_gate_str))
+        if 'Iz' in pygsti_gate_str:
+            gate_list.append('RO ' + qb_name)
+        else:
+            regsplit = pygsti_gate_str.split('G')[1::]
+            for i in range(len(regsplit)):
+                if regsplit[i] == "i":
+                    gate_list.append("I " + qb_name)
+                elif regsplit[i] == "x":
+                    gate_list.append("X90 " + qb_name)
+                elif regsplit[i] == "y":
+                    gate_list.append("Y90 " + qb_name)
+                elif regsplit[i] == "z":
+                    gate_list.append("Z90 " + qb_name)
+                else:
+                    raise ValueError('Unknown pygsti gate type "{}"'.format(
+                        pygsti_gate_str))
 
     elif len(qb_names) == 2:
-        regsplit = pygsti_gate_str.split('G')[1::]
-        for i in range(len(regsplit)):
-            if regsplit[i] == "ii":
-                gate_list.append("I " + qb_names[0])
-                gate_list.append("Is " + qb_names[1])
-            elif regsplit[i] == "ix":
-                gate_list.append("I " + qb_names[0])
-                gate_list.append("X90s " + qb_names[1])
-            elif regsplit[i] == "iy":
-                gate_list.append("I " + qb_names[0])
-                gate_list.append("Y90s " + qb_names[1])
-            elif regsplit[i] == "iz":
-                gate_list.append("I " + qb_names[0])
-                gate_list.append("Z90s " + qb_names[1])
-            elif regsplit[i] == "xi":
-                gate_list.append("X90 " + qb_names[0])
-                gate_list.append("Is " + qb_names[1])
-            elif regsplit[i] == "yi":
-                gate_list.append("Y90 " + qb_names[0])
-                gate_list.append("Is " + qb_names[1])
-            elif regsplit[i] == "zi":
-                gate_list.append("Z90 " + qb_names[0])
-                gate_list.append("Is " + qb_names[1])
-            elif regsplit[i] == "xx":
-                gate_list.append("X90 " + qb_names[0])
-                gate_list.append("X90s " + qb_names[1])
-            elif regsplit[i] == "yy":
-                gate_list.append("Y90 " + qb_names[0])
-                gate_list.append("Y90s " + qb_names[1])
-            elif regsplit[i] == "zz":
-                gate_list.append("Z90 " + qb_names[0])
-                gate_list.append("Z90s " + qb_names[1])
-            elif regsplit[i] == "cphase":
-                gate_list.append("CZ {} {}".format(qb_names[1], qb_names[0]))
-            else:
-                raise ValueError('Unknown pygsti gate type "{}"'.format(
-                    pygsti_gate_str))
+        if 'Iz' in pygsti_gate_str:
+            gate_list.append('RO mux')
+        else:
+            regsplit = pygsti_gate_str.split('G')[1::]
+            for i in range(len(regsplit)):
+                if regsplit[i] == "ii":
+                    gate_list.append("I " + qb_names[0])
+                    gate_list.append("Is " + qb_names[1])
+                elif regsplit[i] == "ix":
+                    gate_list.append("I " + qb_names[0])
+                    gate_list.append("X90s " + qb_names[1])
+                elif regsplit[i] == "iy":
+                    gate_list.append("I " + qb_names[0])
+                    gate_list.append("Y90s " + qb_names[1])
+                elif regsplit[i] == "iz":
+                    gate_list.append("I " + qb_names[0])
+                    gate_list.append("Z90s " + qb_names[1])
+                elif regsplit[i] == "xi":
+                    gate_list.append("X90 " + qb_names[0])
+                    gate_list.append("Is " + qb_names[1])
+                elif regsplit[i] == "yi":
+                    gate_list.append("Y90 " + qb_names[0])
+                    gate_list.append("Is " + qb_names[1])
+                elif regsplit[i] == "zi":
+                    gate_list.append("Z90 " + qb_names[0])
+                    gate_list.append("Is " + qb_names[1])
+                elif regsplit[i] == "xx":
+                    gate_list.append("X90 " + qb_names[0])
+                    gate_list.append("X90s " + qb_names[1])
+                elif regsplit[i] == "yy":
+                    gate_list.append("Y90 " + qb_names[0])
+                    gate_list.append("Y90s " + qb_names[1])
+                elif regsplit[i] == "zz":
+                    gate_list.append("Z90 " + qb_names[0])
+                    gate_list.append("Z90s " + qb_names[1])
+                elif regsplit[i] == "cphase":
+                    gate_list.append("CZ {} {}".format(qb_names[1], qb_names[0]))
+                else:
+                    raise ValueError('Unknown pygsti gate type "{}"'.format(
+                        pygsti_gate_str))
     else:
         raise ValueError('This functions works only up to 2 qubits.')
