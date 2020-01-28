@@ -271,7 +271,7 @@ def randomized_benchmarking_sequence_new(
         rb_clifford_indices = rb_clif_ind_intl
 
     # Calculate the net clifford
-    net_clifford = Cl(0)
+    net_clifford = Cl(0)#.get_pauli_transfer_matrix
     for idx in rb_clifford_indices:
         cliff = Cl(idx)
         # order of operators applied in is right to left, therefore
