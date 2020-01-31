@@ -1127,7 +1127,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
                 '{}_{} w{}'.format(UHFQC.name, result_logging_mode, channel)
         if result_logging_mode == 'raw':
             self.value_units = ['V']*len(self.channels)
-            self.scaling_factor = 1  /(1.8e9*integration_length)
+            self.scaling_factor = 1  # /(1.8e9*integration_length)
         else:
             self.value_units = ['']*len(self.channels)
             self.scaling_factor = 1
