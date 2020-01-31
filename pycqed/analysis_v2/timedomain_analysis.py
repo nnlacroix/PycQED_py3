@@ -2034,8 +2034,10 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             self.proc_data_dict['rho_ls'] = rho_ls
             self.proc_data_dict['rho'] = rho_ls
             if self.options_dict.get('mle', False):
-                rho_mle = tomo.mle_tomography(all_mus, all_Fs, None, #all_Omegas,
-                                              rho_guess=rho_ls)
+                rho_mle = tomo.mle_tomography(
+                    all_mus, all_Fs, None,
+                    all_Omegas if self.get_param_value('use_covariance_matrix', False) else None,
+                    rho_guess=rho_ls)
                 self.proc_data_dict['rho_mle'] = rho_mle
                 self.proc_data_dict['rho'] = rho_mle
 
