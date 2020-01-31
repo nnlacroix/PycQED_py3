@@ -3,6 +3,7 @@
 import logging
 log = logging.getLogger(__name__)
 import numpy as np
+from numpy import array
 import os
 import time
 import datetime
@@ -744,9 +745,11 @@ def compare_instrument_settings_timestamp(timestamp_a, timestamp_b):
                     print('Instrument "%s" does have parameter "%s"' % (
                         ins_key, par_key))
 
-                if eval(ins_a.attrs[par_key]) == eval(ins_b.attrs[par_key]):
+                try:
+                    np.testing.assert_equal(eval(ins_a.attrs[par_key]),
+                                            eval(ins_b.attrs[par_key]))
                     pass
-                else:
+                except:
                     print('    "%s" has a different value '
                           ' "%s" for %s, "%s" for %s' % (
                               par_key, eval(ins_a.attrs[par_key]), timestamp_a,
