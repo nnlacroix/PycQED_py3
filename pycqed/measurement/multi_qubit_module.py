@@ -2197,7 +2197,7 @@ def measure_cphase_nn(qbc, qbt, qbr, lengths, amps, alphas=None,
         return
 
 
-def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
+def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name, qbss=None, qbs_operations=None,
                    hard_sweep_params=None, max_flux_length=None,
                    num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
                    prep_params=None, exp_metadata=None, label=None,
@@ -2218,9 +2218,13 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
     plot_all_probs = kw.get('plot_all_probs', True)
     classified = kw.get('classified', False)
     predictive_label = kw.pop('predictive_label', False)
+
+    if qbss is None:
+        qbss = []
+
     if prep_params is None:
         prep_params = get_multi_qubit_prep_params(
-            [qb.preparation_params() for qb in [qbc, qbt]])
+            [qb.preparation_params() for qb in ([qbc, qbt] + qbss)])
 
     if label is None:
         if predictive_label:
@@ -2241,7 +2245,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                       'unit': 'deg'}
         }
 
-    for qb in [qbc, qbt]:
+    for qb in ([qbc, qbt] + qbss):
         MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
@@ -2252,7 +2256,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
 
     if max_flux_length is not None:
         log.debug(f'max_flux_length = {max_flux_length*1e9:.2f} ns, set by user')
-    operation_dict = get_operation_dict([qbc, qbt])
+    operation_dict = get_operation_dict([qbc, qbt] + qbss)
     sequences, hard_sweep_points, soft_sweep_points = \
         fsqs.cphase_seqs(
             hard_sweep_dict=hard_sweep_params,
@@ -2262,7 +2266,8 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
             operation_dict=operation_dict,
             cal_points=cp, upload=False, prep_params=prep_params,
             max_flux_length=max_flux_length,
-            num_cz_gates=num_cz_gates)
+            num_cz_gates=num_cz_gates,
+            qbs_operations=qbs_operations)
 
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,

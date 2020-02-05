@@ -503,7 +503,7 @@ def cz_bleed_through_phase_seq(phases, qb_name, CZ_pulse_name, CZ_separation,
 
 
 def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
-                operation_dict, cz_pulse_name, num_cz_gates=1,
+                operation_dict, cz_pulse_name, num_cz_gates=1, qbs_operations=None,
                 max_flux_length=None, cal_points=None, upload=True,
                 prep_params=dict()):
 
@@ -511,8 +511,13 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
 
     seq_name = 'Cphase_sequence'
 
-    initial_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
-                         deepcopy(operation_dict['X90s ' + qbt_name])]
+    if qbs_operations is None:
+        qbs_operations = []
+
+    #initial_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
+    #                     deepcopy(operation_dict['X90s ' + qbt_name])]
+    initial_rotations = [deepcopy(operation_dict[op]) for op in (['X180 ' + qbc_name, 'X90s ' + qbt_name] + qbs_operations)]
+
     initial_rotations[0]['name'] = 'cphase_init_pi_qbc'
     initial_rotations[1]['name'] = 'cphase_init_pihalf_qbt'
     for rot_pulses in initial_rotations:
