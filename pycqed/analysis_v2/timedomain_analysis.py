@@ -3860,8 +3860,8 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
         self.fit_dicts = OrderedDict()
         for qbn in self.qb_names:
             for msmt_label in ['_xx', '_xy', '_xmy']:
-                sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
-                    'msmt_sweep_points']
+                sweep_points = self.proc_data_dict['qscale_data'][qbn][
+                    'sweep_points' + msmt_label]
                 data = self.proc_data_dict['qscale_data'][qbn][
                     'data' + msmt_label]
 
@@ -3872,6 +3872,8 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
 
                 guess_pars = model.guess(data=data, x=sweep_points)
                 key = 'fit' + msmt_label + '_' + qbn
+                print(len(sweep_points))
+                print(len(data))
                 self.fit_dicts[key] = {
                     'fit_fn': model.func,
                     'fit_xvals': {'x': sweep_points},
@@ -3938,8 +3940,8 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
         for qbn in self.qb_names:
             base_plot_name = 'Qscale_' + qbn
             for msmt_label in ['_xx', '_xy', '_xmy']:
-                sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
-                'msmt_sweep_points']
+                sweep_points = self.proc_data_dict['qscale_data'][qbn][
+                    'sweep_points' + msmt_label]
                 data = self.proc_data_dict['qscale_data'][qbn][
                     'data' + msmt_label]
                 if msmt_label == '_xx':
@@ -3948,8 +3950,6 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                     plot_name = 'data' + msmt_label + '_' + qbn
 
                 # plot data
-                print(len(sweep_points))
-                print(len(data))
                 try:
                     xunit = self.metadata["sweep_unit"]
                     xlabel = self.metadata["sweep_name"]

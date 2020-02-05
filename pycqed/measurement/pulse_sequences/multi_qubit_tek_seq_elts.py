@@ -1633,19 +1633,34 @@ def pygsti_seq(qb_names, pygsti_exp_list_list, operation_dict,
         exp_gate_lists = get_exp_list(filename='', pygstiGateList=str_lst,
                                       qb_names=qb_names)
 
+        # delay = 44 * (16 / 1.8e9) - 200e-9
+        delay = 56 * (16 / 1.8e9) - 300e-9
         pulse_list_list_all = []
         for exp_lst in exp_gate_lists:
             pulse_list = []
+            prev_pulse_ro = False
             for p in exp_lst:
-                if 'RO mux' in p:
+                if 'RO' in p:
                     pulse_list += generate_mux_ro_pulse_list(
-                        qb_names, operation_dict)
+                        qb_names, operation_dict, element_name='Iz_RO')
+                    prev_pulse_ro = True
                 else:
-                    pulse_list += [operation_dict[p]]
-            pulse_list += generate_mux_ro_pulse_list(qb_names, operation_dict)
+                    if prev_pulse_ro:
+                        prev_pulse_ro = False
+                        pulse = deepcopy(operation_dict[p])
+                        pulse['pulse_delay'] = delay
+                        pulse_list += [pulse]
+                    else:
+                        pulse_list += [operation_dict[p]]
+            pulse_list_mux = generate_mux_ro_pulse_list(qb_names, operation_dict)
+            if prev_pulse_ro:
+                for pulse in pulse_list_mux:
+                    pulse['pulse_delay'] = delay
+            pulse_list += pulse_list_mux
             pulse_list_w_prep = add_preparation_pulses(
                 pulse_list, operation_dict, qb_names, **prep_params)
             pulse_list_list_all.append(pulse_list_w_prep)
+            # print(pulse_list_w_prep)
         seq = pulse_list_list_seq(pulse_list_list_all, seq_name+f'_subexp{i}',
                                   upload=False)
         if cal_points is not None:

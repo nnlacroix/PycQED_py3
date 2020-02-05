@@ -2812,10 +2812,8 @@ def measure_ramsey_add_pulse_sweep_phase(
                                qb_name=measured_qubit.name)
 
 
-def measure_pygsti(qubits, pygsti_gateset=None,
-                   nr_shots_per_seg=2**12, label=None,
+def measure_pygsti(qubits, pygsti_gateset=None, label=None,
                    det_type='int_log_det', upload=True, prep_params=None,
-                   cal_states='auto', n_cal_points_per_state=2,
                    analyze_shots=True, analyze_pygsti=True, **kw):
 
     if len(qubits) == 2:
@@ -2877,10 +2875,6 @@ def measure_pygsti(qubits, pygsti_gateset=None,
         prep_params = get_multi_qubit_prep_params(
             [qb.preparation_params() for qb in qubits])
 
-    cal_states = CalibrationPoints.guess_cal_states(cal_states)
-    cp = CalibrationPoints.multi_qubit(qb_names, cal_states,
-                                       n_per_state=n_cal_points_per_state)
-
     # Check if there are too many experiments to do
     max_exp_len = kw.pop('max_exp_len', 50)
     nr_subexp = nr_exp // max_exp_len
@@ -2894,7 +2888,7 @@ def measure_pygsti(qubits, pygsti_gateset=None,
     operation_dict = get_operation_dict(qubits)
     sequences, hard_sweep_points, soft_sweep_points = \
         mqs.pygsti_seq(qb_names, pygsti_sublistOfExperiments, operation_dict,
-                       upload=False, cal_points=cp, prep_params=prep_params)
+                       upload=False, cal_points=None, prep_params=prep_params)
 
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
@@ -2902,9 +2896,9 @@ def measure_pygsti(qubits, pygsti_gateset=None,
     MC.set_sweep_function(hard_sweep_func)
     MC.set_sweep_points(hard_sweep_points)
 
-    MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
-        hard_sweep_func, sequences, 'Subexperiment Nr.', ''))
-    MC.set_sweep_points_2D(soft_sweep_points)
+    # MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
+    #     hard_sweep_func, sequences, 'Subexperiment Nr.', ''))
+    # MC.set_sweep_points_2D(soft_sweep_points)
 
     det_func = get_multiplexed_readout_detector_function(
         qubits, det_type=det_type, **kw)
@@ -2913,8 +2907,7 @@ def measure_pygsti(qubits, pygsti_gateset=None,
     exp_metadata = {'pygsti_gateset': pygsti_gateset,
                     'linear_GST': linear_GST,
                     'preparation_params': prep_params,
-                    'cal_points': repr(cp),
-                    'nr_shots_per_seg': nr_shots_per_seg,
+                    'max_exp_len': max_exp_len,
                     'nr_exp': nr_exp}
     reduction_type = kw.pop('reduction_type', None)
     if reduction_type is not None:
@@ -2923,7 +2916,7 @@ def measure_pygsti(qubits, pygsti_gateset=None,
         exp_metadata.update({'max_exp_len': max_exp_len})
     if not linear_GST:
         exp_metadata.update({'maxLengths': maxLengths})
-    MC.run(name=label, mode='2D', exp_metadata=exp_metadata)
+    MC.run(name=label, mode='1D', exp_metadata=exp_metadata)
 
     # Analysis
     if analyze_shots:
