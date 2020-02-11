@@ -314,6 +314,47 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter('Spec', 'spec_marker_delay', 'pulse_delay', 
                                  vals=vals.Numbers(), initial_value=0)
 
+        # Flux pulse parameters
+        ps_name = 'flux_pulse'
+        op_name = 'FP'
+        self.add_operation(op_name)
+        self.add_pulse_parameter(op_name, 'flux_pulse_type', 'pulse_type',
+                                 initial_value='BufferedCZPulse',
+                                 vals=vals.Enum('BufferedSquarePulse',
+                                                'BufferedCZPulse'))
+        self.add_pulse_parameter(op_name, ps_name + '_channel', 'channel',
+                                 initial_value='', vals=vals.Strings())
+        self.add_pulse_parameter(op_name, ps_name + '_aux_channels_dict',
+                                 'aux_channels_dict',
+                                 initial_value={}, vals=vals.Dict())
+        self.add_pulse_parameter(op_name, ps_name + '_amplitude', 'amplitude',
+                                 initial_value=0, vals=vals.Numbers())
+        self.add_pulse_parameter(op_name, ps_name + '_frequency', 'frequency',
+                                 initial_value=0, vals=vals.Numbers())
+        self.add_pulse_parameter(op_name, ps_name + '_phase', 'phase',
+                                 initial_value=0, vals=vals.Numbers())
+        self.add_pulse_parameter(op_name, ps_name + '_pulse_length',
+                                 'pulse_length',
+                                 initial_value=0, vals=vals.Numbers(0))
+        self.add_pulse_parameter(op_name, ps_name + '_buffer_length_start',
+                                 'buffer_length_start', initial_value=10e-9,
+                                 vals=vals.Numbers(0))
+        self.add_pulse_parameter(op_name, ps_name + '_buffer_length_end',
+                                 'buffer_length_end', initial_value=10e-9,
+                                 vals=vals.Numbers(0))
+        self.add_pulse_parameter(op_name, ps_name + '_extra_buffer_aux_pulse',
+                                 'extra_buffer_aux_pulse', initial_value=5e-9,
+                                 vals=vals.Numbers(0))
+        self.add_pulse_parameter(op_name, ps_name + '_pulse_delay',
+                                 'pulse_delay',
+                                 initial_value=0, vals=vals.Numbers())
+        self.add_pulse_parameter(op_name, ps_name + '_basis_rotation',
+                                 'basis_rotation', initial_value={},
+                                 vals=vals.Dict())
+        self.add_pulse_parameter(op_name, ps_name + '_gaussian_filter_sigma',
+                                 'gaussian_filter_sigma', initial_value=2e-9,
+                                 vals=vals.Numbers(0))
+
         # dc flux parameters
         self.add_parameter('dc_flux_parameter', initial_value=None,
                            label='QCoDeS parameter to sweep the dc flux',
@@ -763,6 +804,95 @@ class QuDev_transmon(Qubit):
         if analyze:
             tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name])
 
+    def measure_rabi_flux_pulse(self, amplitudes, cz_pulse_amp,
+                                cz_pulse_name=None, n=1, classified_ro=False,
+                                analyze=True, cal_points=True,
+                                upload=True, label=None, for_ef=False,
+                                n_cal_points_per_state=2, delay=None,
+                                cal_states='auto', prep_params=None,
+                                exp_metadata=None, update=False):
+        '''
+        Flux pulse amplitude measurement used to determine the qubits energy in
+        dependence of flux pulse amplitude.
+
+        pulse sequence:
+           |    -------------    |X180|  ---------------------  |RO|
+           |    ------   | ---- fluxpulse ----- |
+
+
+        Args:
+            freqs (numpy array): array of drive frequencies
+            amplitudes (numpy array): array of amplitudes of the flux pulse
+            delay (float): flux pulse delay
+            MC (MeasurementControl): if None, then the self.MC is taken
+
+        Returns: None
+
+        '''
+
+        if cz_pulse_name is None:
+            cz_pulse_name = 'FP ' + self.name
+
+        if prep_params is None:
+            prep_params = self.preparation_params()
+
+        if label is None:
+            label = 'Rabi_flux_pulse'
+            if n != 1:
+                label += f'-n{n}'
+            if classified_ro:
+                label += '_classified'
+            if 'active' in prep_params['preparation_type']:
+                label += '_reset'
+            label += self.msmt_suffix
+
+        MC = self.instr_mc.get_instr()
+        self.prepare(drive='timedomain')
+
+        if cal_points:
+            cal_states = CalibrationPoints.guess_cal_states(cal_states,
+                                                            for_ef=for_ef)
+            cp = CalibrationPoints.single_qubit(
+                self.name, cal_states, n_per_state=n_cal_points_per_state)
+        else:
+            cp = None
+
+        seq, sweep_points = \
+            fsqs.rabi_flux_pulse_sequence(
+                amplitudes=amplitudes, cz_pulse_amp=cz_pulse_amp, n=n,
+                qb_name=self.name, operation_dict=self.get_operation_dict(),
+                delay=delay, cz_pulse_name=cz_pulse_name, cal_points=cp,
+                prep_params=prep_params, upload=False)
+        MC.set_sweep_function(awg_swf.SegmentHardSweep(
+            sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
+        MC.set_sweep_points(sweep_points)
+        MC.set_detector_function(self.int_avg_classif_det if classified_ro else
+                                 self.int_avg_det)
+        if exp_metadata is None:
+            exp_metadata = {}
+        exp_metadata.update({'sweep_points_dict': {self.name: amplitudes},
+                             'use_cal_points': cal_points,
+                             'preparation_params': prep_params,
+                             'cal_points': repr(cp),
+                             'rotate': False if classified_ro else
+                             len(cp.states) != 0,
+                             'data_to_fit': {self.name: 'pe'},
+                             "sweep_name": "Amplitude",
+                             "sweep_unit": "V"})
+        MC.run(label, exp_metadata=exp_metadata)
+
+        if analyze:
+            rabi_ana = tda.RabiAnalysis(qb_names=[self.name])
+            if update:
+                amp180 = rabi_ana.proc_data_dict['analysis_params_dict'][
+                    self.name]['piPulse']
+                if not for_ef:
+                    self.ge_amp180(amp180)
+                    self.ge_amp90_scale(0.5)
+                else:
+                    self.ef_amp180(amp180)
+                    self.ef_amp90_scale(0.5)
+
     def measure_rabi_amp90(self, scales=np.linspace(0.3, 0.7, 31), n=1,
                            MC=None, analyze=True, close_fig=True, upload=True):
 
@@ -1067,6 +1197,112 @@ class QuDev_transmon(Qubit):
 
         if analyze:
             tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name])
+
+    def measure_ramsey_flux_pulse(self, times, artificial_detunings=None,
+                                  cz_pulse_amp=None, label=None,
+                                  analyze=True, cal_states="auto",
+                                  n_cal_points_per_state=2,
+                                  upload=True, update=False, for_ef=False,
+                                  classified_ro=False, prep_params=None,
+                                  cz_pulse_name=None, exp_metadata=None, **kw):
+        '''
+        Flux pulse amplitude measurement used to determine the qubits energy in
+        dependence of flux pulse amplitude.
+
+        pulse sequence:
+           |    -------------    |X180|  ---------------------  |RO|
+           |    ------   | ---- fluxpulse ----- |
+
+
+        Args:
+            freqs (numpy array): array of drive frequencies
+            amplitudes (numpy array): array of amplitudes of the flux pulse
+            delay (float): flux pulse delay
+            MC (MeasurementControl): if None, then the self.MC is taken
+
+        Returns: None
+
+        '''
+
+        if cz_pulse_name is None:
+            cz_pulse_name = 'FP ' + self.name
+
+        if prep_params is None:
+            prep_params = self.preparation_params()
+
+        if label is None:
+            label = 'Ramsey_flux_pulse'
+            if classified_ro:
+                label += '_classified'
+            if 'active' in prep_params['preparation_type']:
+                label += '_reset'
+            label += self.msmt_suffix
+
+        MC = self.instr_mc.get_instr()
+        self.prepare(drive='timedomain')
+        cal_states = CalibrationPoints.guess_cal_states(cal_states,
+                                                        for_ef=for_ef)
+        cp = CalibrationPoints.single_qubit(
+            self.name, cal_states, n_per_state=n_cal_points_per_state)
+        seq, sweep_points = \
+            fsqs.ramsey_flux_pulse_seq(
+                times=times, cz_pulse_amp=cz_pulse_amp,
+                qb_name=self.name, operation_dict=self.get_operation_dict(),
+                artificial_detunings=artificial_detunings,
+                cz_pulse_name=cz_pulse_name, cal_points=cp,
+                prep_params=prep_params, upload=False)
+        MC.set_sweep_function(awg_swf.SegmentHardSweep(
+            sequence=seq, upload=upload, parameter_name='Delay', unit='s'))
+        MC.set_sweep_points(sweep_points)
+        MC.set_detector_function(self.int_avg_classif_det if classified_ro else
+                                 self.int_avg_det)
+        if exp_metadata is None:
+            exp_metadata = {}
+        exp_metadata.update({'sweep_points_dict': {self.name: times},
+                             'preparation_params': prep_params,
+                             'cal_points': repr(cp),
+                             'rotate': False if classified_ro else
+                             len(cp.states) != 0,
+                             'data_to_fit': {self.name: 'pe'},
+                             'artificial_detuning': artificial_detunings,
+                             "sweep_name": "Delay",
+                             "sweep_unit": "s"})
+        MC.run(label, exp_metadata=exp_metadata)
+
+        if analyze:
+            ramsey_ana = tda.RamseyAnalysis(
+                qb_names=[self.name], options_dict=dict(
+                    fit_gaussian_decay=kw.get('fit_gaussian_decay', True)))
+            new_qubit_freq = ramsey_ana.proc_data_dict[
+                'analysis_params_dict'][self.name]['exp_decay_' + self.name][
+                'new_qb_freq']
+            T2_star = ramsey_ana.proc_data_dict[
+                'analysis_params_dict'][self.name]['exp_decay_' + self.name][
+                'T2_star']
+
+            if update:
+                if for_ef:
+                    try:
+                        self.ef_freq(new_qubit_freq)
+                    except AttributeError as e:
+                        log.warning('%s. This parameter will not be '
+                                    'updated.' % e)
+                    try:
+                        self.T2_star_ef(T2_star)
+                    except AttributeError as e:
+                        log.warning('%s. This parameter will not be '
+                                    'updated.' % e)
+                else:
+                    try:
+                        self.ge_freq(new_qubit_freq)
+                    except AttributeError as e:
+                        log.warning('%s. This parameter will not be '
+                                    'updated.' % e)
+                    try:
+                        self.T2_star(T2_star)
+                    except AttributeError as e:
+                        log.warning('%s. This parameter will not be '
+                                    'updated.' % e)
 
     def measure_echo(self, times=None, artificial_detuning=None,
                      upload=True, analyze=True, close_fig=True, cal_points=True,
@@ -2011,6 +2247,7 @@ class QuDev_transmon(Qubit):
                     return ana.F_a, ana.F_d, ana.SNR
                 else:
                     return ana.F_a
+
     def find_readout_angle(self, MC=None, upload=True, close_fig=True, update=True, nreps=10):
         """
         Finds the optimal angle on the IQ plane for readout (optimal phase for
@@ -3401,6 +3638,89 @@ class QuDev_transmon(Qubit):
                                                    options_dict=dict(TwoD=True))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)
+
+    def measure_flux_pulse_amplitude(self, freqs, amplitudes,
+                                     flux_pulse_name=None,
+                                     analyze=True, cal_points=True,
+                                     upload=True, label=None,
+                                     n_cal_points_per_state=2, delay=None,
+                                     cal_states='auto', prep_params=None,
+                                     exp_metadata=None, update=False):
+        '''
+        Flux pulse amplitude measurement used to determine the qubits energy in
+        dependence of flux pulse amplitude.
+
+        pulse sequence:
+           |    -------------    |X180|  ---------------------  |RO|
+           |    ---   | ---- fluxpulse ----- |
+
+
+        Args:
+            freqs (numpy array): array of drive frequencies
+            amplitudes (numpy array): array of amplitudes of the flux pulse
+            delay (float): flux pulse delay
+            MC (MeasurementControl): if None, then the self.MC is taken
+
+        Returns: None
+
+        '''
+
+        if flux_pulse_name is None:
+            flux_pulse_name = 'FP ' + self.name
+
+        if label is None:
+            label = 'Flux_amplitude_{}'.format(self.name)
+        MC = self.instr_mc.get_instr()
+        self.prepare(drive='timedomain')
+
+        if cal_points:
+            cal_states = CalibrationPoints.guess_cal_states(cal_states)
+            cp = CalibrationPoints.single_qubit(
+                self.name, cal_states, n_per_state=n_cal_points_per_state)
+        else:
+            cp = None
+        if prep_params is None:
+            prep_params = self.preparation_params()
+        seq, sweep_points, sweep_points_2D = \
+            fsqs.fluxpulse_amplitude_sequence(
+                amplitudes=amplitudes, freqs=freqs, qb_name=self.name,
+                operation_dict=self.get_operation_dict(), delay=delay,
+                flux_pulse_name=flux_pulse_name, cal_points=cp,
+                prep_params=prep_params, upload=False)
+        MC.set_sweep_function(awg_swf.SegmentHardSweep(
+            sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
+        MC.set_sweep_points(sweep_points)
+        MC.set_sweep_function_2D(swf.Offset_Sweep(
+            self.instr_ge_lo.get_instr().frequency,
+            -self.ge_mod_freq(),
+            name='Drive frequency',
+            parameter_name='Drive frequency', unit='Hz'))
+        MC.set_sweep_points_2D(sweep_points_2D)
+        MC.set_detector_function(self.int_avg_det)
+        if exp_metadata is None:
+            exp_metadata = {}
+        exp_metadata.update({'sweep_points_dict': {self.name: amplitudes},
+                             'sweep_points_dict_2D': {self.name: freqs},
+                             'use_cal_points': cal_points,
+                             'preparation_params': prep_params,
+                             'cal_points': repr(cp),
+                             'rotate': cal_points,
+                             'data_to_fit': {self.name: 'pe'},
+                             "sweep_name": "Amplitude",
+                             "sweep_unit": "V",
+                             "global_PCA": True})
+        MC.run_2D(label, exp_metadata=exp_metadata)
+
+        if analyze:
+            try:
+                MA = tda.FluxAmplitudeSweepAnalysis(
+                    qb_names=[self.name], options_dict=dict(TwoD=True))
+            except Exception:
+                ma.MeasurementAnalysis(TwoD=True)
+
+            # if update:
+            #     self.fit_ge_freq_from_flux_pulse_amp(
+            #         MA.fit_res[f'freq_fit_{self.name}'].best_values)
 
     def measure_flux_pulse_scope_nzcz_alpha(
             self, nzcz_alphas, delays, CZ_pulse_name=None,

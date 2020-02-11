@@ -205,11 +205,166 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
     return seq, np.arange(seq.n_acq_elements())
 
 
-def Ramsey_time_with_flux_seq(qb_name, hard_sweep_dict, operation_dict,
-                            cz_pulse_name,
-                            artificial_detunings=0,
-                            cal_points=None,
-                            upload=False, prep_params=dict()):
+def rabi_flux_pulse_sequence(amplitudes, cz_pulse_amp, qb_name,
+                             operation_dict, cz_pulse_name, n=1,
+                             delay=None, cal_points=None,
+                             prep_params=dict(), upload=True):
+    '''
+    Performs X180 pulse on top of a fluxpulse
+
+    Timings of sequence
+
+       |          ----------           |X180|  ------------------------ |RO|
+       |          ---    | --------- fluxpulse ---------- |
+    '''
+
+    seq_name = 'Fluxpulse_amplitude_sequence'
+    drag_length = operation_dict['X180 ' + qb_name]['sigma'] * operation_dict[
+        'X180 ' + qb_name]['nr_sigma']
+
+    rabi_pulses = n*['']
+    for i in range(n):
+        rabi_pulse = deepcopy(operation_dict['X180 ' + qb_name])
+        rabi_pulse['name'] = f'Rabi_{i}'
+        rabi_pulse['element_name'] = 'Rabi_el'
+        rabi_pulses[i] = rabi_pulse
+
+    flux_pulse = deepcopy(operation_dict[cz_pulse_name])
+    flux_pulse['name'] = 'FPA_Flux'
+    flux_pulse['amplitude'] = cz_pulse_amp
+    flux_pulse['pulse_length'] = (n+1) * drag_length
+    flux_pulse['ref_pulse'] = f'Rabi_{n//2}'
+    flux_pulse['ref_point'] = 'middle'
+    flux_pulse['ref_point_new'] = 'middle'
+
+    # if delay is None:
+    #     delay = flux_pulse['pulse_length'] / 2
+    # flux_pulse['pulse_delay'] = -flux_pulse.get('buffer_length_start',
+    #                                             0) - delay
+
+    ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
+    ro_pulse['name'] = 'FPA_Ro'
+    # ro_pulse['ref_pulse'] = 'Rabi_0'
+    # ro_pulse['ref_point'] = 'middle'
+    # ro_pulse['pulse_delay'] = flux_pulse['pulse_length'] - delay + \
+    #                           flux_pulse.get('buffer_length_end', 0)
+    ro_pulse['ref_pulse'] = 'FPA_Flux'
+
+    pulses = rabi_pulses + [flux_pulse, ro_pulse]
+    swept_pulses = sweep_pulse_params(pulses,
+                                      {f'Rabi_{i}.amplitude': amplitudes
+                                       for i in range(n)})
+
+    if cal_points is not None:
+        # add calibration segments
+        I = deepcopy(operation_dict['I ' + qb_name])
+        I['name'] = 'Ical'
+        X180 = deepcopy(operation_dict['X180 ' + qb_name])
+        X180['name'] = 'X180cal'
+        for i, cal_pulse in enumerate([I, X180]):
+            cal_pulse['element_name'] = f'cal{i}'
+            flux_pulse = deepcopy(operation_dict[cz_pulse_name])
+            flux_pulse['name'] = 'cal_flux'
+            flux_pulse['pulse_length'] = 2 * drag_length
+            flux_pulse['amplitude'] = cz_pulse_amp
+            flux_pulse['ref_pulse'] = cal_pulse['name']
+            flux_pulse['ref_point'] = 'middle'
+            flux_pulse['ref_point_new'] = 'middle'
+            # delay = flux_pulse['pulse_length'] / 2
+            # flux_pulse['pulse_delay'] = -flux_pulse.get(
+            #     'buffer_length_start', 0) - delay
+            ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
+            ro_pulse['name'] = 'cal_ro'
+            ro_pulse['ref_pulse'] = 'cal_flux'
+            # ro_pulse['ref_pulse'] = cal_pulse['name']
+            # ro_pulse['ref_point'] = 'middle'
+            # ro_pulse['pulse_delay'] = flux_pulse['pulse_length'] - delay + \
+            #                           flux_pulse.get('buffer_length_end', 0)
+            swept_pulses += [[cal_pulse, ro_pulse, flux_pulse]]
+            swept_pulses += [[cal_pulse, ro_pulse, flux_pulse]]
+
+    swept_pulses_with_prep = \
+        [add_preparation_pulses(p, operation_dict, [qb_name], **prep_params)
+         for p in swept_pulses]
+
+    seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
+
+    log.debug(seq)
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements())
+
+
+def fluxpulse_amplitude_sequence(amplitudes,
+                                 freqs,
+                                 qb_name,
+                                 operation_dict,
+                                 flux_pulse_name,
+                                 delay,
+                                 cal_points=None,
+                                 prep_params=dict(),
+                                 upload=True):
+    '''
+    Performs X180 pulse on top of a fluxpulse
+
+    Timings of sequence
+
+       |          ----------           |X180|  ------------------------ |RO|
+       |          ---    | --------- fluxpulse ---------- |
+    '''
+
+    seq_name = 'Fluxpulse_amplitude_sequence'
+    ge_pulse = deepcopy(operation_dict['X180 ' + qb_name])
+    ge_pulse['name'] = 'FPA_Pi'
+    ge_pulse['element_name'] = 'FPA_Pi_el'
+
+    flux_pulse = deepcopy(operation_dict[flux_pulse_name])
+    flux_pulse['name'] = 'FPA_Flux'
+    flux_pulse['ref_pulse'] = 'FPA_Pi'
+    flux_pulse['ref_point'] = 'middle'
+
+    if delay is None:
+        delay = flux_pulse['pulse_length'] / 2
+
+    flux_pulse['pulse_delay'] = -flux_pulse.get('buffer_length_start',
+                                                0) - delay
+
+    ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
+    ro_pulse['name'] = 'FPA_Ro'
+    ro_pulse['ref_pulse'] = 'FPA_Pi'
+    ro_pulse['ref_point'] = 'middle'
+
+
+    ro_pulse['pulse_delay'] = flux_pulse['pulse_length'] - delay + \
+                              flux_pulse.get('buffer_length_end', 0)
+
+    pulses = [ge_pulse, flux_pulse, ro_pulse]
+    swept_pulses = sweep_pulse_params(pulses,
+                                      {'FPA_Flux.amplitude': amplitudes})
+
+    swept_pulses_with_prep = \
+        [add_preparation_pulses(p, operation_dict, [qb_name], **prep_params)
+         for p in swept_pulses]
+
+    seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
+
+    if cal_points is not None:
+        # add calibration segments
+        seq.extend(cal_points.create_segments(operation_dict, **prep_params))
+
+    log.debug(seq)
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements()), freqs
+
+
+def ramsey_flux_pulse_seq(qb_name, times, operation_dict,
+                          cz_pulse_name, cz_pulse_amp,
+                          artificial_detunings=0,
+                          cal_points=None,
+                          upload=False, prep_params=dict()):
     '''
     Performs a Ramsey with interleaved Flux pulse
     Sequence
@@ -220,26 +375,25 @@ def Ramsey_time_with_flux_seq(qb_name, hard_sweep_dict, operation_dict,
 
     seq_name = 'Ramsey_flux_seq'
 
-    times = hard_sweep_dict['Delay']['values']
+    drag_length = operation_dict['X180 ' + qb_name]['sigma'] * operation_dict[
+        'X180 ' + qb_name]['nr_sigma']
 
     flux_pulse = deepcopy(operation_dict[cz_pulse_name])
     flux_pulse['name'] = 'flux'
     flux_pulse['element_name'] = 'flux_el'
-    flux_pulse['pulse_length'] = 4*np.max(times)
-    flux_pulse['pulse_delay'] = -0.5*np.max(times)
+    flux_pulse['pulse_delay'] = - drag_length -flux_pulse.get(
+        'buffer_length_start', 0)
+    flux_pulse['amplitude'] = cz_pulse_amp
     flux_pulse['ref_point'] = 'start'
     flux_pulse['ref_pulse'] = 'Ramsey_x1'
-
-    print(flux_pulse)
 
     ramsey_ops = ["X90"] * 2
     ramsey_ops += ["RO"]
     ramsey_ops = add_suffix(ramsey_ops, " " + qb_name)
 
-
     # pulses
     ramsey_pulses = [deepcopy(operation_dict[op]) for op in ramsey_ops]
-
+    ramsey_pulses[-1]['ref_pulse'] = 'flux'
     ramsey_pulses += [flux_pulse]
 
     # name and reference swept pulse
@@ -256,16 +410,40 @@ def Ramsey_time_with_flux_seq(qb_name, hard_sweep_dict, operation_dict,
     # sweep pulses
     params = {f'Ramsey_x2.pulse_delay': times}
     params.update({f'Ramsey_x2.phase': dphase})
+    params.update({f'flux.pulse_length': times+3*drag_length})
     swept_pulses = sweep_pulse_params(ramsey_pulses, params)
+
+    if cal_points is not None:
+        # add cal points
+        I = deepcopy(operation_dict['I ' + qb_name])
+        I['name'] = 'Ical'
+        X180 = deepcopy(operation_dict['X180 ' + qb_name])
+        X180['name'] = 'X180cal'
+        for i, cal_pulse in enumerate([I, X180]):
+            cal_pulse['element_name'] = f'cal{i}'
+            flux_pulse = deepcopy(operation_dict[cz_pulse_name])
+            flux_pulse['name'] = 'cal_flux'
+            flux_pulse['amplitude'] = cz_pulse_amp
+            flux_pulse['pulse_length'] = 3*drag_length
+            flux_pulse['ref_pulse'] = cal_pulse['name']
+            flux_pulse['ref_point'] = 'middle'
+            delay = flux_pulse['pulse_length'] / 2
+            flux_pulse['pulse_delay'] = -flux_pulse.get('buffer_length_start',
+                                                        0) - delay
+            RO = deepcopy(operation_dict['RO ' + qb_name])
+            RO['ref_pulse'] = 'cal_flux'
+            swept_pulses += [[cal_pulse, RO, flux_pulse]]
+            swept_pulses += [[cal_pulse, RO, flux_pulse]]
 
     swept_pulses_with_prep = \
         [add_preparation_pulses(p, operation_dict, [qb_name], **prep_params)
          for p in swept_pulses]
+
     seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
 
-    if cal_points is not None:
-        # add calibration segments
-        seq.extend(cal_points.create_segments(operation_dict, **prep_params))
+    # if cal_points is not None:
+    #     # add calibration segments
+    #     seq.extend(cal_points.create_segments(operation_dict, **prep_params))
 
     log.debug(seq)
     if upload:
@@ -503,20 +681,21 @@ def cz_bleed_through_phase_seq(phases, qb_name, CZ_pulse_name, CZ_separation,
 
 
 def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
-                operation_dict, cz_pulse_name, num_cz_gates=1, qbs_operations=None,
+                operation_dict, cz_pulse_name, num_cz_gates=1,
                 max_flux_length=None, cal_points=None, upload=True,
-                prep_params=dict()):
+                qbs_operations=None, prep_params=dict()):
 
     assert num_cz_gates % 2 != 0
 
-    seq_name = 'Cphase_sequence'
+    seq_name = 'cphase_sequence'
 
     if qbs_operations is None:
         qbs_operations = []
-
-    #initial_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
+    # initial_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
     #                     deepcopy(operation_dict['X90s ' + qbt_name])]
-    initial_rotations = [deepcopy(operation_dict[op]) for op in (['X180 ' + qbc_name, 'X90s ' + qbt_name] + qbs_operations)]
+    initial_rotations = [deepcopy(operation_dict[op]) for
+                         op in (['X180 ' + qbc_name, 'X90s ' + qbt_name] +
+                                qbs_operations)]
 
     initial_rotations[0]['name'] = 'cphase_init_pi_qbc'
     initial_rotations[1]['name'] = 'cphase_init_pihalf_qbt'
@@ -548,8 +727,8 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
             print(f'max_pulse_length = {max_flux_length*1e9:.2f} ns, '
                   f'from pulse dict.')
     # add buffers to this delay
-    delay = max_flux_length + flux_pulse.get('buffer_length_start', 0) + \
-        flux_pulse.get('buffer_length_end', 0)
+    delay = (max_flux_length + flux_pulse.get('buffer_length_start', 0) +
+        flux_pulse.get('buffer_length_end', 0))*num_cz_gates
     # # ensure the delay is commensurate with 16/2.4e9
     # comm_const = (16/2.4e9)
     # if delay % comm_const > 1e-15:
@@ -562,6 +741,7 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
     ro_pulses = generate_mux_ro_pulse_list([qbc_name, qbt_name],
                                             operation_dict)
 
+    # the phases in the hard_sweep_dict must be tiled by 2!
     hsl = len(list(hard_sweep_dict.values())[0]['values'])
     params = {'cphase_init_pi_qbc.amplitude': np.concatenate(
         [initial_rotations[0]['amplitude']*np.ones(hsl//2), np.zeros(hsl//2)]),
@@ -586,6 +766,260 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
             [add_preparation_pulses(p, operation_dict, [qbc_name, qbt_name],
                                     **prep_params)
              for p in swept_pulses]
+        seq = pulse_list_list_seq(swept_pulses_with_prep,
+                                  seq_name+f'_{i}', upload=False)
+        if cal_points is not None:
+            seq.extend(cal_points.create_segments(operation_dict,
+                                                  **prep_params))
+        sequences.append(seq)
+
+    # reuse sequencer memory by repeating readout pattern
+    for s in sequences:
+        s.repeat_ro(f"RO {qbc_name}", operation_dict)
+        s.repeat_ro(f"RO {qbt_name}", operation_dict)
+
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(sequences[0])
+
+    return sequences, np.arange(sequences[0].n_acq_elements()), np.arange(ssl)
+
+
+def cphase_fluxed_spectators_seqs(qbc_name, qbt_name, qbs_name,
+                                  hard_sweep_dict, soft_sweep_dict,
+                                  operation_dict, cz_pulse_name,
+                                  num_cz_gates=1, qbs_operations=None,
+                                  max_flux_length=None,
+                                  cal_points=None, upload=True,
+                                  prep_params=dict()):
+
+    assert num_cz_gates % 2 != 0
+
+    seq_name = 'cphase_spectator_seq'
+
+    if qbs_operations is None:
+        qbs_operations = []
+
+    initial_rotations = [deepcopy(operation_dict[op]) for
+                         op in (['X180 ' + qbc_name, 'X90s ' + qbt_name] +
+                                qbs_operations)]
+
+    initial_rotations[0]['name'] = 'cphase_init_pi_qbc'
+    initial_rotations[1]['name'] = 'cphase_init_pihalf_qbt'
+    for rot_pulses in initial_rotations:
+        rot_pulses['element_name'] = 'cphase_initial_rots_el'
+
+    cz_gate = deepcopy(operation_dict[cz_pulse_name])
+    cz_gate['name'] = 'cphase_flux'
+    cz_gate['element_name'] = 'cphase_flux_el'
+    cz_gate['ref_pulse'] = 'cphase_init_pi_qbc'
+
+    final_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
+                       deepcopy(operation_dict['X90s ' + qbt_name])]
+    final_rotations[0]['name'] = 'cphase_final_pi_qbc'
+    final_rotations[1]['name'] = 'cphase_final_pihalf_qbt'
+
+    for rot_pulses in final_rotations:
+        rot_pulses['element_name'] = 'cphase_final_rots_el'
+
+    # set pulse delay of final_rotations[0] to max_flux_length
+    if max_flux_length is None:
+        max_flux_length = cz_gate['pulse_length']
+        print(f'max_pulse_length = {max_flux_length*1e9:.2f} ns, '
+              f'from pulse dict.')
+    # add buffers to this delay
+    delay = (max_flux_length + cz_gate.get('buffer_length_start', 0) +
+        cz_gate.get('buffer_length_end', 0))*num_cz_gates
+    final_rotations[0]['ref_pulse'] = 'cphase_init_pi_qbc'
+    final_rotations[0]['pulse_delay'] = delay
+
+    # drag_length = operation_dict['X180 ' + qbc_name]['sigma'] * operation_dict[
+    #     'X180 ' + qbc_name]['nr_sigma']
+    spectator_flux_pulse = deepcopy(operation_dict['FP ' + qbs_name])
+    spectator_flux_pulse['name'] = 'spec_flux_pulse'
+    spectator_flux_pulse['element_name'] = 'cphase_flux_el'
+    delta_buffers = cz_gate.get('buffer_length_start', 0) + \
+            cz_gate.get('buffer_length_end', 0) - (
+            spectator_flux_pulse.get('buffer_length_start', 0) +
+            spectator_flux_pulse.get('buffer_length_end', 0))
+    spectator_flux_pulse['pulse_length'] = max_flux_length + delta_buffers
+                                           # + 2*drag_length + \
+                                           # 2*drag_length
+    # assumption below: the flux pulse is referenced to the start of the
+    # control qubit, not the spectator qubit -> assummed to be simultaneous
+    # spectator_flux_pulse['ref_pulse'] = 'cphase_flux'
+    # spectator_flux_pulse['ref_point'] = 'middle'
+    # spectator_flux_pulse['ref_point_new'] = 'middle'
+    # spectator_flux_pulse['pulse_delay'] = - drag_length
+
+    ro_pulses = generate_mux_ro_pulse_list([qbc_name, qbt_name],
+                                            operation_dict)
+    # ro_pulses[0]['ref_pulse'] = 'spec_flux_pulse'
+
+    # the phases in the hard_sweep_dict must be tiled by 2!
+    hsl = len(list(hard_sweep_dict.values())[0]['values'])
+    params = {'cphase_init_pi_qbc.amplitude': np.concatenate(
+        [initial_rotations[0]['amplitude']*np.ones(hsl//2), np.zeros(hsl//2)]),
+              'cphase_final_pi_qbc.amplitude': np.concatenate(
+        [final_rotations[0]['amplitude']*np.ones(hsl//2), np.zeros(hsl//2)])}
+    params.update({f'cphase_final_pihalf_qbt.{k}': v['values']
+                   for k, v in hard_sweep_dict.items()})
+    from pprint import pprint
+    pprint(params)
+    ssl = len(list(soft_sweep_dict.values())[0]['values'])
+    sequences = []
+    for i in range(ssl):
+        flux_p = deepcopy(spectator_flux_pulse)
+        flux_p.update({k: v['values'][i] for k, v in soft_sweep_dict.items()})
+        cz_list = []
+        for j in range(num_cz_gates):
+            fp = deepcopy(cz_gate)
+            fp['name'] = f'cphase_flux_{j}'
+            cz_list += [fp]
+        pulses = initial_rotations + [flux_p] + cz_list + final_rotations + \
+                 ro_pulses
+        swept_pulses = sweep_pulse_params(pulses, params)
+        swept_pulses_with_prep = \
+            [add_preparation_pulses(p, operation_dict, [qbc_name, qbt_name],
+                                    **prep_params)
+             for p in swept_pulses]
+        seq = pulse_list_list_seq(swept_pulses_with_prep,
+                                  seq_name+f'_{i}', upload=False)
+        if cal_points is not None:
+            seq.extend(cal_points.create_segments(operation_dict,
+                                                  **prep_params))
+        sequences.append(seq)
+
+    # reuse sequencer memory by repeating readout pattern
+    for s in sequences:
+        s.repeat_ro(f"RO {qbc_name}", operation_dict)
+        s.repeat_ro(f"RO {qbt_name}", operation_dict)
+
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(sequences[0])
+
+    return sequences, np.arange(sequences[0].n_acq_elements()), np.arange(ssl)
+
+
+def cphase_interleaved_fluxed_spectators_seqs(qbc_name, qbt_name, qbs_names,
+                                  hard_sweep_dict, soft_sweep_dict_list,
+                                  operation_dict, cz_pulse_name,
+                                  num_cz_gates=1, qbs_operations=None,
+                                  max_flux_length=None,
+                                  cal_points=None, upload=True,
+                                  prep_params=dict()):
+
+    # ATTENTION! The soft_sweep_dicts in soft_sweep_dict_list is assumed to
+    # correspond to the qubits in the order given in qbs_names.
+
+    assert num_cz_gates % 2 != 0
+
+    seq_name = 'cphase_multi_spectators_seq'
+
+    if qbs_operations is None:
+        qbs_operations = []
+
+    initial_rotations = [deepcopy(operation_dict[op]) for
+                         op in (['X180 ' + qbc_name, 'X90s ' + qbt_name] +
+                                qbs_operations)]
+
+    initial_rotations[0]['name'] = 'cphase_init_pi_qbc'
+    initial_rotations[1]['name'] = 'cphase_init_pihalf_qbt'
+    for i in range(len(qbs_names)):
+        initial_rotations[2+i]['name'] = f'spec_pulse_{qbs_names[i]}'
+    for rot_pulses in initial_rotations:
+        rot_pulses['element_name'] = 'cphase_initial_rots_el'
+
+    cz_gate = deepcopy(operation_dict[cz_pulse_name])
+    cz_gate['name'] = 'cphase_flux'
+    cz_gate['element_name'] = 'cphase_flux_el'
+    cz_gate['ref_pulse'] = 'cphase_init_pi_qbc'
+
+    final_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
+                       deepcopy(operation_dict['X90s ' + qbt_name])]
+    final_rotations[0]['name'] = 'cphase_final_pi_qbc'
+    final_rotations[1]['name'] = 'cphase_final_pihalf_qbt'
+
+    for rot_pulses in final_rotations:
+        rot_pulses['element_name'] = 'cphase_final_rots_el'
+
+    # set pulse delay of final_rotations[0] to max_flux_length
+    if max_flux_length is None:
+        max_flux_length = cz_gate['pulse_length']
+        print(f'max_pulse_length = {max_flux_length*1e9:.2f} ns, '
+              f'from pulse dict.')
+    # add buffers to this delay
+    delay = (max_flux_length + cz_gate.get('buffer_length_start', 0) +
+        cz_gate.get('buffer_length_end', 0))*num_cz_gates
+    final_rotations[0]['ref_pulse'] = 'cphase_init_pi_qbc'
+    final_rotations[0]['pulse_delay'] = delay
+
+    ro_pulses = generate_mux_ro_pulse_list([qbc_name, qbt_name],
+                                            operation_dict)
+
+    # the phases in the hard_sweep_dict must be tiled by 4!
+    hsl = len(list(hard_sweep_dict.values())[0]['values'])
+    print(hsl)
+    params = {'cphase_init_pi_qbc.amplitude': np.tile(np.concatenate(
+        [initial_rotations[0]['amplitude']*np.ones(hsl//4), np.zeros(hsl//4)]), 2),
+              'cphase_final_pi_qbc.amplitude': np.tile(np.concatenate(
+        [final_rotations[0]['amplitude']*np.ones(hsl//4), np.zeros(hsl//4)]), 2)}
+    params.update({f'spec_pulse_{qbs_names[i]}.amplitude': np.repeat(np.concatenate(
+        [initial_rotations[i+2]['amplitude']*np.ones(hsl//4), np.zeros(
+            hsl//4)]), 2) for i in range(len(qbs_names))})
+    params.update({f'cphase_final_pihalf_qbt.{k}': v['values']
+                   for k, v in hard_sweep_dict.items()})
+    # params = {'cphase_init_pi_qbc.amplitude': np.concatenate(
+    #     [initial_rotations[0]['amplitude']*np.ones(hsl//2), np.zeros(hsl//2)]),
+    #           'cphase_final_pi_qbc.amplitude': np.concatenate(
+    #     [final_rotations[0]['amplitude']*np.ones(hsl//2), np.zeros(hsl//2)])}
+    # params.update({f'cphase_final_pihalf_qbt.{k}': v['values']
+    #                for k, v in hard_sweep_dict.items()})
+
+    ssl = len(list(soft_sweep_dict_list[0].values())[0]['values'])
+    print(ssl)
+    from pprint import pprint
+    pprint(params)
+    sequences = []
+    for i in range(ssl):
+        # add the spectator flux pulses
+        fp_lst = []
+        cnt = 0
+        for p, qbsn in enumerate(qbs_names):
+            spec_fp = deepcopy(operation_dict['FP ' + qbsn])
+            if len(spec_fp['channel']) > 0:
+                spec_fp['name'] = f'spec_flux_pulse_{p}'
+                spec_fp['element_name'] = 'cphase_flux_el'
+                delta_buffers = cz_gate.get('buffer_length_start', 0) + \
+                                cz_gate.get('buffer_length_end', 0) - (
+                                        spec_fp.get('buffer_length_start', 0) +
+                                        spec_fp.get('buffer_length_end', 0))
+                spec_fp['pulse_length'] = max_flux_length + delta_buffers
+                if cnt != 0:
+                    spec_fp['ref_point'] = 'start'
+                spec_fp.update({k: v['values'][i] for k, v in
+                                soft_sweep_dict_list[p].items()})
+                fp_lst += [spec_fp]
+                cnt += 1
+            else:
+                print(f'{qbsn} has no flux pulse channel. Not adding the flux'
+                      f'pulse for this qubit.')
+                print()
+
+        # add the num_cz_gates CZ gates
+        cz_list = []
+        for j in range(num_cz_gates):
+            cz = deepcopy(cz_gate)
+            cz['name'] = f'cphase_flux_{j}'
+            cz_list += [cz]
+        # put the pulses in each segment
+        pulses = initial_rotations + fp_lst + cz_list + final_rotations + \
+                 ro_pulses
+        swept_pulses = sweep_pulse_params(pulses, params)
+        swept_pulses_with_prep = \
+            [add_preparation_pulses(p, operation_dict, [qbc_name, qbt_name],
+                                    **prep_params)
+             for p in swept_pulses]
+
         seq = pulse_list_list_seq(swept_pulses_with_prep,
                                   seq_name+f'_{i}', upload=False)
         if cal_points is not None:
