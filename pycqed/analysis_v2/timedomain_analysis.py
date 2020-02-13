@@ -5273,10 +5273,19 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                             textstr = 'Cphase = {:.2f}'.format(
                                 self.proc_data_dict['analysis_params_dict'][
                                     'cphase']['val'][0]*180/np.pi) + \
+                                      r'$^{\circ}$' + \
+                                    '$\\pm${:.2f}'.format(self.proc_data_dict[
+                                          'analysis_params_dict']['cphase'][
+                                          'stderr'][0] * 180 / np.pi) + \
                                       r'$^{\circ}$'
-                            textstr += '\nPopulation loss = {:.3f}'.format(
-                                self.proc_data_dict['analysis_params_dict'][
-                                    'population_loss']['val'][0])
+                            textstr += '\nPopulation loss = ' + \
+                                       '{:.3f} $\\pm$ {:.3f}'.format(
+                                self.proc_data_dict[
+                                    'analysis_params_dict'][
+                                    'population_loss']['val'][0],
+                                                self.proc_data_dict[
+                                    'analysis_params_dict'][
+                                    'population_loss']['stderr'][0])
                             self.plot_dicts['text_msg_' + qbn] = {
                                 'fig_id': figure_name,
                                 'ypos': -0.2,
@@ -5286,9 +5295,11 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                                 'plotfn': self.plot_text,
                                 'text_string': textstr}
                         else:
-                            textstr = 'Leakage = {:.5f}'.format(
+                            textstr = 'Leakage = {:.5f} $\\pm$ {:.5f}'.format(
                                 self.proc_data_dict['analysis_params_dict'][
-                                    'leakage']['val'][0])
+                                    'leakage']['val'][0],
+                                self.proc_data_dict['analysis_params_dict'][
+                                    'leakage']['stderr'][0])
                             self.plot_dicts['text_msg_' + qbn] = {
                                 'fig_id': figure_name,
                                 'ypos': -0.2,

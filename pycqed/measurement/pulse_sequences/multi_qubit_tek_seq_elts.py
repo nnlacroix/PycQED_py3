@@ -944,11 +944,12 @@ def parity_single_round__phases_seq(ancilla_qubit_name, data_qubit_names, CZ_map
 
     return seq, np.arange(seq.n_acq_elements())
 
+
 def n_qubit_tomo_seq(
         qubit_names, operation_dict, prep_sequence=None,
         prep_name=None,
         rots_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
-        upload=True, verbose=False, return_seq=False,
+        upload=True, return_seq=False,
         preselection=False, ro_spacing=1e-6):
     """
 
@@ -980,10 +981,8 @@ def n_qubit_tomo_seq(
         pulse_list.extend(ro_pulses)
 
         if preselection:
-            ro_pulses_presel = generate_mux_ro_pulse_list(qubit_names, 
-                                                          operation_dict,
-                                                          'RO_presel',
-                                                          True, -ro_spacing)
+            ro_pulses_presel = generate_mux_ro_pulse_list(
+                qubit_names, operation_dict, 'RO_presel', 'end', -ro_spacing)
             pulse_list.extend(ro_pulses_presel)
         seg = segment.Segment('tomography_{}'.format(i), pulse_list)
         seg_list.append(seg)
@@ -1027,8 +1026,7 @@ def get_decoupling_pulses(*qubit_names, nr_pulses=4):
 
 
 def n_qubit_ref_seq(qubit_names, operation_dict, ref_desc, upload=True,
-                    verbose=False, return_seq=False, preselection=False,
-                    ro_spacing=1e-6):
+                    return_seq=False, preselection=False, ro_spacing=1e-6):
     """
         Calibration points for arbitrary combinations
 
@@ -1070,10 +1068,8 @@ def n_qubit_ref_seq(qubit_names, operation_dict, ref_desc, upload=True,
         pulse_list.extend(ro_pulses)
 
         if preselection:
-            ro_pulses_presel = generate_mux_ro_pulse_list(qubit_names, 
-                                                          operation_dict,
-                                                          'RO_presel',
-                                                          True, -ro_spacing)
+            ro_pulses_presel = generate_mux_ro_pulse_list(
+                qubit_names, operation_dict, 'RO_presel', 'end', -ro_spacing)
             pulse_list.extend(ro_pulses_presel)
         seg = segment.Segment('calibration_{}'.format(i), pulse_list)
         seg_list.append(seg)
@@ -1087,9 +1083,8 @@ def n_qubit_ref_seq(qubit_names, operation_dict, ref_desc, upload=True,
         return seq_name
 
 
-def n_qubit_ref_all_seq(qubit_names, operation_dict, upload=True, verbose=False,
-                        return_seq=False,
-                        preselection=False, ro_spacing=1e-6):
+def n_qubit_ref_all_seq(qubit_names, operation_dict, upload=True,
+                        return_seq=False, preselection=False, ro_spacing=1e-6):
     """
         Calibration points for all combinations
     """
@@ -1097,9 +1092,8 @@ def n_qubit_ref_all_seq(qubit_names, operation_dict, upload=True, verbose=False,
     return n_qubit_ref_seq(qubit_names, operation_dict,
                            ref_desc=itertools.product(["I", "X180"],
                                                       repeat=len(qubit_names)),
-                           upload=upload, verbose=verbose,
-                           return_seq=return_seq, preselection=preselection,
-                           ro_spacing=ro_spacing)
+                           upload=upload, return_seq=return_seq,
+                           preselection=preselection, ro_spacing=ro_spacing)
 
 
 def Ramsey_add_pulse_seq(times, measured_qubit_name,
