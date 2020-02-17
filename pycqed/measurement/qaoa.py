@@ -13,7 +13,7 @@ from pycqed.measurement.waveform_control.block import Block
 from pycqed.measurement.waveform_control import pulsar as ps
 import itertools
 
-# TODO: Move this function to more meaningfull place where others can use it
+# TODO: Move this function to more meaningful place where others can use it
 def correlate_qubits(qubit_states, correlations='all', correlator='z',
                      average=True):
     """
@@ -47,6 +47,8 @@ def correlate_qubits(qubit_states, correlations='all', correlator='z',
     correlated_output = np.zeros((n_shots, len(correlations)))
     for j, corr in enumerate(correlations):
         qb_states_to_correlate = []
+        if type(corr) == int:
+            corr = (corr,)
         for i in corr:
             qb_states_to_correlate.append(qubit_states[:, i])
         correlated_output[:, j] = np.prod(1 - np.array(qb_states_to_correlate) * 2, axis=0)
@@ -550,13 +552,27 @@ class QAOAHelper(HelperBase):
         assert cphase_implementation in ("software", "hardware")
         global_zero_angle_threshold = gate_sequence_info.get("zero_angle_threshold", 1e-10)
 
+        if single_qb_terms is not None:
+            tmp_single_qb_terms = [0]*len(self.qb_names)
+            for qb, J in single_qb_terms.items():
+                tmp_single_qb_terms[qb] = J
+            single_qb_terms = tmp_single_qb_terms
+        else:
+            single_qb_terms = [0]*len(self.qb_names)
         U = Block(name, [])
         for i, two_qb_gates_same_timing in enumerate(gate_sequence_info['gate_order']):
             simult_bname = f"simultanenous_{i}"
             simultaneous = Block(simult_bname, [])
             for two_qb_gates_info in [gate_sequence_info['gate_list'][i] for i in two_qb_gates_same_timing]:
                 #gate info
-                C = two_qb_gates_info["C"]
+                C = two_qb_gates_info['J'] if 'J' in two_qb_gates_info else two_qb_gates_info['C'] if 'C' in two_qb_gates_info else 0
+                if C==0:
+                    continue
+                if type(two_qb_gates_info['qbs']) == int:
+                    two_qb_gates_info['qbs'] = (two_qb_gates_info['qbs'],)
+                if (len(two_qb_gates_info['qbs'])==1):
+                    single_qb_terms[two_qb_gates_info['qbs'][0]] += C
+                    continue
                 strategy = two_qb_gates_info.get("zero_angle_strategy", None)
                 doswap = two_qb_gates_info.get("swap", False);
                 nbody = (len(two_qb_gates_info['qbs'])>2)
@@ -679,9 +695,8 @@ class QAOAHelper(HelperBase):
             print(self.qb_names)
 
         # add single qb z rotation for single qb terms of hamiltonian
-        if single_qb_terms is not None:
-            for qb, h in single_qb_terms.items():
-                U.extend([self.Z_gate(2 * gamma * h * 180 / np.pi, self.qb_names[qb])])
+        for qb, h in enumerate(single_qb_terms):
+            U.extend([self.Z_gate(2 * gamma * h * 180 / np.pi, self.qb_names[qb])])
 
         return U
 
@@ -825,5 +840,5 @@ class QAOAHelper(HelperBase):
         flattened_info = deepcopy(two_qb_gates_info['gate_list'])
 
         corr_info = [i['qbs'] for i in flattened_info]
-        couplings = [i['C'] for i in flattened_info]
+        couplings = [i['J'] if 'J' in i else i['C'] if 'C' in i else 0 for i in flattened_info]
         return corr_info, couplings
