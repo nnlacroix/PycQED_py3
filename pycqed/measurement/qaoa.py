@@ -68,6 +68,21 @@ def average_sigmaz(qubit_states):
 class ProblemHamiltonians:
 
     @staticmethod
+    def nbody_zterms(qubit_states, gates_info):
+        """
+        $H = \sum_{i} J_i \prod_{j \in Q_i} \sigma_{z_j}$ where each $Q_i$ is a subset of qubits
+        Args:
+            qubit_states:
+            gates_info:
+
+        Returns:
+
+        """
+        c_info, coupl = QAOAHelper.get_corr_and_coupl_info(gates_info)
+        correlations = correlate_qubits(qubit_states, c_info)
+        return np.sum([Ci * corr for Ci, corr in zip(coupl, correlations)])
+
+    @staticmethod
     def ising(avg_sigma_z_sigma_z_corr, C):
         """
         $H = \sum_{i,j} C_{i,j} (I - \sigma_{z_i} \otimes \sigma_{z_j})$
