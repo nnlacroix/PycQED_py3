@@ -61,7 +61,7 @@ def average_sigmaz(qubit_states):
         qubit_states (array): (n_shots, n_qubits) where each digit is the
             assigned state of a qubit (0 or 1).
     """
-    return np.mean(qubit_states, axis=0)
+    return np.mean(1 - np.array(qubit_states)*2, axis=0)
 
 class ProblemHamiltonians:
 
