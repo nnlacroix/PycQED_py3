@@ -425,7 +425,7 @@ def measure_multiplexed_readout(qubits, liveplot=False,
             use_preselection=preselection
         ))
 
-def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
+def measure_qaoa(qubits, gates_info, single_qb_terms=None,
                  maxfev=None, optimizer_method="Nelder-Mead",
                  optimizer_kwargs=None, betas=(np.pi,), gammas=(np.pi,),
                  problem_hamiltonian="ising", tomography=False, tomography_options=None,
@@ -464,7 +464,7 @@ def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
     cp = None
     if tomography:
         cp = CalibrationPoints.multi_qubit(qb_names, 'ge', 1, True)
-    seq, swp = qaoa.qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info,
+    seq, swp = qaoa.qaoa_sequence(qb_names, betas, gammas, gates_info,
                                   operation_dict, init_state=init_state,
                                   cal_points=cp,
                                   tomography=tomography,
@@ -497,7 +497,7 @@ def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
                     # 'iteration': iter,
                     # 'function_evaluation': feval,
                     'init': init_state,
-                    'two_qb_gates_info': str(two_qb_gates_info),
+                    'gates_info': str(gates_info),
                     'single_qb_terms': single_qb_terms,
                     'cphase_implementation': cphase_implementation,
                     # 'optimizer_method': optimizer_method,
@@ -572,7 +572,7 @@ def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
         else:
             # correlate
             c_info, coupl = \
-                qaoa.QAOAHelper.get_corr_and_coupl_info(two_qb_gates_info)
+                qaoa.QAOAHelper.get_corr_and_coupl_info(gates_info)
             correlations = qaoa.correlate_qubits(qb_states_filtered, c_info)
             a.proc_data_dict['correlations'] = {'names': c_info,
                                                 'values': correlations}
@@ -594,7 +594,7 @@ def measure_qaoa(qubits, two_qb_gates_info, single_qb_terms=None,
             a.save_processed_data()
         return a
 
-def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
+def run_qaoa(qubits, gates_info, maxiter=1,
                  maxfev=None, optimizer_method="Nelder-Mead",
                  optimizer_kwargs=None, betas_init=(np.pi,), gammas_init=(np.pi,),
                  depth=1, tomography=(), tomography_options=None,
@@ -610,7 +610,7 @@ def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
 
     Args:
         qubits:
-        two_qb_gates_info:
+        gates_info:
         max_iter:
         optimizer:
         cphase_implementation:
@@ -677,7 +677,7 @@ def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
             cp = CalibrationPoints.multi_qubit(qb_names, 'ge', 1, True)
             # sequence
             seq, swp = qaoa.qaoa_sequence(
-                qb_names, b, g, two_qb_gates_info, operation_dict,
+                qb_names, b, g, gates_info, operation_dict,
                 cal_points=cp, init_state=init_state, tomography=True,
                 tomo_basis=tomography_options.get("basis_rots",
                                                   tomo.DEFAULT_BASIS_ROTS),
@@ -709,7 +709,7 @@ def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
                             'init': init_state,
                             'basis_rots': tomography_options.get("basis_rots",
                                                   tomo.DEFAULT_BASIS_ROTS),
-                            'two_qb_gates_info': str(two_qb_gates_info),
+                            'gates_info': str(gates_info),
                             "single_qb_terms": single_qb_terms,
                             'cphase_implementation': cphase_implementation,
                             'shots': max(qb.acq_shots() for qb in qubits)}
@@ -809,7 +809,7 @@ def run_qaoa(qubits, two_qb_gates_info, maxiter=1,
         label = f"{label}_iter_{iter}_feval_{feval}"
         exp_metadata.update(dict(iteration=iter, function_evaluation=feval,
                                  optimizer_method=optimizer_method))
-        a[feval] = measure_qaoa(qubits, two_qb_gates_info, betas=betas_feval,
+        a[feval] = measure_qaoa(qubits, gates_info, betas=betas_feval,
                                 single_qb_terms=single_qb_terms,
                                 gammas=gammas_feval, analyze=True,
                                 problem_hamiltonian=problem_hamiltonian,

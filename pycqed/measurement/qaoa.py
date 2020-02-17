@@ -137,7 +137,7 @@ def basis_transformation(qb_array_in_01_basis):
     trans = np.all(trans, axis=-1)
     return trans.astype(np.int).T
 
-def qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info, operation_dict,
+def qaoa_sequence(qb_names, betas, gammas, gates_info, operation_dict,
                   init_state='0', cphase_implementation='hardware',
                   single_qb_terms=None,
                   tomography=False, tomo_basis=tomo.DEFAULT_BASIS_ROTS,
@@ -166,16 +166,16 @@ def qaoa_sequence(qb_names, betas, gammas, two_qb_gates_info, operation_dict,
         seg.extend(builder.initialize(init_state, prep_params=prep_params).build())
 
         # QAOA Unitaries
-        two_qb_gates_info_all = deepcopy(two_qb_gates_info);
-        if 'gate_order' not in two_qb_gates_info_all:
-            two_qb_gates_info_all['gate_order'] = [[i] for i in range(len(two_qb_gates_info_all['gate_list']))]
-        two_qb_gates_info_p = deepcopy(two_qb_gates_info_all);
+        gates_info_all = deepcopy(gates_info);
+        if 'gate_order' not in gates_info_all:
+            gates_info_all['gate_order'] = [[i] for i in range(len(gates_info_all['gate_list']))]
+        gates_info_p = deepcopy(gates_info_all);
         for k, (gamma, beta) in enumerate(zip(gammas, betas)):
             # # Uk
-            if isinstance(two_qb_gates_info_all['gate_order'][0][0],list):
-                two_qb_gates_info_p['gate_order'] = deepcopy(
-                    two_qb_gates_info_all['gate_order'][k % (len(two_qb_gates_info_all['gate_order']))])
-            seg.extend(builder.U(f"U_{k}", two_qb_gates_info_p,
+            if isinstance(gates_info_all['gate_order'][0][0],list):
+                gates_info_p['gate_order'] = deepcopy(
+                    gates_info_all['gate_order'][k % (len(gates_info_all['gate_order']))])
+            seg.extend(builder.U(f"U_{k}", gates_info_p,
                        gamma, cphase_implementation, single_qb_terms).build())
             # # Dk
             seg.extend(builder.D(f"D_{k}", beta).build())
@@ -560,57 +560,57 @@ class QAOAHelper(HelperBase):
         else:
             single_qb_terms = [0]*len(self.qb_names)
         U = Block(name, [])
-        for i, two_qb_gates_same_timing in enumerate(gate_sequence_info['gate_order']):
+        for i, gates_same_timing in enumerate(gate_sequence_info['gate_order']):
             simult_bname = f"simultanenous_{i}"
             simultaneous = Block(simult_bname, [])
-            for two_qb_gates_info in [gate_sequence_info['gate_list'][i] for i in two_qb_gates_same_timing]:
+            for gates_info in [gate_sequence_info['gate_list'][i] for i in gates_same_timing]:
                 #gate info
-                C = two_qb_gates_info['J'] if 'J' in two_qb_gates_info else two_qb_gates_info['C'] if 'C' in two_qb_gates_info else 0
+                C = gates_info['J'] if 'J' in gates_info else gates_info['C'] if 'C' in gates_info else 0
                 if C==0:
                     continue
-                if type(two_qb_gates_info['qbs']) == int:
-                    two_qb_gates_info['qbs'] = (two_qb_gates_info['qbs'],)
-                if (len(two_qb_gates_info['qbs'])==1):
-                    single_qb_terms[two_qb_gates_info['qbs'][0]] += C
+                if type(gates_info['qbs']) == int:
+                    gates_info['qbs'] = (gates_info['qbs'],)
+                if (len(gates_info['qbs'])==1):
+                    single_qb_terms[gates_info['qbs'][0]] += C
                     continue
-                strategy = two_qb_gates_info.get("zero_angle_strategy", None)
-                doswap = two_qb_gates_info.get("swap", False);
-                nbody = (len(two_qb_gates_info['qbs'])>2)
+                strategy = gates_info.get("zero_angle_strategy", None)
+                doswap = gates_info.get("swap", False);
+                nbody = (len(gates_info['qbs'])>2)
                 assert not (nbody and doswap), \
                     f"Combination of n-body interaction and swap is not implemented!"
-                zero_angle_threshold = two_qb_gates_info.get("zero_angle_threshold", global_zero_angle_threshold)
+                zero_angle_threshold = gates_info.get("zero_angle_threshold", global_zero_angle_threshold)
                 if abs((2 * gamma * C) % (2*np.pi))<zero_angle_threshold and strategy == "skip_gate" and not doswap:
                     continue
-                for qbx in [self.qb_names[qb_ind] for qb_ind in two_qb_gates_info['qbs']]:
-                    for qby_tmp in [self.qb_names[qb_ind] for qb_ind in two_qb_gates_info['qbs']]:
+                for qbx in [self.qb_names[qb_ind] for qb_ind in gates_info['qbs']]:
+                    for qby_tmp in [self.qb_names[qb_ind] for qb_ind in gates_info['qbs']]:
                         if qby_tmp == qbx:
                             continue
                         qby = qby_tmp
                         qbt,qbc = qbx,qby
-                        gate_name = f"{two_qb_gates_info['gate_name']} {qbt} {qbc}";
+                        gate_name = f"{gates_info['gate_name']} {qbt} {qbc}";
                         if gate_name not in self.operation_dict:
                             qbt,qbc = qby,qbx
-                            gate_name = f"{two_qb_gates_info['gate_name']} {qbt} {qbc}";
+                            gate_name = f"{gates_info['gate_name']} {qbt} {qbc}";
                             if gate_name not in self.operation_dict:
                                 break
                     else:
                         break
                 else:
                     assert False, \
-                    f"The logical qubits {two_qb_gates_info['qbs']} are currently " \
-                        f"not connected by a {two_qb_gates_info['gate_name']} gate!"
+                    f"The logical qubits {gates_info['qbs']} are currently " \
+                        f"not connected by a {gates_info['gate_name']} gate!"
                 if nbody:
                     opsH = ["Z180 {qbx:}", "Y90 {qbx:}"] # Hadamard gate
                     nbody_start = self.block_from_ops(f"Had", opsH, dict(qbx=qbx), {}).build()
                     nbody_end = []
                     if cphase_implementation != "software":
                         nbody_end = self.block_from_ops(f"Had", opsH, dict(qbx=qbx), {}).build()
-                    for qbz in [self.qb_names[qb_ind] for qb_ind in two_qb_gates_info['qbs']]:
+                    for qbz in [self.qb_names[qb_ind] for qb_ind in gates_info['qbs']]:
                         if qbz==qbx or qbz==qby:
                             continue
-                        qbz_gate_name = f"{two_qb_gates_info['gate_name']} {qbx} {qbz}";
+                        qbz_gate_name = f"{gates_info['gate_name']} {qbx} {qbz}";
                         if gate_name not in self.operation_dict:
-                            qbz_gate_name = f"{two_qb_gates_info['gate_name']} {qbz} {qbx}";
+                            qbz_gate_name = f"{gates_info['gate_name']} {qbz} {qbx}";
                         nbody_cz = self.block_from_ops(f"CZ {qbz}", [qbz_gate_name],
                             {}, {0: dict(element_name="flux_arb_gate")}).build();
                         nbody_start.extend(nbody_cz)
@@ -690,8 +690,8 @@ class QAOAHelper(HelperBase):
             # add block referenced to start of U_k
             U.extend(simultaneous.build())
             if doswap:
-                self.qb_names[two_qb_gates_info['qbs'][0]],self.qb_names[two_qb_gates_info['qbs'][1]] \
-                    = self.qb_names[two_qb_gates_info['qbs'][1]],self.qb_names[two_qb_gates_info['qbs'][0]]
+                self.qb_names[gates_info['qbs'][0]],self.qb_names[gates_info['qbs'][1]] \
+                    = self.qb_names[gates_info['qbs'][1]],self.qb_names[gates_info['qbs'][0]]
             print(self.qb_names)
 
         # add single qb z rotation for single qb terms of hamiltonian
@@ -814,14 +814,14 @@ class QAOAHelper(HelperBase):
         return Block(name, pulses)
 
     @staticmethod
-    def get_corr_and_coupl_info(two_qb_gates_info):
+    def get_corr_and_coupl_info(gates_info):
         """
         Helper function to get correlations and couplings used in the sequence
         Correlations are defined as tuples of zero-indexed of qubits: eg.
         (0,1) indicates a correlation will be made on qb1 and qb2
         a coupling is the C between two qubits
         Args:
-            two_qb_gates_info: list of list of information
+            gates_info: list of list of information
             dictionaries. Dictionaries contain information about a two QB gate:
             assumes the following keys:
             - qbs: 2-tuple of logical qubit indices
@@ -837,7 +837,7 @@ class QAOAHelper(HelperBase):
             couplings (list): corresponding coupling for each correlation
 
         """
-        flattened_info = deepcopy(two_qb_gates_info['gate_list'])
+        flattened_info = deepcopy(gates_info['gate_list'])
 
         corr_info = [i['qbs'] for i in flattened_info]
         couplings = [i['J'] if 'J' in i else i['C'] if 'C' in i else 0 for i in flattened_info]
