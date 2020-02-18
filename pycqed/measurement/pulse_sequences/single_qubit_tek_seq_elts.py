@@ -683,7 +683,7 @@ def single_state_active_reset(operation_dict, qb_name,
 
 
 def randomized_renchmarking_seqs(
-        qb_name, operation_dict, cliffords, nr_seeds, uhf_name, net_clifford=0,
+        qb_name, operation_dict, cliffords, nr_seeds, net_clifford=0,
         gate_decomposition='HZ', interleaved_gate=None, upload=True,
         cal_points=None, prep_params=dict()):
 
@@ -692,7 +692,7 @@ def randomized_renchmarking_seqs(
     sequences = []
     for nCl in cliffords:
         pulse_list_list_all = []
-        for i in nr_seeds:
+        for _ in nr_seeds:
             cl_seq = rb.randomized_benchmarking_sequence(
                 nCl, desired_net_cl=net_clifford,
                 interleaved_gate=interleaved_gate)
@@ -1092,16 +1092,17 @@ def get_pulse_dict_from_pars(pulse_pars):
     # Software Z-gate: apply phase offset to all subsequent X and Y pulses
     target_qubit = pulse_pars.get('basis', None)
     if target_qubit is not None:
-        Z180 = {'pulse_type': 'Z_pulse',
-                'basis_rotation': {target_qubit: 0},
-                'basis': target_qubit,
-                'operation_type': 'Virtual',
-                'pulse_length': 0,
-                'pulse_delay': 0}
-        pulses.update({'Z180': Z180,
-                       'mZ180': deepcopy(Z180),
-                       'Z90': deepcopy(Z180),
-                       'mZ90': deepcopy(Z180)})
+        Z0 = {'pulse_type': 'Z_pulse',
+              'basis_rotation': {target_qubit: 0},
+              'basis': target_qubit,
+              'operation_type': 'Virtual',
+              'pulse_length': 0,
+              'pulse_delay': 0}
+        pulses.update({'Z0': Z0,
+                       'Z180': Z0,
+                       'mZ180': deepcopy(Z0),
+                       'Z90': deepcopy(Z0),
+                       'mZ90': deepcopy(Z0)})
         pulses['Z180']['basis_rotation'][target_qubit] += 180
         pulses['mZ180']['basis_rotation'][target_qubit] += -180
         pulses['Z90']['basis_rotation'][target_qubit] += 90

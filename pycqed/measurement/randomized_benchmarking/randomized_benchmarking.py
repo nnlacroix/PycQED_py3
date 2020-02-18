@@ -54,6 +54,7 @@ def decompose_clifford_seq(clifford_sequence,
         decomposed_seq.extend(gate_decomposition[cl])
     return decomposed_seq
 
+
 def decompose_clifford_seq_n_qubits(clifford_sequence_list, gate_decomp='HZ'):
 
     """
