@@ -243,6 +243,7 @@ def load_settings(instrument,
 
     instrument_name = instrument.name
     verbose = kw.pop('verbose', True)
+    update = kw.pop('update', True)
     older_than = kw.pop('older_than', None)
     success = False
     count = 0
@@ -266,16 +267,22 @@ def load_settings(instrument,
 
             params_to_set = kw.pop('params_to_set', [])
             if len(params_to_set)>0:
-                if verbose:
+                if verbose and update:
                     print('Setting parameters {} for {}.'.format(
                         params_to_set, instrument_name))
                 params_to_set = [(param, val) for (param, val) in
                                 ins_group.attrs.items() if param in
                                  params_to_set]
             else:
-                if verbose:
+                if verbose and update:
                     print('Setting parameters for {}.'.format(instrument_name))
                 params_to_set = ins_group.attrs.items()
+
+            if not update:
+                params_dict = {parameter : value for parameter, value in \
+                        params_to_set}
+                f.close()
+                return params_dict
 
             for parameter, value in params_to_set:
                 if parameter in instrument.parameters.keys() and \

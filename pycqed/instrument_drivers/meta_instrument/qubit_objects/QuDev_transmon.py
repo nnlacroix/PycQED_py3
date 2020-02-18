@@ -467,14 +467,12 @@ class QuDev_transmon(Qubit):
                 return
             # When optimal weights are used, only the RO I weight
             # channel is used
-            self.instr_uhf.get_instr().set('quex_wint_weights_{}_real'.format(
+            self.instr_uhf.get_instr().set('qas_0_integration_weights_{}_real'.format(
                 self.acq_I_channel()), self.acq_weights_I().copy())
-            self.instr_uhf.get_instr().set('quex_wint_weights_{}_imag'.format(
+            self.instr_uhf.get_instr().set('qas_0_integration_weights_{}_imag'.format(
                 self.acq_I_channel()), self.acq_weights_Q().copy())
-            self.instr_uhf.get_instr().set('quex_rot_{}_real'.format(
-                self.acq_I_channel()), 1.0)
-            self.instr_uhf.get_instr().set('quex_rot_{}_imag'.format(
-                self.acq_I_channel()), -1.0)
+            self.instr_uhf.get_instr().set('qas_0_rotations_{}'.format(
+                self.acq_I_channel()), 1.0-1.0j)
         elif weights_type == 'optimal_qutrit':
             for w_f in [self.acq_weights_I, self.acq_weights_Q,
                         self.acq_weights_I2, self.acq_weights_Q2]:
@@ -486,27 +484,24 @@ class QuDev_transmon(Qubit):
             # if all weights are not None, set first integration weights (real 
             # and imag) on channel I amd second integration weights on channel 
             # Q.
-            self.instr_uhf.get_instr().set('quex_wint_weights_{}_real'.format(
+            self.instr_uhf.get_instr().set('qas_0_integration_weights_{}_real'.format(
                 self.acq_I_channel()),
                 self.acq_weights_I().copy())
-            self.instr_uhf.get_instr().set('quex_wint_weights_{}_imag'.format(
+            self.instr_uhf.get_instr().set('qas_0_integration_weights_{}_imag'.format(
                 self.acq_I_channel()),
                 self.acq_weights_Q().copy())
-            self.instr_uhf.get_instr().set('quex_wint_weights_{}_real'.format(
+            self.instr_uhf.get_instr().set('qas_0_integration_weights_{}_real'.format(
                 self.acq_Q_channel()),
                 self.acq_weights_I2().copy())
-            self.instr_uhf.get_instr().set('quex_wint_weights_{}_imag'.format(
+            self.instr_uhf.get_instr().set('qas_0_integration_weights_{}_imag'.format(
                 self.acq_Q_channel()),
                 self.acq_weights_Q2().copy())
 
-            self.instr_uhf.get_instr().set('quex_rot_{}_real'.format(
-                self.acq_I_channel()), 1.0)
-            self.instr_uhf.get_instr().set('quex_rot_{}_imag'.format(
-                self.acq_I_channel()), -1.0)
-            self.instr_uhf.get_instr().set('quex_rot_{}_real'.format(
-                self.acq_Q_channel()), 1.0)
-            self.instr_uhf.get_instr().set('quex_rot_{}_imag'.format(
-                self.acq_Q_channel()), -1.0)
+            self.instr_uhf.get_instr().set('qas_0_rotations_{}'.format(
+                self.acq_I_channel()), 1.0-1.0j)
+            self.instr_uhf.get_instr().set('qas_0_rotations_{}'.format(
+                self.acq_Q_channel()), 1.0-1.0j)
+                
         else:
             tbase = np.arange(0, 4097 / 1.8e9, 1 / 1.8e9)
             theta = self.acq_IQ_angle()
@@ -516,26 +511,21 @@ class QuDev_transmon(Qubit):
             c2 = self.acq_Q_channel()
             uhf = self.instr_uhf.get_instr()
             if weights_type == 'SSB':
-                uhf.set('quex_wint_weights_{}_real'.format(c1), cosI)
-                uhf.set('quex_rot_{}_real'.format(c1), 1)
-                uhf.set('quex_wint_weights_{}_real'.format(c2), sinI)
-                uhf.set('quex_rot_{}_real'.format(c2), 1)
-                uhf.set('quex_wint_weights_{}_imag'.format(c1), sinI)
-                uhf.set('quex_rot_{}_imag'.format(c1), 1)
-                uhf.set('quex_wint_weights_{}_imag'.format(c2), cosI)
-                uhf.set('quex_rot_{}_imag'.format(c2), -1)
+                uhf.set('qas_0_integration_weights_{}_real'.format(c1), cosI)
+                uhf.set('qas_0_rotations_{}'.format(c1), 1.0+1.0j)
+                uhf.set('qas_0_integration_weights_{}_real'.format(c2), sinI)
+                uhf.set('qas_0_rotations_{}'.format(c2), 1.0-1.0j)
+                uhf.set('qas_0_integration_weights_{}_imag'.format(c1), sinI)
+                uhf.set('qas_0_integration_weights_{}_imag'.format(c2), cosI)
             elif weights_type == 'DSB':
-                uhf.set('quex_wint_weights_{}_real'.format(c1), cosI)
-                uhf.set('quex_rot_{}_real'.format(c1), 1)
-                uhf.set('quex_wint_weights_{}_real'.format(c2), sinI)
-                uhf.set('quex_rot_{}_real'.format(c2), 1)
-                uhf.set('quex_rot_{}_imag'.format(c1), 0)
-                uhf.set('quex_rot_{}_imag'.format(c2), 0)
+                uhf.set('qas_0_integration_weights_{}_real'.format(c1), cosI)
+                uhf.set('qas_0_rotations_{}'.format(c1), 1.0+0j)
+                uhf.set('qas_0_integration_weights_{}_real'.format(c2), sinI)
+                uhf.set('qas_0_rotations_{}'.format(c2), 1.0+0j)
             elif weights_type == 'square_rot':
-                uhf.set('quex_wint_weights_{}_real'.format(c1), cosI)
-                uhf.set('quex_rot_{}_real'.format(c1), 1)
-                uhf.set('quex_wint_weights_{}_imag'.format(c1), sinI)
-                uhf.set('quex_rot_{}_imag'.format(c1), 1)
+                uhf.set('qas_0_integration_weights_{}_real'.format(c1), cosI)
+                uhf.set('qas_0_rotations_{}'.format(c1), 1.0+1.0j)
+                uhf.set('qas_0_integration_weights_{}_imag'.format(c1), sinI)
             else:
                 raise KeyError('Invalid weights type: {}'.format(weights_type))
 
@@ -761,7 +751,8 @@ class QuDev_transmon(Qubit):
         exp_metadata.update({'sweep_points_dict': {self.name: amps},
                              'preparation_params': prep_params,
                              'cal_points': repr(cp),
-                             'rotate': len(cp.states) != 0,
+                             'rotate': False if classified_ro else
+                                len(cp.states) != 0,
                              'last_ge_pulses': [last_ge_pulse],
                              'data_to_fit': {self.name: 'pf' if for_ef else 'pe'},
                              "sweep_name": "Amplitude",
@@ -828,7 +819,8 @@ class QuDev_transmon(Qubit):
         exp_metadata.update({'sweep_points_dict': {self.name: times},
                              'preparation_params': prep_params,
                              'cal_points': repr(cp),
-                             'rotate': False if classified_ro else True,
+                             'rotate': False if classified_ro else
+                                len(cp.states) != 0,
                              'last_ge_pulses': [last_ge_pulse],
                              'data_to_fit': {self.name: 'pf' if for_ef else 'pe'},
                              "sweep_name": "Time",
@@ -889,7 +881,7 @@ class QuDev_transmon(Qubit):
              'sweep_unit': '',
              'preparation_params': prep_params,
              'cal_points': repr(cp),
-             'rotate': len(cp.states) != 0,
+             'rotate': False if classified_ro else len(cp.states) != 0,
              'last_ge_pulses': [last_ge_pulse],
              'data_to_fit': {self.name: 'pf' if for_ef else 'pe'}})
         MC.run(label, exp_metadata=exp_metadata)
@@ -1068,7 +1060,7 @@ class QuDev_transmon(Qubit):
              'preparation_params': prep_params,
              'last_ge_pulses': [last_ge_pulse],
              'artificial_detuning': artificial_detunings,
-             'rotate': len(cp.states) != 0,
+             'rotate': False if classified_ro else len(cp.states) != 0,
              'data_to_fit': {self.name: 'pf' if for_ef else 'pe'}})
 
         MC.run(label, exp_metadata=exp_metadata)
@@ -1114,12 +1106,11 @@ class QuDev_transmon(Qubit):
             exp_metadata = {}
         exp_metadata.update({'sweep_points_dict': {self.name: sweep_points},
                              'use_cal_points': cal_points,
-                             'rotate': True, # needs to be changed when adapting sequence; only true if not classified_ro
+                             'rotate': cal_points,
                              'cal_states_dict': cal_states_dict,
                              'cal_states_rotations': cal_states_rotations if
                                 self.acq_weights_type() != 'optimal_qutrit'
                                 else None,
-                             'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
                              'artificial_detuning': artificial_detuning})
         MC.run(label, exp_metadata=exp_metadata)
@@ -1193,7 +1184,7 @@ class QuDev_transmon(Qubit):
         if exp_metadata is None:
             exp_metadata = {}
         exp_metadata.update({'sweep_points_dict': {self.name: sweep_points},
-                             'use_cal_points': cal_points,
+                             'rotate': cal_points,
                              'last_ge_pulse': last_ge_pulse,
                              'data_to_fit': {self.name: 'pf'},
                              'cal_states_dict': cal_states_dict,
@@ -1237,16 +1228,10 @@ class QuDev_transmon(Qubit):
         cp = CalibrationPoints.single_qubit(self.name, cal_states,
                                             n_per_state=n_cal_points_per_state)
 
-        if thresholded:
-            if self.instr_uhf.get_instr().get('quex_thres_{}_level'.format(
-                    self.acq_I_channel())) == 0.0:
-                raise ValueError('The threshold value is not set.')
-
         sequences, hard_sweep_points, soft_sweep_points = \
             sq.randomized_renchmarking_seqs(
                 qb_name=self.name, operation_dict=self.get_operation_dict(),
                 cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
-                uhf_name=self.instr_uhf.get_instr().name,
                 gate_decomposition=gate_decomp,
                 interleaved_gate=interleaved_gate, upload=False,
                 cal_points=cp, prep_params=prep_params)
@@ -1594,12 +1579,13 @@ class QuDev_transmon(Qubit):
         return a
 
     def calibrate_drive_mixer_carrier(self, update=True, x0=(0., 0.),
-                                      initial_stepsize=0.01, trigger_sep=5e-6):
+                                      initial_stepsize=0.01, trigger_sep=5e-6,
+                                      no_improv_break=50):
         MC = self.instr_mc.get_instr()
         ad_func_pars = {'adaptive_function': opti.nelder_mead,
                         'x0': x0,
                         'initial_step': [initial_stepsize, initial_stepsize],
-                        'no_improv_break': 15,
+                        'no_improv_break': no_improv_break,
                         'minimize': True,
                         'maxiter': 500}
         chI_par = self.instr_pulsar.get_instr().parameters['{}_offset'.format(
@@ -1641,13 +1627,13 @@ class QuDev_transmon(Qubit):
         return ch_1_min, ch_2_min
 
     def calibrate_drive_mixer_skewness(self, update=True, amplitude=0.5, 
-                                       trigger_sep=5e-6,
+                                       trigger_sep=5e-6, no_improv_break=50,
                                        initial_stepsize=(0.15, 10)):
         MC = self.instr_mc.get_instr()
         ad_func_pars = {'adaptive_function': opti.nelder_mead,
                         'x0': [self.ge_alpha(), self.ge_phi_skew()],
                         'initial_step': initial_stepsize,
-                        'no_improv_break': 12,
+                        'no_improv_break': no_improv_break,
                         'minimize': True,
                         'maxiter': 500}
         MC.set_sweep_functions([self.ge_alpha, self.ge_phi_skew])
@@ -1942,7 +1928,7 @@ class QuDev_transmon(Qubit):
 
         self.prepare(drive='timedomain')
 
-        RO_spacing = self.instr_uhf.get_instr().quex_wint_delay() / 1.8e9
+        RO_spacing = self.instr_uhf.get_instr().qas_0_delay() / 1.8e9
         RO_spacing += self.acq_length()
         RO_spacing += RO_slack  # for slack
         RO_spacing = np.ceil(RO_spacing / RO_comm) * RO_comm
@@ -2423,18 +2409,6 @@ class QuDev_transmon(Qubit):
                               upload=True, analyze=True,
                               prep_params=None, exp_metadata=None, **kw):
 
-        T1 = kw.pop('T1', None)
-        T2 = kw.pop('T1', None)
-
-        if T1 is None and self.T1() is not None:
-            T1 = self.T1()
-        if T2 is None:
-            if self.T2() is not None:
-                T2 = self.T2()
-            elif self.T2_star() is not None:
-                print('T2 is None. Using T2_star.')
-                T2 = self.T2_star()
-
         if cliffords is None:
             raise ValueError("Unspecified cliffords array")
 
@@ -2447,11 +2421,6 @@ class QuDev_transmon(Qubit):
                 label = 'IRB_{}_{}_{}_seeds_{}_cliffords'.format(
                     interleaved_gate, gate_decomposition,
                     nr_seeds, cliffords[-1]) + self.msmt_suffix
-
-        if thresholded:
-            if self.instr_uhf.get_instr().get('quex_thres_{}_level'.format(
-                    self.acq_weights_I())) == 0.0:
-                raise ValueError('The threshold value is not set.')
 
         #Perform measurement
         self.measure_randomized_benchmarking(
