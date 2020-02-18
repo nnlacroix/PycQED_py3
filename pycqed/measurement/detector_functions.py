@@ -517,12 +517,10 @@ class UHFQC_multi_detector(UHFQC_Base):
         self.correlated = kw.get('correlated', False)
         self.averaged = kw.get('averaged', True)
         if 'classifier' in self.detectors[0].name:
-            print(self.detectors[0].name)
             self.correlated = self.detectors[0].get_values_function_kwargs.get(
                 'correlated', True)
             self.averaged = self.detectors[0].get_values_function_kwargs.get(
                 'averaged', True)
-            print(self.correlated)
         if self.correlated:
             self.value_names += ['correlation']
             self.value_units += ['']
@@ -542,7 +540,7 @@ class UHFQC_multi_detector(UHFQC_Base):
                 d for d in raw_data.values()]))
             processed_data = np.concatenate([processed_data, corr_data], axis=0)
 
-        print('final ', processed_data.shape)
+        # print('final ', processed_data.shape)
         return processed_data
 
     def get_correlations_classif_det(self, data):
@@ -551,7 +549,7 @@ class UHFQC_multi_detector(UHFQC_Base):
         for d in self.detectors:
             classifier_params_list += d.classifier_params_list
             state_prob_mtx_list += d.state_prob_mtx_list
-        print('data ', data.shape)
+        # print('data ', data.shape)
 
         nr_states = len(self.detectors[0].state_labels)
         len_ch_pairs = sum([len(d.channel_str_pairs) for d in self.detectors])
@@ -576,7 +574,7 @@ class UHFQC_multi_detector(UHFQC_Base):
                 log.info('not correcting correlated data')
             clf_data_all[:, nr_states * i: nr_states * i + nr_states] = clf_data
 
-        print('clf_data_all1 ', clf_data_all.shape)
+        # print('clf_data_all1 ', clf_data_all.shape)
         # can only correlate corresponding probabilities on all channels;
         # it cannot correlate selected channels
         nr_states = len(self.detectors[0].state_labels)
@@ -591,7 +589,7 @@ class UHFQC_multi_detector(UHFQC_Base):
                             self.detectors[0].nr_sweep_points))
             corr_data = np.mean(corr_data, axis=0)
         corr_data = np.reshape(corr_data, (1, corr_data.size))
-        print('corr_data ', corr_data.shape)
+        # print('corr_data ', corr_data.shape)
 
         return corr_data
 
