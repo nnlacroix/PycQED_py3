@@ -68,7 +68,7 @@ class CliffordLookuptables():
             clifford = generator(idx=idx)
             # important to use crc32 hashing as this is a non-random hash
             hash_val = crc32(
-                clifford.get_pauli_transfer_matrix.round().astype(int))
+                clifford.pauli_transfer_matrix.round().astype(int))
             lookuptable.append(hash_val)
         return lookuptable
 
