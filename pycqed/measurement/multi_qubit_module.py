@@ -1226,8 +1226,10 @@ def measure_parity_single_round_phases(ancilla_qubit, data_qubits, CZ_map,
             channel_map=channel_map
         ))
 
+
 def measure_tomography(qubits, prep_sequence, state_name,
                        rots_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
+                       operation_dict=None,
                        use_cal_points=True,
                        preselection=True,
                        rho_target=None,
@@ -1239,6 +1241,9 @@ def measure_tomography(qubits, prep_sequence, state_name,
                        nreps=1, run=True,
                        upload=True):
     exp_metadata = {}
+
+    if operation_dict is None:
+        operation_dict = get_operation_dict(qubits)
 
     for qb in qubits:
         MC = qb.instr_mc.get_instr()
@@ -1260,7 +1265,7 @@ def measure_tomography(qubits, prep_sequence, state_name,
     seq = sequence.Sequence(label)
 
     seq_tomo, seg_list_tomo = mqs.n_qubit_tomo_seq(qubit_names,
-                                                   get_operation_dict(qubits),
+                                                   operation_dict,
                                                    prep_sequence=prep_sequence,
                                                    rots_basis=rots_basis,
                                                    return_seq=True,
@@ -1271,7 +1276,7 @@ def measure_tomography(qubits, prep_sequence, state_name,
 
     if use_cal_points:
         seq_cal, seg_list_cal = mqs.n_qubit_ref_all_seq(qubit_names,
-                                                        get_operation_dict(qubits),
+                                                        operation_dict,
                                                         return_seq=True,
                                                         upload=False,
                                                         preselection=preselection,
@@ -1282,13 +1287,19 @@ def measure_tomography(qubits, prep_sequence, state_name,
     for seg in seg_list:
         seq.add(seg)
 
-    n_segments = len(seg_list)
-    if preselection:
-        n_segments *= 2
+    # reuse sequencer memory by repeating readout pattern
+    for qbn in qubit_names:
+        seq.repeat_ro(f"RO {qbn}", operation_dict)
+
+    n_segments = seq.n_acq_elements() #len(seg_list)
+    print(n_segments)
+    # if preselection:
+    #     n_segments *= 2
 
     # from this point on number of segments is fixed
     sf = awg_swf2.n_qubit_seq_sweep(seq_len=n_segments)
-    shots *= n_segments
+
+    # shots *= n_segments
     if shots > 1048576:
         shots = 1048576 - 1048576 % n_segments
     # if shots is None:
@@ -1343,14 +1354,14 @@ def measure_tomography(qubits, prep_sequence, state_name,
     MC.live_plot_enabled(liveplot)
     MC.soft_avg(1)
     MC.set_sweep_function(sf)
-    MC.set_sweep_points(np.arange(shots))
-    MC.set_sweep_function_2D(swf.None_Sweep())
-    MC.set_sweep_points_2D(np.arange(nreps))
+    MC.set_sweep_points(np.arange(n_segments))
+    # MC.set_sweep_function_2D(swf.None_Sweep())
+    # MC.set_sweep_points_2D(np.arange(nreps))
     MC.set_detector_function(df)
     if run:
-        MC.run_2D(label, exp_metadata=exp_metadata)
+        MC.run(label, exp_metadata=exp_metadata)
 
-    return 'Tomo'
+    return
 
 
 def measure_two_qubit_randomized_benchmarking(
@@ -2943,7 +2954,7 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
         seq, hard_sweep_points = \
             fsqs.dynamic_phase_seq(
                 qb_name=qb.name, hard_sweep_dict=hard_sweep_params,
-                operation_dict=get_operation_dict([qbc, qbt]),
+                operation_dict=get_operation_dict(qubits_to_measure),
                 cz_pulse_name=cz_pulse_name, cal_points=cp,
                 prepend_n_cz=prepend_n_cz,
                 upload=False, prep_params=prep_params)

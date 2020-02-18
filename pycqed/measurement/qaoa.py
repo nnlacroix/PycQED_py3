@@ -173,36 +173,42 @@ def qaoa_sequence(qb_names, betas, gammas, gates_info, operation_dict,
         tomography_segments = \
             get_tomography_pulses(*qb_names, basis_pulses=tomo_basis)
 
-    for i, ts in enumerate(tomography_segments):
-        seg_name = f'segment_{i}' if ts is None else  f'segment_{i}_tomo_{i}'
-        seg = segment.Segment(seg_name)
+    if np.ndim(gammas) < 2:
+        gammas = [gammas]
+    if np.ndim(betas) < 2:
+        betas = [betas]
+    for ind_array, (gamma_array, beta_array) in enumerate(zip(gammas,betas)):
+        for i, ts in enumerate(tomography_segments):
+            seg_name = f'segment_{i}_{ind_array}' if ts is None else  \
+                f'segment_{i}_{ind_array}_tomo_{i}'
+            seg = segment.Segment(seg_name)
 
-        # initialize qubits
-        seg.extend(builder.initialize(init_state, prep_params=prep_params).build())
+            # initialize qubits
+            seg.extend(builder.initialize(init_state, prep_params=prep_params).build())
 
-        # QAOA Unitaries
-        gates_info_all = deepcopy(gates_info);
-        if 'gate_order' not in gates_info_all:
-            gates_info_all['gate_order'] = [[i] for i in range(len(gates_info_all['gate_list']))]
-        gates_info_p = deepcopy(gates_info_all);
-        for k, (gamma, beta) in enumerate(zip(gammas, betas)):
-            # # Uk
-            if isinstance(gates_info_all['gate_order'][0][0],list):
-                gates_info_p['gate_order'] = deepcopy(
-                    gates_info_all['gate_order'][k % (len(gates_info_all['gate_order']))])
-            seg.extend(builder.U(f"U_{k}", gates_info_p,
-                       gamma, cphase_implementation, single_qb_terms).build())
-            # # Dk
-            seg.extend(builder.D(f"D_{k}", beta).build())
+            # QAOA Unitaries
+            gates_info_all = deepcopy(gates_info)
+            if 'gate_order' not in gates_info_all:
+                gates_info_all['gate_order'] = [[i] for i in range(len(gates_info_all['gate_list']))]
+            gates_info_p = deepcopy(gates_info_all)
+            for k, (gamma, beta) in enumerate(zip(gamma_array, beta_array)):
+                # # Uk
+                if isinstance(gates_info_all['gate_order'][0][0],list):
+                    gates_info_p['gate_order'] = deepcopy(
+                        gates_info_all['gate_order'][k % (len(gates_info_all['gate_order']))])
+                seg.extend(builder.U(f"U_{k}", gates_info_p,
+                           gamma, cphase_implementation, single_qb_terms).build())
+                # # Dk
+                seg.extend(builder.D(f"D_{k}", beta).build())
 
-        # add tomography pulses if required
-        if ts is not None:
-            seg.extend(builder.block_from_ops(f"tomography_{i}", ts).build())
+            # add tomography pulses if required
+            if ts is not None:
+                seg.extend(builder.block_from_ops(f"tomography_{i}", ts).build())
 
-        # readout qubits
-        seg.extend(builder.mux_readout().build())
+            # readout qubits
+            seg.extend(builder.mux_readout().build())
 
-        seq.add(seg)
+            seq.add(seg)
 
     # add calibration points
     if cal_points is not None:
