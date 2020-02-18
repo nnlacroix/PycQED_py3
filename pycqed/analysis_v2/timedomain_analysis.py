@@ -5082,7 +5082,6 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
         plotsize = (plotsize[0], plotsize[0]/1.25)
         if data_2d.shape[1] != self.proc_data_dict[
                 'sweep_points_dict'][qbn]['sweep_points'].size:
-            print('here')
             data_2d = data_2d.T
 
         if self.interleaved_msmts:
@@ -5287,7 +5286,7 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                                     'analysis_params_dict'][
                                     'population_loss']['stderr'][0])
                             self.plot_dicts['text_msg_' + qbn] = {
-                                'fig_id': figure_name,
+                                'fig_id': 'Cphase_{}_pe'.format(qbn),
                                 'ypos': -0.2,
                                 'xpos': -0.05,
                                 'horizontalalignment': 'left',

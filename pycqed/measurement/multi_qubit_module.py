@@ -884,8 +884,8 @@ def measure_tomography(qubits, prep_sequence, state_name,
     sf = awg_swf2.n_qubit_seq_sweep(seq_len=n_segments)
 
     # shots *= n_segments
-    # if shots > 1048576:
-    #     shots = 1048576 - 1048576 % n_segments
+    if shots > 1048576:
+        shots = 1048576 - 1048576 % n_segments
     # if shots is None:
     #     shots = 4094 - 4094 % n_segments
     # # shots = 600000
@@ -2209,9 +2209,9 @@ def measure_cphase_nn(qbc, qbt, qbr, lengths, amps, alphas=None,
 
 
 def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name, qbss=None,
-                   qbs_operations=None,
-                   hard_sweep_params=None, max_flux_length=None,
-                   num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
+                   qbs_operations=None, hard_sweep_params=None,
+                   max_flux_length=None, num_cz_gates=1,
+                   n_cal_points_per_state=1, cal_states='auto',
                    prep_params=None, exp_metadata=None, label=None,
                    analyze=True, upload=True, for_ef=True, **kw):
     '''
@@ -2255,7 +2255,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name, qbss=None,
 
     if hard_sweep_params is None:
         hard_sweep_params = {
-            'phase': {'values': np.tile(np.linspace(0, 2*np.pi, 7)*180/np.pi, 2),
+            'phase': {'values': np.tile(np.linspace(0, 2*np.pi, 8)*180/np.pi, 2),
                       'unit': 'deg'}
         }
 
@@ -2773,19 +2773,22 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
 
 
 def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
-                           qubits_to_measure=None, cal_points=True,
+                           qubits_to_measure=None, cal_points=True, qbss=None,
                            analyze=True, upload=True, n_cal_points_per_state=1,
                            cal_states='auto', prep_params=None,
                            exp_metadata=None, classified=False, update=False,
                            reset_phases_before_measurement=True,
-                           basis_rot_par=None, prepend_n_cz=0):
+                           qbs_operations=None, basis_rot_par=None,
+                           prepend_n_cz=0):
 
+    if qbss is None:
+        qbss = []
     if qubits_to_measure is None:
         qubits_to_measure = [qbc, qbt]
     if hard_sweep_params is None:
         hard_sweep_params = {
             'phase': {
-                'values': np.tile(np.linspace(0, 2*np.pi, 6)*180/np.pi, 2),
+                'values': np.tile(np.linspace(0, 2*np.pi, 8)*180/np.pi, 2),
                 'unit': 'deg'}}
 
     if basis_rot_par is None:
@@ -2797,7 +2800,12 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
     else:
         dyn_phases = qbc.get(basis_rot_par)
     for qb in qubits_to_measure:
-        label = f'Dynamic_phase_measurement_CZ{qbt.name}{qbc.name}-{qb.name}'
+        label = f'Dynamic_phase_measurement_CZ{qbt.name}{qbc.name}'
+        if len(qbss) > 0:
+            label += '_withSpectator' + ('' if len(qbss) == 1 else 's')
+            for qbs in qbss:
+                qbs.prepare(drive='timedomain')
+        label += f'-{qb.name}'
         qb.prepare(drive='timedomain')
         MC = qbc.instr_mc.get_instr()
 
@@ -2808,13 +2816,14 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
         else:
             cp = None
 
-        prep_params = qb.preparation_params()
+        if prep_params is None:
+            prep_params = qb.preparation_params()
         seq, hard_sweep_points = \
             fsqs.dynamic_phase_seq(
                 qb_name=qb.name, hard_sweep_dict=hard_sweep_params,
-                operation_dict=get_operation_dict(qubits_to_measure),
+                operation_dict=get_operation_dict(qubits_to_measure+qbss),
                 cz_pulse_name=cz_pulse_name, cal_points=cp,
-                prepend_n_cz=prepend_n_cz,
+                prepend_n_cz=prepend_n_cz, qbs_operations=qbs_operations,
                 upload=False, prep_params=prep_params)
 
         MC.set_sweep_function(awg_swf.SegmentHardSweep(
@@ -2833,6 +2842,7 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                              'data_to_fit': {qb.name: 'pe'},
                              'cal_states_rotations':
                                  {qb.name: {'g': 0, 'e': 1}},
+                             'sectator_qbname': [qbs.name for qbs in qbss],
                              'hard_sweep_params': hard_sweep_params})
         MC.run(label, exp_metadata=exp_metadata)
 

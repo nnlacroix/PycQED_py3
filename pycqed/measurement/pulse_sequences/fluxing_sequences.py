@@ -137,7 +137,7 @@ def Ramsey_with_flux_pulse_meas_seq(thetas, qb, X90_separation, verbose=False,
 
 def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
                       cz_pulse_name, cal_points=None, prepend_n_cz=0,
-                      upload=False, prep_params=dict()):
+                      qbs_operations=None, upload=False, prep_params=dict()):
     '''
     Performs a Ramsey with interleaved Flux pulse
     Sequence
@@ -149,10 +149,19 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
 
     seq_name = 'Dynamic_phase_seq'
 
+    if qbs_operations is None:
+        qbs_operations = []
+
     ge_half_start = deepcopy(operation_dict['X90 ' + qb_name])
     ge_half_start['name'] = 'pi_half_start'
     # ge_half_start['element_name'] = 'pi_half_start_el'
     ge_half_start['element_name'] = 'pi'
+
+    if qbs_operations is not None:
+        spec_pulses = [deepcopy(operation_dict[spec_op]) for
+                       spec_op in qbs_operations]
+    else:
+        spec_pulses = []
 
     flux_pulse = deepcopy(operation_dict[cz_pulse_name])
     flux_pulse['name'] = 'flux'
@@ -168,7 +177,8 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
     pulse_list = [deepcopy(operation_dict[cz_pulse_name])
                   for _ in range(prepend_n_cz)]
 
-    pulse_list += [ge_half_start, flux_pulse, ge_half_end, ro_pulse]
+    pulse_list += [ge_half_start] + spec_pulses + [flux_pulse, ge_half_end,
+                  ro_pulse]
     hsl = len(list(hard_sweep_dict.values())[0]['values'])
     if 'amplitude' in flux_pulse:
         param_to_set = 'amplitude'
