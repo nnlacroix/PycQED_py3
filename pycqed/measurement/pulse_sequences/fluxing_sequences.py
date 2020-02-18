@@ -190,7 +190,6 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
 
     params = {f'flux.{param_to_set}': np.concatenate(
         [flux_pulse[param_to_set]*np.ones(hsl//2), np.zeros(hsl//2)])}
-    print((hsl // 2))
 
     if 'aux_channels_dict' in flux_pulse:
         params.update({'flux.aux_channels_dict': np.concatenate([
