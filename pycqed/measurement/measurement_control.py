@@ -116,6 +116,12 @@ class MeasurementControl(Instrument):
     # Functions used to control the measurements #
     ##############################################
 
+    def create_instrument_settings_file(self):
+        self.set_measurement_name('instrument_settings')
+        with h5d.Data(name=self.get_measurement_name(),
+                      datadir=self.datadir()) as self.data_object:
+            self.save_instrument_settings(self.data_object)
+
     def run(self, name: str=None, exp_metadata: dict=None,
             mode: str='1D', disable_snapshot_metadata: bool=False, **kw):
         '''
@@ -524,7 +530,7 @@ class MeasurementControl(Instrument):
             x_tiled = np.tile(self.sweep_pts_x, self.ylen)
             # create outer loop
             self.sweep_pts_y = self.sweep_points_2D
-            y_rep = np.repeat(self.sweep_pts_y, self.xlen,axis=0)
+            y_rep = np.repeat(self.sweep_pts_y, self.xlen, axis=0)
             c = np.column_stack((x_tiled, y_rep))
             self.set_sweep_points(c)
             self.initialize_plot_monitor_2D()
