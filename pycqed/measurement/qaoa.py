@@ -588,6 +588,7 @@ class QAOAHelper(HelperBase):
                 if (len(gates_info['qbs'])==1):
                     single_qb_terms[gates_info['qbs'][0]] += C
                     continue
+                gates_info['gate_name'] = gates_info['gate_name'] if 'gate_name' in gates_info else 'upCZ'
                 strategy = gates_info.get("zero_angle_strategy", None)
                 doswap = gates_info.get("swap", False);
                 nbody = (len(gates_info['qbs'])>2)
