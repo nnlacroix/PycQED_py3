@@ -21,7 +21,7 @@ def save_data(self, data_dict, savedir: str = None, savebase: str = None,
     Args:
         savedir (string):
                 Directory where the file is saved. If this is None, the
-                file is saved in self.raw_data_dict['folder'] or the
+                file is saved in self.raw_data_dict['folders'] or the
                 working directory of the console.
         savebase (string):
                 Base name for the saved file.
@@ -37,13 +37,13 @@ def save_data(self, data_dict, savedir: str = None, savebase: str = None,
                 saved.
     '''
     if savedir is None:
-        savedir = self.raw_data_dict.get('folder', '')
+        savedir = self.raw_data_dict.get('folders', '')
         if isinstance(savedir, list):
             savedir = savedir[0]
     if savebase is None:
         savebase = ''
     if tag_tstamp:
-        tstag = '_' + self.raw_data_dict['timestamp'][0]
+        tstag = '_' + self.raw_data_dict['timestamps'][0]
     else:
         tstag = ''
 
@@ -67,66 +67,11 @@ def save_data(self, data_dict, savedir: str = None, savebase: str = None,
     log.info('Data saved to "{}".'.format(filepath))
 
 
-def save_processed_data(self, key=None, overwrite=True):
-    """
-    Saves data from the processed data dictionary to the hdf5 file
-
-    Args:
-        key: key of the data to save. All processed data is saved by
-             default.
-    """
-
-    if isinstance(key, (list, set)):
-        for k in key:
-            self.save_processed_data(k)
-        return
-
-    # Check weather there is any data to save
-    if hasattr(self, 'proc_data_dict') and self.proc_data_dict is not None \
-            and key in self.proc_data_dict:
-        fn = self.options_dict.get('analysis_result_file', False)
-        if fn == False:
-            if isinstance(self.raw_data_dict, tuple):
-                timestamp = self.raw_data_dict[0]['timestamp']
-            else:
-                timestamp = self.raw_data_dict['timestamp']
-            fn = a_tools.measurement_filename(a_tools.get_folder(
-                timestamp))
-        try:
-            os.mkdir(os.path.dirname(fn))
-        except FileExistsError:
-            pass
-
-        if self.verbose:
-            log.info('Saving fitting results to %s' % fn)
-
-        with h5py.File(fn, 'a') as data_file:
-            try:
-                analysis_group = data_file.create_group('Analysis')
-            except ValueError:
-                # If the analysis group already exists.
-                analysis_group = data_file['Analysis']
-
-            try:
-                proc_data_group = \
-                    analysis_group.create_group('Processed data')
-            except ValueError:
-                # If the processed data group already exists.
-                proc_data_group = analysis_group['Processed data']
-
-            if key in proc_data_group.keys():
-                del proc_data_group[key]
-
-            d = {key: self.proc_data_dict[key]}
-            write_dict_to_hdf5(d, entry_point=proc_data_group,
-                               overwrite=overwrite)
-
-
 def save_fit_results(data_dict, fit_res_dict, **params):
     """
     Saves the fit results
     """
-    timestamp = data_dict['timestamp']
+    timestamp = data_dict['timestamps'][-1]
     fn = a_tools.measurement_filename(a_tools.get_folder(timestamp))
 
     try:
@@ -171,21 +116,21 @@ def save_figures(data_dict, figs, **params):
     savedir = params.get('savedir', None)
     if savedir is None:
         if isinstance(data_dict, tuple):
-            savedir = data_dict[0].get('folder', '')
+            savedir = data_dict[0].get('folders', '')
         else:
-            savedir = data_dict.get('folder', '')
+            savedir = data_dict.get('folders', '')
 
         if isinstance(savedir, list):
-            savedir = savedir[0]
+            savedir = savedir[-1]
         if isinstance(savedir, list):
-            savedir = savedir[0]
+            savedir = savedir[-1]
     if savebase is None:
         savebase = ''
     if tag_tstamp:
         if isinstance(data_dict, tuple):
-            tstag = '_' + data_dict[0]['timestamp']
+            tstag = '_' + data_dict[0]['timestamps'][-1]
         else:
-            tstag = '_' + data_dict['timestamp']
+            tstag = '_' + data_dict['timestamps'][-1]
     else:
         tstag = ''
 

@@ -824,8 +824,8 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
 
         self.proc_data_dict['analysis_params']['state_prob_mtx'] = fm
         self.proc_data_dict['analysis_params']['n_shots'] = X.shape[0]
-        self.proc_data_dict['analysis_params'] \
-                           ['classifier_params'] = clf_params
+        self.proc_data_dict['analysis_params'][
+            'classifier_params'] = clf_params
 
         if self.pre_selection:
             prep_states = []
@@ -851,6 +851,8 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
                                ['state_prob_mtx_masked'] = fm
             self.proc_data_dict['analysis_params']['n_shots_masked'] = \
                 X.shape[0]
+
+        self.save_processed_data(key='analysis_params')
 
     def _filter(self, data):
         """
@@ -1664,6 +1666,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
 
             val_list = [self.proc_data_dict['probability_table'][idx_ro]
                         [observabele_idxs] for idx_ro in cal_point[0]]
+            print('val_list ', val_list)
             means[i] = np.mean(val_list, axis=0)
 
         # find the means for all the products of the operators and the average
