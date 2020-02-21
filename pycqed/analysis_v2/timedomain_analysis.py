@@ -302,7 +302,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                               default_value=False)
         try:
             self.cp = eval(cal_points)
-
             # for now assuming the same for all qubits.
             self.cal_states_dict = self.cp.get_indices()[self.qb_names[0]]
             if rotate:
@@ -336,7 +335,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if self.cal_states_rotations is not None:
             self.cal_states_analysis()
         else:
-            # this assumes data obetained with classifier detector!
+            # this assumes data obtained with classifier detector!
             # ie pg, pe, pf are expected to be in the value_names
             self.proc_data_dict['projected_data_dict'] = OrderedDict()
             for qbn, data_dict in self.proc_data_dict[
@@ -1060,10 +1059,6 @@ class Grovers_TwoQubitAllStates_Analysis(ba.BaseDataAnalysis):
                      (1-y0[1])*y1[1] +
                      (y0[2])*(1-y1[2]) +
                      (1-y0[3])*(1-y1[3]) )/4
-        print(y0[0]*y1[0])
-        print((1-y0[1])*y1[1])
-        print((y0[2])*(1-y1[2]))
-        print((1-y0[3])*(1-y1[3]))
         self.proc_data_dict['p_success'] = p_success
 
 
@@ -1982,7 +1977,6 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         tomography_qubits = self.options_dict.get('tomography_qubits', None)
         data, Fs, Omega = self.base_analysis.measurement_operators_and_results(
                               tomography_qubits)
-        print(data.shape, len(Fs), Fs[0].shape)
         if 'data_filter' in self.options_dict:
             data = self.options_dict['data_filter'](data.T).T
 
@@ -2021,27 +2015,36 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         rotations = [qtp.Qobj(U) for U in rotations]
 
         all_Fs = tomo.rotated_measurement_operators(rotations, Fs)
-        all_Fs = list(itertools.chain(*np.array(all_Fs).T))
+        all_Fs = list(itertools.chain(*np.array(all_Fs, dtype=np.object).T))
         all_mus = np.array(list(itertools.chain(*data.T)))
         all_Omegas = sp.linalg.block_diag(*[Omega] * len(data[0]))
+
 
         self.proc_data_dict['meas_operators'] = all_Fs
         self.proc_data_dict['covar_matrix'] = all_Omegas
         self.proc_data_dict['meas_results'] = all_mus
 
-        rho_ls = tomo.least_squares_tomography(
-            all_mus, all_Fs,
-            all_Omegas if self.get_param_value('use_covariance_matrix', False)
-            else None )
-        self.proc_data_dict['rho_ls'] = rho_ls
-        self.proc_data_dict['rho'] = rho_ls
-        if self.options_dict.get('mle', False):
-            rho_mle = tomo.mle_tomography(all_mus, all_Fs, None, #all_Omegas,
-                                          rho_guess=rho_ls)
-            self.proc_data_dict['rho_mle'] = rho_mle
-            self.proc_data_dict['rho'] = rho_mle
-        rho = self.proc_data_dict['rho']
+        if self.options_dict.get('pauli_raw', False):
+            pauli_raw = self.generate_raw_pauli_set()
+            rho_raw = tomo.pauli_set_to_density_matrix(pauli_raw)
+            self.proc_data_dict['rho_raw'] = rho_raw
+            self.proc_data_dict['rho'] = rho_raw
+        else:
+            rho_ls = tomo.least_squares_tomography(
+                all_mus, all_Fs,
+                all_Omegas if self.get_param_value('use_covariance_matrix', False)
+                else None )
+            self.proc_data_dict['rho_ls'] = rho_ls
+            self.proc_data_dict['rho'] = rho_ls
+            if self.options_dict.get('mle', False):
+                rho_mle = tomo.mle_tomography(
+                    all_mus, all_Fs, None,
+                    all_Omegas if self.get_param_value('use_covariance_matrix', False) else None,
+                    rho_guess=rho_ls)
+                self.proc_data_dict['rho_mle'] = rho_mle
+                self.proc_data_dict['rho'] = rho_mle
 
+        rho = self.proc_data_dict['rho']
         self.proc_data_dict['purity'] = (rho * rho).tr().real
 
         rho_target = metadata.get('rho_target', None)
@@ -2076,7 +2079,9 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                 ytick_labels = [r'$\langle' + lbl + '|$' for lbl in labels]
         color = (0.5 * np.angle(self.proc_data_dict['rho'].full()) / np.pi) % 1.
         cmap = self.options_dict.get('rho_colormap', self.default_phase_cmap())
-        if self.options_dict.get('mle', False):
+        if self.options_dict.get('pauli_raw', False):
+            title = 'Density matrix reconstructed from the Pauli set\n'
+        elif self.options_dict.get('mle', False):
             title = 'Maximum likelihood fit of the density matrix\n'
         else:
             title = 'Least squares fit of the density matrix\n'
@@ -2198,7 +2203,9 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                     [53, 54, 55, 57, 58, 59, 61, 62, 63]
         else:
             order = np.arange(4**nr_qubits)[1:]
-        if self.options_dict.get('mle', False):
+        if self.options_dict.get('pauli_raw', False):
+            fit_type = 'raw counts'
+        elif self.options_dict.get('mle', False):
             fit_type = 'maximum likelihood estimation'
         else:
             fit_type = 'least squares fit'
@@ -3026,66 +3033,21 @@ class RODynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
                     'plotfn': self.plot_text,
                     'text_string': textstr}
 
-
-class MeasurementInducedDephasingAnalysis(ba.BaseDataAnalysis):
-    def __init__(self, *args, **kwargs):
-        options_dict = kwargs.pop('options_dict', {})
-        auto = kwargs.pop('auto', True)
-        super().__init__(*args, options_dict=options_dict, **kwargs)
-        self.single_timestamp = True
-        self.params_dict = {
-            'value_names': 'value_names',
-            'measured_values': 'measured_values',
-            'sweep_points': 'sweep_points',
-            'measurementstring': 'measurementstring',
-            'exp_metadata': 'exp_metadata'}
-        self.numeric_params = []
-        if auto:
-            self.run_analysis()
-
+class MeasurementInducedDephasingAnalysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):
+        super().process_data()
+
         rdd = self.raw_data_dict
         pdd = self.proc_data_dict
-        self.metadata = rdd.get('exp_metadata', {})
-        if self.metadata is None:
-            self.metadata = {}
-        self.cal_points = self.metadata.get('cal_points', ((-4, -3), (-2, -1)))
-        self.cal_points = self.options_dict.get('cal_points', self.cal_points)
-        self.cal_points = tuple([j % len(rdd['sweep_points'])
-                                 for j in self.cal_points[i]]
-                                for i in [0, 1])
 
-        data_ch_indices = [i for i, ch in enumerate(rdd['value_names'])
-                           if ch[-8:] == '_measure']
-        if len(rdd['measured_values']) == 1:
-            # if only one weight function is used rotation is not required
-            pdd['corr_data_all'] = a_tools.rotate_and_normalize_data_1ch(
-                    rdd['measured_values'], 
-                    cal_zero_points=self.cal_points[0],
-                    cal_one_points=self.cal_points[1])
-        else:
-            pdd['corr_data_all'] = a_tools.rotate_and_normalize_data_IQ(
-                data=rdd['measured_values'],
-                zero_coord=None, one_coord=None,
-                cal_zero_points=self.cal_points[0],
-                cal_one_points=self.cal_points[1])[0]
-
-        pdd['corr_data_flat'] = np.array([pdd['corr_data_all'][i]
-                                     for i in range(len(pdd['corr_data_all']))
-                                     if (i not in self.cal_points[0] and
-                                         i not in self.cal_points[1])])
-        pdd['phases'] = self.metadata.get('phases', None)
-        pdd['phases'] = self.options_dict.get('phases', pdd['phases'])
-        pdd['ro_amp_scales'] = self.metadata.get('ro_amp_scales', None)
-        pdd['ro_amp_scales'] = self.options_dict.get('ro_amp_scales', 
-            pdd['ro_amp_scales'])
-        pdd['ref_amplitude'] = self.metadata.get('ref_amplitude', 1)
-        pdd['ref_amplitude'] = self.options_dict.get('ref_amplitude', 
-            pdd['ref_amplitude'])
-        pdd['amplitudes'] = pdd['ref_amplitude']*pdd['ro_amp_scales']
-        shape = (len(pdd['amplitudes']), len(pdd['phases']))
-        pdd['corr_data'] = np.reshape(pdd['corr_data_flat'], shape).T
-        
+        pdd['data_reshaped'] = {qb: [] for qb in pdd['data_to_fit']}
+        pdd['amps_reshaped'] = np.unique(self.metadata['hard_sweep_params']['ro_amp_scale']['values'])
+        pdd['phases_reshaped'] = []
+        for amp in pdd['amps_reshaped']:
+            mask = self.metadata['hard_sweep_params']['ro_amp_scale']['values'] == amp
+            pdd['phases_reshaped'].append(self.metadata['hard_sweep_params']['phase']['values'][mask])
+            for qb in self.qb_names:
+                pdd['data_reshaped'][qb].append(pdd['data_to_fit'][qb][:len(mask)][mask])
 
     def prepare_fitting(self):
         pdd = self.proc_data_dict
@@ -3093,190 +3055,212 @@ class MeasurementInducedDephasingAnalysis(ba.BaseDataAnalysis):
         self.fit_dicts = OrderedDict()
         cos_mod = lmfit.Model(fit_mods.CosFunc)
         cos_mod.guess = fit_mods.Cos_guess.__get__(cos_mod, cos_mod.__class__)
-        for i, data in enumerate(pdd['corr_data'].T):
-            self.fit_dicts['cos_fit_{}'.format(i)] = {
-                'model': cos_mod,
-                'guess_dict': {'frequency': {'value': 1/360,
-                                             'vary': False}},
-                'fit_xvals': {'t': pdd['phases']},
-                'fit_yvals': {'data': data}}
+        for qb in self.qb_names:
+            for i, data in enumerate(pdd['data_reshaped'][qb]):
+                self.fit_dicts[f'cos_fit_{qb}_{i}'] = {
+                    'model': cos_mod,
+                    'guess_dict': {'frequency': {'value': 1/360,
+                                                 'vary': False}},
+                    'fit_xvals': {'t': pdd['phases_reshaped'][i]},
+                    'fit_yvals': {'data': data}}
 
     def analyze_fit_results(self):
         pdd = self.proc_data_dict
-        pdd['phase_contrast'] = np.array([
-            self.fit_res['cos_fit_{}'.format(i)].best_values['amplitude']
-            for i in range(len(pdd['amplitudes']))])
-        pdd['phase_offset'] = np.array([
-            self.fit_res['cos_fit_{}'.format(i)].best_values['phase']
-            for i in range(len(pdd['amplitudes']))])
-        pdd['phase_offset'] += np.pi*(pdd['phase_contrast'] < 0)
-        pdd['phase_offset'] = (pdd['phase_offset'] + np.pi) % (2*np.pi) - np.pi
-        pdd['phase_offset'] = np.unwrap(pdd['phase_offset'])
-        pdd['phase_contrast'] = np.abs(pdd['phase_contrast'])
 
-        gauss_mod = lmfit.models.GaussianModel()
-        self.fit_dicts['phase_contrast_fit'] = {
-            'model': gauss_mod,
-            'guess_dict': {'center': {'value': 0, 'vary': False}},
-            'fit_xvals': {'x': pdd['amplitudes']},
-            'fit_yvals': {'data': pdd['phase_contrast']}}
+        pdd['phase_contrast'] = {}
+        pdd['phase_offset'] = {}
+        pdd['sigma'] = {}
+        pdd['sigma_err'] = {}
+        pdd['a'] = {}
+        pdd['a_err'] = {}
+        pdd['c'] = {}
+        pdd['c_err'] = {}
 
-        quadratic_mod = lmfit.models.QuadraticModel()
-        self.fit_dicts['phase_offset_fit'] = {
-            'model': quadratic_mod,
-            'guess_dict': {'b': {'value': 0, 'vary': False}},
-            'fit_xvals': {'x': pdd['amplitudes']},
-            'fit_yvals': {'data': pdd['phase_offset']}}
-        self.run_fitting()
+        for qb in self.qb_names:
+            pdd['phase_contrast'][qb] = np.array([
+                self.fit_res[f'cos_fit_{qb}_{i}'].best_values['amplitude']
+                for i, _ in enumerate(pdd['data_reshaped'][qb])])
+            pdd['phase_offset'][qb] = np.array([
+                self.fit_res[f'cos_fit_{qb}_{i}'].best_values['phase']
+                for i, _ in enumerate(pdd['data_reshaped'][qb])])
+            pdd['phase_offset'][qb] += np.pi * (pdd['phase_contrast'][qb] < 0)
+            pdd['phase_offset'][qb] = (pdd['phase_offset'][qb] + np.pi) % (2 * np.pi) - np.pi
+            pdd['phase_offset'][qb] = 180*np.unwrap(pdd['phase_offset'][qb])/np.pi
+            pdd['phase_contrast'][qb] = np.abs(pdd['phase_contrast'][qb])
 
-        pdd['sigma'] = self.fit_res['phase_contrast_fit'].best_values['sigma']
-        pdd['sigma_err'] = self.fit_res['phase_contrast_fit'].params['sigma'].\
-                                                                        stderr
-        pdd['a'] = self.fit_res['phase_offset_fit'].best_values['a']
-        pdd['a_err'] = self.fit_res['phase_offset_fit'].params['a'].stderr
-        pdd['c'] = self.fit_res['phase_offset_fit'].best_values['c']
-        pdd['c_err'] = self.fit_res['phase_offset_fit'].params['c'].stderr
+            gauss_mod = lmfit.models.GaussianModel()
+            self.fit_dicts[f'phase_contrast_fit_{qb}'] = {
+                'model': gauss_mod,
+                'guess_dict': {'center': {'value': 0, 'vary': False}},
+                'fit_xvals': {'x': pdd['amps_reshaped']},
+                'fit_yvals': {'data': pdd['phase_contrast'][qb]}}
 
-        pdd['sigma_err'] = float('nan') if pdd['sigma_err'] is None \
-                                        else pdd['sigma_err']
-        pdd['a_err'] = float('nan') if pdd['a_err'] is None else pdd['a_err']
-        pdd['c_err'] = float('nan') if pdd['c_err'] is None else pdd['c_err']
+            quadratic_mod = lmfit.models.QuadraticModel()
+            self.fit_dicts[f'phase_offset_fit_{qb}'] = {
+                'model': quadratic_mod,
+                'guess_dict': {'b': {'value': 0, 'vary': False}},
+                'fit_xvals': {'x': pdd['amps_reshaped']},
+                'fit_yvals': {'data': pdd['phase_offset'][qb]}}
 
+            self.run_fitting()
+            self.save_fit_results()
+
+            pdd['sigma'][qb] = self.fit_res[f'phase_contrast_fit_{qb}'].best_values['sigma']
+            pdd['sigma_err'][qb] = self.fit_res[f'phase_contrast_fit_{qb}'].params['sigma']. \
+                stderr
+            pdd['a'][qb] = self.fit_res[f'phase_offset_fit_{qb}'].best_values['a']
+            pdd['a_err'][qb] = self.fit_res[f'phase_offset_fit_{qb}'].params['a'].stderr
+            pdd['c'][qb] = self.fit_res[f'phase_offset_fit_{qb}'].best_values['c']
+            pdd['c_err'][qb] = self.fit_res[f'phase_offset_fit_{qb}'].params['c'].stderr
+
+            pdd['sigma_err'][qb] = float('nan') if pdd['sigma_err'][qb] is None \
+                else pdd['sigma_err'][qb]
+            pdd['a_err'][qb] = float('nan') if pdd['a_err'][qb] is None else pdd['a_err'][qb]
+            pdd['c_err'][qb] = float('nan') if pdd['c_err'][qb] is None else pdd['c_err'][qb]
 
     def prepare_plots(self):
         pdd = self.proc_data_dict
+        rdd = self.raw_data_dict
 
-        self.plot_dicts['corr_data'] = {
-            'title': self.raw_data_dict['measurementstring'] +
-                     '\n' + self.raw_data_dict['timestamp'],
-            'plotfn': self.plot_colorxy,
-            'xvals': pdd['phases'],
-            'yvals': pdd['amplitudes'],
-            'zvals': pdd['corr_data'].T,
-            'xlabel': r'Pulse phase, $\phi$',
-            'xunit': 'deg',
-            'ylabel': r'Readout pulse amplitude, $V_{RO}$',
-            'yunit': 'V',
-            'zlabel': 'Excited state population',
-        }
+        phases_equal = True
+        for phases in pdd['phases_reshaped'][1:]:
+            if not np.all(phases == pdd['phases_reshaped'][0]):
+                phases_equal = False
+                break
 
-        colormap = self.options_dict.get('colormap', mpl.cm.plasma)
-        for i, amp in enumerate(pdd['amplitudes']):
-            color = colormap(i/(len(pdd['amplitudes'])-1))
-            label = 'cos_data_{}'.format(i)
-            self.plot_dicts[label] = {
-                'title': self.raw_data_dict['measurementstring'] +
-                         '\n' + self.raw_data_dict['timestamp'],
-                'ax_id': 'amplitude_crossections',
-                'plotfn': self.plot_line,
-                'xvals': pdd['phases'],
-                'yvals': pdd['corr_data'][:,i],
-                'xlabel': r'Pulse phase, $\phi$',
-                'xunit': 'deg',
-                'ylabel': 'Excited state population',
-                'linestyle': '',
-                'color': color,
-                'setlabel': 'data {}: amp={:.4f}'.format(i, amp),
-                'do_legend': True,
-                'legend_bbox_to_anchor': (1, 1),
-                'legend_pos': 'upper left',
-            }
-        if self.do_fitting:
-            for i, amp in enumerate(pdd['amplitudes']):
-                color = colormap(i/(len(pdd['amplitudes'])-1))
-                label = 'cos_fit_{}'.format(i)
-                self.plot_dicts[label] = {
-                    'ax_id': 'amplitude_crossections',
-                    'plotfn': self.plot_fit,
-                    'fit_res': self.fit_res[label],
-                    'plot_init': self.options_dict.get('plot_init', False),
-                    'color': color,
-                    'setlabel': 'fit {}: amp={:.4f}'.format(i, amp),
+        for qb in self.qb_names:
+            if phases_equal:
+                self.plot_dicts[f'data_2d_{qb}'] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'],
+                    'plotfn': self.plot_colorxy,
+                    'xvals': pdd['phases_reshaped'][0],
+                    'yvals': pdd['amps_reshaped'],
+                    'zvals': pdd['data_reshaped'][qb],
+                    'xlabel': r'Pulse phase, $\phi$',
+                    'xunit': 'deg',
+                    'ylabel': r'Readout pulse amplitude scale, $V_{RO}/V_{ref}$',
+                    'yunit': '',
+                    'zlabel': 'Excited state population',
                 }
 
-                # Phase contrast
-            self.plot_dicts['phase_contrast_data'] = {
-                'title': self.raw_data_dict['measurementstring'] +
-                         '\n' + self.raw_data_dict['timestamp'],
-                'ax_id': 'phase_contrast',
-                'plotfn': self.plot_line,
-                'xvals': pdd['amplitudes'],
-                'yvals': 200*pdd['phase_contrast'],
-                'xlabel': r'Readout pulse amplitude, $V_{RO}$',
-                'xunit': 'V',
-                'ylabel': 'Phase contrast',
-                'yunit': '%',
-                'linestyle': '',
-                'color': 'k',
-                'setlabel': 'data',
-                'do_legend': True,
-            }
-            self.plot_dicts['phase_contrast_fit'] = {
-                'ax_id': 'phase_contrast',
-                'plotfn': self.plot_line,
-                'xvals': pdd['amplitudes'],
-                'yvals': 200*self.fit_res['phase_contrast_fit'].best_fit,
-                'color': 'r',
-                'marker': '',
-                'setlabel': 'fit',
-                'do_legend': True,
-            }
-            self.plot_dicts['phase_contrast_labels'] = {
-                'ax_id': 'phase_contrast',
-                'plotfn': self.plot_line,
-                'xvals': pdd['amplitudes'],
-                'yvals': 200*pdd['phase_contrast'],
-                'marker': '',
-                'linestyle': '',
-                'setlabel': r'$\sigma = ({:.5f} \pm {:.5f})$ V'.
-                    format(pdd['sigma'], pdd['sigma_err']),
-                'do_legend': True,
-                'legend_bbox_to_anchor': (1, 1),
-                'legend_pos': 'upper left',
-            }
+            colormap = self.options_dict.get('colormap', mpl.cm.plasma)
+            for i, amp in enumerate(pdd['amps_reshaped']):
+                color = colormap(i/(len(pdd['amps_reshaped'])-1))
+                label = f'cos_data_{qb}_{i}'
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'],
+                    'ax_id': f'amplitude_crossections_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['phases_reshaped'][i],
+                    'yvals': pdd['data_reshaped'][qb][i],
+                    'xlabel': r'Pulse phase, $\phi$',
+                    'xunit': 'deg',
+                    'ylabel': 'Excited state population',
+                    'linestyle': '',
+                    'color': color,
+                    'setlabel': f'amp={amp:.4f}',
+                    'do_legend': True,
+                    'legend_bbox_to_anchor': (1, 1),
+                    'legend_pos': 'upper left',
+                }
+            if self.do_fitting:
+                for i, amp in enumerate(pdd['amps_reshaped']):
+                    color = colormap(i/(len(pdd['amps_reshaped'])-1))
+                    label = f'cos_fit_{qb}_{i}'
+                    self.plot_dicts[label] = {
+                        'ax_id': f'amplitude_crossections_{qb}',
+                        'plotfn': self.plot_fit,
+                        'fit_res': self.fit_res[label],
+                        'plot_init': self.options_dict.get('plot_init', False),
+                        'color': color,
+                        'setlabel': f'fit, amp={amp:.4f}',
+                    }
 
-            # Phase offset
-            self.plot_dicts['phase_offset_data'] = {
-                'title': self.raw_data_dict['measurementstring'] +
-                         '\n' + self.raw_data_dict['timestamp'],
-                'ax_id': 'phase_offset',
-                'plotfn': self.plot_line,
-                'xvals': pdd['amplitudes'],
-                'yvals': pdd['phase_offset'],
-                'xlabel': r'Readout pulse amplitude, $V_{RO}$',
-                'xunit': 'DAC unit',
-                'ylabel': 'Phase offset',
-                'yunit': 'deg',
-                'linestyle': '',
-                'color': 'k',
-                'setlabel': 'data',
-                'do_legend': True,
-            }
-            self.plot_dicts['phase_offset_fit'] = {
-                'ax_id': 'phase_offset',
-                'plotfn': self.plot_line,
-                'xvals': pdd['amplitudes'],
-                'yvals': self.fit_res['phase_offset_fit'].best_fit,
-                'color': 'r',
-                'marker': '',
-                'setlabel': 'fit',
-                'do_legend': True,
-            }
-            self.plot_dicts['phase_offset_labels'] = {
-                'ax_id': 'phase_offset',
-                'plotfn': self.plot_line,
-                'xvals': pdd['amplitudes'],
-                'yvals': pdd['phase_offset'],
-                'marker': '',
-                'linestyle': '',
-                'setlabel': r'$a = {:.0f} \pm {:.0f}$ deg/V${{}}^2$'.
-                    format(pdd['a'], pdd['a_err']) + '\n' +
-                            r'$c = {:.1f} \pm {:.1f}$ deg'.
-                    format(pdd['c'], pdd['c_err']),
-                'do_legend': True,
-                'legend_bbox_to_anchor': (1, 1),
-                'legend_pos': 'upper left',
-            }
+                # Phase contrast
+                self.plot_dicts[f'phase_contrast_data_{qb}'] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'],
+                    'ax_id': f'phase_contrast_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['amps_reshaped'],
+                    'yvals': 200*pdd['phase_contrast'][qb],
+                    'xlabel': r'Readout pulse amplitude scale, $V_{RO}/V_{ref}$',
+                    'xunit': '',
+                    'ylabel': 'Phase contrast',
+                    'yunit': '%',
+                    'linestyle': '',
+                    'color': 'k',
+                    'setlabel': 'data',
+                    'do_legend': True,
+                }
+                self.plot_dicts[f'phase_contrast_fit_{qb}'] = {
+                    'ax_id': f'phase_contrast_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['amps_reshaped'],
+                    'yvals': 200*self.fit_res[f'phase_contrast_fit_{qb}'].best_fit,
+                    'color': 'r',
+                    'marker': '',
+                    'setlabel': 'fit',
+                    'do_legend': True,
+                }
+                self.plot_dicts[f'phase_contrast_labels_{qb}'] = {
+                    'ax_id': f'phase_contrast_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['amps_reshaped'],
+                    'yvals': 200*pdd['phase_contrast'][qb],
+                    'marker': '',
+                    'linestyle': '',
+                    'setlabel': r'$\sigma = ({:.5f} \pm {:.5f})$ V'.
+                        format(pdd['sigma'][qb], pdd['sigma_err'][qb]),
+                    'do_legend': True,
+                    'legend_bbox_to_anchor': (1, 1),
+                    'legend_pos': 'upper left',
+                }
+
+                # Phase offset
+                self.plot_dicts[f'phase_offset_data_{qb}'] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'],
+                    'ax_id': f'phase_offset_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['amps_reshaped'],
+                    'yvals': pdd['phase_offset'][qb],
+                    'xlabel': r'Readout pulse amplitude scale, $V_{RO}/V_{ref}$',
+                    'xunit': '',
+                    'ylabel': 'Phase offset',
+                    'yunit': 'deg',
+                    'linestyle': '',
+                    'color': 'k',
+                    'setlabel': 'data',
+                    'do_legend': True,
+                }
+                self.plot_dicts[f'phase_offset_fit_{qb}'] = {
+                    'ax_id': f'phase_offset_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['amps_reshaped'],
+                    'yvals': self.fit_res[f'phase_offset_fit_{qb}'].best_fit,
+                    'color': 'r',
+                    'marker': '',
+                    'setlabel': 'fit',
+                    'do_legend': True,
+                }
+                self.plot_dicts[f'phase_offset_labels_{qb}'] = {
+                    'ax_id': f'phase_offset_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['amps_reshaped'],
+                    'yvals': pdd['phase_offset'][qb],
+                    'marker': '',
+                    'linestyle': '',
+                    'setlabel': r'$a = {:.0f} \pm {:.0f}$ deg/V${{}}^2$'.
+                        format(pdd['a'][qb], pdd['a_err'][qb]) + '\n' +
+                                r'$c = {:.1f} \pm {:.1f}$ deg'.
+                        format(pdd['c'][qb], pdd['c_err'][qb]),
+                    'do_legend': True,
+                    'legend_bbox_to_anchor': (1, 1),
+                    'legend_pos': 'upper left',
+                }
 
 
 class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
@@ -4168,14 +4152,16 @@ class RamseyAddPulseAnalysis(MultiQubit_TimeDomain_Analysis):
     def __init__(self, *args, **kwargs):
         auto = kwargs.pop('auto', True)
         super().__init__(*args, auto=False, **kwargs)
-        self.ramsey_analysis = RamseyAnalysis(*args, auto=False,
-                                             options_dict=dict(
-                                             data_filter=lambda raw: np.concatenate([raw[:-4][1::2], raw[-4:]])),
-                                             **kwargs)
-        self.ramsey_add_pulse_analysis = RamseyAnalysis(*args, auto=False,
-                                             options_dict=dict
-                                             (data_filter=lambda raw: np.concatenate([raw[:-4][0::2], raw[-4:]])),
-                                             **kwargs)
+        self.ramsey_analysis = RamseyAnalysis(
+            *args, auto=False, options_dict=dict(
+                data_filter=lambda raw: np.concatenate([
+                    raw[:-4][1::2], raw[-4:]])),
+            **kwargs)
+        self.ramsey_add_pulse_analysis = RamseyAnalysis(
+            *args, auto=False, options_dict=dict(
+                data_filter=lambda raw: np.concatenate([
+                    raw[:-4][0::2], raw[-4:]])),
+            **kwargs)
 
 
         if auto:
@@ -4214,12 +4200,18 @@ class RamseyAddPulseAnalysis(MultiQubit_TimeDomain_Analysis):
 
             self.params_dict_ramsey = self.ramsey_analysis.proc_data_dict[
                 'analysis_params_dict'][qbn]
-            self.params_dict_add_pulse = self.ramsey_add_pulse_analysis.proc_data_dict[
-                'analysis_params_dict'][qbn]
-            self.cross_kerr = self.params_dict_ramsey['exp_decay_'+str(qbn)]['new_qb_freq'] \
-                            - self.params_dict_add_pulse['exp_decay_'+str(qbn)]['new_qb_freq']
-            self.cross_kerr_error = np.sqrt((self.params_dict_ramsey['exp_decay_'+str(qbn)]['new_qb_freq_stderr'])**2 + \
-                                            (self.params_dict_add_pulse['exp_decay_' + str(qbn)]['new_qb_freq_stderr'])**2)
+            self.params_dict_add_pulse = \
+                self.ramsey_add_pulse_analysis.proc_data_dict[
+                    'analysis_params_dict'][qbn]
+            self.cross_kerr = self.params_dict_ramsey[
+                                  'exp_decay_'+str(qbn)]['new_qb_freq'] \
+                            - self.params_dict_add_pulse[
+                                  'exp_decay_'+str(qbn)]['new_qb_freq']
+            self.cross_kerr_error = np.sqrt(
+                (self.params_dict_ramsey[
+                    'exp_decay_'+str(qbn)]['new_qb_freq_stderr'])**2 +
+                (self.params_dict_add_pulse[
+                    'exp_decay_' + str(qbn)]['new_qb_freq_stderr'])**2)
 
     def prepare_plots(self):
         self.ramsey_analysis.prepare_plots()
@@ -4229,58 +4221,114 @@ class RamseyAddPulseAnalysis(MultiQubit_TimeDomain_Analysis):
         self.ramsey_analysis.save_figures(close_figs=True, savebase='Ramsey_no')
 
         self.ramsey_add_pulse_analysis.plot(key_list='auto')
-        self.ramsey_add_pulse_analysis.save_figures(close_figs=True,  savebase='Ramsey_with')
+        self.ramsey_add_pulse_analysis.save_figures(close_figs=True,
+                                                    savebase='Ramsey_with')
 
         self.options_dict['plot_proj_data'] = False
         self.metadata = {'plot_proj_data': False, 'plot_raw_data': False}
         super().prepare_plots()
 
+        try:
+            xunit = self.metadata["sweep_unit"]
+            xlabel = self.metadata["sweep_name"]
+        except KeyError:
+            xlabel = self.raw_data_dict['sweep_parameter_names'][0]
+            xunit = self.raw_data_dict['sweep_parameter_units'][0]
+        if np.ndim(xunit) > 0:
+            xunit = xunit[0]
+        title = (self.raw_data_dict['timestamp'] + ' ' +
+                 self.raw_data_dict['measurementstring'])
+
         for qbn in self.qb_names:
-            data_no = self.ramsey_analysis.proc_data_dict['data_to_fit'][qbn][:-4]
-            data_with = self.ramsey_add_pulse_analysis.proc_data_dict['data_to_fit'][qbn][:-4]
-            delays = self.ramsey_analysis.proc_data_dict['sweep_points_dict'][qbn]['sweep_points'][:-4]
+            data_no = self.ramsey_analysis.proc_data_dict['data_to_fit'][
+                          qbn][:-self.ramsey_analysis.num_cal_points]
+            data_with = self.ramsey_add_pulse_analysis.proc_data_dict[
+                            'data_to_fit'][
+                            qbn][:-self.ramsey_analysis.num_cal_points]
+            delays = self.ramsey_analysis.proc_data_dict['sweep_points_dict'][
+                         qbn]['sweep_points'][
+                     :-self.ramsey_analysis.num_cal_points]
 
             figure_name = 'CrossZZ_' + qbn
             self.plot_dicts[figure_name+'with'] = {
                 'fig_id': figure_name,
                 'plotfn': self.plot_line,
-                'xvals': np.array(delays)*1e6,
-                'yvals': np.array(data_with),
-                'xlabel': 'Ramsey delay, $\mu$s',
+                'xvals': delays,
+                'yvals': data_with,
+                'xlabel': xlabel,
+                'xunit': xunit,
                 'ylabel': '|e> state population',
-                'setlabel': 'with $\pi$-pulse',
+                'setlabel': 'with $\\pi$-pulse',
+                'title': title,
                 'color': 'r',
                 'marker': 'o',
                 'line_kws': {'markersize': 5},
-                'linestyle': '-',
+                'linestyle': 'none',
                 'do_legend': True,
                 'legend_ncol': 2,
                 'legend_bbox_to_anchor': (1, -0.15),
                 'legend_pos': 'upper right'}
 
+            if self.do_fitting:
+                fit_res_with = self.ramsey_add_pulse_analysis.fit_dicts[
+                    'exp_decay_' + qbn]['fit_res']
+                self.plot_dicts['fit_with_'+qbn] = {
+                    'fig_id': figure_name,
+                    'plotfn': self.plot_fit,
+                    'xlabel': 'Ramsey delay',
+                    'xunit': 's',
+                    'fit_res': fit_res_with,
+                    'setlabel': 'with $\\pi$-pulse - fit',
+                    'title': title,
+                    'do_legend': True,
+                    'color': 'r',
+                    'legend_ncol': 2,
+                    'legend_bbox_to_anchor': (1, -0.15),
+                    'legend_pos': 'upper right'}
+
             self.plot_dicts[figure_name+'no'] = {
                 'fig_id': figure_name,
                 'plotfn': self.plot_line,
-                'xvals': np.array(delays)*1e6,
-                'yvals': np.array(data_no),
-                'setlabel': 'no $\pi$-pulse',
+                'xvals': delays,
+                'yvals': data_no,
+                'setlabel': 'no $\\pi$-pulse',
+                'title': title,
                 'color': 'g',
                 'marker': 'o',
                 'line_kws': {'markersize': 5},
-                'linestyle': '-',
+                'linestyle': 'none',
                 'do_legend': True,
                 'legend_ncol': 2,
                 'legend_bbox_to_anchor': (1, -0.15),
                 'legend_pos': 'upper right'}
+
+            if self.do_fitting:
+                fit_res_no = self.ramsey_analysis.fit_dicts[
+                    'exp_decay_' + qbn]['fit_res']
+                self.plot_dicts['fit_no_'+qbn] = {
+                    'fig_id': figure_name,
+                    'plotfn': self.plot_fit,
+                    'xlabel': 'Ramsey delay',
+                    'xunit': 's',
+                    'fit_res': fit_res_no,
+                    'setlabel': 'no $\\pi$-pulse - fit',
+                    'title': title,
+                    'do_legend': True,
+                    'color': 'g',
+                    'legend_ncol': 2,
+                    'legend_bbox_to_anchor': (1, -0.15),
+                    'legend_pos': 'upper right'}
 
             textstr = r'$\alpha ZZ$ = {:.2f} +- {:.2f}'.format(
                self.cross_kerr*1e-3, self.cross_kerr_error*1e-3) + ' kHz'
 
             self.plot_dicts['text_msg_' + qbn] = {'fig_id': figure_name,
                                                   'text_string': textstr,
-                                                  'ypos': 0.8,
-                                                  'xpos': 0.8,
-                                                  'plotfn': self.plot_text,}
+                                                  'ypos': -0.2,
+                                                  'xpos': -0.075,
+                                                  'horizontalalignment': 'left',
+                                                  'verticalalignment': 'top',
+                                                  'plotfn': self.plot_text}
 
 
 
@@ -4740,12 +4788,21 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                             textstr = 'Cphase = {:.2f}'.format(
                                 self.proc_data_dict['analysis_params_dict'][
                                     'cphase']['val'][0]*180/np.pi) + \
+                                      r'$^{\circ}$' + \
+                                    '$\\pm${:.2f}'.format(self.proc_data_dict[
+                                          'analysis_params_dict']['cphase'][
+                                          'stderr'][0] * 180 / np.pi) + \
                                       r'$^{\circ}$'
-                            textstr += '\nPopulation loss = {:.3f}'.format(
-                                self.proc_data_dict['analysis_params_dict'][
-                                    'population_loss']['val'][0])
+                            textstr += '\nPopulation loss = ' + \
+                                       '{:.3f} $\\pm$ {:.3f}'.format(
+                                self.proc_data_dict[
+                                    'analysis_params_dict'][
+                                    'population_loss']['val'][0],
+                                                self.proc_data_dict[
+                                    'analysis_params_dict'][
+                                    'population_loss']['stderr'][0])
                             self.plot_dicts['text_msg_' + qbn] = {
-                                'fig_id': figure_name,
+                                'fig_id': 'Cphase_{}_pe'.format(qbn),
                                 'ypos': -0.2,
                                 'xpos': -0.05,
                                 'horizontalalignment': 'left',
@@ -4753,9 +4810,11 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                                 'plotfn': self.plot_text,
                                 'text_string': textstr}
                         else:
-                            textstr = 'Leakage = {:.5f}'.format(
+                            textstr = 'Leakage = {:.5f} $\\pm$ {:.5f}'.format(
                                 self.proc_data_dict['analysis_params_dict'][
-                                    'leakage']['val'][0])
+                                    'leakage']['val'][0],
+                                self.proc_data_dict['analysis_params_dict'][
+                                    'leakage']['stderr'][0])
                             self.plot_dicts['text_msg_' + qbn] = {
                                 'fig_id': figure_name,
                                 'ypos': -0.2,
@@ -4779,22 +4838,13 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
             for idx, ss_pname in enumerate(ss_pars):
                 for param_name, results_dict in self.proc_data_dict[
                         'analysis_params_dict'].items():
+                    reps = len(results_dict['val']) / \
+                           len(ss_pars[ss_pname]['values'])
                     plot_name = '{}_vs_{}'.format(param_name, ss_pname)
-                    self.plot_dicts[plot_name] = {
-                        'plotfn': self.plot_line,
-                        'xvals': ss_pars[ss_pname]['values'],
-                        'xlabel': ss_pname,
-                        'xunit': ss_pars[ss_pname]['unit'],
-                        'yvals': results_dict['val']-np.pi if \
-                                param_name=='cphase' else results_dict['val'],
-                        'yerr': results_dict['stderr'] if
-                            param_name != 'leakage' else None,
-                        'ylabel': param_name+'-$\\pi$' if \
-                            param_name=='cphase' else param_name,
-                        'yunit': 'rad' if param_name == 'cphase' else '',
-                        'linestyle': 'none',
-                        'do_legend': False}
                     if param_name == 'cphase':
+                        yvals = results_dict['val']*180/np.pi - 180
+                        yerr = results_dict['stderr']*180/np.pi
+                        ylabel = param_name + '-$180^{\\circ}$'
                         self.plot_dicts[plot_name+'_hline'] = {
                             'fig_id': plot_name,
                             'plotfn': self.plot_hlines,
@@ -4802,6 +4852,21 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                             'xmin': np.min(ss_pars[ss_pname]['values']),
                             'xmax': np.max(ss_pars[ss_pname]['values']),
                             'colors': 'gray'}
+                    else:
+                        yvals = results_dict['val']
+                        yerr = results_dict['stderr']
+                        ylabel = param_name
+                    self.plot_dicts[plot_name] = {
+                        'plotfn': self.plot_line,
+                        'xvals': np.repeat(ss_pars[ss_pname]['values'], reps),
+                        'xlabel': ss_pname,
+                        'xunit': ss_pars[ss_pname]['unit'],
+                        'yvals': yvals,
+                        'yerr': yerr if param_name != 'leakage' else None,
+                        'ylabel': ylabel,
+                        'yunit': 'deg' if param_name == 'cphase' else '',
+                        'linestyle': 'none',
+                        'do_legend': False}
 
 
 class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):

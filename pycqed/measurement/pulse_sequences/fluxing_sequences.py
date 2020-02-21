@@ -180,6 +180,11 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
 
     params = {f'flux.{param_to_set}': np.concatenate(
         [flux_pulse[param_to_set]*np.ones(hsl//2), np.zeros(hsl//2)])}
+
+    if 'aux_channels_dict' in flux_pulse:
+        params.update({'flux.aux_channels_dict': np.concatenate([
+            [flux_pulse['aux_channels_dict']] * (hsl // 2),
+             [{}] * (hsl // 2)])})
     params.update({f'pi_half_end.{k}': v['values']
                    for k, v in hard_sweep_dict.items()})
     swept_pulses = sweep_pulse_params(pulse_list, params)
@@ -594,6 +599,11 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
             seq.extend(cal_points.create_segments(operation_dict,
                                                   **prep_params))
         sequences.append(seq)
+
+    # reuse sequencer memory by repeating readout pattern
+    for s in sequences:
+        s.repeat_ro(f"RO {qbc_name}", operation_dict)
+        s.repeat_ro(f"RO {qbt_name}", operation_dict)
 
     if upload:
         ps.Pulsar.get_instance().program_awgs(sequences[0])
