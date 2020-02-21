@@ -1951,6 +1951,9 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
 
         if kwargs.get('auto', True):
             self.run_analysis()
+    def extract_data(self):
+        super().extract_data()
+        self.metadata = self.raw_data_dict.get('exp_metadata', [])
 
     def process_data(self):
         tomography_qubits = self.options_dict.get('tomography_qubits', None)
