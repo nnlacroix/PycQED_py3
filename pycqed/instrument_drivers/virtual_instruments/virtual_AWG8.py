@@ -127,7 +127,7 @@ class VirtualAWG8(Instrument):
                     docstring=docst)
                 self._params_to_skip_update.append(parname)
 
-    def clock_freq(self, awg_nr):
+    def clock_freq(self):
         return 2.4e9
 
     def upload_codeword_program(self):
