@@ -307,7 +307,7 @@ def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
     flux_pulse['name'] = 'chevron_flux'
     flux_pulse['element_name'] = 'chevron_flux_el'
 
-    ro_pulses = generate_mux_ro_pulse_list([qbc_name, qbt_name],
+    ro_pulses = generate_mux_ro_pulse_list([qbr_name],
                                            operation_dict)
     if 'pulse_length' in hard_sweep_dict:
         max_flux_length = max(hard_sweep_dict['pulse_length']['values'])
@@ -336,6 +336,13 @@ def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
                                                   **prep_params))
         sequences.append(seq)
 
+    # reuse sequencer memory by repeating readout pattern
+    # 1. get all readout pulse names (if they are on different uhf,
+    # they will be applied to different channels)
+    ro_pulse_names = [f"RO {qbn}" for qbn in [qbr_name]]
+    # 2. repeat readout for each ro_pulse.
+    for seq in sequences:
+        [seq.repeat_ro(pn, operation_dict) for pn in ro_pulse_names]
     if upload:
         ps.Pulsar.get_instance().program_awgs(sequences[0])
 
