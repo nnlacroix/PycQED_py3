@@ -2,6 +2,7 @@ from pprint import pprint
 
 import numpy as np
 from numpy import array # Do not remove, used in eval(str_with_array)
+from scipy.interpolate import interp1d # Do not remove, used in eval(str_with_interp1d)
 from copy import deepcopy
 import pycqed.measurement.waveform_control.sequence as sequence
 import pycqed.analysis_v2.tomography_qudev as tomo
