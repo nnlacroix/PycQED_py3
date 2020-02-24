@@ -2744,45 +2744,55 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
     if measure_dynamic_phase:
         if qubits_to_measure is None:
             qubits_to_measure = [qbc]
-        dyn_phases = []
+        dyn_phases_per_ampl = []
         # FIXME: infering amplitude parameter from pulse name, but if naming
         #  protocol changes this might fail
         ampl_param_name = "_".join(cz_pulse_name.split(" ")[:-1] + ["amplitude"])
-        for amp in amplitudes:
-            with temporary_value(
-                    (getattr(qbc, ampl_param_name), amp)):
-                dyn_phases.append(
-                    measure_dynamic_phases(qbc, qbt, cz_pulse_name, update=False,
-                                           qubits_to_measure=qubits_to_measure,
-                                           reset_phases_before_measurement=True))
+
+        max_amps_per_meas = kw.pop('max_amps_per_meas', 1)
+        simultaneous = kw.pop('simultaneous', False)
+        for i, amps in enumerate(np.array_split(amplitudes, np.ceil(
+                len(amplitudes) / max_amps_per_meas))):
+            dyn_hard_sweep_params = {
+                'upCZ_amplitude': amps,
+                'phase': 'default'}
+            dyn_phases_per_ampl.append(
+                measure_dynamic_phases(qbc, qbt, cz_pulse_name, update=False,
+                                       qubits_to_measure=qubits_to_measure,
+                                       reset_phases_before_measurement=True,
+                                       extract_only=True, analyze=analyze,
+                                       hard_sweep_params=dyn_hard_sweep_params,
+                                       simultaneous=simultaneous))
 
         if analyze:
             a = ma.MeasurementAnalysis(auto=False)
             a.get_naming_and_values()
             save_folder = a.folder
-            dyn_phases = np.array([d[qubits_to_measure[0].name] for d in dyn_phases])
+            dyn_phases_per_qb = {
+                qbi.name: np.hstack(np.asarray([d[qbi.name] for d in dyn_phases_per_ampl]))
+                for qbi in qubits_to_measure}
+            for qbn, dyn_phases in dyn_phases_per_qb.items():
+                if kw.get("wrap_phase", True):
+                    dyn_phases[dyn_phases < 0 ] = dyn_phases[dyn_phases < 0] + 360
+                    dyn_phases[dyn_phases > 360] = dyn_phases[dyn_phases > 360] + 360
+                fig, ax = plt.subplots(2, sharex=True)
+                ax[0].scatter(amplitudes, predicted_dyn_phase[qbn],
+                              label=f'Predicted dynamic phase {qbn}', marker='x')
+                ax[0].scatter(amplitudes, dyn_phases, marker='x',
+                              label=f'Measured dynamic phase {qbn}')
+                ax[0].set_ylabel(f"Dynamic Phase (deg)")
+                ax[0].legend(prop=dict(size=12))
 
-            if kw.get("wrap_phase", True):
-                dyn_phases[dyn_phases < 0 ] = dyn_phases[dyn_phases < 0] + 360
-                dyn_phases[dyn_phases > 360] = dyn_phases[dyn_phases > 360] + 360
-            fig, ax = plt.subplots(2, sharex=True)
-            ax[0].scatter(amplitudes, predicted_dyn_phase,
-                          label='Predicted dynamic phase', marker='x')
-            ax[0].scatter(amplitudes, dyn_phases, marker='x',
-                          label='Measured dynamic phase')
-            ax[0].set_ylabel(f"Dynamic Phase (deg)")
-            ax[0].legend(prop=dict(size=12))
-
-            # wrapping to get difference around 0 degree
-            diff_dyn_phases = \
-                (dyn_phases - predicted_dyn_phase + 180) % 360 - 180
-            ax[1].scatter(amplitudes, diff_dyn_phases, label='Target - Measured')
-            ax[1].set_xlabel(f"Amplitude (V)")
-            ax[1].set_ylabel(f"Dynamic Phase (deg)")
-            ax[1].legend(prop=dict(size=12))
-            fig.savefig(os.path.join(save_folder, "dynamic_phase.png"))
-            results['dphases'] = dyn_phases
-            results['dphases_diff'] = diff_dyn_phases
+                # wrapping to get difference around 0 degree
+                diff_dyn_phases = \
+                    (dyn_phases - predicted_dyn_phase[qbn] + 180) % 360 - 180
+                ax[1].scatter(amplitudes, diff_dyn_phases, label='Target - Measured')
+                ax[1].set_xlabel(f"Amplitude (V)")
+                ax[1].set_ylabel(f"Dynamic Phase (deg)")
+                ax[1].legend(prop=dict(size=12))
+                fig.savefig(os.path.join(save_folder, f"dynamic_phase_{qbn}.png"))
+                results['dphases'] = dyn_phases
+                results['dphases_diff'] = diff_dyn_phases
             np.save(save_folder + "\\results.npy", [results] )
             # FIXME: hack to save to file, should instead save into analysis via analysis_v2
 
