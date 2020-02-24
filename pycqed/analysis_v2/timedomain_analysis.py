@@ -202,6 +202,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         if auto:
             self.run_analysis()
+            self.data_file.close()
 
     def extract_data(self):
         super().extract_data()
