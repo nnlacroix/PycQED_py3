@@ -642,9 +642,9 @@ class QAOAHelper(HelperBase):
                     nbody_end.extend(self.block_from_ops(f"Had2", opsH, dict(qbx=qbx), {}).build())
 
                 #virtual gate on qb 0
-                z_qbc = self.Z_gate(-2 * gamma * C * 180 / np.pi, qbc)
+                z_qbc = self.Z_gate(2 * gamma * C * 180 / np.pi, qbc)
                 # virtual gate on qb 1
-                z_qbt = self.Z_gate(-2 * gamma * C * 180 / np.pi, qbt)
+                z_qbt = self.Z_gate(2 * gamma * C * 180 / np.pi, qbt)
 
                 if cphase_implementation == "software":
                     if doswap:
@@ -664,9 +664,9 @@ class QAOAHelper(HelperBase):
                     #arbitrary phase gate
                     c_arb_pulse = deepcopy(self.operation_dict[gate_name])
                     #get amplitude and dynamic phase from model
-                    angle = -4 * gamma * C
+                    angle = 4 * gamma * C
                     if doswap:
-                        angle+= np.pi; # correct phase since a fermionic swap gate is used instead of a swap gate
+                        angle+= np.pi # correct phase since a fermionic swap gate is used instead of a swap gate
                     angle = angle % (2*np.pi)
                     ampl, dyn_phase = eval(gate_sequence_info['phase_func'][qbt+qbc])(angle)
 
@@ -722,11 +722,11 @@ class QAOAHelper(HelperBase):
 
         return U
 
-    def _U_qb_pair_software_decomposition(self, qbc, qbt, gamma, C, cz_gate_name,
+    def _U_qb_pair_software_decomposition(self, qbc, qbt, gamma, J, cz_gate_name,
                                           block_name, remove_had=False):
         """
         Performs the software decomposition of the QAOA two qubit unitary:
-        diag({i phi, -i phi, -i phi, i phi}) where phi = C * gamma.
+        diag({i phi, -i phi, -i phi, i phi}) where phi = J * gamma.
 
         Efficient decomposition by Christian :
 
@@ -739,7 +739,7 @@ class QAOAHelper(HelperBase):
         :param qbc:
         :param qbt:
         :param gamma:
-        :param C:
+        :param J:
         :param cz_gate_name:
         :param remove_had: optional. If true, the outermost Hadamard gates are removed (default: false)
         :return:
@@ -756,7 +756,7 @@ class QAOAHelper(HelperBase):
             # put flux pulses in same element
             pulse_modifs = {2: dict(element_name="flux_arb_gate"),
                             8: dict(element_name="flux_arb_gate")}
-        fill_values = dict(qbt=qbt, two_phi= -2*gamma * C * 180/np.pi)
+        fill_values = dict(qbt=qbt, two_phi=2 * gamma * J * 180 / np.pi)
         return self.block_from_ops(block_name, ops, fill_values, pulse_modifs)
 
     def _U_qb_pair_fermionic_simulation(self, qbc, qbt, phi, cz_gate_name,
@@ -830,7 +830,8 @@ class QAOAHelper(HelperBase):
         ops = ["mY90 {qbn:}", "Z{angle:} {qbn:}", "Y90 {qbn:}"]
         for qbn in qubits:
             D_qbn = self.block_from_ops(f"{qbn}", ops,
-                                        dict(qbn=qbn, angle=beta * 180 / np.pi))
+                                        dict(qbn=qbn, angle=2 * beta * 180 /
+                                                            np.pi))
             # reference block to beginning of D_k block
             pulses.extend(D_qbn.build(ref_pulse=f"start"))
         return Block(name, pulses)
