@@ -4539,7 +4539,19 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
         phases_errs[phases_errs == None] = 0.0
 
         cphases = phases[0::2] - phases[1::2]
-        cphases[cphases < 0] += 2*np.pi
+        # arrange phases in ascending order: used
+        # to analyze arbitrary phase gates
+        if self.get_param_value("sort_phases_ascending_order", False):
+            cphases[cphases < 0] += 2 * np.pi
+            cphases[cphases > 2 * np.pi] -= 2 * np.pi
+            pi_phase_idx = np.argmin(np.abs(cphases - np.pi))
+            for ind in range(len(cphases)):
+                if ind < pi_phase_idx and cphases[ind] > cphases[pi_phase_idx]:
+                    cphases[ind] -= 2 * np.pi
+                elif ind > pi_phase_idx and cphases[ind] < cphases[pi_phase_idx]:
+                    cphases[ind] += 2 * np.pi
+        else:
+            cphases[cphases < 0] += 2 * np.pi
         cphases_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
                                            phases_errs[1::2]**2,
                                            dtype=np.float64))
