@@ -4889,122 +4889,162 @@ class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
         # convert phases to radians
         for qbn in self.qb_names:
             sweep_dict = self.proc_data_dict['sweep_points_dict'][qbn]
-            sweep_dict['sweep_points'] *= np.pi/180
+            sweep_dict['sweep_points'] *= np.pi / 180
 
         # get data with flux pulse and w/o flux pulse
         self.data_with_fp = OrderedDict()
         self.data_no_fp = OrderedDict()
-        for qbn in self.qb_names:
-            all_data = self.proc_data_dict['data_to_fit'][qbn]
-            if self.num_cal_points != 0:
-                all_data = all_data[:-self.num_cal_points]
-            self.data_with_fp[qbn] = all_data[0: len(all_data)//2]
-            self.data_no_fp[qbn] = all_data[len(all_data)//2:]
+        # find out how many dynamic phases were done in mmnt
+        self.hard_sweep_params_flux = self.get_param_value(
+            'hard_sweep_dict_flux', {})
+        if self.hard_sweep_params_flux is None or \
+                len(self.hard_sweep_params_flux) == 0:
+            self.n_flux_sweep_points = 1
+        else:
+            self.n_flux_sweep_points = \
+                len(list(self.hard_sweep_params_flux.values())[0])
+        for i in range(self.n_flux_sweep_points):
+            self.data_with_fp[i] = OrderedDict()
+            self.data_no_fp[i] = OrderedDict()
+            for qbn in self.qb_names:
+                all_data = self.proc_data_dict['data_to_fit'][qbn]
+                start = i*(len(all_data)//self.n_flux_sweep_points)
+                end = (i+1)*(len(all_data)//self.n_flux_sweep_points)
+                all_data = all_data[start:end]
+                if self.num_cal_points != 0:
+                    all_data = all_data[:-self.num_cal_points]
+                self.data_with_fp[i][qbn] = all_data[0: len(all_data)//2]
+                self.data_no_fp[i][qbn] = all_data[len(all_data)//2:]
 
     def prepare_fitting(self):
         self.fit_dicts = OrderedDict()
-        for qbn in self.qb_names:
-            sweep_points = np.unique(
-                self.proc_data_dict['sweep_points_dict'][qbn][
-                    'msmt_sweep_points'])
-            for i, data in enumerate([self.data_with_fp[qbn],
-                                      self.data_no_fp[qbn]]):
-                cos_mod = lmfit.Model(fit_mods.CosFunc)
-                guess_pars = fit_mods.Cos_guess(
-                    model=cos_mod,
-                    t=sweep_points,
-                    data=data)
-                guess_pars['amplitude'].vary = True
-                guess_pars['offset'].vary = True
-                guess_pars['frequency'].value = 1/(2*np.pi)
-                guess_pars['frequency'].vary = False
-                guess_pars['phase'].vary = True
+        for j in range(self.n_flux_sweep_points):
+            for qbn in self.qb_names:
+                sweep_points = np.unique(
+                    self.proc_data_dict['sweep_points_dict'][qbn][
+                        'msmt_sweep_points'])
+                for i, data in enumerate([self.data_with_fp[j][qbn],
+                                          self.data_no_fp[j][qbn]]):
 
-                key = 'cos_fit_{}_{}'.format(qbn, 'wfp' if i == 0 else 'nofp')
-                self.fit_dicts[key] = {
-                    'fit_fn': fit_mods.CosFunc,
-                    'fit_xvals': {'t': sweep_points},
-                    'fit_yvals': {'data': data},
-                    'guess_pars': guess_pars}
+                    cos_mod = lmfit.Model(fit_mods.CosFunc)
+                    guess_pars = fit_mods.Cos_guess(
+                        model=cos_mod,
+                        t=sweep_points,
+                        data=data)
+                    guess_pars['amplitude'].vary = True
+                    guess_pars['offset'].vary = True
+                    guess_pars['frequency'].value = 1/(2*np.pi)
+                    guess_pars['frequency'].vary = False
+                    guess_pars['phase'].vary = True
+
+                    key = 'cos_fit_{}_{}_{}'.format(j, qbn, 'wfp' if i == 0 else
+                    'nofp')
+                    self.fit_dicts[key] = {
+                        'fit_fn': fit_mods.CosFunc,
+                        'fit_xvals': {'t': sweep_points},
+                        'fit_yvals': {'data': data},
+                        'guess_pars': guess_pars}
 
     def analyze_fit_results(self):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
         for qbn in self.qb_names:
             self.proc_data_dict['analysis_params_dict'][qbn] = OrderedDict()
-            self.proc_data_dict['analysis_params_dict'][qbn][
-                'dynamic_phase'] = {
-                'val': (self.fit_dicts[f'cos_fit_{qbn}_wfp'][
-                            'fit_res'].best_values['phase'] -
-                        self.fit_dicts[f'cos_fit_{qbn}_nofp'][
-                            'fit_res'].best_values['phase']),
-                'stderr': np.sqrt(
-                    self.fit_dicts[f'cos_fit_{qbn}_wfp'][
-                        'fit_res'].params['phase'].stderr**2 +
-                    self.fit_dicts[f'cos_fit_{qbn}_nofp'][
-                        'fit_res'].params['phase'].stderr**2)
+            std_wfp = np.asarray([self.fit_dicts[f'cos_fit_{j}_{qbn}_wfp'][
+                                  'fit_res'].params['phase'].stderr for
+                                  j in range(self.n_flux_sweep_points)])
+            std_wfp[std_wfp == None] = 0 # in case fit does not find it (?)
+            std_nofp = np.asarray([self.fit_dicts[f'cos_fit_{j}_{qbn}_nofp'][
+                          'fit_res'].params['phase'].stderr for
+                      j in range(self.n_flux_sweep_points)])
+            std_nofp[std_nofp == None] = 0
+            dyn_phase_dict = {
+                'val':
+                    (np.array([self.fit_dicts[f'cos_fit_{j}_{qbn}_wfp'][
+                            'fit_res'].best_values['phase'] for j in range(
+                            self.n_flux_sweep_points)]) -
+                    np.array([self.fit_dicts[f'cos_fit_{j}_{qbn}_nofp'][
+                            'fit_res'].best_values['phase'] for j in range(
+                            self.n_flux_sweep_points)])),
+                'stderr':
+                    np.sqrt(std_wfp.astype(float)**2 +std_nofp.astype(float)**2),
                 }
+
+            # to be retro compatible, remove array if len ==1
+            if len(dyn_phase_dict['val']) == 1:
+                dyn_phase_dict['val'] = dyn_phase_dict['val'][0]
+                dyn_phase_dict['stderr'] = dyn_phase_dict['stderr'][0]
+
+            self.proc_data_dict['analysis_params_dict'][qbn]['dynamic_phase'] = \
+                dyn_phase_dict
+
         self.save_processed_data(key='analysis_params_dict')
 
     def prepare_plots(self):
-        super().prepare_plots()
-        for qbn in self.qb_names:
-            for i, data in enumerate([self.data_with_fp[qbn],
-                                      self.data_no_fp[qbn]]):
-                fit_key = f'cos_fit_{qbn}_wfp' if i == 0 else \
-                    f'cos_fit_{qbn}_nofp'
-                plot_name_suffix = 'fit_'+'wfp' if i == 0 else 'nofp'
-                cal_pts_data = self.proc_data_dict['data_to_fit'][qbn][
-                               -self.num_cal_points:]
-                base_plot_name = 'Dynamic_phase_' + qbn
-                self.prepare_projected_data_plot(
-                    fig_name=base_plot_name,
-                    data=np.concatenate((data,cal_pts_data)),
-                    sweep_points=np.unique(
-                        self.proc_data_dict['sweep_points_dict'][qbn][
-                            'sweep_points']),
-                    data_label='with flux pulse' if i == 0 else 'no flux pulse',
-                    plot_name_suffix=qbn + plot_name_suffix,
-                    qb_name=qbn,
-                    do_legend_cal_states=(i == 0))
-                if self.do_fitting:
-                    fit_res = self.fit_dicts[fit_key]['fit_res']
-                    self.plot_dicts[plot_name_suffix + '_' + qbn] = {
-                        'fig_id': base_plot_name,
-                        'plotfn': self.plot_fit,
-                        'fit_res': fit_res ,
-                        'setlabel': 'cosine fit',
-                        'color': 'r',
-                        'do_legend': i == 0}
+        # super().prepare_plots()
+        for j in range(self.n_flux_sweep_points):
+            for qbn in self.qb_names:
+                for i, data in enumerate([self.data_with_fp[j][qbn],
+                                          self.data_no_fp[j][qbn]]):
+                    fit_key = f'cos_fit_{j}_{qbn}_wfp' if i == 0 else \
+                        f'cos_fit_{j}_{qbn}_nofp'
+                    plot_name_suffix = f'fit_{j}_'+('wfp' if i == 0 else 'nofp')
+                    cal_pts_data = self.proc_data_dict['data_to_fit'][qbn][
+                                   -self.num_cal_points:]
+                    base_plot_name = f'Dynamic_phase_{j}_' + qbn
+                    self.prepare_projected_data_plot(
+                        fig_name=base_plot_name,
+                        data=np.concatenate((data,cal_pts_data)),
+                        sweep_points=np.unique(
+                            self.proc_data_dict['sweep_points_dict'][qbn][
+                                'sweep_points']),
+                        data_label='with flux pulse' if i == 0 else 'no flux pulse',
+                        plot_name_suffix=qbn + plot_name_suffix,
+                        qb_name=qbn,
+                        do_legend_cal_states=(i == 0))
+                    if self.do_fitting:
+                        fit_res = self.fit_dicts[fit_key]['fit_res']
+                        self.plot_dicts[plot_name_suffix + '_' + qbn] = {
+                            'fig_id': base_plot_name,
+                            'plotfn': self.plot_fit,
+                            'fit_res': fit_res ,
+                            'setlabel': 'cosine fit',
+                            'color': 'r',
+                            'do_legend': i == 0}
 
-                    textstr = 'Dynamic phase {}:\n\t{:.2f}'.format(
-                        qbn,
-                        self.proc_data_dict['analysis_params_dict'][qbn][
-                            'dynamic_phase']['val']*180/np.pi) + \
-                              r'$^{\circ}$' + \
-                            '$\\pm${:.2f}'.format(
-                        self.proc_data_dict['analysis_params_dict'][qbn][
-                            'dynamic_phase']['stderr']*180/np.pi) + \
-                              r'$^{\circ}$'
+                        textstr = 'Dynamic phase {}:\n\t{:.2f}'.format(
+                            qbn,
+                            np.atleast_1d(self.proc_data_dict['analysis_params_dict'][
+                                qbn]['dynamic_phase']['val'])[j]*180/np.pi) + \
+                                  r'$^{\circ}$' + \
+                                '$\\pm${:.2f}'.format(
+                            np.atleast_1d(self.proc_data_dict['analysis_params_dict'][
+                                qbn]['dynamic_phase']['stderr'])[j]*180/np.pi) + \
+                                  r'$^{\circ}$'
 
-                    fpl = self.get_param_value('flux_pulse_length')
-                    if fpl is not None:
-                        textstr += '\n length: {:.2f} ns'.format(fpl*1e9)
-                    fpa = self.get_param_value('flux_pulse_amp')
-                    if fpa is not None:
-                        textstr += '\n amp: {:.4f} V'.format(fpa)
+                        fpl = self.get_param_value('flux_pulse_length')
+                        fpa = self.get_param_value('flux_pulse_amp')
+                        if 'hard_sweep_dict_flux' in self.metadata:
+                            if 'amplitude' in self.metadata['hard_sweep_dict_flux']:
+                                fpa = self.metadata['hard_sweep_dict_flux'][
+                                    'amplitude'][j]
+                                fpl = None
+                        if fpl is not None:
+                            textstr += '\n length: {:.2f} ns'.format(fpl*1e9)
+                        if fpa is not None:
+                            textstr += '\n amp: {:.4f} V'.format(fpa)
 
-                    self.plot_dicts['text_msg_' + qbn] = {
-                        'fig_id': base_plot_name,
-                        'ypos': -0.15,
-                        'xpos': -0.05,
-                        'horizontalalignment': 'left',
-                        'verticalalignment': 'top',
-                        'plotfn': self.plot_text,
-                        'text_string': textstr}
-            for plot_name in list(self.plot_dicts)[::-1]:
-                if self.plot_dicts[plot_name].get('do_legend', False):
-                    break
-            self.plot_dicts[plot_name].update(
-                {'legend_ncol': 2,
-                 'legend_bbox_to_anchor': (1, -0.15),
-                 'legend_pos': 'upper right'})
+                        self.plot_dicts['text_msg_' + qbn + plot_name_suffix] = {
+                            'fig_id': base_plot_name,
+                            'ypos': -0.15,
+                            'xpos': -0.05,
+                            'horizontalalignment': 'left',
+                            'verticalalignment': 'top',
+                            'plotfn': self.plot_text,
+                            'text_string': textstr}
+                for plot_name in list(self.plot_dicts)[::-1]:
+                    if self.plot_dicts[plot_name].get('do_legend', False):
+                        break
+                self.plot_dicts[plot_name].update(
+                    {'legend_ncol': 2,
+                     'legend_bbox_to_anchor': (1, -0.15),
+                     'legend_pos': 'upper right'})
