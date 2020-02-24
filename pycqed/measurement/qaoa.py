@@ -596,7 +596,7 @@ class QAOAHelper(HelperBase):
                     continue
                 gates_info['gate_name'] = gates_info['gate_name'] if 'gate_name' in gates_info else 'upCZ'
                 strategy = gates_info.get("zero_angle_strategy", None)
-                doswap = gates_info.get("swap", False);
+                doswap = gates_info.get("swap", False)
                 nbody = (len(gates_info['qbs'])>2)
                 assert not (nbody and doswap), \
                     f"Combination of n-body interaction and swap is not implemented!"
@@ -692,7 +692,7 @@ class QAOAHelper(HelperBase):
                         else:
                             raise ValueError(f"Zero angle strategy {strategy} not "
                                              f"understood")
-                    print(f"{name}:\nphase angle: {angle}\nAmpl: {ampl}\ndyn_phase: {dyn_phase}")
+                    # print(f"{name}:\nphase angle: {angle}\nAmpl: {ampl}\ndyn_phase: {dyn_phase}")
                     c_arb_pulse['amplitude'] = ampl
                     c_arb_pulse['element_name'] = "flux_arb_gate"
                     c_arb_pulse['basis_rotation'].update(
@@ -714,7 +714,7 @@ class QAOAHelper(HelperBase):
             if doswap:
                 self.qb_names[gates_info['qbs'][0]],self.qb_names[gates_info['qbs'][1]] \
                     = self.qb_names[gates_info['qbs'][1]],self.qb_names[gates_info['qbs'][0]]
-            print(self.qb_names)
+            #print(self.qb_names)
 
         # add single qb z rotation for single qb terms of hamiltonian
         for qb, h in enumerate(single_qb_terms):
