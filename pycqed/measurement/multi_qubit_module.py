@@ -2375,7 +2375,8 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                            cal_states='auto', prep_params=None,
                            exp_metadata=None, classified=False, update=False,
                            reset_phases_before_measurement=True,
-                           prepend_n_cz=0):
+                           prepend_n_cz=0,
+                           extract_only=False, simultaneous=False):
     if isinstance(qbc, str):
         qbc = dev.get_qb(qbc)
     if isinstance(qbt, str):
@@ -2392,67 +2393,93 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
     basis_rot_par = dev.get_pulse_par(cz_pulse_name, qbc, qbt, 'basis_rotation')
     if reset_phases_before_measurement:
         dyn_phases = {qb.name: 0 for qb in qubits_to_measure}
-        basis_rot_par(dyn_phases)
     else:
-        dyn_phases = basis_rot_par()
+        dyn_phases = deepcopy(basis_rot_par())
 
     # check whether qubits are connected
     dev.check_connection(qbc, qbt)
 
-    if prep_params is None:
-        prep_params = dev.get_prep_params([qbc, qbt])
-
-    for qb in qubits_to_measure:
-        label = f'Dynamic_phase_measurement_CZ{qbt.name}{qbc.name}-{qb.name}'
-        qb.prepare(drive='timedomain')
-        MC = qbc.instr_mc.get_instr()
-
-        if cal_points:
-            cal_states = CalibrationPoints.guess_cal_states(cal_states)
-            cp = CalibrationPoints.single_qubit(
-                qb.name, cal_states, n_per_state=n_cal_points_per_state)
+    with temporary_value(basis_rot_par, deepcopy(dyn_phases)):
+        if not simultaneous:
+            qubits_to_measure = [[qb] for qb in qubits_to_measure]
         else:
-            cp = None
+            qubits_to_measure = [qubits_to_measure]
 
-        seq, hard_sweep_points = \
-            fsqs.dynamic_phase_seq(
-                qb_name=qb.name, hard_sweep_dict=hard_sweep_params,
-                operation_dict=dev.get_operation_dict(),
-                cz_pulse_name=cz_pulse_name + f' {qbc.name} {qbt.name}',
-                cal_points=cp,
-                prepend_n_cz=prepend_n_cz,
-                upload=False, prep_params=prep_params)
+        for qbs in qubits_to_measure:
+            assert (qbc not in qbs or qbt not in qbs), \
+                "Dynamic phases of control and target qubit cannot be measured " + \
+                "simultaneously."
 
-        MC.set_sweep_function(awg_swf.SegmentHardSweep(
-            sequence=seq, upload=upload,
-            parameter_name=list(hard_sweep_params)[0],
-            unit=list(hard_sweep_params.values())[0]['unit']))
-        MC.set_sweep_points(hard_sweep_points)
-        MC.set_detector_function(qb.int_avg_classif_det if classified
-                                 else qb.int_avg_det)
-        if exp_metadata is None:
-            exp_metadata = {}
-        exp_metadata.update({'use_cal_points': cal_points,
-                             'preparation_params': prep_params,
-                             'cal_points': repr(cp),
-                             'rotate': cal_points,
-                             'data_to_fit': {qb.name: 'pe'},
-                             'cal_states_rotations':
-                                 {qb.name: {'g': 0, 'e': 1}},
-                             'hard_sweep_params': hard_sweep_params})
-        MC.run(label, exp_metadata=exp_metadata)
+            label = f'Dynamic_phase_measurement_CZ{qbt.name}{qbc.name}-' + \
+                    ''.join([qb.name for qb in qbs])
+            for qb in qbs:
+                qb.prepare(drive='timedomain')
+            MC = qbc.instr_mc.get_instr()
 
-        if analyze:
-            MA = tda.CZDynamicPhaseAnalysis(qb_names=[qb.name], options_dict={
-                'flux_pulse_length': dev.get_pulse_par(cz_pulse_name,
-                                                        qbc, qbt,
-                                                        'pulse_length')(),
-                'flux_pulse_amp': dev.get_pulse_par(cz_pulse_name,
-                                                     qbc, qbt,
-                                                     'amplitude')(), })
-            dyn_phases[qb.name] = \
-                MA.proc_data_dict['analysis_params_dict'][qb.name][
-                    'dynamic_phase']['val'] * 180 / np.pi
+            if cal_points:
+                cal_states = CalibrationPoints.guess_cal_states(cal_states)
+                cp = CalibrationPoints.multi_qubit(
+                    [qb.name for qb in qbs], cal_states,
+                    n_per_state=n_cal_points_per_state)
+            else:
+                cp = None
+
+            if prep_params is not None:
+                current_prep_params = prep_params
+            else:
+                current_prep_params = dev.get_prep_params(qbs)
+
+            seq, hard_sweep_points = \
+                fsqs.dynamic_phase_seq(
+                    qb_names=[qb.name for qb in qbs],
+                    hard_sweep_dict=hard_sweep_params,
+                    operation_dict=dev.get_operation_dict(),
+                    cz_pulse_name=cz_pulse_name + f' {qbc.name} {qbt.name}',
+                    cal_points=cp,
+                    prepend_n_cz=prepend_n_cz,
+                    upload=False, prep_params=current_prep_params)
+
+            MC.set_sweep_function(awg_swf.SegmentHardSweep(
+                sequence=seq, upload=upload,
+                parameter_name=list(hard_sweep_params)[0],
+                unit=list(hard_sweep_params.values())[0]['unit']))
+            MC.set_sweep_points(hard_sweep_points)
+            det_get_values_kws = {'classified': classified,
+                                  'correlated': False,
+                                  'thresholded': True,
+                                  'averaged': True}
+            det_name = 'int_avg{}_det'.format('_classif' if classified else '')
+            MC.set_detector_function(get_multiplexed_readout_detector_functions(
+                qbs, nr_averages=max(qb.acq_averages() for qb in qbs),
+                det_get_values_kws=det_get_values_kws)[det_name])
+
+            if exp_metadata is None:
+                exp_metadata = {}
+            exp_metadata.update({'use_cal_points': cal_points,
+                                 'preparation_params': prep_params,
+                                 'cal_points': repr(cp),
+                                 'rotate': cal_points,
+                                 'data_to_fit': {qb.name: 'pe' for qb in qbs},
+                                 'cal_states_rotations':
+                                     {qb.name: {'g': 0, 'e': 1} for qb in qbs},
+                                 'hard_sweep_params': hard_sweep_params})
+            MC.run(label, exp_metadata=exp_metadata)
+
+            if analyze:
+                MA = tda.CZDynamicPhaseAnalysis(
+                    qb_names=[qb.name for qb in qbs],
+                    options_dict={
+                    'flux_pulse_length': dev.get_pulse_par(cz_pulse_name,
+                                                            qbc, qbt,
+                                                            'pulse_length')(),
+                    'flux_pulse_amp': dev.get_pulse_par(cz_pulse_name,
+                                                         qbc, qbt,
+                                                         'amplitude')(),
+                        'save_figs': ~extract_only}, extract_only=extract_only)
+                for qb in qbs:
+                    dyn_phases[qb.name] = \
+                        MA.proc_data_dict['analysis_params_dict'][qb.name][
+                            'dynamic_phase']['val'] * 180 / np.pi
     if update and reset_phases_before_measurement:
         basis_rot_par(dyn_phases)
     return dyn_phases
