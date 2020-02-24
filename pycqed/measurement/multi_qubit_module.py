@@ -586,6 +586,9 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
                 energy = qaoa.ProblemHamiltonians.ising_with_field(
                     correlations, avg_sigmaz, coupl,
                     [single_qb_terms[i] for i, qbn in enumerate(qb_names)])
+            elif problem_hamiltonian == 'nbody_zterms':
+                energy = qaoa.ProblemHamiltonians.nbody_zterms(qb_states_filtered,
+                                                          gates_info)
             else:
                 raise ValueError(f"Problem hamiltonian {problem_hamiltonian} "
                                  f"not known")
