@@ -674,7 +674,7 @@ class QAOAHelper(HelperBase):
                     # overwrite angles for angle % 2 pi  == 0
                     if abs(angle) < zero_angle_threshold:
                         if strategy == "zero_amplitude":
-                            ampl, dyn_phase = 0, 0
+                            ampl, dyn_phase = 0, {qb:0 for qb in dyn_phase.keys()}
                         elif strategy == "skip_gate":
                             two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                                  [z_qbc, z_qbt])
@@ -696,8 +696,7 @@ class QAOAHelper(HelperBase):
                     # print(f"{name}:\nphase angle: {angle}\nAmpl: {ampl}\ndyn_phase: {dyn_phase}")
                     c_arb_pulse['amplitude'] = ampl
                     c_arb_pulse['element_name'] = "flux_arb_gate"
-                    c_arb_pulse['basis_rotation'].update(
-                        {qbc: dyn_phase})
+                    c_arb_pulse['basis_rotation'].update(dyn_phase)
 
                     two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                          [z_qbc, z_qbt, c_arb_pulse])
