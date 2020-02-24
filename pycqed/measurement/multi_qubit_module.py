@@ -2684,7 +2684,9 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
     soft_sweep_params['amplitude'] = dict(values=amplitudes, unit='V')
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update(dict(target_phases=target_phases, phase_func=phase_func))
+    exp_metadata.update(dict(target_phases=target_phases,
+                             phase_func=phase_func,
+                             sort_phases_ascending_order=True))
     if measure_conditional_phase:
         cphases, population_losses, leakage, flux_pulse_tdma = \
             measure_cphase(qbc=qbc, qbt=qbt, soft_sweep_params=soft_sweep_params,
