@@ -49,9 +49,10 @@ class Block:
                        "pulse_delay": block_delay,
                        "ref_pulse": ref_pulse,
                        "ref_point": ref_point}
+        block_start.update(kwargs.get("block_start", {}))
         block_end = {"name": f"end",
                      "pulse_type": "VirtualPulse"}
-
+        block_end.update(kwargs.get("block_end", {}))
         pulses_built = deepcopy(self.pulses)
 
         # check if block_start/end  specified by user
