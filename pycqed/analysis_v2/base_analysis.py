@@ -1657,6 +1657,71 @@ class BaseDataAnalysis(object):
                         pass
             axs.axvline(x=x, **d)
 
+    @staticmethod
+    def get_latest_data(n=1, contains="", search_dir=None,
+                              older_than=None, newer_than=None):
+        """
+        Returns the list of n last timestamps and measurement_directories in the
+        search_dir which contain "contains".
+        Args:
+            n: number of timestamps
+            contains: filter for the labels. Any label that does not include
+                this string will be ignored. If in addition,
+            search_dir: search directory
+            older_than:
+            newer_than:
+
+        Returns: list of timestamps and corresponding directories
+
+        """
+        if search_dir is None:
+            search_dir = a_tools.datadir
+        else:
+            search_dir = search_dir
+        daydirs = os.listdir(search_dir)
+
+        if len(daydirs) == 0:
+            log.warning('No data found in datadir')
+            return None
+
+        daydirs.sort()
+
+        timestamps = []
+        measurement_directories = []
+        i = len(daydirs) - 1
+
+        while len(timestamps) < n and i >= 0:
+            print(len(timestamps) < n)
+            daydir = daydirs[i]
+            # this makes sure that (most) non day dirs do not get searched
+            # as they should start with a digit (e.g. YYYYMMDD)
+            if daydir[0].isdigit():
+                all_measdirs = [d for d in os.listdir(
+                    os.path.join(search_dir, daydir))]
+                all_measdirs.sort(reverse=True)
+                for d in all_measdirs:
+                    if len(timestamps) == n:
+                        break
+                    # this routine verifies that any output directory
+                    # is a 'valid' directory
+                    # (i.e, obeys the regular naming convention)
+                    _timestamp = daydir + d[:6]
+                    try:
+                        dstamp, tstamp = a_tools.verify_timestamp(_timestamp)
+                    except:
+                        continue
+                    timestamp = dstamp + tstamp
+                    if contains in d:
+                        if older_than is not None:
+                            if not a_tools.is_older(timestamp, older_than):
+                                continue
+                        if newer_than is not None:
+                            if not a_tools.is_older(newer_than, timestamp):
+                                continue
+                        timestamps.append(f"{dstamp}_{tstamp}")
+                        measurement_directories.append(d)
+            i -= 1
+        return timestamps, measurement_directories
 
 def plot_scatter_errorbar(self, ax_id, xdata, ydata, xerr=None, yerr=None, pdict=None):
     pdict = pdict or {}
