@@ -2794,31 +2794,6 @@ class QuDev_transmon(Qubit):
                     self.ge_motzoi(qscale)
         return
 
-    def calculate_anharmonicity(self, update=False):
-
-        """
-        Computes the qubit anaharmonicity using f_ef (self.f_ef_qubit)
-        and f_ge (self.f_qubit).
-        It is assumed that the latter values exist.
-        WARNING: Does not automatically update the qubit anharmonicity
-        parameter. Set update=True if you want this!
-        """
-        if not update:
-            log.warning("Does not automatically update the qubit "
-                            "anharmonicity parameter. "
-                            "Set update=True if you want this!")
-
-        if self.ge_freq() == 0:
-            log.warning('f_ge = 0. Run qubit spectroscopy or Ramsey.')
-        if self.ef_freq() == 0:
-            log.warning('f_ef = 0. Run qubit spectroscopy or Ramsey.')
-
-        anharmonicity = self.ef_freq() - self.ge_freq()
-
-        if update:
-            self.anharmonicity(anharmonicity)
-
-        return  anharmonicity
 
     def calculate_EC_EJ(self, update=True, **kw):
 

@@ -231,7 +231,7 @@ def transmon_resonator_fge_anh_wrg_chi(ec: float, ej: float, wrb: float,
                                        dim_resonator: int = 10):
     """Calculate observable frequencies of a coupled transmon-resonator system.
 
-    Calulates the first transition frequency and anhoarmonicity of the
+    Calculates the first transition frequency and anharmonicity of the
     transmon with the resonator in the ground state, the resonator frequency
     for the qubit in the ground state and the dispersive shift of the resonator.
 
@@ -241,11 +241,11 @@ def transmon_resonator_fge_anh_wrg_chi(ec: float, ej: float, wrb: float,
         wrb: Bare resonator frequency.
         gb: Bare transmon-resonator coupling strength.
         ng: Charge offset of the Hamiltonian.
-        dim_charge: Number ofcharge states to use in calculations.
+        dim_charge: Number of charge states to use in calculations.
         dim_resonator: Number of photon number states to use in calculations.
 
     Returns:
-        A tuple of 1) qubit transition frequency, 2) qubit anahrmonicity,
+        A tuple of 1) qubit transition frequency, 2) qubit anharmonicity,
         3) the resonator frequency for transmon ground state, and 4) the
         dispersive shift.
     """
@@ -290,3 +290,47 @@ def transmon_resonator_ec_ej_wrb_gb(fge: float, anh: float, wrg: float,
                                       args=(np.array([fge, anh, wrg, chi]),
                                             ng, dim_charge, dim_resonator))
     return tuple(ec_ej_wrb_gb)
+
+
+def transmon_resonator_ej_anh_wrg_chi(fge: float, ec: float, wrb: float,
+                                      gb: float, ng: float = 0.,
+                                      dim_charge: int = 31,
+                                      dim_resonator: int = 10):
+    """Calculate Josephson energy and observable frequencies of a coupled
+    transmon-resonator system from the qubit transition frequency and
+    Hamiltonian parameters
+
+    Calculates the Josephson energy, the transmon anharmonicity  with the
+    resonator in the ground state, the resonator frequency for the qubit in
+    the ground state and the dispersive shift of the resonator.
+
+    Args:
+        ec: Charging energy of the Hamiltonian.
+        fge: The first transition frequency of the transmon.
+        wrb: Bare resonator frequency.
+        gb: Bare transmon-resonator coupling strength.
+        ng: Charge offset of the Hamiltonian.
+        dim_charge: Number of charge states to use in calculations.
+        dim_resonator: Number of photon number states to use in calculations.
+
+    Returns:
+        A tuple of 1) transmon Josephson energy, 2) qubit anharmonicity,
+        3) the resonator frequency for transmon ground state, and 4) the
+        dispersive shift.
+    """
+
+    def func(ej_anh_wrg_chi_, fge_ec_wrb_gb, ng_, dim_charge_, dim_resonator_):
+        fge_, ec_, wrb_, gb_ = fge_ec_wrb_gb
+        ej, anh, wrg, chi = ej_anh_wrg_chi_
+        return -np.array([fge_, anh, wrg, chi]) + \
+            transmon_resonator_fge_anh_wrg_chi(ec_, ej, wrb_, gb_, ng_,
+                                               dim_charge_, dim_resonator_)
+
+    anh0 = -ec
+    ej0 = (fge + ec)**2 / 8 / ec
+    wrg0 = wrb
+    chi0 = gb**2 * ec / (fge - ec - wrb) / (fge - wrb)
+    ej_anh_wrg_chi = sp.optimize.fsolve(func, np.array([ej0, anh0, wrg0, chi0]),
+                                        args=(np.array([fge, ec, wrb, gb]),
+                                              ng, dim_charge, dim_resonator))
+    return tuple(ej_anh_wrg_chi)
