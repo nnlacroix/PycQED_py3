@@ -88,7 +88,7 @@ McKay et al. Phys. Rev. A 96, 022330 (2017)
 '''
 HZ_gate_decomposition = [[]]*(24)
 # explictly reversing order because order of operators is order in time
-HZ_gate_decomposition[0] = ['I']
+HZ_gate_decomposition[0] = ['Z0']
 HZ_gate_decomposition[1] = ['X90', 'Z90']
 HZ_gate_decomposition[2] = ['mZ90', 'mX90']
 HZ_gate_decomposition[3] = ['X180']
