@@ -79,9 +79,15 @@ class ProblemHamiltonians:
         Returns:
 
         """
+        return np.sum(list(ProblemHamiltonians.nbody_zterms_individual(qubit_states,
+                                                 gates_info).values()))
+
+    @staticmethod
+    def nbody_zterms_individual(qubit_states, gates_info):
         c_info, coupl = QAOAHelper.get_corr_and_coupl_info(gates_info)
         correlations = correlate_qubits(qubit_states, c_info)
-        return np.sum([Ci * corr for Ci, corr in zip(coupl, correlations)])
+        return {info: Ci * corr for info, Ci, corr in zip(c_info, coupl,
+                                                          correlations)}
 
     @staticmethod
     def ising(avg_sigma_z_sigma_z_corr, C):
