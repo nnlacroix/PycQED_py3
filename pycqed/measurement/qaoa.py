@@ -204,7 +204,8 @@ def qaoa_sequence(qb_names, betas, gammas, gates_info, operation_dict,
                     gates_info_p['gate_order'] = deepcopy(
                         gates_info_all['gate_order'][k % (len(gates_info_all['gate_order']))])
                 seg.extend(builder.U(f"U_{k}", gates_info_p,
-                           gamma, cphase_implementation, single_qb_terms).build())
+                           gamma, cphase_implementation, single_qb_terms,
+                                     first_layer=(k==0)).build())
                 # # Dk
                 seg.extend(builder.D(f"D_{k}", beta).build())
 
@@ -529,7 +530,7 @@ class HelperBase:
 class QAOAHelper(HelperBase):
 
     def U(self, name, gate_sequence_info, gamma, cphase_implementation,
-          single_qb_terms=None):
+          single_qb_terms=None, first_layer=False):
         """
         Returns Unitary propagator pulse sequence (as a Block).
         :param name: name of the block
@@ -574,6 +575,8 @@ class QAOAHelper(HelperBase):
             "hardware" --> hardware arbitrary phase gate
         :param single_qb_terms (dict): keys are all logical qubit indices of experiment
             and values are the h weighting factor for that qubit.
+        :param first_layer (bool): only if this is True, remove_1stCZ in
+            gates_info will remove the first CZ gate of the software decomposition
         :return: Unitary U (Block)
         """
 
@@ -602,6 +605,7 @@ class QAOAHelper(HelperBase):
                     single_qb_terms[gates_info['qbs'][0]] += C
                     continue
                 gates_info['gate_name'] = gates_info['gate_name'] if 'gate_name' in gates_info else 'upCZ'
+                remove_1stCZ = gates_info.get('remove_1stCZ', '')
                 strategy = gates_info.get("zero_angle_strategy", None)
                 doswap = gates_info.get("swap", False)
                 nbody = (len(gates_info['qbs'])>2)
@@ -664,7 +668,8 @@ class QAOAHelper(HelperBase):
                         two_qb_block = \
                             self._U_qb_pair_software_decomposition(
                                 qbc, qbt, gamma, C, gate_name,
-                                f"software qbc:{qbc} qbt:{qbt}", nbody)
+                                f"software qbc:{qbc} qbt:{qbt}", remove_had=nbody,
+                                remove_1stCZ=(remove_1stCZ if first_layer else ''))
                 elif cphase_implementation == "hardware":
                     # TODO: clean up in function just as above
 
@@ -729,7 +734,8 @@ class QAOAHelper(HelperBase):
         return U
 
     def _U_qb_pair_software_decomposition(self, qbc, qbt, gamma, J, cz_gate_name,
-                                          block_name, remove_had=False):
+                                          block_name, remove_had=False,
+                                          remove_1stCZ=''):
         """
         Performs the software decomposition of the QAOA two qubit unitary:
         diag({i phi, -i phi, -i phi, i phi}) where phi = J * gamma.
@@ -748,15 +754,32 @@ class QAOAHelper(HelperBase):
         :param J:
         :param cz_gate_name:
         :param remove_had: optional. If true, the outermost Hadamard gates are removed (default: false)
+        :param remove_1stCZ: optional. If 'late_init', the first CZ gate and the first
+            Hadamard are removed. If 'early_init', the first CZ gate and both
+            surrounding Hadamard gates are removed. (default '')
         :return:
         """
-        ops = [cz_gate_name, "Z180 {qbt:}",
-               "Y90 {qbt:}", "Z{two_phi:} {qbt:}", "Z180 {qbt:}",
-               "Y90 {qbt:}", cz_gate_name]
+        assert remove_1stCZ == '' or not remove_had, \
+            "The combination of remove_1stCZ and remove_had is not supported."
+        assert remove_1stCZ in ['', 'early_init', 'late_init'], \
+            f"remove_1stCZ=\'{remove_1stCZ}\' is not supported."
+
+        ops = [] if remove_1stCZ != '' else [cz_gate_name]
+        if remove_1stCZ != 'early_init':
+            ops += ["Z180 {qbt:}", "Y90 {qbt:}"]
+        ops += ["Z{two_phi:} {qbt:}", "Z180 {qbt:}",
+                "Y90 {qbt:}", cz_gate_name]
         if remove_had:
             # put flux pulses in same element
             pulse_modifs = {0: dict(element_name="flux_arb_gate"),
                             6: dict(element_name="flux_arb_gate")}
+        elif remove_1stCZ != '':
+            ops = ops + ["Z180 {qbt:}", "Y90 {qbt:}"]
+            # put flux pulses in same element
+            if remove_1stCZ == 'early_init':
+                pulse_modifs = {3: dict(element_name="flux_arb_gate")}
+            else:
+                pulse_modifs = {5: dict(element_name="flux_arb_gate")}
         else:
             ops = ["Z180 {qbt:}", "Y90 {qbt:}"] + ops + ["Z180 {qbt:}", "Y90 {qbt:}"]
             # put flux pulses in same element
