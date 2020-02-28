@@ -297,7 +297,7 @@ class HelperBase:
         qubits = self.get_qubits(qubits)
         if prep_params is None:
             prep_params = {}
-        if np.ndim(init_state) == 0:
+        if len(init_state) == 1:
             init_state = [init_state] * len(qubits)
         else:
             assert len(init_state) == len(qubits), \
