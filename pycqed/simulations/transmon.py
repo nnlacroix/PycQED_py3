@@ -334,3 +334,69 @@ def transmon_resonator_ej_anh_frg_chi(fge: float, ec: float, frb: float,
                                         args=(np.array([fge, ec, frb, gb]),
                                               ng, dim_charge, dim_resonator))
     return tuple(ej_anh_frg_chi)
+
+
+@np.vectorize
+def qubit_resonator_t1_limit(fq, jqr, fr, kr, angular_units: bool = False):
+    """Calculate qubit T1 limit due to decay through resonator
+
+    Args:
+        fq: Qubit frequency
+        jqr: Qubit-resonator coupling rate
+        fr: Resonator frequency
+        kr: Resonator linewidth
+        angular_units: True if the inputs are specified in angular frequency,
+            False for regular frequency (default False).
+
+    Returns:
+        The qubit T1 limit
+    """
+    m = np.array([[kr + 2j * fr, 2j * jqr],
+                  [2j * jqr, 2j * fq]])
+    if not angular_units:
+        m *= 2 * np.pi
+    return 1 / np.linalg.eigvals(m).real.min()
+
+
+@np.vectorize
+def qubit_resonator_purcell_t1_limit(fq, jqr, fr, jrp, fp, kp,
+                                     angular_units=False):
+    """Calculate qubit T1 limit due to decay through Purcell-filtered resonator
+
+    Args:
+        fq: Qubit frequency
+        jqr: Qubit-resonator coupling rate
+        fr: Resonator frequency
+        jrp: Resonator-Purcell-filter coupling rate
+        fp: Purcell filter frequency
+        kp: Purcell filter linewidth
+        angular_units: True if the inputs are specified in angular frequency,
+            False for regular frequency (default False).
+
+    Returns:
+        The qubit T1 limit
+    """
+    m = np.array([[kp + 2j * fp, 2j * jrp, 0],
+                  [2j * jrp, 2j * fr, 2j * jqr],
+                  [0, 2j * jqr, 2j * fq]])
+    if not angular_units:
+        m *= 2 * np.pi
+    return 1 / np.linalg.eigvals(m).real.min()
+
+
+@np.vectorize
+def resonator_purcell_effective_linewidth(fr, jrp, fp, kp):
+    """Calculate effective linewidth of Purcell-filtered resonator
+
+    Args:
+        fr: Resonator frequency
+        jrp: Resonator-Purcell-filter coupling rate
+        fp: Purcell filter frequency
+        kp: Purcell filter linewidth
+
+    Returns:
+        The resonator effective linewidth
+    """
+    m = np.array([[kp + 2j * fp, 2j * jrp],
+                  [2j * jrp, 2j * fr]])
+    return np.linalg.eigvals(m).real
