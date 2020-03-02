@@ -169,21 +169,21 @@ def resonator_destroy(dim_resonator: int = 10):
 
 
 @functools.lru_cache()
-def resonator_hamiltonian(wrb: float, dim_resonator: int = 10):
+def resonator_hamiltonian(frb: float, dim_resonator: int = 10):
     """Calculate the resonator Hamiltonian.
 
     Args:
-        wrb: Bare resonator frequency.
+        frb: Bare resonator frequency.
         dim_resonator: Number of photon number states to use in calculations.
 
     Returns:
         A (dim_resonator x dim_resonator) numpy matrix, representing the
         Hamiltonian.
     """
-    return wrb * np.diag(np.arange(dim_resonator))
+    return frb * np.diag(np.arange(dim_resonator))
 
 
-def transmon_resonator_levels(ec: float, ej: float, wrb: float, gb: float,
+def transmon_resonator_levels(ec: float, ej: float, frb: float, gb: float,
                               ng: float = 0., dim_charge: int = 31,
                               dim_resonator: int = 10,
                               states: List[Tuple[int, int]] =
@@ -193,7 +193,7 @@ def transmon_resonator_levels(ec: float, ej: float, wrb: float, gb: float,
     Args:
         ec: Charging energy of the Hamiltonian.
         ej: Josephson energy of the Hamiltonian.
-        wrb: Bare resonator frequency.
+        frb: Bare resonator frequency.
         gb: Bare transmon-resonator coupling strength.
         ng: Charge offset of the Hamiltonian.
         dim_charge: Number of charge states to use in calculations.
@@ -208,7 +208,7 @@ def transmon_resonator_levels(ec: float, ej: float, wrb: float, gb: float,
     id_mon = np.diag(np.ones(dim_charge))
     id_res = np.diag(np.ones(dim_resonator))
     ham_mon = transmon_hamiltonian(ec, ej, ng, dim_charge)
-    ham_res = resonator_hamiltonian(wrb, dim_resonator)
+    ham_res = resonator_hamiltonian(frb, dim_resonator)
     n_mon = transmon_charge(ng, dim_charge)
     a_res = resonator_destroy(dim_resonator)
     ham_int = gb * np.kron(n_mon, a_res + a_res.T)
@@ -225,7 +225,7 @@ def transmon_resonator_levels(ec: float, ej: float, wrb: float, gb: float,
     return levels_full[return_idxs] - levels_full.min()
 
 
-def transmon_resonator_fge_anh_wrg_chi(ec: float, ej: float, wrb: float,
+def transmon_resonator_fge_anh_frg_chi(ec: float, ej: float, frb: float,
                                        gb: float, ng: float = 0.,
                                        dim_charge: int = 31,
                                        dim_resonator: int = 10):
@@ -238,7 +238,7 @@ def transmon_resonator_fge_anh_wrg_chi(ec: float, ej: float, wrb: float,
     Args:
         ec: Charging energy of the Hamiltonian.
         ej: Josephson energy of the Hamiltonian.
-        wrb: Bare resonator frequency.
+        frb: Bare resonator frequency.
         gb: Bare transmon-resonator coupling strength.
         ng: Charge offset of the Hamiltonian.
         dim_charge: Number of charge states to use in calculations.
@@ -249,24 +249,24 @@ def transmon_resonator_fge_anh_wrg_chi(ec: float, ej: float, wrb: float,
         3) the resonator frequency for transmon ground state, and 4) the
         dispersive shift.
     """
-    f10, f20, f01, f11 = transmon_resonator_levels(ec, ej, wrb, gb, ng,
+    f10, f20, f01, f11 = transmon_resonator_levels(ec, ej, frb, gb, ng,
                                                    dim_charge,
                                                    dim_resonator)
     return f10, f20 - 2 * f10, f01, (f11 - f10 - f01) / 2
 
 
-def transmon_resonator_ec_ej_wrb_gb(fge: float, anh: float, wrg: float,
+def transmon_resonator_ec_ej_frb_gb(fge: float, anh: float, frg: float,
                                     chi: float, ng: float = 0.,
                                     dim_charge: int = 31,
                                     dim_resonator: int = 10):
     """Calculate Hamiltonian parameters of a coupled transmon-resonator system.
 
-    Inverts the function `transmon_resonator_fge_anh_wrg_chi`.
+    Inverts the function `transmon_resonator_fge_anh_frg_chi`.
 
     Args:
         fge: The first transition frequency of the transmon.
         anh: Anharmonicity of the transmon.
-        wrg: Resonator frequency for transmon ground state.
+        frg: Dressed resonator frequency for transmon ground state.
         chi: Dispersive shift of the coupled system.
         ng: Charge offset of the Hamiltonian.
         dim_charge: Number of charge states to use in calculations.
@@ -278,21 +278,21 @@ def transmon_resonator_ec_ej_wrb_gb(fge: float, anh: float, wrg: float,
         strength.
     """
 
-    def func(ec_ej_wrb_gb_, fge_anh_wrg_chi, ng_, dim_charge_, dim_resonator_):
-        return -fge_anh_wrg_chi + transmon_resonator_fge_anh_wrg_chi(
-            *ec_ej_wrb_gb_, ng_, dim_charge_, dim_resonator_)
+    def func(ec_ej_frb_gb_, fge_anh_frg_chi, ng_, dim_charge_, dim_resonator_):
+        return -fge_anh_frg_chi + transmon_resonator_fge_anh_frg_chi(
+            *ec_ej_frb_gb_, ng_, dim_charge_, dim_resonator_)
 
     ec0 = -anh
     ej0 = -(fge - anh)**2 / 8 / anh
-    wrb0 = wrg
-    gb0 = np.sqrt(np.abs((fge + anh - wrg) * (fge - wrg) * chi / anh))
-    ec_ej_wrb_gb = sp.optimize.fsolve(func, np.array([ec0, ej0, wrb0, gb0]),
-                                      args=(np.array([fge, anh, wrg, chi]),
+    frb0 = frg
+    gb0 = np.sqrt(np.abs((fge + anh - frg) * (fge - frg) * chi / anh))
+    ec_ej_frb_gb = sp.optimize.fsolve(func, np.array([ec0, ej0, frb0, gb0]),
+                                      args=(np.array([fge, anh, frg, chi]),
                                             ng, dim_charge, dim_resonator))
-    return tuple(ec_ej_wrb_gb)
+    return tuple(ec_ej_frb_gb)
 
 
-def transmon_resonator_ej_anh_wrg_chi(fge: float, ec: float, wrb: float,
+def transmon_resonator_ej_anh_frg_chi(fge: float, ec: float, frb: float,
                                       gb: float, ng: float = 0.,
                                       dim_charge: int = 31,
                                       dim_resonator: int = 10):
@@ -307,7 +307,7 @@ def transmon_resonator_ej_anh_wrg_chi(fge: float, ec: float, wrb: float,
     Args:
         ec: Charging energy of the Hamiltonian.
         fge: The first transition frequency of the transmon.
-        wrb: Bare resonator frequency.
+        frb: Bare resonator frequency.
         gb: Bare transmon-resonator coupling strength.
         ng: Charge offset of the Hamiltonian.
         dim_charge: Number of charge states to use in calculations.
@@ -319,18 +319,18 @@ def transmon_resonator_ej_anh_wrg_chi(fge: float, ec: float, wrb: float,
         dispersive shift.
     """
 
-    def func(ej_anh_wrg_chi_, fge_ec_wrb_gb, ng_, dim_charge_, dim_resonator_):
-        fge_, ec_, wrb_, gb_ = fge_ec_wrb_gb
-        ej, anh, wrg, chi = ej_anh_wrg_chi_
-        return -np.array([fge_, anh, wrg, chi]) + \
-            transmon_resonator_fge_anh_wrg_chi(ec_, ej, wrb_, gb_, ng_,
-                                               dim_charge_, dim_resonator_)
+    def func(ej_anh_frg_chi_, fge_ec_frb_gb, ng_, dim_charge_, dim_resonator_):
+        fge_, ec_, frb_, gb_ = fge_ec_frb_gb
+        ej, anh, frg, chi = ej_anh_frg_chi_
+        calc_fge_anh_frg_chi = transmon_resonator_fge_anh_frg_chi(
+            ec_, ej, frb_, gb_, ng_, dim_charge_, dim_resonator_)
+        return calc_fge_anh_frg_chi - np.array([fge_, anh, frg, chi])
 
     anh0 = -ec
     ej0 = (fge + ec)**2 / 8 / ec
-    wrg0 = wrb
-    chi0 = gb**2 * ec / (fge - ec - wrb) / (fge - wrb)
-    ej_anh_wrg_chi = sp.optimize.fsolve(func, np.array([ej0, anh0, wrg0, chi0]),
-                                        args=(np.array([fge, ec, wrb, gb]),
+    frg0 = frb
+    chi0 = gb**2 * ec / (fge - ec - frb) / (fge - frb)
+    ej_anh_frg_chi = sp.optimize.fsolve(func, np.array([ej0, anh0, frg0, chi0]),
+                                        args=(np.array([fge, ec, frb, gb]),
                                               ng, dim_charge, dim_resonator))
-    return tuple(ej_anh_wrg_chi)
+    return tuple(ej_anh_frg_chi)
