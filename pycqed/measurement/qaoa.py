@@ -507,9 +507,13 @@ class HelperBase:
         :param operations: list of operations (str), which can be preformatted
             and later filled with values in the dictionary fill_values
         :param fill_values (dict): optional fill values for operations.
-        :param pulse_modifs (dict): keys are the index of the pulses on which the pulse
-            modifications should be made, values are dictionaries of modifications
-            Eg. ops = ["X180 qb1", "Y90 qb2"],
+        :param pulse_modifs (dict): Modification of pulses parameters.
+            keys:
+             -indices of the pulses on  which the pulse modifications should be
+             made (backwards compatible)
+             -
+             values: dictionaries of modifications
+            E.g. ops = ["X180 qb1", "Y90 qb2"],
             pulse_modifs = {1: {"ref_point": "start"}}
             This will modify the pulse "Y90 qb2" and reference it to the start
             of the first one.
@@ -523,7 +527,7 @@ class HelperBase:
         pulses = [self.get_pulse(op.format(**fill_values), True)
                   for op in operations]
 
-        # modify pulses given the modifications
+        # modify pulses
         [pulses[i].update(pm) for i, pm in pulse_modifs.items()]
         return Block(block_name, pulses)
 
@@ -594,36 +598,39 @@ class QAOAHelper(HelperBase):
         for i, gates_same_timing in enumerate(gate_sequence_info['gate_order']):
             simult_bname = f"simultanenous_{i}"
             simultaneous = Block(simult_bname, [])
-            for gates_info in [gate_sequence_info['gate_list'][i] for i in gates_same_timing]:
+            for gates_info in [gate_sequence_info['gate_list'][i]
+                               for i in gates_same_timing]:
                 #gate info
-                C = gates_info['J'] if 'J' in gates_info else gates_info['C'] if 'C' in gates_info else 0
-                if C==0:
-                    continue
+                C = gates_info['J'] if 'J' in gates_info else gates_info['C'] \
+                    if 'C' in gates_info else 0
+                doswap = gates_info.get("swap", False)
                 if type(gates_info['qbs']) == int:
                     gates_info['qbs'] = (gates_info['qbs'],)
-                if (len(gates_info['qbs'])==1):
+                if len(gates_info['qbs']) == 1:
                     single_qb_terms[gates_info['qbs'][0]] += C
                     continue
-                gates_info['gate_name'] = gates_info['gate_name'] if 'gate_name' in gates_info else 'upCZ'
+                gates_info['gate_name'] = \
+                    gates_info['gate_name'] if 'gate_name' in gates_info else 'upCZ'
                 remove_1stCZ = gates_info.get('remove_1stCZ', '')
                 strategy = gates_info.get("zero_angle_strategy", None)
-                doswap = gates_info.get("swap", False)
                 nbody = (len(gates_info['qbs'])>2)
                 assert not (nbody and doswap), \
                     f"Combination of n-body interaction and swap is not implemented!"
-                zero_angle_threshold = gates_info.get("zero_angle_threshold", global_zero_angle_threshold)
-                if abs((2 * gamma * C) % (2*np.pi))<zero_angle_threshold and strategy == "skip_gate" and not doswap:
+                zero_angle_threshold = gates_info.get("zero_angle_threshold",
+                                                      global_zero_angle_threshold)
+                if abs((2 * gamma * C) % (2*np.pi))<zero_angle_threshold \
+                        and strategy == "skip_gate" and not doswap:
                     continue
                 for qbx in [self.qb_names[qb_ind] for qb_ind in gates_info['qbs']]:
                     for qby_tmp in [self.qb_names[qb_ind] for qb_ind in gates_info['qbs']]:
                         if qby_tmp == qbx:
                             continue
                         qby = qby_tmp
-                        qbt,qbc = qbx,qby
-                        gate_name = f"{gates_info['gate_name']} {qbt} {qbc}";
+                        qbt, qbc = qbx, qby
+                        gate_name = f"{gates_info['gate_name']} {qbt} {qbc}"
                         if gate_name not in self.operation_dict:
                             qbt,qbc = qby,qbx
-                            gate_name = f"{gates_info['gate_name']} {qbt} {qbc}";
+                            gate_name = f"{gates_info['gate_name']} {qbt} {qbc}"
                             if gate_name not in self.operation_dict:
                                 break
                     else:
@@ -668,7 +675,8 @@ class QAOAHelper(HelperBase):
                         two_qb_block = \
                             self._U_qb_pair_software_decomposition(
                                 qbc, qbt, gamma, C, gate_name,
-                                f"software qbc:{qbc} qbt:{qbt}", remove_had=nbody,
+                                f"software qbc:{qbc} qbt:{qbt}",
+                                remove_had=nbody,
                                 remove_1stCZ=(remove_1stCZ if first_layer else ''))
                 elif cphase_implementation == "hardware":
                     # TODO: clean up in function just as above
@@ -735,13 +743,13 @@ class QAOAHelper(HelperBase):
 
     def _U_qb_pair_software_decomposition(self, qbc, qbt, gamma, J, cz_gate_name,
                                           block_name, remove_had=False,
-                                          remove_1stCZ=''):
+                                          remove_1stCZ='', echo=()):
         """
         Performs the software decomposition of the QAOA two qubit unitary:
         diag({i phi, -i phi, -i phi, i phi}) where phi = J * gamma.
 
         Efficient decomposition by Christian :
-
+        (X180)--------(X180)-------------------------------- (echo pulses)
         H_qbt---CZ---H_qbt---RZ_qbt(2*phi)---H_qbt---CZ---H_qbt
         where:
             H_qbt is a Hadamard gate on qbt (implemented using Y90 + Z180)
@@ -753,10 +761,13 @@ class QAOAHelper(HelperBase):
         :param gamma:
         :param J:
         :param cz_gate_name:
-        :param remove_had: optional. If true, the outermost Hadamard gates are removed (default: false)
-        :param remove_1stCZ: optional. If 'late_init', the first CZ gate and the first
-            Hadamard are removed. If 'early_init', the first CZ gate and both
-            surrounding Hadamard gates are removed. (default '')
+        :param remove_had: optional. If true, the outermost Hadamard gates
+            are removed (default: false)
+        :param remove_1stCZ: optional. If 'late_init', the first CZ gate and
+            the first Hadamard are removed. If 'early_init', the first CZ gate
+            and both surrounding Hadamard gates are removed. (default '')
+        :param echo (list): optional list of logical qubits on which echo pulses
+            will be applied. Cannot be used with 'early_init' or 'late_init'.
         :return:
         """
         assert remove_1stCZ == '' or not remove_had, \
