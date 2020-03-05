@@ -202,13 +202,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         if auto:
             self.run_analysis()
-            self.data_file.close()
 
     def extract_data(self):
         super().extract_data()
-        self.metadata = self.raw_data_dict.get('exp_metadata', [])
-        if len(self.metadata) == 0:
-            self.metadata = {}
 
         self.channel_map = self.get_param_value('channel_map')
         if self.channel_map is None:
@@ -1952,9 +1948,9 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
 
         if kwargs.get('auto', True):
             self.run_analysis()
+
     def extract_data(self):
         super().extract_data()
-        self.metadata = self.raw_data_dict.get('exp_metadata', [])
 
     def process_data(self):
         tomography_qubits = self.options_dict.get('tomography_qubits', None)
