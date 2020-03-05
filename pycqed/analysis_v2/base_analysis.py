@@ -216,6 +216,9 @@ class BaseDataAnalysis(object):
             self.save_figures(close_figs=self.options_dict.get(
                 'close_figs', False))
 
+        if self.options_dict.get('close_file', True):
+            self.data_file.close()
+
     @staticmethod
     def get_hdf_param_value(group, param_name):
         '''
@@ -351,6 +354,10 @@ class BaseDataAnalysis(object):
                 temp_dict_list.append(
                     self.add_measured_data(rd_dict))
             self.raw_data_dict = tuple(temp_dict_list)
+
+        self.metadata = self.raw_data_dict.get('exp_metadata', [])
+        if len(self.metadata) == 0:
+            self.metadata = {}
 
     def process_data(self):
         """
