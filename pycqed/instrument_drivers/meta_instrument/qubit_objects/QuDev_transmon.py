@@ -2843,63 +2843,6 @@ class QuDev_transmon(Qubit):
                     self.ge_motzoi(qscale)
         return
 
-    def calculate_anharmonicity(self, update=False):
-
-        """
-        Computes the qubit anaharmonicity using f_ef (self.f_ef_qubit)
-        and f_ge (self.f_qubit).
-        It is assumed that the latter values exist.
-        WARNING: Does not automatically update the qubit anharmonicity
-        parameter. Set update=True if you want this!
-        """
-        if not update:
-            log.warning("Does not automatically update the qubit "
-                            "anharmonicity parameter. "
-                            "Set update=True if you want this!")
-
-        if self.ge_freq() == 0:
-            log.warning('f_ge = 0. Run qubit spectroscopy or Ramsey.')
-        if self.ef_freq() == 0:
-            log.warning('f_ef = 0. Run qubit spectroscopy or Ramsey.')
-
-        anharmonicity = self.ef_freq() - self.ge_freq()
-
-        if update:
-            self.anharmonicity(anharmonicity)
-
-        return  anharmonicity
-
-    def calculate_EC_EJ(self, update=True, **kw):
-
-        """
-        Extracts EC and EJ from a least squares fit to the transmon
-        Hamiltonian solutions. It uses a_tools.calculate_transmon_transitions,
-        f_ge and f_ef.
-        WARNING: Does not automatically update the qubit EC and EJ parameters.
-        Set update=True if you want this!
-
-        Keyword Arguments:
-            asym:           (default=0)
-                asymmetry d (Koch (2007), eqn 2.18) for asymmetric junctions
-            reduced_flux:   (default=0)
-                reduced magnetic flux through SQUID
-            no_transitions  (default=2)
-                how many transitions (levels) are you interested in
-            dim:            (default=None)
-                dimension of Hamiltonian will  be (2*dim+1,2*dim+1)
-        """
-        if not update:
-            log.warning("Does not automatically update the qubit EC and EJ "
-                            "parameters. "
-                            "Set update=True if you want this!")
-
-        (EC,EJ) = a_tools.fit_EC_EJ(self.f_qubit(), self.f_ef_qubit(), **kw)
-
-        if update:
-            self.EC_qubit(EC)
-            self.EJ_qubit(EJ)
-
-        return EC, EJ
 
     def find_readout_frequency(self, freqs=None, update=False, MC=None,
                                qutrit=False, **kw):
