@@ -327,26 +327,27 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter(op_name, 'flux_pulse_type', 'pulse_type',
                                  initial_value='BufferedCZPulse',
                                  vals=vals.Enum('BufferedSquarePulse',
-                                                'BufferedCZPulse'))
+                                                'BufferedCZPulse',
+                                                'NZBufferedCZPulse'))
         self.add_pulse_parameter(op_name, ps_name + '_channel', 'channel',
                                  initial_value='', vals=vals.Strings())
         self.add_pulse_parameter(op_name, ps_name + '_aux_channels_dict',
                                  'aux_channels_dict',
                                  initial_value={}, vals=vals.Dict())
         self.add_pulse_parameter(op_name, ps_name + '_amplitude', 'amplitude',
-                                 initial_value=0, vals=vals.Numbers())
+                                 initial_value=0.5, vals=vals.Numbers())
         self.add_pulse_parameter(op_name, ps_name + '_frequency', 'frequency',
                                  initial_value=0, vals=vals.Numbers())
         self.add_pulse_parameter(op_name, ps_name + '_phase', 'phase',
                                  initial_value=0, vals=vals.Numbers())
         self.add_pulse_parameter(op_name, ps_name + '_pulse_length',
                                  'pulse_length',
-                                 initial_value=0, vals=vals.Numbers(0))
+                                 initial_value=100e-9, vals=vals.Numbers(0))
         self.add_pulse_parameter(op_name, ps_name + '_buffer_length_start',
-                                 'buffer_length_start', initial_value=10e-9,
+                                 'buffer_length_start', initial_value=20e-9,
                                  vals=vals.Numbers(0))
         self.add_pulse_parameter(op_name, ps_name + '_buffer_length_end',
-                                 'buffer_length_end', initial_value=10e-9,
+                                 'buffer_length_end', initial_value=20e-9,
                                  vals=vals.Numbers(0))
         self.add_pulse_parameter(op_name, ps_name + '_extra_buffer_aux_pulse',
                                  'extra_buffer_aux_pulse', initial_value=5e-9,
@@ -1831,6 +1832,7 @@ class QuDev_transmon(Qubit):
                                qutrit=False, acq_length=4097/1.8e9, **kw):
         # FIXME: Make a proper analysis class for this (Ants, 04.12.2017)
         # I agree (Christian, 07.11.2018 -- around 1 year later)
+        # Still no analysis class in 2020. (Michael, 28.01.2020)
 
         levels = ('g', 'e', 'f') if qutrit else ('g', 'e')
         if measure:
@@ -2027,14 +2029,15 @@ class QuDev_transmon(Qubit):
                 ssqtro = \
                     Singleshot_Readout_Analysis_Qutrit(label=labels,
                                                           options_dict=options)
-                state_prob_mtx = ssqtro.proc_data_dict[
-                    'analysis_params']['state_prob_mtx_masked']
                 classifier_params = ssqtro.proc_data_dict[
                     'analysis_params'].get('classifier_params', None)
                 if update:
+                    state_prob_mtx = ssqtro.proc_data_dict[
+                        'analysis_params']['state_prob_mtx_masked']
                     self.acq_classifier_params(classifier_params)
                     self.acq_state_prob_mtx(state_prob_mtx)
-                return state_prob_mtx, classifier_params
+                    return state_prob_mtx, classifier_params
+                return None, classifier_params
             else:
                 rotate = self.acq_weights_type() in {'SSB', 'DSB'}
                 preselection = prep_params['preparation_type'] == 'preselection'
@@ -3530,14 +3533,15 @@ class QuDev_transmon(Qubit):
                 ma.MeasurementAnalysis(TwoD=True)
 
         if update:
-            self.fit_ge_freq_from_flux_pulse_amp(MA.fit_res['freq_fit_{'
-                                                            'self.name}'].best_values)
+            self.fit_ge_freq_from_flux_pulse_amp(
+                MA.fit_res[f'freq_fit_{self.name}'].best_values)
 
     def measure_T1_freq_sweep(self, flux_lengths, cz_pulse_name=None,
                               freqs=None, amplitudes=None,
                               analyze=True,cal_states='auto', cal_points=False,
                               upload=True, label=None,n_cal_points_per_state=2,
-                              exp_metadata=None, all_fits=False):
+                              exp_metadata=None, all_fits=False,
+                              prep_params=None):
         '''
         Flux pulse amplitude measurement used to determine the qubits energy in
         dependence of flux pulse amplitude.
@@ -3558,6 +3562,16 @@ class QuDev_transmon(Qubit):
 
         '''
 
+        if prep_params is None:
+            prep_params = self.preparation_params()
+
+        # Define the measurement label
+        if label is None:
+            label = 'T1_frequency_sweep'
+            if 'active' in prep_params['preparation_type']:
+                label += '_reset'
+            label += self.msmt_suffix
+
         if cz_pulse_name is None:
             cz_pulse_name = 'FP ' + self.name
 
@@ -3567,14 +3581,10 @@ class QuDev_transmon(Qubit):
 
         amplitudes = np.array(amplitudes)
 
-        if np.any((amplitudes > abs(fit_paras['dac_sweet_spot']))):
+        if np.any((amplitudes > abs(fit_paras['V_per_phi0']) / 2)):
             amplitudes -= fit_paras['V_per_phi0']
-        elif np.any((amplitudes < -abs(fit_paras['dac_sweet_spot']))):
+        elif np.any((amplitudes < -abs(fit_paras['V_per_phi0']) / 2)):
             amplitudes += fit_paras['V_per_phi0']
-
-        if np.any((amplitudes > abs(fit_paras['dac_sweet_spot']))+
-                  (amplitudes < -abs(fit_paras['dac_sweet_spot']))):
-            raise ValueError('Specified sweep exceeds AWG output range!')
 
         if np.any(np.isnan(amplitudes)):
             raise ValueError('Specified frequencies resulted in nan amplitude. '
@@ -3583,8 +3593,6 @@ class QuDev_transmon(Qubit):
         if amplitudes is None:
             raise ValueError('Either freqs or amplitudes need to be specified')
 
-        if label is None:
-            label = 'T1_frequency_sweep_{}'.format(self.name)
         MC = self.instr_mc.get_instr()
         self.prepare(drive='timedomain')
 
@@ -3602,7 +3610,8 @@ class QuDev_transmon(Qubit):
             fsqs.decay_freq_seq(
                 amplitudes=amplitudes, qb_name=self.name,
                 operation_dict=self.get_operation_dict(), flux_lengths=flux_lengths,
-                cz_pulse_name=cz_pulse_name, upload=False, cal_points=cp)
+                cz_pulse_name=cz_pulse_name, upload=False, cal_points=cp,
+                prep_params=prep_params)
         MC.set_sweep_function(awg_swf.SegmentHardSweep(
             sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
         MC.set_sweep_points(sweep_points)
@@ -3613,6 +3622,7 @@ class QuDev_transmon(Qubit):
                             #  'sweep_points_dict': {self.name: amplitudes if\
                             #                        freqs is None else freqs},
                              'amplitudes': amplitudes,
+                             'preparation_params': prep_params,
                              'frequencies': freqs,
                              'flux_lengths': flux_lengths,
                              'use_cal_points': cal_points,
@@ -3629,8 +3639,8 @@ class QuDev_transmon(Qubit):
             except Exception:
                 ma.MeasurementAnalysis(TwoD=False)
 
-    def measure_T2_freq_sweep(self, cz_pulse_name, flux_lengths,
-                              freqs=None, amplitudes=None, phases=[0,30,60],
+    def measure_T2_freq_sweep(self, flux_lengths, cz_pulse_name=None,
+                              freqs=None, amplitudes=None, phases=[0,120,240],
                               analyze=True, cal_states='auto', cal_points=False,
                               upload=True, label=None, n_cal_points_per_state=2,
                               exp_metadata=None):
@@ -3659,14 +3669,18 @@ class QuDev_transmon(Qubit):
 
         amplitudes = np.array(amplitudes)
 
+        if cz_pulse_name is None:
+            cz_pulse_name = 'FP ' + self.name
+
         if np.any((amplitudes > abs(fit_paras['dac_sweet_spot']))):
             amplitudes -= fit_paras['V_per_phi0']
         elif np.any((amplitudes < -abs(fit_paras['dac_sweet_spot']))):
             amplitudes += fit_paras['V_per_phi0']
 
-        if np.any((amplitudes > abs(fit_paras['dac_sweet_spot'])) +
-                  (amplitudes < -abs(fit_paras['dac_sweet_spot']))):
-            raise ValueError('Specified sweep exceeds AWG output range!')
+        if np.any((amplitudes > abs(fit_paras['V_per_phi0']) / 2)):
+            amplitudes -= fit_paras['V_per_phi0']
+        elif np.any((amplitudes < -abs(fit_paras['V_per_phi0']) / 2)):
+            amplitudes += fit_paras['V_per_phi0']
 
         if np.any(np.isnan(amplitudes)):
             raise ValueError('Specified frequencies resulted in nan amplitude. '

@@ -919,7 +919,7 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
         self.result_logging_mode = result_logging_mode
         self.correlations = correlations
         self.thresholding = self.result_logging_mode == 'digitized'
-        res_logging_indices = {'lin_trans': 0, 'digitized': 1, 'raw': 2}
+        res_logging_indices = {'digitized': 5, 'raw': 4}
         self.result_logging_mode_idx = res_logging_indices[
             self.result_logging_mode]
 
@@ -940,10 +940,6 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
             self.value_units = ['V']*len(self.value_names) + \
                                ['(V^2)']*len(self.correlations)
             self.scaling_factor = 1/(1.8e9*integration_length)
-        elif self.result_logging_mode == 'lin_trans':
-            self.value_units = ['a.u']*len(self.value_names) + \
-                               ['a.u.']*len(self.correlations)
-            self.scaling_factor = 1
         elif self.result_logging_mode == 'digitized':
             self.value_units = ['frac']*len(self.value_names) + \
                                ['normalized']*len(self.correlations)
@@ -1024,11 +1020,9 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
             # Duplicate source channel to the correlation channel and select
             # second channel as channel to correlate with.
             copy_int_weights_real = \
-                self.UHFQC.get('qas_0_integration_weights_{}_real'.format(corr[0]))[
-                    0]['vector']
+                self.UHFQC.get('qas_0_integration_weights_{}_real'.format(corr[0])).astype(np.float64)
             copy_int_weights_imag = \
-                self.UHFQC.get('qas_0_integration_weights_{}_imag'.format(corr[0]))[
-                    0]['vector']
+                self.UHFQC.get('qas_0_integration_weights_{}_imag'.format(corr[0])).astype(np.float64)
 
             copy_rot_matrix = self.UHFQC.get('qas_0_rotations_{}'.format(corr[0]))
 
@@ -1045,7 +1039,7 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
 
             # Enable correlation mode one the correlation output channel and
             # set the source to the second source channel
-            self.UHFQC.set('qas_0_correlations_{}_mode'.format(correlation_channel), 1)
+            self.UHFQC.set('qas_0_correlations_{}_enable'.format(correlation_channel), 1)
             self.UHFQC.set('qas_0_correlations_{}_source'.format(correlation_channel),
                            corr[1])
 
@@ -1070,11 +1064,11 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
             data = []
             for n, ch in enumerate(self.used_channels):
                 if ch in self.correlation_channels:
-                    data.append(3 * np.array(data_raw[n]) *
-                                (self.scaling_factor**2 / self.nr_averages))
+                    data.append(1.5*np.array(data_raw[n]) *
+                                (self.scaling_factor**2))
                 else:
                     data.append(np.array(data_raw[n]) *
-                                (self.scaling_factor / self.nr_averages))
+                                (self.scaling_factor))
         return data
 
 

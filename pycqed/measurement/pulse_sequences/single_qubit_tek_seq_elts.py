@@ -558,6 +558,9 @@ def ramsey_active_reset(times, qb_name, operation_dict, cal_points, n=1,
     # pulses
     ramsey_pulses = [deepcopy(operation_dict[op]) for op in ramsey_ops]
 
+    pulse_length = ramsey_pulses[2 if for_ef else 1]['sigma'] *\
+                   ramsey_pulses[2 if for_ef else 1]['nr_sigma']
+
     # name and reference swept pulse
     for i in range(n):
         idx = (2 if for_ef else 1) + i * 2
@@ -578,6 +581,18 @@ def ramsey_active_reset(times, qb_name, operation_dict, cal_points, n=1,
     swept_pulses_with_prep = \
         [add_preparation_pulses(p, operation_dict, [qb_name], **prep_params)
          for p in swept_pulses]
+
+    # make sure Ramsey pulses are put into separate elements
+    # if possible
+    i = 0
+    for sequence in swept_pulses_with_prep:
+        for pulse in sequence:
+            if 'name' not in pulse:
+                continue
+            if pulse['pulse_delay'] > pulse_length:
+                pulse["element_name"] = f"Ramsey_x2_{i}_element"
+                i += 1
+
     seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
 
     # add calibration segments
@@ -1092,16 +1107,17 @@ def get_pulse_dict_from_pars(pulse_pars):
     # Software Z-gate: apply phase offset to all subsequent X and Y pulses
     target_qubit = pulse_pars.get('basis', None)
     if target_qubit is not None:
-        Z180 = {'pulse_type': 'Z_pulse',
-                'basis_rotation': {target_qubit: 0},
-                'basis': target_qubit,
-                'operation_type': 'Virtual',
-                'pulse_length': 0,
-                'pulse_delay': 0}
-        pulses.update({'Z180': Z180,
-                       'mZ180': deepcopy(Z180),
-                       'Z90': deepcopy(Z180),
-                       'mZ90': deepcopy(Z180)})
+        Z0 = {'pulse_type': 'Z_pulse',
+              'basis_rotation': {target_qubit: 0},
+              'basis': target_qubit,
+              'operation_type': 'Virtual',
+              'pulse_length': 0,
+              'pulse_delay': 0}
+        pulses.update({'Z0': deepcopy(Z0),
+                       'Z180': deepcopy(Z0),
+                       'mZ180': deepcopy(Z0),
+                       'Z90': deepcopy(Z0),
+                       'mZ90': deepcopy(Z0)})
         pulses['Z180']['basis_rotation'][target_qubit] += 180
         pulses['mZ180']['basis_rotation'][target_qubit] += -180
         pulses['Z90']['basis_rotation'][target_qubit] += 90

@@ -15,8 +15,13 @@ from qcodes.instrument.parameter import (
     ManualParameter, InstrumentRefParameter)
 from qcodes.utils import validators as vals
 from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.analysis import measurement_analysis as ma
+from pycqed.measurement import sweep_functions as swf
 import pycqed.measurement.awg_sweep_functions as awg_swf
 import pycqed.analysis_v2.timedomain_analysis as tda
+import pycqed.measurement.multi_qubit_module as mqm
+import pycqed.analysis.fitting_models as fms
+
 
 log = logging.getLogger(__name__)
 
@@ -91,12 +96,14 @@ class Device(Instrument):
 
         # add 2qb operations
         two_qb_operation_dict = {}
-        for op_name, op in self.operations().items():
-            # FIXME: add also switched qubit names of 2qb gates
-            two_qb_operation_dict[op_name] = {}
-            for argument_name, parameter_name in op.items():
-                two_qb_operation_dict[op_name][argument_name] = \
-                    self.get(parameter_name)
+        for op_tag, op in self.operations().items():
+            # Add both qubit combinations to operations dict
+            for op_name in [op_tag[0] + ' ' + op_tag[1] + ' ' + op_tag[2],
+                            op_tag[0] + ' ' + op_tag[2] + ' ' + op_tag[1]]:
+                two_qb_operation_dict[op_name] = {}
+                for argument_name, parameter_name in op.items():
+                    two_qb_operation_dict[op_name][argument_name] = \
+                        self.get(parameter_name)
 
         operation_dict.update(two_qb_operation_dict)
 
@@ -175,18 +182,20 @@ class Device(Instrument):
 
     # Two Qubit Gates
 
-    def add_nz_halfway_pulse(self, gate_name):
+    def add_halfway_pulse(self, gate_name):
 
         self.set('two_qb_gates', self.get('two_qb_gates') + [gate_name])
 
         for [qb1, qb2] in self.connectivity_graph():
-            op_name = f'{gate_name} {qb1} {qb2}'
+            # op_name = f'{gate_name} {qb1} {qb2}'
+            op_name = (gate_name, qb1, qb2)
             par_name = f'{gate_name}_{qb1}_{qb2}'
             self.add_operation(op_name)
 
             self.add_pulse_parameter(op_name, par_name + '_pulse_type', 'pulse_type',
                                      initial_value='BufferedHalfwayPulse',
-                                     vals=vals.Enum('BufferedHalfwayPulse'))
+                                     vals=vals.Enum('BufferedHalfwayPulse',
+                                                    'BufferedNZHalfwayPulse'))
 
             qb1_obj = self.get_qb(qb1)
             qb2_obj = self.get_qb(qb2)
@@ -215,10 +224,16 @@ class Device(Instrument):
             self.add_pulse_parameter(op_name, par_name + '_alpha2', 'alpha2',
                                      initial_value=1, vals=vals.Numbers())
             self.add_pulse_parameter(op_name, par_name + '_buffer_length_start',
-                                     'buffer_length_start', initial_value=10e-9,
+                                     'buffer_length_start', initial_value=30e-9,
                                      vals=vals.Numbers(0))
             self.add_pulse_parameter(op_name, par_name + '_buffer_length_end',
-                                     'buffer_length_end', initial_value=10e-9,
+                                     'buffer_length_end', initial_value=30e-9,
+                                     vals=vals.Numbers(0))
+            self.add_pulse_parameter(op_name, par_name + '_flux_buffer_length',
+                                     'flux_buffer_length', initial_value=0,
+                                     vals=vals.Numbers(0))
+            self.add_pulse_parameter(op_name, par_name + '_flux_buffer_length2',
+                                     'flux_buffer_length2', initial_value=0,
                                      vals=vals.Numbers(0))
             self.add_pulse_parameter(op_name, par_name + '_extra_buffer_aux_pulse',
                                      'extra_buffer_aux_pulse', initial_value=5e-9,
@@ -230,13 +245,115 @@ class Device(Instrument):
                                      'channel_relative_delay',
                                      initial_value=0, vals=vals.Numbers())
             self.add_pulse_parameter(op_name, par_name + '_gaussian_filter_sigma',
-                                     'gaussian_filter_sigma', initial_value=2e-9,
+                                     'gaussian_filter_sigma', initial_value=1e-9,
                                      vals=vals.Numbers(0))
 
     def add_nz_cz_pulse(self, gate_name, symmetric=True):
         raise NotImplementedError('NZ CZ pulse has not been implemented!')
 
     # Device Algorithms
+
+    def measure_J_coupling(self, qbm, qbs , freqs, cz_pulse_name=None,
+                           label=None, cal_points=False, prep_params=None,
+                           cal_states='auto', n_cal_points_per_state=1,
+                           freq_s=None, exp_metadata=None, upload=True,
+                           analyze=True):
+
+        """
+        Measure the J coupling between the qubits qbm and qbm at the interaction
+        frequency freq.
+
+        :param qbm:
+        :param qbs:
+        :param freq:
+        :param cz_pulse_name:
+        :param label:
+        :param cal_points:
+        :param prep_params:
+        :return:
+        """
+
+        if cz_pulse_name is None:
+            raise ValueError('Provide a cz_pulse_name!')
+
+        if label is None:
+            label = f'J_coupling_{qbm.name}{qbs.name}'
+        MC = self.instr_mc.get_instr()
+
+        for qb in [qbm, qbs]:
+            qb.prepare(drive='timedomain')
+
+        if cal_points:
+            cal_states = CalibrationPoints.guess_cal_states(cal_states)
+            cp = CalibrationPoints.single_qubit(
+                qbm.name, cal_states, n_per_state=n_cal_points_per_state)
+        else:
+            cp = None
+        if prep_params is None:
+            prep_params = self.get_prep_params([qbm, qbs])
+
+        operation_dict = self.get_operation_dict()
+
+        # Adjust amplitude of stationary qubit
+        if freq_s is None:
+            freq_s = freqs.mean()
+
+        amp_s = fms.Qubit_freq_to_dac(freq_s,
+                                      **qbs.fit_ge_freq_from_flux_pulse_amp())
+
+        fit_paras = qbm.fit_ge_freq_from_flux_pulse_amp()
+
+        amplitudes = fms.Qubit_freq_to_dac(freqs,
+                                       **fit_paras)
+
+        amplitudes = np.array(amplitudes)
+
+        if np.any((amplitudes > abs(fit_paras['V_per_phi0']) / 2)):
+            amplitudes -= fit_paras['V_per_phi0']
+        elif np.any((amplitudes < -abs(fit_paras['V_per_phi0']) / 2)):
+            amplitudes += fit_paras['V_per_phi0']
+
+        for [qb1, qb2] in [[qbm, qbs],[qbs,qbm]]:
+            operation_dict[cz_pulse_name+f' {qb1.name} {qb2.name}']\
+                ['amplitude2'] = amp_s
+
+
+        cz_pulse_name += f' {qbm.name} {qbs.name}'
+
+        seq, sweep_points, sweep_points_2D = \
+            fsqs.fluxpulse_amplitude_sequence(
+                amplitudes=amplitudes, freqs=freqs, qb_name=qbm.name,
+                operation_dict=operation_dict,
+                cz_pulse_name=cz_pulse_name, cal_points=cp,
+                prep_params=prep_params, upload=False)
+
+        MC.set_sweep_function(awg_swf.SegmentHardSweep(
+            sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
+
+        MC.set_sweep_points(sweep_points)
+        MC.set_sweep_function_2D(swf.Offset_Sweep(
+            qbm.instr_ge_lo.get_instr().frequency,
+            -qbm.ge_mod_freq(),
+            name='Drive frequency',
+            parameter_name='Drive frequency', unit='Hz'))
+        MC.set_sweep_points_2D(sweep_points_2D)
+        MC.set_detector_function(qbm.int_avg_det)
+        if exp_metadata is None:
+            exp_metadata = {}
+        exp_metadata.update({'sweep_points_dict': {qbm.name: amplitudes},
+                             'sweep_points_dict_2D': {qbm.name: freqs},
+                             'use_cal_points': cal_points,
+                             'preparation_params': prep_params,
+                             'cal_points': repr(cp),
+                             'rotate': cal_points,
+                             'data_to_fit': {qbm.name: 'pe'},
+                             "sweep_name": "Amplitude",
+                             "sweep_unit": "V",
+                             "global_PCA": True})
+        MC.run_2D(label, exp_metadata=exp_metadata)
+
+        if analyze:
+            ma.MeasurementAnalysis(TwoD=True)
 
     def measure_chevron(self, qbc, qbt, hard_sweep_params, soft_sweep_params,
                         cz_pulse_name=None, upload=True, label=None, qbr=None,
@@ -245,7 +362,7 @@ class Device(Instrument):
                         exp_metadata=None, analyze=True):
 
         if qbr is None:
-            qbr = qbc
+            qbr = qbt
         elif qbr != qbc and qbr != qbt:
             raise ValueError('Only target or control qubit can be read out!')
 
@@ -263,7 +380,7 @@ class Device(Instrument):
             cz_pulse_name += f' {qbc.name} {qbt.name}'
 
         cal_states = CalibrationPoints.guess_cal_states(cal_states)
-        cp = CalibrationPoints.single_qubit(qbc.name, cal_states,
+        cp = CalibrationPoints.single_qubit(qbr.name, cal_states,
                                             n_per_state=n_cal_points_per_state)
 
         if prep_params is None:
@@ -321,12 +438,10 @@ class Device(Instrument):
         if [qbc_name, qbt_name] not in self.connectivity_graph() and [qbt_name, qbc_name] not in self.connectivity_graph():
             raise ValueError('Qubits are not connected!')
 
-        if cz_pulse_name is None and len(self.get('two_qb_gates')) == 0:
-            raise ValueError('No two-qubit gates have been added!')
-        elif cz_pulse_name is None and len(self.get('two_qb_gates')) == 1:
-            cz_pulse_name = self.get('two_qb_gates')[0] + '_' + qbc_name + '_' + qbt_name
-            if cz_pulse_name not in self.operations():
-                cz_pulse_name = self.get('two_qb_gates')[0] + '_' + qbt_name + '_' + qbc_name
+        if cz_pulse_name is None:
+            cz_pulse_name = f'FP {qbc.name}'
+        else:
+            cz_pulse_name += f' {qbc.name} {qbt.name}'
 
 
         MC = self.instr_mc.get_instr()
@@ -337,8 +452,7 @@ class Device(Instrument):
         predictive_label = kw.pop('predictive_label', False)
 
         if prep_params is None:
-            prep_params = get_multi_qubit_prep_params(
-                [qb.preparation_params() for qb in [qbc, qbt]])
+            prep_params = self.get_prep_params([qbc, qbt])
 
         if label is None:
             if predictive_label:
@@ -397,7 +511,7 @@ class Device(Instrument):
                               'thresholded': False,
                               'averaged': True}
         det_name = 'int_avg{}_det'.format('_classif' if classified else '')
-        det_func = get_multiplexed_readout_detector_functions(
+        det_func = mqm.get_multiplexed_readout_detector_functions(
             [qbc, qbt], nr_averages=max(qb.acq_averages() for qb in [qbc, qbt]),
             det_get_values_kws=det_get_values_kws)[det_name]
         MC.set_detector_function(det_func)
@@ -413,7 +527,8 @@ class Device(Instrument):
                              'cal_states_rotations':
                                  {qbc.name: {'g': 0, 'f': 1},
                                   qbt.name: {'g': 0, 'e': 1}} if
-                                 (len(cal_states) != 0 and not classified) else None,
+                                 (len(cal_states) != 0 and not classified
+                                  and for_ef) else None,
                              'data_to_fit': {qbc.name: 'pf', qbt.name: 'pe'},
                              'hard_sweep_params': hard_sweep_params,
                              'soft_sweep_params': soft_sweep_params})
@@ -458,7 +573,7 @@ class Device(Instrument):
             qubits = [self.get_qb(qb_name) for qb_name in self.qubits()]
 
         for qubit in qubits:
-            gen.load_settings(qb, timestamp=timestamp)
+            gen.load_settings(qubit, timestamp=timestamp)
             # FIXME: also reload flux parameters
 
         cp = self.calibration_parameters()

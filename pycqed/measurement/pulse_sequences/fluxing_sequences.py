@@ -318,6 +318,8 @@ def chevron_seqs(qbc_name,
     ge_pulse_qbc['name'] = 'chevron_pi_qbc'
     ge_pulse_qbt = deepcopy(operation_dict['X180s ' + qbt_name])
     ge_pulse_qbt['name'] = 'chevron_pi_qbt'
+    ge_pulse_qbt['ref_point'] = 'end'
+    ge_pulse_qbt['ref_point_new'] = 'end'
     for ge_pulse in [ge_pulse_qbc, ge_pulse_qbt]:
         ge_pulse['element_name'] = 'chevron_pi_el'
 
@@ -332,7 +334,9 @@ def chevron_seqs(qbc_name,
         ro_pulses[0]['ref_pulse'] = 'chevron_pi_qbc'
         ro_pulses[0]['pulse_delay'] = \
             max_flux_length + flux_pulse.get('buffer_length_start', 0) + \
-            flux_pulse.get('buffer_length_end', 0)
+            flux_pulse.get('buffer_length_end', 0) + \
+            2*flux_pulse.get('flux_buffer_length', 0) + \
+            2*flux_pulse.get('flux_buffer_length2', 0)
 
     ssl = len(list(soft_sweep_dict.values())[0]['values'])
     sequences = []
@@ -387,7 +391,7 @@ def fluxpulse_scope_sequence(delays,
     flux_pulse['name'] = 'FPS_Flux'
     flux_pulse['ref_pulse'] = 'FPS_Pi'
     flux_pulse['ref_point'] = 'middle'
-    flux_pulse['pulse_delay'] = -flux_pulse.get('buffer_length_start', 0)
+    flux_pulse_delays = -delays - flux_pulse.get('buffer_length_start', 0)
 
     ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
     ro_pulse['name'] = 'FPS_Ro'
@@ -397,8 +401,8 @@ def fluxpulse_scope_sequence(delays,
                               flux_pulse.get('buffer_length_end', 0)
 
     pulses = [ge_pulse, flux_pulse, ro_pulse]
-    swept_pulses = sweep_pulse_params(pulses,
-                                      {'FPS_Flux.pulse_delay': -delays})
+    swept_pulses = sweep_pulse_params(
+        pulses, {'FPS_Flux.pulse_delay': flux_pulse_delays})
 
     swept_pulses_with_prep = \
         [add_preparation_pulses(p, operation_dict, [qb_name], **prep_params)
@@ -409,6 +413,8 @@ def fluxpulse_scope_sequence(delays,
     if cal_points is not None:
         # add calibration segments
         seq.extend(cal_points.create_segments(operation_dict, **prep_params))
+
+    seq.repeat_ro(f"RO {qb_name}", operation_dict)
 
     log.debug(seq)
     if upload:
@@ -422,7 +428,7 @@ def fluxpulse_amplitude_sequence(amplitudes,
                                  qb_name,
                                  operation_dict,
                                  cz_pulse_name,
-                                 delay,
+                                 delay=None,
                                  cal_points=None,
                                  prep_params=dict(),
                                  upload=True):
@@ -521,7 +527,7 @@ def T2_freq_sweep_seq(amplitudes,
     ge_pulse2['ref_pulse'] = 'DF_Flux'
     ge_pulse2['ref_point'] = 'end'
     ge_pulse2['pulse_delay'] = 0
-    ge_pulse2['element_name'] = 'DF_X90_el2'
+    ge_pulse2['element_name'] = 'DF_X90_el'
 
     ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
     ro_pulse['name'] = 'DF_Ro'
@@ -558,7 +564,8 @@ def decay_freq_seq(amplitudes,
                    cz_pulse_name,
                    flux_lengths,
                    cal_points=None,
-                   upload=True):
+                   upload=True,
+                   prep_params=dict()):
     '''
     Performs a X180 pulse before changing the qubit frequency with the flux
 
@@ -597,11 +604,14 @@ def decay_freq_seq(amplitudes,
         'DF_Flux.pulse_length': flux_lengths
     })
 
-    seq = pulse_list_list_seq(swept_pulses, seq_name, upload=False)
+    swept_pulses_with_prep = \
+        [add_preparation_pulses(p, operation_dict, [qb_name], **prep_params)
+         for p in swept_pulses]
+    seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
 
     if cal_points is not None:
         # add calibration segments
-        seq.extend(cal_points.create_segments(operation_dict))
+        seq.extend(cal_points.create_segments(operation_dict, **prep_params))
 
     seq.repeat_ro('RO ' + qb_name, operation_dict)
 
@@ -783,6 +793,8 @@ def cphase_seqs(
     ]
     initial_rotations[0]['name'] = 'cphase_init_pi_qbc'
     initial_rotations[1]['name'] = 'cphase_init_pihalf_qbt'
+    initial_rotations[1]['ref_point'] = 'end'
+    initial_rotations[1]['ref_point_new'] = 'end'
     for rot_pulses in initial_rotations:
         rot_pulses['element_name'] = 'cphase_initial_rots_el'
 
@@ -813,8 +825,13 @@ def cphase_seqs(
             print(f'max_pulse_length = {max_flux_length*1e9:.2f} ns, '
                   f'from pulse dict.')
     # add buffers to this delay
-    delay = max_flux_length + flux_pulse.get('buffer_length_start', 0) + \
-        flux_pulse.get('buffer_length_end', 0)
+    nr_flux_buffer = 4 if flux_pulse['pulse_type']=='BufferedNZHalfwayPulse' \
+        else 2 #for NZ pulse we have four buffers
+    delay = num_cz_gates*(max_flux_length +
+        flux_pulse.get('buffer_length_start', 0) +
+        flux_pulse.get('buffer_length_end', 0) +
+        nr_flux_buffer*flux_pulse.get('flux_buffer_length', 0) +
+        nr_flux_buffer*flux_pulse.get('flux_buffer_length2', 0))
     # # ensure the delay is commensurate with 16/2.4e9
     # comm_const = (16/2.4e9)
     # if delay % comm_const > 1e-15:
@@ -824,8 +841,18 @@ def cphase_seqs(
     final_rotations[0]['ref_pulse'] = 'cphase_init_pi_qbc'
     final_rotations[0]['pulse_delay'] = delay
 
+    # make sure RO happens after last ge
+    ge_pulse_len = np.array(
+        [final_rotations[i]['sigma']*final_rotations[i]['nr_sigma']
+         for i in range(2)])
+
+    longer_pulse = ge_pulse_len.argmax()
+
+
     ro_pulses = generate_mux_ro_pulse_list([qbc_name, qbt_name],
                                            operation_dict)
+
+    ro_pulses[0]['ref_pulse'] = final_rotations[longer_pulse]['name']
 
     hsl = len(list(hard_sweep_dict.values())[0]['values'])
     params = {

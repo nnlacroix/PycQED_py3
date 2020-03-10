@@ -96,12 +96,13 @@ def TwinLorentzFunc(f, A_gf_over_2, A, f0_gf_over_2, f0,
 def Qubit_dac_to_freq(dac_voltage, f_max,
                       dac_sweet_spot, V_per_phi0=None,
                       dac_flux_coefficient=None,
-                      asymmetry=0):
+                      # asymmetry=0.5, E_c = 250e6):
+                      asymmetry=0.5):
     '''
     The cosine Arc model for uncalibrated flux for asymmetric qubit.
 
     dac_voltage (V)
-    f_max (Hz): sweet-spot frequency of the qubit
+    f_max (Hz): sweet-spot frequency of the qubitd
     E_c (Hz): charging energy of the qubit
     V_per_phi0 (V): volt per phi0 (convert voltage to flux)
     dac_sweet_spot (V): voltage at which the sweet-spot is found
@@ -1259,7 +1260,8 @@ LinOModel = lmfit.Model(linear_with_offset)
 LinBGModel = lmfit.Model(linear_with_background)
 LinBGOModel = lmfit.Model(linear_with_background_and_offset)
 ErfWindowModel = lmfit.Model(ErfWindow)
-GaussianModel = lmfit.models.GaussianModel
+GaussianModel_v2 = lmfit.models.GaussianModel
+GaussianModel = lmfit.Model(Gaussian)
 ExponentialModel = lmfit.models.ExponentialModel
 HangerWithPfModel = lmfit.Model(hanger_with_pf)
 SimHangerWithPfModel = lmfit.Model(simultan_hanger_with_pf,

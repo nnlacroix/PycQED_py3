@@ -1164,7 +1164,12 @@ class MeasurementControl(Instrument):
                         val = repr(p['value'])
                     except KeyError:
                         val = ''
-                    instrument_grp.attrs[p_name] = val
+                    try:
+                        instrument_grp.attrs[p_name] = val
+                    except MemoryError:
+                        print(f'{p_name}: {len(val)}')
+                        print(f'{p_name}: {val}')
+                        raise
         numpy.set_printoptions(**opt)
 
     def save_MC_metadata(self, data_object=None, *args):

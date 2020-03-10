@@ -274,7 +274,7 @@ class BufferedCZPulse(Pulse):
         t_rel = tvals - tvals[0]
         wave *= np.cos(
             2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
-        return wave
+        return wave - wave[0]
 
     def hashables(self, tstart, channel):
         if channel not in self.channels:
@@ -503,7 +503,7 @@ class NZBufferedCZPulse(Pulse):
         hashlist += [self.gaussian_filter_sigma, self.alpha]
         return hashlist
 
-class BufferedHalfwayPulse(Pulse):
+class BufferedNZHalfwayPulse(Pulse):
     def __init__(self, channel, channel2, element_name, aux_channels_dict=None,
                  name='Buffered Halfway Pulse', **kw):
         super().__init__(name, element_name)
@@ -512,6 +512,10 @@ class BufferedHalfwayPulse(Pulse):
         self.channel2 = channel2
         self.channels = [self.channel, self.channel2]
 
+        # buffer when fluxing one qubit until the other qubit is fluxed
+        self.flux_buffer = {channel: kw.pop('flux_buffer_length2', 0),
+                            channel2: kw.pop('flux_buffer_length', 0)}
+
         self.amps = {channel: kw.pop('amplitude', 0), channel2: kw.pop('amplitude2', 0)}
         
         alpha1 = kw.pop('alpha', 1)
@@ -519,8 +523,16 @@ class BufferedHalfwayPulse(Pulse):
         alpha2 = alpha1
         self.alphas = {channel: alpha1, channel2: alpha2}
         self.pulse_length = kw.pop('pulse_length', 0)
-        self.length1 = {channel: alpha1*self.pulse_length/(alpha1 + 1),
-                        channel2: alpha2*self.pulse_length/(alpha2 + 1)}
+
+        self.length1 = {channel: alpha1*self.pulse_length/(alpha1 + 1)\
+                                 + 2*self.flux_buffer[channel2],
+                        channel2: alpha2*self.pulse_length/(alpha2 + 1)\
+                                  + 2*self.flux_buffer[channel]}
+
+        self.length2 = {channel: self.pulse_length/(alpha1 + 1)\
+                                 + 2*self.flux_buffer[channel2],
+                        channel2: self.pulse_length/(alpha2 + 1)\
+                                  + 2*self.flux_buffer[channel]}
 
         # delay of pulse on qb2 wrt pulse on qb1
         self.delay = kw.pop('channel_relative_delay',0) 
@@ -528,22 +540,32 @@ class BufferedHalfwayPulse(Pulse):
         # negative delay means the qb1 pulse happens after qb2 pulse
         if self.delay < 0:
             self.buffer_length_start = \
-                       {channel: kw.get('buffer_length_start', 0) - self.delay,
-                        channel2: kw.pop('buffer_length_start', 0)}
+                       {channel: kw.get('buffer_length_start', 0) - self.delay\
+                           + self.flux_buffer[channel],
+                        channel2: kw.pop('buffer_length_start', 0)\
+                           + self.flux_buffer[channel2]}
             self.buffer_length_end = \
-                        {channel: kw.get('buffer_length_end', 0),
-                         channel2: kw.pop('buffer_length_end', 0) - self.delay}
+                        {channel: kw.get('buffer_length_end', 0)\
+                            + self.flux_buffer[channel],
+                         channel2: kw.pop('buffer_length_end', 0) - self.delay\
+                            + self.flux_buffer[channel2]}
         else:
             self.buffer_length_start = \
-                       {channel: kw.get('buffer_length_start', 0),
-                        channel2: kw.pop('buffer_length_start', 0) + self.delay}
+                       {channel: kw.get('buffer_length_start', 0)\
+                           + self.flux_buffer[channel],
+                        channel2: kw.pop('buffer_length_start', 0) + self.delay\
+                           + self.flux_buffer[channel2]}
             self.buffer_length_end = \
-                        {channel: kw.get('buffer_length_end', 0) + self.delay,
-                         channel2: kw.pop('buffer_length_end', 0)}
+                        {channel: kw.get('buffer_length_end', 0) + self.delay\
+                            + self.flux_buffer[channel],
+                         channel2: kw.pop('buffer_length_end', 0)\
+                            + self.flux_buffer[channel2]}
 
         self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma', 0)
-        self.length = self.pulse_length + self.buffer_length_start[channel] + \
-                      self.buffer_length_end[channel]
+        self.length = self.length1[channel] + self.length2[channel] + \
+                      self.buffer_length_start[channel] + \
+                      self.buffer_length_end[channel] + \
+                      2*self.flux_buffer[channel]
 
         self.codeword = kw.pop('codeword', 'no_codeword')
 
@@ -577,27 +599,32 @@ class BufferedHalfwayPulse(Pulse):
         amp1 = self.amps[chan]
         amp2 = -amp1*self.alphas[chan]
         buffer_start = self.buffer_length_start[chan]
-        pulse_length = self.pulse_length
+        flux_buffer = self.flux_buffer[chan]
         l1 = self.length1[chan]
+        l2 = self.length2[chan]
 
         if self.gaussian_filter_sigma == 0:
+            # creates first square
             wave1 = np.ones_like(tvals)*amp1
             wave1 *= (tvals >= tvals[0] + buffer_start)
             wave1 *= (tvals < tvals[0] + buffer_start + l1)
 
+            # creates second NZ square
             wave2 = np.ones_like(tvals)*amp2
-            wave2 *= (tvals >= tvals[0] + buffer_start + l1)
-            wave2 *= (tvals < tvals[0] + buffer_start + pulse_length)
+            wave2 *= (tvals >= tvals[0] + buffer_start + l1 + 2*flux_buffer)
+            wave2 *= (tvals < tvals[0] + buffer_start + l1 + l2 \
+                      + 2*flux_buffer)
 
             wave = wave1 + wave2
         else:
             tstart = tvals[0] + buffer_start
             tend = tvals[0] + buffer_start + l1
-            tend2 = tvals[0] + buffer_start + pulse_length
+            tstart2 = tvals[0] + buffer_start + l1 + 2*flux_buffer
+            tend2 = tvals[0] + buffer_start + l1 + l2 + 2*flux_buffer
             scaling = 1/np.sqrt(2)/self.gaussian_filter_sigma
             wave = 0.5*(amp1*sp.special.erf((tvals - tstart)*scaling) -
                         amp1*sp.special.erf((tvals - tend)*scaling) +
-                        amp2*sp.special.erf((tvals - tend)*scaling) -
+                        amp2*sp.special.erf((tvals - tstart2)*scaling) -
                         amp2*sp.special.erf((tvals - tend2)*scaling))
         return wave
 
@@ -613,6 +640,94 @@ class BufferedHalfwayPulse(Pulse):
 
         hashlist += [amp, pulse_length, buffer_start, buffer_end]
         hashlist += [self.gaussian_filter_sigma, self.alphas[channel]]
+        return hashlist
+
+
+class BufferedHalfwayPulse(Pulse):
+    def __init__(self, channel, channel2, element_name, aux_channels_dict=None,
+                 name='Buffered Halfway Pulse', **kw):
+        super().__init__(name, element_name)
+
+        self.channel = channel
+        self.channel2 = channel2
+        self.channels = [self.channel, self.channel2]
+
+        self.amps = {channel: kw.pop('amplitude', 0),
+                     channel2: kw.pop('amplitude2', 0)}
+
+        # delay of pulse on qb2 wrt pulse on qb1
+        self.delay = kw.pop('channel_relative_delay', 0)
+
+        # buffer when fluxing one qubit until the other qubit is fluxed
+        self.flux_buffer_length = kw.pop('flux_buffer_length', 0)
+        self.flux_buffer_length2 = kw.pop('flux_buffer_length2', 0)
+
+        self.pulse_length = kw.pop('pulse_length', 0)
+        self.length1 = {channel: self.pulse_length + 2*self.flux_buffer_length,
+                        channel2: self.pulse_length+2*self.flux_buffer_length2}
+
+        # negative delay means the qb1 pulse happens after qb2 pulse
+        if self.delay < 0:
+            self.buffer_length_start = \
+                {channel: kw.get('buffer_length_start', 0) - self.delay + \
+                    self.flux_buffer_length2,
+                 channel2: kw.pop('buffer_length_start', 0) + \
+                    self.flux_buffer_length}
+            self.buffer_length_end = \
+                {channel: kw.get('buffer_length_end', 0) + \
+                    self.flux_buffer_length2,
+                 channel2: kw.pop('buffer_length_end', 0) - self.delay + \
+                    self.flux_buffer_length}
+        else:
+            self.buffer_length_start = \
+                {channel: kw.get('buffer_length_start', 0) + \
+                    self.flux_buffer_length2,
+                 channel2: kw.pop('buffer_length_start', 0) + self.delay + \
+                    self.flux_buffer_length}
+            self.buffer_length_end = \
+                {channel: kw.get('buffer_length_end', 0) + self.delay + \
+                    self.flux_buffer_length2,
+                 channel2: kw.pop('buffer_length_end', 0) + \
+                    self.flux_buffer_length}
+
+        self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma', 0)
+        self.length = self.length1[channel] + self.buffer_length_start[channel] + \
+                      self.buffer_length_end[channel] + 2*self.flux_buffer_length2
+
+        self.codeword = kw.pop('codeword', 'no_codeword')
+
+    def chan_wf(self, chan, tvals):
+
+        amp = self.amps[chan]
+        buffer_start = self.buffer_length_start[chan]
+        l1 = self.length1[chan]
+
+        if self.gaussian_filter_sigma == 0:
+            wave = np.ones_like(tvals) * amp
+            wave *= (tvals >= tvals[0] + buffer_start)
+            wave *= (tvals < tvals[0] + buffer_start + l1)
+
+        else:
+            tstart = tvals[0] + buffer_start
+            tend = tvals[0] + buffer_start + l1
+            scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
+            wave = 0.5 * (sp.special.erf(
+                (tvals - tstart) * scaling) - sp.special.erf(
+                (tvals - tend) * scaling)) * amp
+        return wave
+
+    def hashables(self, tstart, channel):
+        if channel not in self.channels:
+            return []
+        hashlist = [type(self), self.algorithm_time() - tstart]
+
+        amp = self.amps[channel]
+        buffer_start = self.buffer_length_start[channel]
+        buffer_end = self.buffer_length_end[channel]
+        pulse_length = self.pulse_length
+
+        hashlist += [amp, pulse_length, buffer_start, buffer_end]
+        hashlist += [self.gaussian_filter_sigma]
         return hashlist
 
 class NZMartinisGellarPulse(Pulse):
