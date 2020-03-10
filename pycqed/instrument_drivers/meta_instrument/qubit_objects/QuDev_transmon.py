@@ -3286,12 +3286,6 @@ class QuDev_transmon(Qubit):
             freqs (numpy array): array of drive frequencies
             delays (numpy array): array of delays of the drive pulse w.r.t
                 the flux pulse
-            pulse_length (float): flux pulse length (if not specified, the
-                                    self.flux_pulse_length() is taken)
-            pulse_amp (float): flux pulse amplitude  (if not specified, the
-                                    self.flux_pulse_amp() is taken)
-            pulse_delay (float): flux pulse delay
-            MC (MeasurementControl): if None, then the self.MC is taken
 
         Returns: None
 
@@ -3315,6 +3309,7 @@ class QuDev_transmon(Qubit):
                 operation_dict=self.get_operation_dict(),
                 cz_pulse_name=cz_pulse_name, cal_points=cp,
                 prep_params=prep_params, upload=False)
+
         MC.set_sweep_function(awg_swf.SegmentHardSweep(
             sequence=seq, upload=upload, parameter_name='Delay', unit='s'))
         MC.set_sweep_points(sweep_points)
@@ -3344,6 +3339,88 @@ class QuDev_transmon(Qubit):
                                                    options_dict=dict(TwoD=True))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)
+
+    def measure_flux_pulse_amplitude(self, freqs, amplitudes, cz_pulse_name,
+                                     analyze=True, cal_points=True,
+                                     upload=True, label=None,
+                                     n_cal_points_per_state=2, delay=None,
+                                     cal_states='auto', prep_params=None,
+                                     exp_metadata=None, update=False):
+        '''
+        Flux pulse amplitude measurement used to determine the qubits energy in
+        dependence of flux pulse amplitude.
+        pulse sequence:
+           |    -------------    |X180|  ---------------------  |RO|
+           |    ---   | ---- fluxpulse ----- |
+        Args:
+            freqs (numpy array): array of drive frequencies
+            amplitudes (numpy array): array of amplitudes of the flux pulse
+            delay (float): flux pulse delay
+            MC (MeasurementControl): if None, then the self.MC is taken
+        Returns: None
+        '''
+
+        #Pulse name is a mandatory arg
+
+        #if cz_pulse_name is None:
+            #cz_pulse_name = f'upCZ {qbt.name} {self.name}' #fixed name for CZ
+
+        if label is None:
+            label = 'Flux_amplitude_{}'.format(self.name)  #fix: uncomment when on live system
+        MC = self.instr_mc.get_instr()
+        # self.prepare(drive='timedomain')
+
+        if cal_points:
+            cal_states = CalibrationPoints.guess_cal_states(cal_states)
+            cp = CalibrationPoints.single_qubit(
+                self.name, cal_states, n_per_state=n_cal_points_per_state)
+        else:
+            cp = None
+        if prep_params is None:
+            prep_params = self.preparation_params()
+        seq, sweep_points, sweep_points_2D = \
+            fsqs.fluxpulse_amplitude_sequence(
+                amplitudes=amplitudes, freqs=freqs, qb_name=self.name,
+                operation_dict=self.get_operation_dict(), delay=delay,
+                cz_pulse_name=cz_pulse_name, cal_points=cp,
+                prep_params=prep_params, upload=False)
+
+        #return seq #to plot the sequence used afterward
+
+        MC.set_sweep_function(awg_swf.SegmentHardSweep(
+            sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
+        MC.set_sweep_points(sweep_points)
+        MC.set_sweep_function_2D(swf.Offset_Sweep(
+            self.instr_ge_lo.get_instr().frequency,
+            -self.ge_mod_freq(),
+            name='Drive frequency',
+            parameter_name='Drive frequency', unit='Hz'))
+        MC.set_sweep_points_2D(sweep_points_2D)
+        MC.set_detector_function(self.int_avg_det)
+        if exp_metadata is None:
+            exp_metadata = {}
+        exp_metadata.update({'sweep_points_dict': {self.name: amplitudes},
+                             'sweep_points_dict_2D': {self.name: freqs},
+                             'use_cal_points': cal_points,
+                             'preparation_params': prep_params,
+                             'cal_points': repr(cp),
+                             'rotate': cal_points,
+                             'data_to_fit': {self.name: 'pe'},
+                             "sweep_name": "Amplitude",
+                             "sweep_unit": "V",
+                             "global_PCA": True})
+        MC.run_2D(label, exp_metadata=exp_metadata)
+
+        if analyze:
+            try:
+                MA = tda.FluxAmplitudeSweepAnalysis(qb_names=[self.name],
+                                                    options_dict=dict(TwoD=True))
+            except Exception:
+                ma.MeasurementAnalysis(TwoD=True)
+
+        if update:
+            self.fit_ge_freq_from_flux_pulse_amp(MA.fit_res['freq_fit_{'
+                                                            'self.name}'].best_values)
 
     def measure_flux_pulse_scope_nzcz_alpha(
             self, nzcz_alphas, delays, CZ_pulse_name=None,

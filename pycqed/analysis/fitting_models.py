@@ -1254,6 +1254,7 @@ LinBGModel = lmfit.Model(linear_with_background)
 LinBGOModel = lmfit.Model(linear_with_background_and_offset)
 ErfWindowModel = lmfit.Model(ErfWindow)
 GaussianModel = lmfit.Model(Gaussian)
+GaussianModel_v2 = lmfit.models.GaussianModel
 HangerWithPfModel = lmfit.Model(hanger_with_pf)
 SimHangerWithPfModel = lmfit.Model(simultan_hanger_with_pf,
                                    independent_vars=['f'])
