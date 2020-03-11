@@ -2154,41 +2154,6 @@ def plot_errorbars(x, y, ax=None, err_bars=None, label=None, **kw):
 #    Calculations tools
 ######################################################################
 
-
-def calculate_transmon_transitions(EC, EJ, asym=0, reduced_flux=0,
-                                   no_transitions=2, dim=None):
-    '''
-    Calculates transmon energy levels from the full transmon qubit Hamiltonian.
-    '''
-    if dim is None:
-        dim = no_transitions*20
-
-    EJphi = EJ*np.sqrt(asym**2 + (1-asym**2)*np.cos(np.pi*reduced_flux)**2)
-
-    Ham = 4*EC*np.diag(np.arange(-dim, dim+1)**2) - EJphi/2 * \
-        (np.eye(2*dim+1, k=+1) + np.eye(2*dim+1, k=-1))
-    HamEigs = np.linalg.eigvalsh(Ham)
-    HamEigs.sort()
-
-    transitions = HamEigs[1:]-HamEigs[:-1]
-
-    return transitions[:no_transitions]
-
-
-def fit_EC_EJ(f01, f12):
-    '''
-    Calculates EC and EJ from f01 and f12 by numerical optimization.
-    '''
-    from scipy import optimize
-    # initial guesses
-    EC0 = f01-f12
-    EJ0 = (f01+EC0)**2/(8*EC0)
-
-    penaltyfn = lambda Es: calculate_transmon_transitions(*Es)-[f01, f12]
-    (EC, EJ), success = optimize.leastsq(penaltyfn, (EC0, EJ0))
-    return EC, EJ
-
-
 def solve_quadratic_equation(a, b, c, verbose=False):
     '''
     returns solutions to the quadratic equation. Will raise an error if the
