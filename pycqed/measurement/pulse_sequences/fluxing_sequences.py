@@ -142,7 +142,7 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict_ramsey, operation_dict,
                       cz_pulse_name,
                       hard_sweep_dict_flux=None,
                       cal_points=None, prepend_n_cz=0,
-                      upload=False, prep_params=dict()):
+                      upload=False, prep_params=dict(), prepend_pulse_dicts=None):
     '''
     Performs a Ramsey with interleaved Flux pulse
     Sequence
@@ -162,7 +162,6 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict_ramsey, operation_dict,
         p['element_name'] = 'pi_half_start'
 
     flux_pulse = deepcopy(operation_dict[cz_pulse_name])
-    flux_pulse['name'] = 'flux'
     flux_pulse['element_name'] = 'flux_el'
 
     ge_half_end = [deepcopy(operation_dict['X90 ' + qb_name]) for qb_name in
@@ -184,12 +183,24 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict_ramsey, operation_dict,
         hard_sweep_dict_flux = {param_to_set: [flux_pulse[param_to_set]]}
     ro_pulses = generate_mux_ro_pulse_list(qb_names, operation_dict)
 
-    pulse_list = [deepcopy(operation_dict[cz_pulse_name])
+    if prepend_pulse_dicts is None:
+        prepend_pulse_dicts = {}
+    pulse_list = []
+    for i, pp in enumerate(prepend_pulse_dicts):
+        prepend_pulse = deepcopy(operation_dict[pp['pulse_name']])
+        prepend_pulse['name'] = f'prepend_cz_{i}'
+        prepend_pulse['element_name'] = pp.get('element_name', 'flux_el')
+        pulse_list += [prepend_pulse]
+
+    print(pulse_list)
+    pulse_list += [deepcopy(flux_pulse)
                   for _ in range(prepend_n_cz)]
 
     pulse_list += Block("ge_half_start pulses", ge_half_start,)\
         .build(block_start=dict(element_name='flux_el'),
                block_end=dict(element_name='flux_el'))
+
+    flux_pulse['name'] = 'flux'
     pulse_list += [flux_pulse] + ge_half_end + ro_pulses
     hsl = len(list(hard_sweep_dict_ramsey.values())[0]['values'])
 
@@ -548,11 +559,20 @@ def cz_bleed_through_phase_seq(phases, qb_name, CZ_pulse_name, CZ_separation,
 def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
                 operation_dict, cz_pulse_name, num_cz_gates=1,
                 max_flux_length=None, cal_points=None, upload=True,
-                prep_params=dict()):
+                prep_params=dict(), prepend_pulse_dicts=None):
 
     assert num_cz_gates % 2 != 0
 
     seq_name = 'Cphase_sequence'
+
+    if prepend_pulse_dicts is None:
+        prepend_pulse_dicts = {}
+    prepend_pulses = []
+    for i, pp in enumerate(prepend_pulse_dicts):
+        prepend_pulse = deepcopy(operation_dict[pp['pulse_name']])
+        prepend_pulse['name'] = f'prepend_cz_{i}'
+        prepend_pulse['element_name'] = pp.get('element_name', 'cphase_flux_el')
+        prepend_pulses += [prepend_pulse]
 
     initial_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
                          deepcopy(operation_dict['X90s ' + qbt_name])]
@@ -624,8 +644,8 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
             final_rotations[0]['ref_pulse'] =  fp_list[-1]['name']
             final_rotations[0]['ref_point'] = 'end'
             final_rotations[0]['pulse_delay'] = 0
-        pulses = initial_rotations + fp_list + deepcopy(final_rotations) + \
-                 ro_pulses
+        pulses = prepend_pulses + initial_rotations + fp_list + \
+                 deepcopy(final_rotations) + ro_pulses
         swept_pulses = sweep_pulse_params(pulses, params)
         swept_pulses_with_prep = \
             [add_preparation_pulses(p, operation_dict, [qbc_name, qbt_name],
