@@ -665,6 +665,8 @@ class QAOAHelper(HelperBase):
                 z_qbt = self.Z_gate(2 * gamma * C * 180 / np.pi, qbt)
 
                 if cphase_implementation == "software":
+                    # temporary hard coding of pulse type.
+                    self.operation_dict[gate_name]['pulse_type'] = 'BufferedCZPulse'
                     if doswap:
                         two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}", [z_qbc, z_qbt])
                         two_qb_block.extend(
@@ -718,7 +720,7 @@ class QAOAHelper(HelperBase):
                     c_arb_pulse['amplitude'] = ampl
                     c_arb_pulse['element_name'] = "flux_arb_gate"
                     c_arb_pulse['basis_rotation'].update(dyn_phase)
-
+                    c_arb_pulse['pulse_type'] = 'BufferedCZPulseEffectiveTime'
                     two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                          [z_qbc, z_qbt, c_arb_pulse])
                     if doswap:
