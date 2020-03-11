@@ -2589,7 +2589,7 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                         MA.proc_data_dict['analysis_params_dict'][qb.name][
                             'dynamic_phase']['val']*180/np.pi
     if update and reset_phases_before_measurement:
-        qbc.set(basis_rot_par, dyn_phases)
+        getattr(qbc,basis_rot_par)().update(dyn_phases)
     return dyn_phases
 
 
