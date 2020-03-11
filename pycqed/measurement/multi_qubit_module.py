@@ -454,7 +454,7 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
     if tomography_options is None:
         tomography_options = {}
 
-    operation_dict = get_operation_dict(qubits)
+    operation_dict = deepcopy(get_operation_dict(qubits))
     MC = qubits[0].instr_mc.get_instr()
 
     # prepare qubits

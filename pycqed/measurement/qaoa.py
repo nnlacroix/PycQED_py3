@@ -170,7 +170,7 @@ def qaoa_sequence(qb_names, betas, gammas, gates_info, operation_dict,
 
     seq = sequence.Sequence(seq_name)
 
-    builder = QAOAHelper(qb_names, operation_dict)
+    builder = QAOAHelper(qb_names, deepcopy(operation_dict))
 
     prep_params = {} if prep_params is None else prep_params
 
