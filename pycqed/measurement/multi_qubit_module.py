@@ -540,6 +540,7 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
         a.proc_data_dict['qubit_states_filtered'] = \
             np.array(qubit_states).T[filter]
         qb_states_filtered = a.proc_data_dict['qubit_states_filtered']
+        a.data_file.close()
         a.save_processed_data()
         if tomography and tomography_options.get("analyze", True):
             # tomography analysis
@@ -756,7 +757,7 @@ def run_qaoa(qubits, gates_info, maxiter=1,
                 a.proc_data_dict['qubit_states'] = np.array(qubit_states).T
                 qb_states_filtered = np.array(qubit_states).T[filter]
                 a.proc_data_dict['qubit_states_filtered'] = qb_states_filtered
-
+                a.data_file.close()
                 a.save_processed_data()
 
                 # tomography analysis
