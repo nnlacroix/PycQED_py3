@@ -430,14 +430,11 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
                  maxfev=None, optimizer_method="Nelder-Mead",
                  optimizer_kwargs=None, betas=(np.pi,), gammas=(np.pi,),
                  problem_hamiltonian="ising", tomography=False, tomography_options=None,
-                 analyze=True, exp_metadata=None,
+                 analyze=True, exp_metadata=None, shots=15000,
                  init_state="+", cphase_implementation="hardware",
                  prep_params=None, upload=True, label=None,
                  custom_sequence=None):
     qb_names = [qb.name for qb in qubits]
-    assert len(np.unique([qb.acq_shots() for qb in qubits])) == 1, \
-        f"Not all qubits have same number of acquisition shots:\n{qb_names} " \
-            f"\n{[qb.acq_shots() for qb in qubits]}"
 
     if label is None:
         label = f"QAOA_{qb_names}"
@@ -482,7 +479,7 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
                           'thresholded': False,
                           'averaged': False}
     df = get_multiplexed_readout_detector_functions(
-        qubits, nr_shots=max(qb.acq_shots() for qb in qubits),
+        qubits, nr_shots=shots,
         nr_averages=max(qb.acq_averages() for qb in qubits),
         det_get_values_kws=det_get_values_kws)['int_avg_classif_det']
     MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq, upload=upload))
@@ -503,11 +500,13 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
                     'single_qb_terms': str(single_qb_terms),
                     'cphase_implementation': cphase_implementation,
                     # 'optimizer_method': optimizer_method,
-                    'shots': max(qb.acq_shots() for qb in qubits)})
+                    'shots': shots})
     if tomography:
         exp_metadata.update(dict(basis_rots=tomography_options.get("basis_rots",
                                             tomo.DEFAULT_BASIS_ROTS)))
-    MC.run(name=label, exp_metadata=exp_metadata)
+    temp_val = [(qb.acq_shots, shots) for qb in qubits]
+    with temporary_value(*temp_val):
+        MC.run(name=label, exp_metadata=exp_metadata)
 
     if analyze:
         # analyze
@@ -605,7 +604,7 @@ def run_qaoa(qubits, gates_info, maxiter=1,
                  optimizer_kwargs=None, betas_init=(np.pi,), gammas_init=(np.pi,),
                  depth=1, tomography=(), tomography_options=None,
                  analyze=True, exp_metadata=None, problem_hamiltonian="ising",
-                 single_qb_terms=None,
+                 single_qb_terms=None, shots=15000,
                  init_state="+", cphase_implementation="hardware",
                  prep_params=None, upload=True, label=None):
     """
@@ -644,10 +643,6 @@ def run_qaoa(qubits, gates_info, maxiter=1,
     """
 
     qb_names = [qb.name for qb in qubits]
-
-    assert len(np.unique([qb.acq_shots() for qb in qubits])) == 1, \
-        f"Not all qubits have same number of acquisition shots:\n{qb_names} " \
-            f"\n{[qb.acq_shots() for qb in qubits]}"
 
     if label is None:
         label = f"QAOA_{qb_names}"
@@ -719,10 +714,9 @@ def run_qaoa(qubits, gates_info, maxiter=1,
                             'qb_names': str(qb_names),
                             "single_qb_terms": str(single_qb_terms),
                             'cphase_implementation': cphase_implementation,
-                            'shots': max(qb.acq_shots() for qb in qubits)}
+                            'shots': shots}
 
-            MC.run(name=
-                   tomography_options.pop("label",
+            MC.run(name=tomography_options.pop("label",
                                          f"tomography_iter_{iteration[-1]}"),
                    exp_metadata=exp_metadata)
             if analyze:
@@ -821,7 +815,7 @@ def run_qaoa(qubits, gates_info, maxiter=1,
                                 gammas=gammas_feval, analyze=True,
                                 problem_hamiltonian=problem_hamiltonian,
                      exp_metadata=exp_metadata, init_state=init_state,
-                     cphase_implementation=cphase_implementation,
+                     cphase_implementation=cphase_implementation, shots=shots,
                      prep_params=prep_params, upload=upload, label=label)
 
         func_eval.append(func_eval[-1] + 1)
