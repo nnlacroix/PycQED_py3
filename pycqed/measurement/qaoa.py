@@ -674,7 +674,9 @@ class QAOAHelper(HelperBase):
                     else:
                         two_qb_block = \
                             self._U_qb_pair_software_decomposition(
-                                qbc, qbt, gamma, C, gate_name,
+                                (self.qb_names[gates_info['qbs'][-1]] if not
+                                    nbody else qbt),
+                                gamma, C, gate_name,
                                 f"software qbc:{qbc} qbt:{qbt}",
                                 remove_had=nbody,
                                 remove_1stCZ=(remove_1stCZ if first_layer else ''))
@@ -741,7 +743,7 @@ class QAOAHelper(HelperBase):
 
         return U
 
-    def _U_qb_pair_software_decomposition(self, qbc, qbt, gamma, J, cz_gate_name,
+    def _U_qb_pair_software_decomposition(self, qbt, gamma, J, cz_gate_name,
                                           block_name, remove_had=False,
                                           remove_1stCZ='', echo=()):
         """
@@ -753,10 +755,9 @@ class QAOAHelper(HelperBase):
         H_qbt---CZ---H_qbt---RZ_qbt(2*phi)---H_qbt---CZ---H_qbt
         where:
             H_qbt is a Hadamard gate on qbt (implemented using Y90 + Z180)
-            CZ is the control pi-phase gate between qbc and qbt
+            CZ is the control pi-phase gate between the qubits
             RZ_qb(x) is a z rotation of angle x on qb
 
-        :param qbc:
         :param qbt:
         :param gamma:
         :param J:
