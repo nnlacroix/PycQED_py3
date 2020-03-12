@@ -17,7 +17,6 @@ from pycqed.analysis.analysis_toolbox import get_color_order as gco
 from pycqed.analysis.analysis_toolbox import get_color_list
 from pycqed.analysis.tools.plotting import (
     set_axis_label, flex_colormesh_plot_vs_xy, flex_color_plot_vs_x)
-import pycqed.analysis_v2.default_figure_settings_analysis as def_fig
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import datetime
 import json
@@ -1656,6 +1655,7 @@ class BaseDataAnalysis(object):
                     except:
                         pass
             axs.axvline(x=x, **d)
+
 
 
 def plot_scatter_errorbar(self, ax_id, xdata, ydata, xerr=None, yerr=None, pdict=None):
