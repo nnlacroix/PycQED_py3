@@ -3366,9 +3366,9 @@ class QuDev_transmon(Qubit):
             #cz_pulse_name = f'upCZ {qbt.name} {self.name}' #fixed name for CZ
 
         if label is None:
-            label = 'Flux_amplitude_{}'.format(self.name)  #fix: uncomment when on live system
+            label = 'Flux_amplitude_{}'.format(self.name)
         MC = self.instr_mc.get_instr()
-        # self.prepare(drive='timedomain')
+        self.prepare(drive='timedomain')
 
         if cal_points:
             cal_states = CalibrationPoints.guess_cal_states(cal_states)
