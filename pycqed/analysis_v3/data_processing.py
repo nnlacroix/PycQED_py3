@@ -1097,7 +1097,7 @@ class SingleQubitRBAnalysis(object):
                 'guess_pars': guess_pars}
 
             if self.do_simple_fit:
-                fit_kwargs = {'scale_covar': False}
+                fit_kwargs = {}
             elif keys is not None:
                 fit_kwargs = {'scale_covar': False,
                               'weights': 1/help_func_mod.get_param(

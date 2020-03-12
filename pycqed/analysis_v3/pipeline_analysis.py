@@ -99,6 +99,7 @@ class PipelineDataAnalysis(object):
         self.data_dict = add_measured_data(self.data_dict)
 
         self.processing_pipe = self.get_param_value('processing_pipe')
+        self.data_dict.update(self.options_dict)
         if self.processing_pipe is None:
             self.processing_pipe = []
 
@@ -202,6 +203,7 @@ class PipelineDataAnalysis_multi_timestamp(object):
         self.data_dict = add_measured_data(self.data_dict)
 
         self.processing_pipe = self.get_param_value('processing_pipe')
+        self.data_dict.update(self.options_dict)
         if self.processing_pipe is None:
             self.processing_pipe = []
 

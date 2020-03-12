@@ -29,6 +29,29 @@ def get_hdf_param_value(group, param_name):
         return s
 
 
+def get_channel_names_from_timestamp(timestamp):
+    folder = a_tools.get_folder(timestamp)
+    h5filepath = a_tools.measurement_filename(folder)
+    data_file = h5py.File(h5filepath, 'r+')
+    channel_names = get_hdf_param_value(data_file['Experimental Data'],
+                                        'value_names')
+    data_file.close()
+    return channel_names
+
+
+def get_sweep_points_from_timestamp(timestamp):
+    folder = a_tools.get_folder(timestamp)
+    h5filepath = a_tools.measurement_filename(folder)
+    data_file = h5py.File(h5filepath, 'r+')
+
+    group = data_file['Experimental Data'][
+        'Experimental Metadata']['sweep_points']
+    sweep_points = OrderedDict()
+    sweep_points = read_dict_from_hdf5(sweep_points, group)
+    data_file.close()
+    return sweep_points
+
+
 def get_params_from_hdf_file(data_dict, **params):
     params_dict = get_param('params_dict', data_dict, **params)
     numeric_params = get_param('numeric_params', data_dict,
@@ -51,6 +74,10 @@ def get_params_from_hdf_file(data_dict, **params):
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, h5mode)
 
+    if 'data_files' in data_dict:
+        data_dict['data_files'] += [data_file]
+    else:
+        data_dict['data_files'] = [data_file]
     if 'measurementstrings' in params_dict:
         # assumed data_dict['measurementstrings'] is a list
         if 'measurementstrings' in data_dict:
@@ -110,6 +137,7 @@ def get_params_from_hdf_file(data_dict, **params):
                 data_dict[par_name] = np.asarray(data_dict[par_name])
             else:
                 data_dict[par_name] = np.double(data_dict[par_name])
+    data_file.close()
     return data_dict
 
 
@@ -207,8 +235,6 @@ def add_param(name, value, data_dict, update_key=False, append_key=False,
             else:
                 dd[all_keys[-1]] = value
         elif append_key:
-            # print(all_keys[-1])
-            # print(dd.keys())
             v = dd[all_keys[-1]]
             dd[all_keys[-1]] = list(v)
             dd[all_keys[-1]].append(value)
