@@ -1259,15 +1259,17 @@ class QuDev_transmon(Qubit):
         sp.add_sweep_parameter('cliffords', cliffords, '',
                                'Number of applied Cliffords, $m$')
         # create analysis pipeline object
-        pp = ProcessingPipeline(
-            'average',  keys_in=det_func.value_names,
-            num_bins=[len(cliffords)]*len(det_func.value_names))
-        pp.add_node(
-            'get_std_deviation', keys_in=det_func.value_names,
-            num_bins=[len(cliffords)]*len(det_func.value_names))
-        pp.add_node('SingleQubitRBAnalysis', keys_in='previous',
-                    std_keys=[k+' std' for k in det_func.value_names],
-                    meas_obj_name=self.name, do_plotting=True)
+        meas_obj_value_names_map = {self.name: det_func.value_names}
+        pp = ProcessingPipeline(meas_obj_value_names_map)
+        pp.add_node('average', keys_in='raw',
+                    shape=(len(cliffords), nr_seeds),
+                    meas_obj_names=[self.name])
+        pp.add_node('get_std_deviation', keys_in='raw',
+                    shape=(len(cliffords), nr_seeds),
+                    meas_obj_names=[self.name])
+        pp.add_node('SingleQubitRBAnalysis', keys_in='previous average_data',
+                    std_keys='previous get_std_deviation',
+                    meas_obj_names=[self.name], plot_T1_lim=True, d=2)
         if exp_metadata is None:
             exp_metadata = {}
         exp_metadata.update({'preparation_params': prep_params,
@@ -1275,8 +1277,8 @@ class QuDev_transmon(Qubit):
                              'sweep_points': sp,
                              'meas_obj_sweep_points_map':
                                  sp.get_sweep_points_map([self.name]),
-                             'meas_obj_value_names_map': {
-                                 self.name: det_func.value_names},
+                             'meas_obj_value_names_map':
+                                 meas_obj_value_names_map,
                              'processing_pipe': pp})
         MC.run_2D(label, exp_metadata=exp_metadata)
 

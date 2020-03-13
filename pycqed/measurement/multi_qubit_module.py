@@ -1023,13 +1023,13 @@ def measure_two_qubit_randomized_benchmarking(
     # create analysis pipeline object
     meas_obj_value_names_map = get_meas_obj_value_names_map(qubits, det_func)
     mobj_names = list(meas_obj_value_names_map)
-    pp = ProcessingPipeline()
+    pp = ProcessingPipeline(meas_obj_value_names_map)
     for i, mobjn in enumerate(mobj_names):
         pp.add_node(
-            'get_std_deviation', keys_in='raw',
+            'average', keys_in='raw',
             shape=(len(cliffords), nr_seeds), meas_obj_names=[mobjn])
         pp.add_node(
-            'average', keys_in='raw',
+            'get_std_deviation', keys_in='raw',
             shape=(len(cliffords), nr_seeds), meas_obj_names=[mobjn])
         pp.add_node(
             'SingleQubitRBAnalysis', keys_in='previous average_data',
