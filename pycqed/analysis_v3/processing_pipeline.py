@@ -342,6 +342,7 @@ class ProcessingPipeline(list):
             keys_in, meas_obj_names=meas_obj_names, **params)
         std_keys, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             std_keys, meas_obj_names=meas_obj_names)
+
         return {'node_type': 'SingleQubitRBAnalysis',
                 'keys_in': keys_in,
                 'std_keys': std_keys,

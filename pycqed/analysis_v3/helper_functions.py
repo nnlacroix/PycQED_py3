@@ -220,6 +220,7 @@ def add_param(name, value, data_dict, update_key=False, append_key=False,
     :param params: keyword arguments
     :return:
     """
+
     dd = data_dict
     all_keys = name.split('.')
     if len(all_keys) > 1:
@@ -236,8 +237,9 @@ def add_param(name, value, data_dict, update_key=False, append_key=False,
                 dd[all_keys[-1]] = value
         elif append_key:
             v = dd[all_keys[-1]]
-            dd[all_keys[-1]] = list(v)
-            dd[all_keys[-1]].append(value)
+            dd[all_keys[-1]] = [v]
+            dd[all_keys[-1]].extend([value])
+
         else:
             raise KeyError(f'{all_keys[-1]} already exists in data_dict.')
     else:

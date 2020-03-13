@@ -4147,6 +4147,7 @@ class RamseyAddPulseAnalysis(MultiQubit_TimeDomain_Analysis):
             *args, auto=False, options_dict=options_dict_with,
             **kwargs)
 
+
         if auto:
             self.ramsey_analysis.extract_data()
             self.ramsey_analysis.process_data()
