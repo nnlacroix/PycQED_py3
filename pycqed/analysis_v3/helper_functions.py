@@ -6,6 +6,7 @@ import h5py
 import numpy as np
 from copy import deepcopy
 from collections import OrderedDict
+from more_itertools import unique_everseen
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
 from pycqed.measurement.calibration_points import CalibrationPoints
@@ -419,19 +420,24 @@ def get_latex_prob_label(prob_label):
         return prob_label
 
 
-def flatten_list_func(lst):
-    if all([isinstance(e, list) for e in lst]):
-        return [e for l1 in lst for e in l1]
-    elif any([isinstance(e, list) for e in lst]):
+def flatten_list(lst_of_lsts):
+    """
+    Flattens the list of lists lst_of_lsts.
+    :param lst_of_lsts: a list of lists
+    :return: flattened list
+    """
+    if all([isinstance(e, list) for e in lst_of_lsts]):
+        return [e for l1 in lst_of_lsts for e in l1]
+    elif any([isinstance(e, list) for e in lst_of_lsts]):
         l = []
-        for e in lst:
+        for e in lst_of_lsts:
             if isinstance(e, list):
                 l.extend(e)
             else:
                 l.append(e)
         return l
     else:
-        return lst
+        return lst_of_lsts
 
 
 def get_sublst_with_all_strings_of_list(lst_to_search, lst_to_match):
@@ -449,4 +455,4 @@ def get_sublst_with_all_strings_of_list(lst_to_search, lst_to_match):
             r = re.search(etm, ets)
             if r is not None:
                 lst_w_matches += [ets]
-    return list(set(lst_w_matches))
+    return list(unique_everseen(lst_w_matches))

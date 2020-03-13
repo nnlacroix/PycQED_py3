@@ -11,7 +11,7 @@ from pycqed.analysis_v3 import saving as save_mod
 from copy import deepcopy
 from mpl_toolkits.mplot3d import Axes3D
 
-from pycqed.analysis_v3 import helper_functions as help_func_mod
+from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.measurement.calibration_points import CalibrationPoints
 from pycqed.analysis.analysis_toolbox import get_color_order as gco
 from pycqed.analysis.analysis_toolbox import get_color_list
@@ -112,9 +112,9 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
         - expects 1d arrays
         - meas_obj_names is defined in cal_points
     """
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     cp, sp, mospm, _, mobjn = \
-        help_func_mod.get_measobj_properties(data_dict, **params)
+        hlp_mod.get_measobj_properties(data_dict, **params)
     if len(cp.states) == 0:
         print(f'There are no cal_states to plot for {mobjn}.')
         return
@@ -163,11 +163,11 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
         data = data_to_proc_dict[keyi]
 
         if ylabel is None:
-            ylabel = help_func_mod.get_latex_prob_label(keyi)
+            ylabel = hlp_mod.get_latex_prob_label(keyi)
 
-        cal_swpts = help_func_mod.get_cal_sweep_points(physical_swpts,
+        cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts,
                                                        cp, mobjn)
-        cal_data = help_func_mod.get_cal_data(data, cp, mobjn)
+        cal_data = hlp_mod.get_cal_data(data, cp, mobjn)
         qb_cal_indxs = cp.get_indices()[mobjn]
         # plot cal points
         for ii, cal_pts_idxs in enumerate(qb_cal_indxs.values()):
@@ -203,12 +203,12 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
                 'legend_bbox_to_anchor': (1, 0.5),
                 'legend_pos': 'center left',
                 'linestyle': 'none',
-                'line_kws': {'color': help_func_mod.get_cal_state_color(
+                'line_kws': {'color': hlp_mod.get_cal_state_color(
                     list(qb_cal_indxs)[ii])}}
 
             plot_names_cal += [plot_dict_name_cal, plot_dict_name_cal + '_line']
 
-    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_names_cal, **params)
     return plot_dicts
@@ -253,13 +253,13 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
         - expects 1d arrays
         - meas_obj_names is defined in cal_points
     """
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict,
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict,
                                                           keys_in=keys_in)
     sp, mospm, movnm, mobjn = \
-        help_func_mod.get_measobj_properties(
+        hlp_mod.get_measobj_properties(
             data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
             **params)
-    cp = help_func_mod.get_param('cal_points', data_dict, raise_error=False,
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
                                  **params)
     if isinstance(cp, str):
         cp = eval(cp)
@@ -311,9 +311,9 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
     plot_dict_names = []
     for i, keyi in enumerate(data_to_proc_dict):
         yvals = data_to_proc_dict[keyi]
-        yvals = help_func_mod.get_msmt_data(yvals, cp, mobjn)
+        yvals = hlp_mod.get_msmt_data(yvals, cp, mobjn)
         if ylabel is None:
-            ylabel = help_func_mod.get_latex_prob_label(keyi)
+            ylabel = hlp_mod.get_latex_prob_label(keyi)
 
         plot_dict_name = figure_name + '_' + keyi + plot_name_suffix
         plot_dicts[plot_dict_name] = {
@@ -340,7 +340,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
             'legend_pos': 'center left'}
         plot_dict_names += [plot_dict_name]
 
-    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
     return plot_dicts
@@ -382,13 +382,13 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
         - expects 1d arrays
         - meas_obj_names is defined in cal_points
     """
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict,
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict,
                                                           keys_in=keys_in)
     sp, mospm, movnm, mobjn = \
-        help_func_mod.get_measobj_properties(
+        hlp_mod.get_measobj_properties(
             data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
             **params)
-    cp = help_func_mod.get_param('cal_points', data_dict, raise_error=False,
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
                                  **params)
     if isinstance(cp, str):
         cp = eval(cp)
@@ -436,9 +436,9 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
     plot_dict_names = []
     for i, keyi in enumerate(data_to_proc_dict):
         zvals = data_to_proc_dict[keyi]
-        zvals = help_func_mod.get_msmt_data(zvals, cp, mobjn)
+        zvals = hlp_mod.get_msmt_data(zvals, cp, mobjn)
         if zlabel is None:
-            zlabel = help_func_mod.get_latex_prob_label(keyi)
+            zlabel = hlp_mod.get_latex_prob_label(keyi)
         zlabel = f'{zlabel} {zunit}'
         plot_dict_name = f'{figure_name}_{keyi}_{plot_name_suffix}'
         for sp_info in sweep_info:
@@ -461,7 +461,7 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
                 'clabel': zlabel}
             plot_dict_names += [plot_dict_name]
 
-    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
     return plot_dicts
@@ -506,17 +506,17 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         - meas_obj_name is defined in cal_points
     """
     sp, mospm, movnm, mobjn = \
-        help_func_mod.get_measobj_properties(
+        hlp_mod.get_measobj_properties(
             data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
             **params)
-    cp = help_func_mod.get_param('cal_points', data_dict, raise_error=False,
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
                                  **params)
     if isinstance(cp, str):
         cp = eval(cp)
 
     if keys_in is None:
         keys_in = movnm[mobjn]
-    data_to_proc_dict = help_func_mod.get_data_to_process(
+    data_to_proc_dict = hlp_mod.get_data_to_process(
         data_dict, keys_in=keys_in)
     sp_name = params.get('sp_name', mospm[mobjn][0])
     sweep_info = [v for d in sp for k, v in d.items() if sp_name == k]
@@ -555,12 +555,12 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     for i, keyi in enumerate(data_to_proc_dict):
         if xvals is None:
             physical_swpts = deepcopy(sweep_info[0][0])
-            cal_swpts = help_func_mod.get_cal_sweep_points(physical_swpts,
+            cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts,
                                                            cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         yvals = data_to_proc_dict[keyi]
         ylabel = keyi.split('.')[-1]
-        yunit = params.get('yunit', help_func_mod.get_param(
+        yunit = params.get('yunit', hlp_mod.get_param(
             'value_units', data_dict, default_value='arb.'))
         if isinstance(yunit, list):
             yunit = yunit[0]
@@ -588,7 +588,7 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             'legend_pos': 'center left'}
         plot_dict_names += [plot_dict_name]
 
-    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
     return plot_dicts
@@ -633,17 +633,17 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         - meas_obj_name is defined in cal_points
     """
     sp, mospm, movnm, mobjn = \
-        help_func_mod.get_measobj_properties(
+        hlp_mod.get_measobj_properties(
             data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
             **params)
-    cp = help_func_mod.get_param('cal_points', data_dict, raise_error=False,
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
                                  **params)
     if isinstance(cp, str):
         cp = eval(cp)
 
     if keys_in is None:
         keys_in = movnm[mobjn]
-    data_to_proc_dict = help_func_mod.get_data_to_process(
+    data_to_proc_dict = hlp_mod.get_data_to_process(
         data_dict, keys_in=keys_in)
     sp_names = params.get('sp_names', mospm[mobjn])
     sweep_info = [v for d in sp for k, v in d.items() if k in sp_names]
@@ -681,12 +681,12 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     for i, keyi in enumerate(data_to_proc_dict):
         if xvals is None:
             physical_swpts = deepcopy(sweep_info[0][0])
-            cal_swpts = help_func_mod.get_cal_sweep_points(physical_swpts,
+            cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts,
                                                            cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         zvals = data_to_proc_dict[keyi]
         zlabel = keyi.split('.')[-1]
-        zunit = params.get('zunit', help_func_mod.get_param(
+        zunit = params.get('zunit', hlp_mod.get_param(
             'value_units', data_dict, default_value='arb.'))
         if isinstance(zunit, list):
             zunit = zunit[0]
@@ -713,7 +713,7 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
                 'clabel': zlabel}
             plot_dict_names += [plot_dict_name]
 
-    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict,
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
                             update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
@@ -728,7 +728,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, **params):
     :param params:
     :return:
     """
-    mobjn = help_func_mod.get_measobj_properties(
+    mobjn = hlp_mod.get_measobj_properties(
         data_dict, props_to_extract=['mobjn'], **params)
 
     labels = params.get('labels', 'Fit')
@@ -737,9 +737,9 @@ def prepare_fit_plot_dicts(data_dict, figure_name, **params):
     plot_dicts = {}
     for fit_name, fit_dict in fit_dicts.items():
         fit_res = fit_dict['fit_res']
-        legend_label = help_func_mod.get_param('legend_label', fit_dict,
+        legend_label = hlp_mod.get_param('legend_label', fit_dict,
                                                default_value=labels)
-        fit_line_color = help_func_mod.get_param('fit_line_color', fit_dict,
+        fit_line_color = hlp_mod.get_param('fit_line_color', fit_dict,
                                                default_value='C0')
         plot_dicts[fit_name] = {
             'fig_id': figure_name,
@@ -752,7 +752,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, **params):
             'legend_bbox_to_anchor': (1, -0.15),
             'legend_pos': 'upper right', **params}
 
-        pois = help_func_mod.get_param('params_to_print', fit_dict)
+        pois = hlp_mod.get_param('params_to_print', fit_dict)
         if pois is not None:
             textstr = ''
             for i, poi in enumerate(pois):
@@ -773,7 +773,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, **params):
                 'plotfn': 'plot_text',
                 'text_string': textstr}
 
-    help_func_mod.add_param('plot_dicts', plot_dicts, data_dict,
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
                             update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=list(plot_dicts), **params)

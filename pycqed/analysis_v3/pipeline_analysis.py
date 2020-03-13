@@ -4,7 +4,7 @@ File containing the BaseDataAnalyis class.
 import numpy as np
 from collections import OrderedDict
 from pycqed.analysis import analysis_toolbox as a_tools
-from pycqed.analysis_v3 import helper_functions as help_func_mod
+from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import data_processing as dat_proc
 from pycqed.analysis_v3 import fitting as fit_module
 from pycqed.analysis_v3 import plotting as plot_module
@@ -115,7 +115,7 @@ class PipelineDataAnalysis(object):
         # call get_params_from_hdf_file which gets values for params
         # in self.params_dict and adds them to the dictionary
         # raw_data_dict_ts
-        help_func_mod.get_params_from_hdf_file(
+        hlp_mod.get_params_from_hdf_file(
             raw_data_dict, params_dict=self.params_dict,
             numeric_params=self.numeric_params,
             folder=folder)
@@ -224,7 +224,7 @@ class PipelineDataAnalysis_multi_timestamp(object):
             # call get_params_from_hdf_file which gets values for params
             # in self.params_dict and adds them to the dictionary
             # raw_data_dict_ts
-            help_func_mod.get_params_from_hdf_file(
+            hlp_mod.get_params_from_hdf_file(
                 raw_data_dict, params_dict=self.params_dict,
                 numeric_params=self.numeric_params,
                 folder=folder, append_key=False, update_key=True)
@@ -275,7 +275,7 @@ def add_measured_data(raw_data_dict):
         if data.shape[0] != len(value_names):
             raise ValueError('Shape mismatch between data and ro channels.')
 
-        TwoD = help_func_mod.get_param('TwoD', raw_data_dict,
+        TwoD = hlp_mod.get_param('TwoD', raw_data_dict,
                                        default_value=False)
         sweep_points = measured_data[:-len(value_names)]
         for i, ro_ch in enumerate(value_names):
