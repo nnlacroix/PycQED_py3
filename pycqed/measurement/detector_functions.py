@@ -521,6 +521,7 @@ class UHFQC_multi_detector(UHFQC_Base):
                 'correlated', True)
             self.averaged = self.detectors[0].get_values_function_kwargs.get(
                 'averaged', True)
+
         if self.correlated:
             self.value_names += ['correlation']
             self.value_units += ['']
@@ -540,7 +541,6 @@ class UHFQC_multi_detector(UHFQC_Base):
                 d for d in raw_data.values()]))
             processed_data = np.concatenate([processed_data, corr_data], axis=0)
 
-        # print('final ', processed_data.shape)
         return processed_data
 
     def get_correlations_classif_det(self, data):
@@ -549,20 +549,24 @@ class UHFQC_multi_detector(UHFQC_Base):
         for d in self.detectors:
             classifier_params_list += d.classifier_params_list
             state_prob_mtx_list += d.state_prob_mtx_list
-        # print('data ', data.shape)
-
         nr_states = len(self.detectors[0].state_labels)
         len_ch_pairs = sum([len(d.channel_str_pairs) for d in self.detectors])
+
+        # create variable with nr_states=3 x len_ch_pairs=nr_qubits columns
+        # and nr_sweep_points x nr_shots rows
         clf_data_all = np.zeros(
             (self.detectors[0].nr_sweep_points * self.detectors[0].nr_shots,
              nr_states * len_ch_pairs))
         for i in range(len_ch_pairs):
+            # classify shot-by-shot
             clf_data = a_tools.predict_gm_proba_from_clf(
                 data[2 * i: 2 * i + 2, :].T, classifier_params_list[i])
             if self.detectors[0].get_values_function_kwargs.get(
                     'thresholded', True):
                 # clf_data must be 2 dimensional, rows are shots*sweep_points,
                 # columns are nr_states
+                # goes through each set of 3 columns and sets the max entry
+                # in each row to 1 and the other 2 entries to 0
                 clf_data = np.isclose(np.repeat([np.arange(nr_states)],
                                                 clf_data.shape[0], axis=0).T,
                                       np.argmax(clf_data, axis=1)).T
@@ -574,14 +578,20 @@ class UHFQC_multi_detector(UHFQC_Base):
                 log.info('not correcting correlated data')
             clf_data_all[:, nr_states * i: nr_states * i + nr_states] = clf_data
 
-        # print('clf_data_all1 ', clf_data_all.shape)
         # can only correlate corresponding probabilities on all channels;
         # it cannot correlate selected channels
-        nr_states = len(self.detectors[0].state_labels)
-        q = clf_data_all.shape[1] // nr_states
+        nr_states = len(self.detectors[0].state_labels)  # usually 3
+        q = clf_data_all.shape[1] // nr_states  # nr of qubits
+        # creates array with nr_sweep_points x nr_shots columns and
+        # nr_qubits rows, where all entries are 0, 1, or 2. The entry in each
+        # column is the state of the respective qubit, 0=g, 1=e, 2=f.
         qb_states_list = [np.argmax(
             clf_data_all[:, i * nr_states: i * nr_states + nr_states],
             axis=1) for i in range(q)]
+        # correlate the shots of the two qubits as follows:
+        # if both qubits are in g or f ---> correlator = 0
+        # if both qubits are in e ---> correlator = 0
+        # if one qubit is in g or f but the other in e ---> correlator = 1
         corr_data = np.sum(np.array(qb_states_list) % 2, axis=0) % 2
         if self.averaged:
             corr_data = np.reshape(
@@ -589,7 +599,6 @@ class UHFQC_multi_detector(UHFQC_Base):
                             self.detectors[0].nr_sweep_points))
             corr_data = np.mean(corr_data, axis=0)
         corr_data = np.reshape(corr_data, (1, corr_data.size))
-        # print('corr_data ', corr_data.shape)
 
         return corr_data
 
@@ -1404,21 +1413,5 @@ class UHFQC_classifier_detector(UHFQC_Base):
 
             classified_data[nr_states * i: nr_states * i + nr_states, :] = \
                 clf_data
-        # if True:
-        #     # can only correlate corresponding probabilities on all channels;
-        #     # it cannot correlate selected channels
-        #     q = clf_data_all.shape[1] // nr_states
-        #     print(clf_data_all.shape[1])
-        #     print(nr_states, q)
-        #     qb_states_list = [np.argmax(
-        #         clf_data_all[:, i*nr_states: i*nr_states + nr_states],
-        #         axis=1) for i in range(q)]
-        #     corr_data = np.sum(np.array(qb_states_list) % 2, axis=0) % 2
-        #     if averaged:
-        #         corr_data = np.reshape(
-        #             corr_data, (self.nr_shots, self.nr_sweep_points))
-        #         corr_data = np.mean(corr_data, axis=0)
-        #     corr_data = np.reshape(corr_data, (1, corr_data.size))
-        #     classified_data = np.concatenate([classified_data, corr_data],
-        #                                      axis=0)
+
         return classified_data.T
