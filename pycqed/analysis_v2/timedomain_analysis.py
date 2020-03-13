@@ -1949,9 +1949,6 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         if kwargs.get('auto', True):
             self.run_analysis()
 
-    def extract_data(self):
-        super().extract_data()
-
     def process_data(self):
         tomography_qubits = self.options_dict.get('tomography_qubits', None)
         data, Fs, Omega = self.base_analysis.measurement_operators_and_results(
