@@ -1098,8 +1098,8 @@ def get_pulse_dict_from_pars(pulse_pars):
               'operation_type': 'Virtual',
               'pulse_length': 0,
               'pulse_delay': 0}
-        pulses.update({'Z0': Z0,
-                       'Z180': Z0,
+        pulses.update({'Z0': deepcopy(Z0),
+                       'Z180': deepcopy(Z0),
                        'mZ180': deepcopy(Z0),
                        'Z90': deepcopy(Z0),
                        'mZ90': deepcopy(Z0)})
