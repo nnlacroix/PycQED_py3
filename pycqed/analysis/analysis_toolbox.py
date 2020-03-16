@@ -65,7 +65,7 @@ def verify_timestamp(timestamp):
     elif len(timestamp) == 14:
         daystamp = timestamp[:8]
         tstamp = timestamp[8:]
-    elif len(timestamp) == 15:  # In case day and timestamp separted by _
+    elif len(timestamp) == 15:  # In case day and timestamp separeted by _
         daystamp = timestamp[:8]
         tstamp = timestamp[9:]
     else:

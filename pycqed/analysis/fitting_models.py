@@ -93,20 +93,24 @@ def TwinLorentzFunc(f, A_gf_over_2, A, f0_gf_over_2, f0,
     return val
 
 
-def Qubit_dac_to_freq(dac_voltage, f_max, E_c,
+def Qubit_dac_to_freq(dac_voltage, f_max,
                       dac_sweet_spot, V_per_phi0=None,
                       dac_flux_coefficient=None,
-                      asymmetry=0):
+                      # asymmetry=0.5, E_c = 250e6):
+                      asymmetry=0.5):
     '''
     The cosine Arc model for uncalibrated flux for asymmetric qubit.
 
     dac_voltage (V)
-    f_max (Hz): sweet-spot frequency of the qubit
+    f_max (Hz): sweet-spot frequency of the qubitd
     E_c (Hz): charging energy of the qubit
     V_per_phi0 (V): volt per phi0 (convert voltage to flux)
     dac_sweet_spot (V): voltage at which the sweet-spot is found
     asym (dimensionless asymmetry param) = abs((EJ1-EJ2)/(EJ1+EJ2)),
     '''
+
+    E_c = 0
+
     if V_per_phi0 is None and dac_flux_coefficient is None:
         raise ValueError('Please specify "V_per_phi0".')
 
@@ -892,13 +896,15 @@ def Resonator_dac_arch_guess(model, freq, dac_voltage, f_max_qubit: float = None
     return params
 
 
-def Qubit_dac_arch_guess(model, freq, dac_voltage):
-    fmax, fmin, dac_ss, period = arc_guess(freq=freq, dac=dac_voltage)
-    model.set_param_hint('f_max', value=fmax, min=0.7 * fmax, max=1.3 * fmax)
-    model.set_param_hint('dac_sweet_spot', value=dac_ss, min=(dac_ss - 0.005) / 2, max=2 * (dac_ss + 0.005))
-    model.set_param_hint('V_per_phi0', value=period, min=(period - 0.005) / 3, max=5 * (period + 0.005))
-    model.set_param_hint('asymmetry', value=0, max=1, min=-1)
-    model.set_param_hint('E_c', value=260e6, min=50e6, max=400e6)
+def Qubit_dac_arch_guess(model, data, dac_voltage):
+    f_max, dac_ss = np.max(data), dac_voltage[np.argmax(data)]
+    f_min, dac_lss = np.min(data), dac_voltage[np.argmin(data)]
+    V_per_phi0 = abs(2*(dac_ss-dac_lss))
+    d = (f_min)**2/(f_max)**2
+    model.set_param_hint('f_max', value=f_max, min=0)
+    model.set_param_hint('dac_sweet_spot', value=dac_ss, min=-3, max=3)
+    model.set_param_hint('V_per_phi0', value=V_per_phi0, min=0)
+    model.set_param_hint('asymmetry', value=d, min=0, max=1)
 
     params = model.make_params()
     return params
