@@ -11,20 +11,22 @@ import logging
 #################################
 
 def RandomizedBenchmarkingLeakage(numCliff, pu, pd, p0):
-    val = pu/(pd+pu) * (1-np.exp(-(pd+pu)*numCliff)) + p0*np.exp(-(pd+pu)*numCliff)
-    return val
+    # from https://journals.aps.org/prl/pdf/10.1103/PhysRevLett.116.020501
+    return pu/(pd+pu) * (1-np.exp(-(pd+pu)*numCliff)) + \
+           p0*np.exp(-(pd+pu)*numCliff)
 
 def RandomizedBenchmarkingDecay(numCliff, Amplitude, p, offset):
     val = Amplitude * (p ** numCliff) + offset
     return val
 
-
 def DoubleExpDampOscFunc(t, tau_1, tau_2,
                          freq_1, freq_2,
                          phase_1, phase_2,
                          amp_1, amp_2, osc_offset):
-    cos_1 = amp_1 * (np.cos(2 * np.pi * freq_1 * t + phase_1)) * np.exp(-(t / tau_1))
-    cos_2 = amp_2 * (np.cos(2 * np.pi * freq_2 * t + phase_2)) * np.exp(-(t / tau_2))
+    cos_1 = amp_1 * (np.cos(2 * np.pi * freq_1 * t + phase_1)) * \
+            np.exp(-(t / tau_1))
+    cos_2 = amp_2 * (np.cos(2 * np.pi * freq_2 * t + phase_2)) * \
+            np.exp(-(t / tau_2))
     return cos_1 + cos_2 + osc_offset
 
 
@@ -244,6 +246,25 @@ def CosFunc(t, amplitude, frequency, phase, offset):
     return amplitude * np.cos(2 * np.pi * frequency * t + phase) + offset
 
 
+def ResidZZFuncJoint(t, amplitude, amplitude1, tau, alpha, t11, frequency,
+                     phase, offset):
+    x = t11*alpha
+    without_pulse = amplitude * np.exp(-t/tau)*np.cos(
+        2*np.pi*frequency*t + phase) + offset
+    with_pulse = amplitude1 * np.exp(-t/tau)*(x*np.exp(-t*alpha/x)*np.cos(
+        2*np.pi*(frequency+alpha)*t + phase) - np.sin(
+        2*np.pi*frequency*t + phase))/np.sqrt(1+x**2) + offset
+    return without_pulse, with_pulse
+    # return amplitude * np.exp(-(t / tau) ** n) * (np.cos(
+    #     2 * np.pi * frequency * t + phase) + oscillation_offset) + \
+    #        exponential_offset
+
+def ResidZZFunc(t, amplitude, tau, alpha, x, frequency, phase, offset):
+    return amplitude * np.exp(-t/tau)*(x*np.exp(-t*alpha/x)*np.cos(
+        2*np.pi*(frequency+alpha)*t + phase) - np.sin(
+        2*np.pi*frequency*t + phase))/np.sqrt(1+x**2) + offset
+
+
 def ExpDecayFunc(t, tau, amplitude, offset, n):
     return amplitude * np.exp(-(t / tau) ** n) + offset
 
@@ -295,7 +316,8 @@ def gain_corr_double_ExpDecayFunc(t, tau_A, tau_B, amp_A, amp_B, gc):
 def ExpDampOscFunc(t, tau, n, frequency, phase, amplitude,
                    oscillation_offset, exponential_offset):
     return amplitude * np.exp(-(t / tau) ** n) * (np.cos(
-        2 * np.pi * frequency * t + phase) + oscillation_offset) + exponential_offset
+        2 * np.pi * frequency * t + phase) + oscillation_offset) + \
+           exponential_offset
 
 
 def GaussExpDampOscFunc(t, tau, tau_2, frequency, phase, amplitude,
