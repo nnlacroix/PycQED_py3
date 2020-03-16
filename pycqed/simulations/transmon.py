@@ -122,6 +122,34 @@ def transmon_ej_anh(fge: float, ec: float, ng: float = 0.,
     return ej_anh[0], ej_anh[1]
 
 
+def transmon_ej_fge(fef: float, ec: float, ng: float = 0.,
+                    dim_charge: int = 31):
+    """Calculate the Josephson energy and the excitation frequency of a transmon
+
+    Inverts the function `transmon_levels`. Useful for finding the Josephson
+    energy at a new flux bias point.
+
+    Args:
+        fef: The second transition frequency of the transmon.
+        ec: Charging energy of the Hamiltonian.
+        ng: Charge offset of the Hamiltonian.
+        dim_charge: Number of charge states to use in calculations.
+
+    Returns:
+        The Josephson energy and the anharmonicity of the transmon.
+    """
+
+    def func(ej_fge_, fef_ec, ng_, dim_charge_):
+        fs = transmon_levels(fef_ec[1], ej_fge_[0], ng_, dim_charge_)
+        return [fs[0] - ej_fge_[1], fs[1] - fs[0] - fef_ec[0]]
+
+    ej0 = (fef + 2*ec)**2 / 8 / ec
+    fge0 = fef+ec
+    ej_fge = sp.optimize.fsolve(func, np.array([ej0, fge0]),
+                                args=([fef, ec], ng, dim_charge))
+    return ej_fge[0], ej_fge[1]
+
+
 def charge_dispersion_ge_ef(fge: Optional[float] = None,
                             anh: Optional[float] = None,
                             ej: Optional[float] = None,
@@ -329,11 +357,53 @@ def transmon_resonator_ej_anh_frg_chi(fge: float, ec: float, frb: float,
     anh0 = -ec
     ej0 = (fge + ec)**2 / 8 / ec
     frg0 = frb
-    chi0 = gb**2 * ec / (fge - ec - frb) / (fge - frb)
+    chi0 = -gb**2 * (fge - ec) / (fge - frb) / (fge - frb - ec) / 16
     ej_anh_frg_chi = sp.optimize.fsolve(func, np.array([ej0, anh0, frg0, chi0]),
                                         args=(np.array([fge, ec, frb, gb]),
                                               ng, dim_charge, dim_resonator))
     return tuple(ej_anh_frg_chi)
+
+def transmon_resonator_ej_anh_frb_chi(fge: float, ec: float, frg: float,
+                                      gb: float, ng: float = 0.,
+                                      dim_charge: int = 31,
+                                      dim_resonator: int = 10):
+    """Calculate Josephson energy and observable frequencies of a coupled
+    transmon-resonator system from the qubit transition frequency and
+    Hamiltonian parameters
+
+    Calculates the Josephson energy, the transmon anharmonicity  with the
+    resonator in the ground state, the resonator frequency for the qubit in
+    the ground state and the dispersive shift of the resonator.
+
+    Args:
+        ec: Charging energy of the Hamiltonian.
+        fge: The first transition frequency of the transmon.
+        frg: Resonator frequency for transmon ground state
+        gb: Bare transmon-resonator coupling strength.
+        ng: Charge offset of the Hamiltonian.
+        dim_charge: Number of charge states to use in calculations.
+        dim_resonator: Number of photon number states to use in calculations.
+
+    Returns:
+        A tuple of 1) transmon Josephson energy, 2) qubit anharmonicity,
+        3) bare resonator frequency, and 4) the dispersive shift.
+    """
+
+    def func(ej_anh_frb_chi_, fge_ec_frg_gb, ng_, dim_charge_, dim_resonator_):
+        fge_, ec_, frg_, gb_ = fge_ec_frg_gb
+        ej, anh, frb, chi = ej_anh_frb_chi_
+        calc_fge_anh_frg_chi = transmon_resonator_fge_anh_frg_chi(
+            ec_, ej, frb, gb_, ng_, dim_charge_, dim_resonator_)
+        return calc_fge_anh_frg_chi - np.array([fge_, anh, frg_, chi])
+
+    anh0 = -ec
+    ej0 = (fge + ec)**2 / 8 / ec
+    frb0 = frg
+    chi0 = -gb**2 * (fge - ec) / (fge - frg) / (fge - frg - ec) / 16
+    ej_anh_frb_chi = sp.optimize.fsolve(func, np.array([ej0, anh0, frb0, chi0]),
+                                        args=(np.array([fge, ec, frg, gb]),
+                                              ng, dim_charge, dim_resonator))
+    return tuple(ej_anh_frb_chi)
 
 
 @np.vectorize
@@ -399,4 +469,4 @@ def resonator_purcell_effective_linewidth(fr, jrp, fp, kp):
     """
     m = np.array([[kp + 2j * fp, 2j * jrp],
                   [2j * jrp, 2j * fr]])
-    return np.linalg.eigvals(m).real
+    return np.linalg.eigvals(m).min().real
