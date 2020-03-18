@@ -1261,7 +1261,7 @@ class QuDev_transmon(Qubit):
         # create analysis pipeline object
         meas_obj_value_names_map = {self.name: det_func.value_names}
         pp = ProcessingPipeline(meas_obj_value_names_map)
-        pp.add_node('average', keys_in='raw',
+        pp.add_node('average_data', keys_in='raw',
                     shape=(len(cliffords), nr_seeds),
                     meas_obj_names=[self.name])
         pp.add_node('get_std_deviation', keys_in='raw',
