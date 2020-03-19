@@ -10,61 +10,52 @@ import matplotlib.pyplot as plt
 from collections import OrderedDict
 from pycqed.utilities.general import NumpyJsonEncoder
 from pycqed.analysis import analysis_toolbox as a_tools
+from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.measurement.hdf5_data import write_dict_to_hdf5
 
 
-def save_data(self, data_dict, savedir: str = None, savebase: str = None,
-              tag_tstamp: bool = True, fmt: str = 'json', key_list='auto'):
-    '''
-    Saves the data from data_dict to file.
+def save_analysis_results(data_dict, ana_res_dict, **params):
+    """
+    Saves the analysis results.
+    """
+    ana_res_group_name = hlp_mod.get_param('ana_res_group_name', data_dict,
+                                           default_value='Analysis results',
+                                           **params)
+    overwrite = hlp_mod.get_param('overwrite', data_dict, default_value=True,
+                                  **params)
 
-    Args:
-        savedir (string):
-                Directory where the file is saved. If this is None, the
-                file is saved in self.raw_data_dict['folders'] or the
-                working directory of the console.
-        savebase (string):
-                Base name for the saved file.
-        tag_tstamp (bool):
-                Whether to append the timestamp of the first to the base
-                name.
-        fmt (string):
-                File extension for the format in which the file should
-                be saved.
-        key_list (list or 'auto'):
-                Specifies which keys from self.raw_data_dict are saved.
-                If this is 'auto' or None, all keys-value pairs are
-                saved.
-    '''
-    if savedir is None:
-        savedir = self.raw_data_dict.get('folders', '')
-        if isinstance(savedir, list):
-            savedir = savedir[0]
-    if savebase is None:
-        savebase = ''
-    if tag_tstamp:
-        tstag = '_' + self.raw_data_dict['timestamps'][0]
-    else:
-        tstag = ''
-
-    if key_list == 'auto' or key_list is None:
-        key_list = data_dict.keys()
-
-    save_dict = {}
-    for k in key_list:
-        save_dict[k] = data_dict[k]
+    timestamp = data_dict['timestamps'][-1]
+    fn = a_tools.measurement_filename(a_tools.get_folder(timestamp))
 
     try:
-        os.mkdir(savedir)
+        os.mkdir(os.path.dirname(fn))
     except FileExistsError:
         pass
 
-    filepath = os.path.join(savedir, savebase + tstag + '.' + fmt)
-    if self.verbose:
-        log.info('Saving raw data to %s' % filepath)
-    with open(filepath, 'w') as file:
-        json.dump(save_dict, file, cls=NumpyJsonEncoder, indent=4)
-    log.info('Data saved to "{}".'.format(filepath))
+    if params.get('verbose', False):
+        log.info('Saving analysis results to %s' % fn)
+
+    with h5py.File(fn, 'a') as data_file:
+        try:
+            analysis_group = data_file.create_group('Analysis')
+        except ValueError:
+            # If the analysis group already exists.
+            analysis_group = data_file['Analysis']
+
+        try:
+            ana_res_group = \
+                analysis_group.create_group(ana_res_group_name)
+        except ValueError:
+            # If the processed data group already exists.
+            ana_res_group = analysis_group[ana_res_group_name]
+
+        for key in ana_res_dict:
+            if key in ana_res_group.keys():
+                del ana_res_group[key]
+
+            d = {key: ana_res_dict[key]}
+            write_dict_to_hdf5(d, entry_point=ana_res_group,
+                               overwrite=overwrite)
 
 
 def save_fit_results(data_dict, fit_res_dict, **params):

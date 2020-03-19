@@ -9,6 +9,7 @@ from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import fitting as fit_module
 from pycqed.analysis_v3 import plotting as plot_module
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+from pycqed.analysis_v3 import saving as save_mod
 from sklearn.mixture import GaussianMixture as GM
 from copy import deepcopy
 
@@ -301,9 +302,9 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
                              f'{len(data_to_proc_dict[keyi])}.')
         data_to_avg = data_to_proc_dict[keyi] if shape is None else \
             np.reshape(data_to_proc_dict[keyi], shape)
-        hlp_mod.add_param(keys_out[k],
-                                np.mean(data_to_avg, axis=averaging_axis),
-            data_dict, update_key=params.get('update_key', False))
+        hlp_mod.add_param(keys_out[k], np.mean(data_to_avg,
+                                               axis=averaging_axis),
+                          data_dict, update_key=params.get('update_key', False))
     return data_dict
 
 
@@ -591,7 +592,7 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
 
 ## Nodes that are classes ##
 
-class RabiAnalysis(object):
+class RamseyAnalysis(object):
 
     def __init__(self, data_dict, keys_in, **params):
         """
@@ -605,6 +606,251 @@ class RabiAnalysis(object):
         Assumptions:
             - cal_points, sweep_points, meas_obj_sweep_points_map, meas_obj_names
             exist in exp_metadata or params
+            - expects a 1d sweep, ie takes sweep_points[0][
+            meas_obj_sweep_points_map[mobjn]][0] as sweep points
+        """
+        self.data_dict = data_dict
+        self.data_to_proc_dict = hlp_mod.get_data_to_process(
+            self.data_dict, keys_in)
+        self.keys_in = keys_in
+
+        if params.pop('auto', True):
+            prepare_fitting = params.pop('prepare_fitting', True)
+            do_fitting = params.pop('do_fitting', True)
+            prepare_plots = params.pop('prepare_plots', True)
+            do_plotting = params.pop('do_plotting', True)
+
+            self.extract_params(**params)
+            if prepare_fitting:
+                self.prepare_fitting()
+                if do_fitting:
+                    getattr(fit_module, 'run_fitting')(
+                        self.data_dict, keys_in=list(
+                            self.data_dict['fit_dicts']),**params)
+                    self.analyze_fit_results()
+            if prepare_plots:
+                self.prepare_plots(**params)
+            if do_plotting:
+                getattr(plot_module, 'plot')(
+                    self.data_dict, keys_in=list(self.data_dict['plot_dicts']),
+                    **params)
+
+    def __call__(self, *args, **kwargs):
+        return self.data_dict
+
+    def extract_params(self, **params):
+        self.cp, self.sp, self.mospm, self.mobjn = \
+            hlp_mod.get_measurement_properties(
+                self.data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'],
+                enforce_one_meas_obj=True, **params)
+        # Get from the hdf5 file any parameters specified in
+        # params_dict and numeric_params.
+        params_dict = {}
+        s = 'Instrument settings.' + self.mobjn
+        for trans_name in ['ge', 'ef']:
+            params_dict[f'{trans_name}_freq_'+self.mobjn] = \
+                s+f'.{trans_name}_freq'
+        hlp_mod.get_params_from_hdf_file(self.data_dict,
+                                               params_dict=params_dict,
+                                               numeric_params=list(params_dict),
+                                               **params)
+
+        self.physical_swpts = self.sp[0][self.mospm[self.mobjn][0]][0]
+
+        self.reset_reps = 0
+        metadata = self.data_dict['exp_metadata']
+        if 'preparation_params' in metadata:
+            if 'active' in metadata['preparation_params'].get(
+                    'preparation_type', 'wait'):
+                self.reset_reps = metadata['preparation_params'].get(
+                    'reset_reps', 0)
+
+        fit_gaussian_decay = hlp_mod.get_param('fit_gaussian_decay',
+                                               self.data_dict,
+                                               default_value=True, **params)
+        if fit_gaussian_decay:
+            self.fit_names = ['exp_decay', 'gauss_decay']
+        else:
+            self.fit_names = ['exp_decay']
+
+        self.artificial_detuning_dict = hlp_mod.get_param(
+            'artificial_detuning_dict', self.data_dict, raise_error=True,
+            **params)
+
+    def prepare_fitting(self):
+        for i, fit_name in enumerate(self.fit_names):
+            fit_module.prepare_cos_fit_dict(
+                self.data_dict, keys_in=list(self.data_to_proc_dict),
+                meas_obj_names=self.mobjn, fit_name=fit_name,
+                guess_params={'n': i+1},
+                plot_params={'color': 'r'if i == 0 else 'C4'})
+
+    def analyze_fit_results(self):
+        if 'fit_dicts' in self.data_dict:
+            fit_dicts = self.data_dict['fit_dicts']
+        else:
+            raise KeyError('data_dict does not contain fit_dicts.')
+        ana_res_dict = OrderedDict()
+        for keyi in self.data_to_proc_dict:
+            trans_name = 'ef' if 'f' in keyi else 'ge'
+            old_qb_freq = self.data_dict[f'{trans_name}_freq_'+self.mobjn]
+            if old_qb_freq != old_qb_freq:
+                old_qb_freq = 0
+            ana_res_dict['old_freq_' + self.mobjn] = old_qb_freq
+            for fit_name in self.fit_names:
+                key = fit_name + '_' + self.mobjn + keyi
+                fit_res = fit_dicts[key]['fit_res']
+                ana_res_dict['new_freq_' + self.mobjn] = \
+                    old_qb_freq + self.artificial_detuning_dict[self.mobjn] - \
+                    fit_res.best_values['frequency']
+                ana_res_dict['new_freq_' + self.mobjn + '_stderr'] = \
+                    fit_res.params['frequency'].stderr
+                ana_res_dict['T2_star_' + self.mobjn ] = \
+                    fit_res.best_values['tau']
+                ana_res_dict['T2_star_' + self.mobjn + '_stderr'] = \
+                    fit_res.params['tau'].stderr
+        hlp_mod.add_param('ana_res_dict', ana_res_dict,
+                          self.data_dict, update_key=True)
+        save_mod.save_analysis_results(self.data_dict, ana_res_dict)
+
+    def prepare_plots(self, **params):
+        # prepare raw data plot
+        if self.reset_reps != 0:
+            swpts = deepcopy(self.physical_swpts)
+            if len(self.cp.states) != 0:
+                swpts = np.concatenate([
+                    swpts, hlp_mod.get_cal_sweep_points(
+                        self.physical_swpts, self.cp, self.mobjn)])
+            swpts = np.repeat(swpts, self.reset_reps+1)
+            swpts = np.arange(len(swpts))
+            plot_module.prepare_1d_raw_data_plot_dicts(
+                self.data_dict,
+                meas_obj_names=params.pop('meas_obj_names', self.mobjn),
+                xvals=swpts, **params)
+
+            filtered_raw_keys = [k for k in self.data_dict.keys() if
+                                 'filter' in k]
+            if len(filtered_raw_keys) > 0:
+                plot_module.prepare_1d_raw_data_plot_dicts(
+                    data_dict=self.data_dict,
+                    keys_in=filtered_raw_keys,
+                    figure_name='raw_data_filtered',
+                    meas_obj_names=params.pop('meas_obj_names', self.mobjn),
+                    **params)
+        else:
+            plot_module.prepare_1d_raw_data_plot_dicts(
+                self.data_dict,
+                meas_obj_names=params.pop('meas_obj_names', self.mobjn),
+                **params)
+
+        plot_dicts = OrderedDict()
+        for keyi, data in self.data_to_proc_dict.items():
+            base_plot_name = 'Ramsey_' + self.mobjn + '_' + keyi
+            sp_name = self.mospm[self.mobjn][0]
+            # plot data
+            plot_module.prepare_1d_plot_dicts(
+                data_dict=self.data_dict,
+                keys_in=[keyi],
+                figure_name=base_plot_name,
+                sp_name=sp_name,
+                meas_obj_names=params.pop('meas_obj_names', self.mobjn),
+                do_plotting=False, **params)
+
+            if len(self.cp.states) != 0:
+                # plot cal states
+                plot_module.prepare_cal_states_plot_dicts(
+                    data_dict=self.data_dict,
+                    keys_in=[keyi],
+                    figure_name=base_plot_name,
+                    sp_name=sp_name,
+                    meas_obj_names=params.pop('meas_obj_names', self.mobjn),
+                    do_plotting=False, **params)
+
+            if 'fit_dicts' in self.data_dict:
+                plot_module.prepare_fit_plot_dicts(
+                    data_dict=self.data_dict,
+                    figure_name=base_plot_name,
+                    fit_names='all',
+                    meas_obj_names=params.pop('meas_obj_names', self.mobjn),
+                    do_plotting=False, **params)
+
+                # res_ana_dict = hlp_mod.get_param('res_ana_dict',
+                #                                  self.data_dict,
+                #                                  raise_error=True)
+                # for i, key in enumerate([k + qbn for k in self.fit_keys]):
+                #     if i != 0:
+                #         textstr += '\n'
+                #     textstr += \
+                #         ('$f_{{qubit \_ new \_ {{{key}}} }}$ = '.format(
+                #             key=('exp' if i == 0 else 'gauss')) +
+                #          '{:.6f} GHz '.format(
+                #              ramsey_dict[qbn][key]['new_qb_freq']*1e-9) +
+                #          '$\pm$ {:.2E} GHz '.format(
+                #              ramsey_dict[qbn][key][
+                #                  'new_qb_freq_stderr']*1e-9))
+                #     T2_star_str += \
+                #         ('\n$T_{{2,{{{key}}} }}^\star$ = '.format(
+                #             key=('exp' if i == 0 else 'gauss')) +
+                #          '{:.2f} $\mu$s'.format(
+                #              fit_res.params['tau'].value*1e6) +
+                #          '$\pm$ {:.2f} $\mu$s'.format(
+                #              fit_res.params['tau'].stderr*1e6))
+                #
+                # textstr += '\n$f_{qubit \_ old}$ = '+'{:.6f} GHz '.format(
+                #     old_qb_freq*1e-9)
+                # textstr += ('\n$\Delta f$ = {:.4f} MHz '.format(
+                #     (ramsey_dict[qbn][exp_decay_fit_key]['new_qb_freq'] -
+                #      old_qb_freq)*1e-6) + '$\pm$ {:.2E} MHz'.format(
+                #     self.fit_dicts[exp_decay_fit_key]['fit_res'].params[
+                #         'frequency'].stderr*1e-6) +
+                #             '\n$f_{Ramsey}$ = '+'{:.4f} MHz $\pm$ {:.2E} MHz'.format(
+                #             self.fit_dicts[exp_decay_fit_key]['fit_res'].params[
+                #                 'frequency'].value*1e-6,
+                #             self.fit_dicts[exp_decay_fit_key]['fit_res'].params[
+                #                 'frequency'].stderr*1e-6))
+                # textstr += T2_star_str
+                # textstr += '\nartificial detuning = {:.2f} MHz'.format(
+                #     ramsey_dict[qbn][exp_decay_fit_key][
+                #         'artificial_detuning']*1e-6)
+                #
+                # self.plot_dicts['text_msg_' + qbn] = {
+                #     'fig_id': base_plot_name,
+                #     'ypos': -0.2,
+                #     'xpos': -0.025,
+                #     'horizontalalignment': 'left',
+                #     'verticalalignment': 'top',
+                #     'plotfn': self.plot_text,
+                #     'text_string': textstr}
+                #
+                # self.plot_dicts['half_hline_' + qbn] = {
+                #     'fig_id': base_plot_name,
+                #     'plotfn': self.plot_hlines,
+                #     'y': 0.5,
+                #     'xmin': self.proc_data_dict['sweep_points_dict'][qbn][
+                #         'sweep_points'][0],
+                #     'xmax': self.proc_data_dict['sweep_points_dict'][qbn][
+                #         'sweep_points'][-1],
+                #     'colors': 'gray'}
+
+        hlp_mod.add_param('plot_dicts', plot_dicts,
+                                self.data_dict, update_key=True)
+
+
+class RabiAnalysis(object):
+
+    def __init__(self, data_dict, keys_in, **params):
+        """
+        Does Ramsey analysis. Prepares fits and plot, extracts T2*, and
+        calculates new qubit frequency
+        .
+        :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+        :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+
+        Assumptions:
+            - cal_points, sweep_points, meas_obj_sweep_points_map,
+            meas_obj_names exist in exp_metadata or params
             - expects a 1d sweep, ie takes sweep_points[0][
             meas_obj_sweep_points_map[mobjn]][0] as sweep points
         """
@@ -639,7 +885,7 @@ class RabiAnalysis(object):
 
     def process_data(self, **params):
         self.cp, self.sp, self.mospm, self.mobjn = \
-            hlp_mod.get_measobj_properties(
+            hlp_mod.get_measurement_properties(
                 self.data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'],
                 enforce_one_meas_obj=True, **params)
         # Get from the hdf5 file any parameters specified in
@@ -652,9 +898,9 @@ class RabiAnalysis(object):
             params_dict[f'{trans_name}_amp90scale_'+self.mobjn] = \
                 s+f'.{trans_name}_amp90_scale'
         hlp_mod.get_params_from_hdf_file(self.data_dict,
-                                               params_dict=params_dict,
-                                               numeric_params=list(params_dict),
-                                               **params)
+                                         params_dict=params_dict,
+                                         numeric_params=list(params_dict),
+                                         **params)
         self.physical_swpts = self.sp[0][self.mospm[self.mobjn][0]][0]
         self.reset_reps = 0
         metadata = self.data_dict['exp_metadata']
@@ -667,21 +913,23 @@ class RabiAnalysis(object):
     def prepare_fitting(self):
         fit_module.prepare_cos_fit_dict(self.data_dict,
                                         keys_in=list(self.data_to_proc_dict),
-                                        meas_obj_names=self.mobjn)
+                                        meas_obj_names=self.mobjn,
+                                        fit_name='RabiFit')
 
     def analyze_fit_results(self):
         if 'fit_dicts' in self.data_dict:
             fit_dicts = self.data_dict['fit_dicts']
         else:
             raise KeyError('data_dict does not contain fit_dicts.')
-        rabi_amplitudes = OrderedDict()
+        ana_res_dict = OrderedDict()
         for keyi in self.data_to_proc_dict:
-            fit_res = fit_dicts['rabi_fit_' + self.mobjn + keyi]['fit_res']
-            rabi_amplitudes[self.mobjn] = self.get_amplitudes(
+            fit_res = fit_dicts['RabiFit_' + self.mobjn + keyi]['fit_res']
+            ana_res_dict[self.mobjn] = self.get_amplitudes(
                 fit_res=fit_res, sweep_points=self.physical_swpts)
 
-        hlp_mod.add_param('analysis_params_dict', rabi_amplitudes,
-                                self.data_dict, update_key=True)
+        hlp_mod.add_param('ana_res_dict', ana_res_dict,
+                          self.data_dict, update_key=True)
+        save_mod.save_analysis_results(self.data_dict, ana_res_dict)
 
     def prepare_plots(self, **params):
         # prepare raw data plot
@@ -843,7 +1091,7 @@ class RabiAnalysis(object):
                         'text_string': textstr}
 
         hlp_mod.add_param('plot_dicts', plot_dicts,
-                                self.data_dict, update_key=True)
+                          self.data_dict, update_key=True)
 
     def get_amplitudes(self, fit_res, sweep_points):
         # Extract the best fitted frequency and phase.
@@ -1005,7 +1253,7 @@ class SingleQubitRBAnalysis(object):
 
     def process_data(self, **params):
         self.cp, self.sp, self.mospm, self.mobjn = \
-            hlp_mod.get_measobj_properties(
+            hlp_mod.get_measurement_properties(
                 self.data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'],
                 enforce_one_meas_obj=True, **params)
         # Get from the hdf5 file any parameters specified in
@@ -1083,8 +1331,7 @@ class SingleQubitRBAnalysis(object):
                 fit_module.prepare_rbleakage_fit_dict(
                     self.data_dict, [keyi], meas_obj_names=self.mobjn,
                     indep_var_array=self.cliffords,
-                    fit_key='rbleak_fit_' + self.mobjn + keyi, **params)
-
+                    fit_name='rbleak_fit', **params)
             key = 'rb_fit_' + self.mobjn + keyi
             data_fit = hlp_mod.get_msmt_data(
                 self.data_to_proc_dict[keyi], self.cp, self.mobjn)
@@ -1139,10 +1386,10 @@ class SingleQubitRBAnalysis(object):
             fit_dicts = self.data_dict['fit_dicts']
         else:
             raise KeyError('data_dict does not contain fit_dicts.')
-        ap_dict = OrderedDict()
+        ana_res_dict = OrderedDict()
         for keyi in self.data_to_proc_dict:
             fit_res = fit_dicts['rb_fit_' + self.mobjn + keyi]['fit_res']
-            ap_dict['EPC_'+self.mobjn+keyi] = {
+            ana_res_dict['EPC_'+self.mobjn+keyi] = {
                 'value': fit_res.params['error_per_Clifford'].value,
                 'stderr': fit_res.params['fidelity_per_Clifford'].stderr}
             if 'pf' in keyi:
@@ -1150,34 +1397,25 @@ class SingleQubitRBAnalysis(object):
                 Aerr = fit_res.params['Amplitude'].stderr
                 p = fit_res.best_values['p']
                 perr = fit_res.params['p'].stderr
-                A_idx = fit_res.var_names.index('Amplitude')
-                p_idx = fit_res.var_names.index('p')
-                cov = 0
-                if fit_res.covar is not None:
-                    cov = fit_res.covar[A_idx, p_idx]
-                ap_dict['L1_'+self.mobjn+keyi] = {
+                ana_res_dict['L1_'+self.mobjn+keyi] = {
                     'value': A*(1-p),
                     'stderr': np.sqrt((A*perr)**2 + (Aerr*(p-1))**2)}
-                    # 'stderr': np.sqrt(Aerr**2 + perr**2 + (Aerr*p)**2 +
-                    #                   (perr*A)**2 + 2*A*p*cov**2)}
-                ap_dict['L2_'+self.mobjn+keyi] = {
+                ana_res_dict['L2_'+self.mobjn+keyi] = {
                     'value': (1-A)*(1-p),
                     'stderr': np.sqrt((Aerr*(p-1))**2 + ((A-1)*perr)**2)}
-                    # 'stderr': np.sqrt(Aerr**2 + (Aerr*p)**2 + (perr*A)**2 -
-                    #                   2*A*p*cov**2)}
-
                 fit_res = fit_dicts['rbleak_fit_' + self.mobjn + keyi][
                     'fit_res']
-                ap_dict['pu_'+self.mobjn+keyi] = {
+                ana_res_dict['pu_'+self.mobjn+keyi] = {
                     'value': fit_res.best_values['pu'],
                     'stderr': fit_res.params['pu'].stderr}
-                ap_dict['pd_'+self.mobjn+keyi] = {
+                ana_res_dict['pd_'+self.mobjn+keyi] = {
                     'value': fit_res.best_values['pd'],
                     'stderr': fit_res.params['pd'].stderr}
 
-        self.analysis_params_dict = ap_dict
-        hlp_mod.add_param(
-            'analysis_params_dict', ap_dict, self.data_dict, update_key=True)
+        self.ana_res_dict = ana_res_dict
+        hlp_mod.add_param('ana_res_dict', ana_res_dict, self.data_dict,
+                          update_key=True)
+        save_mod.save_analysis_results(self.data_dict, ana_res_dict)
 
     @staticmethod
     def calculate_confidence_intervals(
@@ -1287,6 +1525,7 @@ class SingleQubitRBAnalysis(object):
 
             if 'fit_dicts' in self.data_dict:
                 fit_dicts = self.data_dict['fit_dicts']
+                ana_res_dict = self.data_dict['ana_res_dict']
                 # plot fits
                 L1_dict = None
                 L2_dict = None
@@ -1304,9 +1543,9 @@ class SingleQubitRBAnalysis(object):
                         'legend_ncol': 2,
                         'legend_bbox_to_anchor': (1, -0.15),
                         'legend_pos': 'upper right'}
-                    L1_dict = self.analysis_params_dict[
+                    L1_dict = ana_res_dict[
                         f'L1_{self.mobjn}{keyi}']
-                    L2_dict = self.analysis_params_dict[
+                    L2_dict = ana_res_dict[
                         f'L2_{self.mobjn}{keyi}']
                     textstr = self.get_textbox_str(
                         fit_res, for_leakage_google=True,

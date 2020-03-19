@@ -53,24 +53,46 @@ def get_sweep_points_from_timestamp(timestamp):
     return sweep_points
 
 
-def get_params_from_hdf_file(data_dict, **params):
-    params_dict = get_param('params_dict', data_dict, **params)
-    numeric_params = get_param('numeric_params', data_dict,
-                               default_value=[], **params)
+def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
+                             folder=None, **params):
+    """
+    Extracts the parameter provided in params_dict from an HDF file
+    and saves them in data_dict.
+    :param data_dict: OrderedDict where parameters and their values are saved
+    :param params_dict: OrderedDict with key being the parameter name that will
+        be used as key in data_dict for this parameter, and value being a
+        parameter name or a path + parameter name indie the HDF file.
+    :param numeric_params: list of parameter names from amount the keys of
+        params_dict. This specifies that those parameters are numbers and will
+        be converted to floats.
+    :param folder: path to file from which data will be read
+    :param params: keyword arguments:
+        append_key (bool, default: True): whether to append an
+            already-existing key
+        update_key (bool, default: False): whether to replace an
+            already-existing key
+        h5mode (str, default: 'r+'): reading mode of the HDF file
+    """
+    if params_dict is None:
+        params_dict = get_param('params_dict', data_dict, raise_error=True,
+                                **params)
+    if numeric_params is None:
+        numeric_params = get_param('numeric_params', data_dict,
+                                   default_value=[], **params)
     append_key = get_param('append_key', data_dict, default_value=True,
                            **params)
     update_key = get_param('update_key', data_dict, default_value=False,
                            **params)
+    if append_key is True and update_key is True:
+        raise ValueError('"append_key" and "update_key" cannot both be True.')
 
-    if params_dict is None:
-        raise ValueError('params_dict was not specified.')
-
-    # if folder is not specified, will take the last folder in the list
-    folder = params.get('folders', data_dict.get('folders', None))
+    # if folder is not specified, will take the last folder in the list from
+    # data_dict['folders']
     if folder is None:
-        raise ValueError('No folder was found.')
-    else:
-        folder = folder[-1]
+        folder = get_param('folders', data_dict, raise_error=True, **params)
+        if len(folder) > 0:
+            folder = folder[-1]
+
     h5mode = get_param('h5mode', data_dict, default_value='r+', **params)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, h5mode)
@@ -85,14 +107,6 @@ def get_params_from_hdf_file(data_dict, **params):
             data_dict['measurementstrings'] += [os.path.split(folder)[1][7:]]
         else:
             data_dict['measurementstrings'] = [os.path.split(folder)[1][7:]]
-    if 'measured_data' in params_dict:
-        if 'measured_data' in data_dict:
-            data_dict['measured_data'] = np.concatenate(
-                (data_dict['measured_data'],
-                 np.array(data_file['Experimental Data']['Data']).T), axis=1)
-        else:
-            data_dict['measured_data'] = np.array(
-                data_file['Experimental Data']['Data']).T
 
     for save_par, file_par in params_dict.items():
         epd = data_dict
@@ -133,11 +147,11 @@ def get_params_from_hdf_file(data_dict, **params):
     for par_name in data_dict:
         if par_name in numeric_params:
             if hasattr(data_dict[par_name], '__iter__'):
-                data_dict[par_name] = [np.double(p) for p
+                data_dict[par_name] = [np.float(p) for p
                                        in data_dict[par_name]]
                 data_dict[par_name] = np.asarray(data_dict[par_name])
             else:
-                data_dict[par_name] = np.double(data_dict[par_name])
+                data_dict[par_name] = np.float(data_dict[par_name])
     data_file.close()
     return data_dict
 
@@ -182,11 +196,21 @@ def get_data_to_process(data_dict, keys_in):
     return data_to_proc_dict
 
 
-def get_param(name, data_dict, default_value=None, raise_error=False, **params):
+def get_param(param, data_dict, default_value=None, raise_error=False, **params):
+    """
+    Get the value of the parameter "param" from params, data_dict, or metadata.
+    :param name: name of the parameter being sought
+    :param data_dict: OrderedDict where param is to be searched
+    :param default_value: default value for the parameter being sought in case
+        it is not found.
+    :param raise_error: whether to raise error if the parameter is not found
+    :param params: keyword args where parameter is to be sough
+    :return: the value of the parameter
+    """
     p = params
     md = data_dict.get('exp_metadata', dict())
     dd = data_dict
-    all_keys = name.split('.')
+    all_keys = param.split('.')
     if len(all_keys) > 1:
         for i in range(len(all_keys)-1):
             if all_keys[i] not in p:
@@ -204,7 +228,7 @@ def get_param(name, data_dict, default_value=None, raise_error=False, **params):
                          )
                   )
     if raise_error and value is None:
-        raise ValueError(f'{name} was not found in either data_dict, or '
+        raise ValueError(f'{param} was not found in either data_dict, or '
                          f'exp_metadata or input params.')
     return value
 
@@ -221,6 +245,8 @@ def add_param(name, value, data_dict, update_key=False, append_key=False,
     :param params: keyword arguments
     :return:
     """
+    if append_key is True and update_key is True:
+        raise ValueError('"append_key" and "update_key" cannot both be True.')
 
     dd = data_dict
     all_keys = name.split('.')
@@ -242,12 +268,14 @@ def add_param(name, value, data_dict, update_key=False, append_key=False,
             dd[all_keys[-1]].extend([value])
 
         else:
-            raise KeyError(f'{all_keys[-1]} already exists in data_dict.')
+            raise KeyError(f'{all_keys[-1]} already exists in data_dict and it'
+                           f' is unclear how to add it to the data_dict.')
     else:
+        print('in key not in dd')
         dd[all_keys[-1]] = value
 
 
-def get_measobj_properties(data_dict, props_to_extract='all', **params):
+def get_measurement_properties(data_dict, props_to_extract='all', **params):
     """
     Extracts cal_points, sweep_points, meas_obj_sweep_points_map and
     meas_obj_names from experiment metadata or from params.

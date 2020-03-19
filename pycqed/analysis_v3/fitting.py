@@ -31,12 +31,12 @@ def run_fitting(data_dict, keys_in='all', **params):
         fit_dicts = {fk: fd for fk, fd in data_dict['fit_dicts'].items() if
                      fk in keys_in}
 
-    for fit_key, fit_dict in fit_dicts.items():
+    for fit_name, fit_dict in fit_dicts.items():
         fit_one_dict(fit_dict)
         for par in fit_dict['fit_res'].params:
             if fit_dict['fit_res'].params[par].stderr is None:
                 fit_dict['fit_res'].params[par].stderr = 0
-        fit_res_dict[fit_key] = fit_dict['fit_res']
+        fit_res_dict[fit_name] = fit_dict['fit_res']
 
     if params.get('save_fit_results', True):
         getattr(save_mod, 'save_fit_results')(data_dict, fit_res_dict,
@@ -95,13 +95,21 @@ def fit_one_dict(fit_dict, **params):
 def prepare_cos_fit_dict(data_dict, keys_in=None, **params):
     fit_dicts = OrderedDict()
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
-    cp, sp, mospm, mobjn = hlp_mod.get_measobj_properties(
+    cp, sp, mospm, mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'], **params)
     indep_var_array = hlp_mod.get_param('indep_var_array', data_dict,
                                               raise_error=False, **params)
     if indep_var_array is None:
         indep_var_array = sp[0][mospm[mobjn][0]][0]
+    plot_params = hlp_mod.get_param('plot_params', data_dict, default_value={},
+                                    **params)
+    if 'setlabel' not in plot_params:
+        plot_params['setlabel'] = 'CosFit'
+    params_to_print = hlp_mod.get_param(
+        'params_to_print', data_dict, default_value=None, **params)
 
+    fit_name = hlp_mod.get_param('fit_name', data_dict,
+                                raise_error=False, **params)
     for keyi, data in data_to_proc_dict.items():
         data_fit = hlp_mod.get_msmt_data(data, cp, mobjn)
         cos_mod = lmfit.Model(fit_mods.CosFunc)
@@ -113,12 +121,16 @@ def prepare_cos_fit_dict(data_dict, keys_in=None, **params):
         guess_pars['frequency'].vary = True
         guess_pars['phase'].vary = True
 
-        key = 'rabi_fit_' + mobjn + keyi
-        fit_dicts[key] = {
+        fit_name_to_set = fit_name
+        if fit_name_to_set is None:
+            fit_name_to_set = 'CosFit'
+        fit_name_to_set += '_' + mobjn + keyi
+        fit_dicts[fit_name_to_set] = {
             'fit_fn': fit_mods.CosFunc,
             'fit_xvals': {'t': indep_var_array},
             'fit_yvals': {'data': data_fit},
-            'guess_pars': guess_pars}
+            'guess_pars': guess_pars,
+            'params_to_print': params_to_print, **plot_params}
 
     hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_key=True)
 
@@ -142,14 +154,16 @@ def prepare_joint_residzz_fit_dict(data_dict, keys_in=None, **params):
         raise ValueError('keys_in must have two entries.')
     fit_dicts = OrderedDict()
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
-    cp, sp, mospm, mobjn = hlp_mod.get_measobj_properties(
+    cp, sp, mospm, mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'], **params)
     indep_var_array = hlp_mod.get_param('indep_var_array', data_dict,
                                               raise_error=False, **params)
     if indep_var_array is None:
         indep_var_array = sp[0][mospm[mobjn][0]][0]
-    legend_label = hlp_mod.get_param(
-        'legend_label', data_dict, default_value='JointResidZZFit', **params)
+    plot_params = hlp_mod.get_param('plot_params', data_dict, default_value={},
+                                    **params)
+    if 'setlabel' not in plot_params:
+        plot_params['setlabel'] = 'JointResidZZFit'
     params_to_print = hlp_mod.get_param(
         'params_to_print', data_dict, default_value=None, **params)
 
@@ -183,17 +197,18 @@ def prepare_joint_residzz_fit_dict(data_dict, keys_in=None, **params):
                                                 raise_error=False, **params)
     update_fit_guess_pars(guess_params_new, guess_pars)
 
-    fit_key = hlp_mod.get_param('fit_key', data_dict,
-                                      raise_error=False, **params)
-    if fit_key is None:
-        fit_key = 'residzz_fit_' + mobjn
-    fit_dicts[fit_key] = {
+    fit_name = hlp_mod.get_param('fit_name', data_dict,
+                                 raise_error=False, **params)
+    fit_name_to_set = fit_name
+    if fit_name_to_set is None:
+        fit_name_to_set = 'residzz_fit'
+    fit_name_to_set += '_' + mobjn
+    fit_dicts[fit_name] = {
         'fit_fn': fit_mods.ResidZZFuncJoint,
         'fit_xvals': {'t': indep_var_array},
         'fit_yvals': {'data': (data_wo_pulse, data_w_pulse)},
         'guess_pars': guess_pars,
-        'legend_label': legend_label,
-        'params_to_print': params_to_print}
+        'params_to_print': params_to_print, **plot_params}
 
     hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_key=True)
     if params.get('do_fitting', False):
@@ -215,18 +230,21 @@ def prepare_residzz_fit_dict(data_dict, keys_in=None, **params):
     """
     fit_dicts = OrderedDict()
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
-    cp, sp, mospm, mobjn = hlp_mod.get_measobj_properties(
+    cp, sp, mospm, mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'], **params)
     indep_var_array = hlp_mod.get_param('indep_var_array', data_dict,
                                               raise_error=False, **params)
     if indep_var_array is None:
         indep_var_array = sp[0][mospm[mobjn][0]][0]
-    legend_label = hlp_mod.get_param(
-        'legend_label', data_dict, default_value='ResidZZFit', **params)
+    plot_params = hlp_mod.get_param('plot_params', data_dict, default_value={},
+                                    **params)
+    if 'setlabel' not in plot_params:
+        plot_params['setlabel'] = 'ResidZZFit'
     params_to_print = hlp_mod.get_param(
         'params_to_print', data_dict, default_value=None, **params)
-    fit_line_color = hlp_mod.get_param(
-        'fit_line_color', data_dict, default_value=None, **params)
+
+    fit_name = hlp_mod.get_param('fit_name', data_dict,
+                                raise_error=False, **params)
     for keyi, data in data_to_proc_dict.items():
         data_fit = hlp_mod.get_msmt_data(data, cp, mobjn)
         residzz_mod = lmfit.Model(fit_mods.ResidZZFunc)
@@ -243,19 +261,16 @@ def prepare_residzz_fit_dict(data_dict, keys_in=None, **params):
                                                    raise_error=False, **params)
         update_fit_guess_pars(guess_params_new, guess_pars)
 
-        fit_key = hlp_mod.get_param('fit_key', data_dict,
-                                          raise_error=False, **params)
-        if fit_key is None:
-            fit_key = 'residzz_fit_' + mobjn
-        fit_dicts[fit_key] = {
+        fit_name_to_set = fit_name
+        if fit_name_to_set is None:
+            fit_name_to_set = 'residzz_fit'
+        fit_name_to_set += '_' + mobjn + keyi
+        fit_dicts[fit_name_to_set] = {
             'fit_fn': fit_mods.ResidZZFunc,
             'fit_xvals': {'t': indep_var_array},
             'fit_yvals': {'data': data_fit},
             'guess_pars': guess_pars,
-            'legend_label': legend_label,
-            'fit_line_color': fit_line_color,
-            'params_to_print': params_to_print
-        }
+            'params_to_print': params_to_print, **plot_params}
 
     hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_key=True)
     if params.get('do_fitting', False):
@@ -272,22 +287,29 @@ def prepare_expdamposc_fit_dict(data_dict, keys_in=None, **params):
     :param params: keyword args
         do_fitting (bool, default: False): whether to perform the fit
         guess_params (dict, default: dict()): dict of guess pars for fit
+        fit_name
+        indep_var_array
+        plot_params
+        params_to_print
     :return: adds fit_dicts to data_dict
     """
     fit_dicts = OrderedDict()
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
-    cp, sp, mospm, mobjn = hlp_mod.get_measobj_properties(
+    cp, sp, mospm, mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'], **params)
     indep_var_array = hlp_mod.get_param('indep_var_array', data_dict,
                                               raise_error=False, **params)
     if indep_var_array is None:
         indep_var_array = sp[0][mospm[mobjn][0]][0]
-    legend_label = hlp_mod.get_param(
-        'legend_label', data_dict, default_value='ExpDampOscFit', **params)
+    plot_params = hlp_mod.get_param('plot_params', data_dict, default_value={},
+                                    **params)
+    if 'setlabel' not in plot_params:
+        plot_params['setlabel'] = 'ExpDampOscFit'
     params_to_print = hlp_mod.get_param(
         'params_to_print', data_dict, default_value=None, **params)
-    fit_line_color = hlp_mod.get_param(
-        'fit_line_color', data_dict, default_value=None, **params)
+
+    fit_name = hlp_mod.get_param('fit_name', data_dict,
+                                raise_error=False, **params)
     for keyi, data in data_to_proc_dict.items():
         data_fit = hlp_mod.get_msmt_data(data, cp, mobjn)
         exp_damped_decay_mod = lmfit.Model(fit_mods.ExpDampOscFunc)
@@ -303,21 +325,20 @@ def prepare_expdamposc_fit_dict(data_dict, keys_in=None, **params):
         guess_pars['oscillation_offset'].vary = False
         guess_pars['exponential_offset'].vary = True
         guess_params_new = hlp_mod.get_param('guess_params', data_dict,
-                                                   default_value=dict(),
-                                                   raise_error=False, **params)
+                                             default_value=dict(),
+                                             raise_error=False, **params)
         update_fit_guess_pars(guess_params_new, guess_pars)
-        fit_key = hlp_mod.get_param('fit_key', data_dict,
-                                          raise_error=False, **params)
-        if fit_key is None:
-            fit_key = 'expdamposc_fit_' + mobjn
-        fit_dicts[fit_key] = {
+
+        fit_name_to_set = fit_name
+        if fit_name_to_set is None:
+            fit_name_to_set = 'expdamposc_fit'
+        fit_name_to_set += '_' + mobjn + keyi
+        fit_dicts[fit_name_to_set] = {
             'fit_fn': fit_mods.ExpDampOscFunc,
             'fit_xvals': {'t': indep_var_array},
             'fit_yvals': {'data': data_fit},
             'guess_pars': guess_pars,
-            'legend_label': legend_label,
-            'fit_line_color': fit_line_color,
-            'params_to_print': params_to_print}
+            'params_to_print': params_to_print, **plot_params}
 
     hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_key=True)
 
@@ -338,16 +359,21 @@ def prepare_rbleakage_fit_dict(data_dict, keys_in=None, **params):
     """
     fit_dicts = OrderedDict()
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
-    cp, sp, mospm, mobjn = hlp_mod.get_measobj_properties(
+    cp, sp, mospm, mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'], **params)
     indep_var_array = hlp_mod.get_param('indep_var_array', data_dict,
                                               raise_error=False, **params)
     if indep_var_array is None:
         indep_var_array = sp[0][mospm[mobjn][0]][0]
-    legend_label = hlp_mod.get_param(
-        'legend_label', data_dict, default_value='RBLeakageFit', **params)
+    plot_params = hlp_mod.get_param('plot_params', data_dict, default_value={},
+                                    **params)
+    if 'setlabel' not in plot_params:
+        plot_params['setlabel'] = 'RBLeakageFit'
     params_to_print = hlp_mod.get_param(
         'params_to_print', data_dict, default_value=None, **params)
+
+    fit_name = hlp_mod.get_param('fit_name', data_dict,
+                                raise_error=False, **params)
     for keyi, data in data_to_proc_dict.items():
         data_fit = hlp_mod.get_msmt_data(data, cp, mobjn)
         rbleak_mod = lmfit.Model(fit_mods.RandomizedBenchmarkingLeakage)
@@ -358,17 +384,16 @@ def prepare_rbleakage_fit_dict(data_dict, keys_in=None, **params):
                                                    raise_error=False, **params)
         update_fit_guess_pars(guess_params_new, guess_pars)
 
-        fit_key = hlp_mod.get_param('fit_key', data_dict,
-                                          raise_error=False, **params)
-        if fit_key is None:
-            fit_key = 'rbleak_fit_' + mobjn + keyi
-        fit_dicts[fit_key] = {
+        fit_name_to_set = fit_name
+        if fit_name_to_set is None:
+            fit_name_to_set = 'rbleak_fit'
+        fit_name_to_set += '_' + mobjn + keyi
+    fit_dicts[fit_name_to_set] = {
             'fit_fn': fit_mods.RandomizedBenchmarkingLeakage,
             'fit_xvals': {'numCliff': indep_var_array},
             'fit_yvals': {'data': data_fit},
             'guess_pars': guess_pars,
-            'legend_label': legend_label,
-            'params_to_print': params_to_print}
+            'params_to_print': params_to_print, **plot_params}
 
     hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_key=True)
     if params.get('do_fitting', False):

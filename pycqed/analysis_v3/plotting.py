@@ -114,7 +114,7 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
     """
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     cp, sp, mospm, _, mobjn = \
-        hlp_mod.get_measobj_properties(data_dict, **params)
+        hlp_mod.get_measurement_properties(data_dict, **params)
     if len(cp.states) == 0:
         print(f'There are no cal_states to plot for {mobjn}.')
         return
@@ -256,7 +256,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict,
                                                           keys_in=keys_in)
     sp, mospm, movnm, mobjn = \
-        hlp_mod.get_measobj_properties(
+        hlp_mod.get_measurement_properties(
             data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
             **params)
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
@@ -382,14 +382,12 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
         - expects 1d arrays
         - meas_obj_names is defined in cal_points
     """
-    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict,
-                                                          keys_in=keys_in)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in=keys_in)
     sp, mospm, movnm, mobjn = \
-        hlp_mod.get_measobj_properties(
+        hlp_mod.get_measurement_properties(
             data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
             **params)
-    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
-                                 **params)
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False, **params)
     if isinstance(cp, str):
         cp = eval(cp)
 
@@ -506,7 +504,7 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         - meas_obj_name is defined in cal_points
     """
     sp, mospm, movnm, mobjn = \
-        hlp_mod.get_measobj_properties(
+        hlp_mod.get_measurement_properties(
             data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
             **params)
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
@@ -606,15 +604,13 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     :param figure_name: name of the figure on which all the plot dicts created
             will be plotted
     :param params:
-        sp_name (str, default: 'none): name of the sweep parameter in
+        sp_name (str, default: mospm[mobjn]): name of the sweep parameter in
             sweep_points. To be used on x-axis.
-        ylabel (str, default: None): y-axis label
-        yunit (str, default: ''): y-axis unit
-        data_label (str, default: 'Data'): legend label corresponding to
-            the data
-        do_legend (bool, default: True): whether to show the legend
+        xvals (numpy array or list, default: None): x values
+        zunit (str, default: 'arb.'): z-axis unit
         title_suffix (str, default: ''): suffix to be added to the figure
             title, which is by default meas_obj_name
+        do_plotting (bool, default: False): wheter to plot
         ncols (int, default: 2 if len(data_to_proc_dict) > 2 else 1):
             number of subplots along x
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
@@ -633,11 +629,10 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         - meas_obj_name is defined in cal_points
     """
     sp, mospm, movnm, mobjn = \
-        hlp_mod.get_measobj_properties(
+        hlp_mod.get_measurement_properties(
             data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
             **params)
-    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
-                                 **params)
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False, **params)
     if isinstance(cp, str):
         cp = eval(cp)
 
@@ -713,46 +708,58 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
                 'clabel': zlabel}
             plot_dict_names += [plot_dict_name]
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
-                            update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
     return plot_dicts
 
 
-def prepare_fit_plot_dicts(data_dict, figure_name, **params):
+def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
     """
-    meas_obj_names must be in params
-    :param data_dict:
-    :param figure_name:
+    Prepares plot dict for from a fit result object. Adds the plot dicts to the
+    data_dict['plot_dicts'].
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param figure_name: name of the figure on which all the plot dicts created
+            will be plotted
+    :param fit_names: list of fit_names that exist in fit_dicts. Can also be
+        'all' in which case it plots all the dictionaries in fit_dicts
     :param params:
-    :return:
+        plot_params (dict, default: {}): dictionary of plot parameters and
+            their values compatible with the plotting framework
+        params_to_print (dict, default: None): list of parameter names that
+            exist in the fit_res object and whose value should be displayed as
+            textbox in the plot.
+
+    Assumptions:
+        - fit_dicts exists in fit_dicts
+        - meas_obj_names exists in either params, data_dict, or exp_metadata
     """
-    mobjn = hlp_mod.get_measobj_properties(
+    mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], **params)
 
-    labels = params.get('labels', 'Fit')
+    fit_dicts = hlp_mod.get_param('fit_dicts', data_dict, raise_error=True)
     figure_name += '_' + mobjn
-    fit_dicts = data_dict['fit_dicts']
     plot_dicts = {}
-    for fit_name, fit_dict in fit_dicts.items():
+    if fit_names == 'all':
+        fit_names = list(fit_dicts)
+    for fit_name in fit_names:
+        fit_dict = hlp_mod.get_param(fit_name, fit_dicts, raise_error=True)
         fit_res = fit_dict['fit_res']
-        legend_label = hlp_mod.get_param('legend_label', fit_dict,
-                                               default_value=labels)
-        fit_line_color = hlp_mod.get_param('fit_line_color', fit_dict,
-                                               default_value='C0')
+        plot_params = hlp_mod.get_param('plot_params', fit_dict,
+                                        default_value={})
         plot_dicts[fit_name] = {
             'fig_id': figure_name,
             'plotfn': 'plot_fit',
             'fit_res': fit_res,
-            'setlabel': legend_label,
-            'color': fit_line_color,
+            'setlabel': 'fit',
             'do_legend': True,
             'legend_ncol': 2,
             'legend_bbox_to_anchor': (1, -0.15),
-            'legend_pos': 'upper right', **params}
+            'legend_pos': 'upper right'}
+        plot_dicts[fit_name].update(plot_params)
 
-        pois = hlp_mod.get_param('params_to_print', fit_dict)
+        pois = hlp_mod.get_param('params_to_print', fit_dict, **params)
         if pois is not None:
             textstr = ''
             for i, poi in enumerate(pois):
@@ -773,8 +780,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, **params):
                 'plotfn': 'plot_text',
                 'text_string': textstr}
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
-                            update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=list(plot_dicts), **params)
     return plot_dicts
