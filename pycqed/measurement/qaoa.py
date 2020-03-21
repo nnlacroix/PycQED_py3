@@ -272,9 +272,10 @@ class HelperBase:
             angle, qbn = op.split(" ")[0][1:], op.split(" ")[1]
             p = self.get_pulse(f"Z180 {qbn}", parse_z_gate=False)
             p['basis_rotation'] = {qbn: float(angle)}
-            return p
-
-        return deepcopy(self.operation_dict[op])
+        else:
+            p = deepcopy(self.operation_dict[op])
+        p['op_code'] = op
+        return p
 
     def initialize(self, init_state='0', qubits='all', prep_params=None,
                    simultaneous=True, block_name=None):
@@ -478,6 +479,9 @@ class HelperBase:
 
         :return: Pulse dict of the Z-gate
         """
+
+        # FIXME: shouldn't this function rather call block_from_ops(f'Z{theta} {qb}') for all qb in qubits?
+
         # if qubits is the name of a qb, expects single pulse output
         single_qb_given = False
         if qubits in self.qb_names:
@@ -490,6 +494,7 @@ class HelperBase:
         for qbn in qubits:
             zgate = deepcopy(self.operation_dict[zgate_base_name + f" {qbn}"])
             zgate['basis_rotation'] = {qbn: theta}
+            zgate['op_code'] = f'Z{theta} {qbn}'
             pulses.append(zgate)
 
         return pulses[0] if single_qb_given else pulses
