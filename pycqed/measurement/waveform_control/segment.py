@@ -1071,6 +1071,7 @@ class UnresolvedPulse:
         self.basis = pulse_pars.get('basis', None)
         self.operation_type = pulse_pars.get('operation_type', None)
         self.basis_rotation = pulse_pars.pop('basis_rotation', {})
+        self.op_code = pulse_pars.get('op_code', '')
 
         pulse_func = None
         for module in bpl.pulse_libraries:
@@ -1083,6 +1084,8 @@ class UnresolvedPulse:
                 pulse_pars['pulse_type']))
 
         self.pulse_obj = pulse_func(**pulse_pars)
+        # allow a pulse to modify its op_code (e.g., for C-ARB gates)
+        self.op_code = getattr(self.pulse_obj, 'op_code', self.op_code)
 
         if self.pulse_obj.codeword != 'no_codeword' and \
                 self.basis_rotation != {}:
