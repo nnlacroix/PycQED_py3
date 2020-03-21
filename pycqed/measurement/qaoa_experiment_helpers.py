@@ -3,6 +3,7 @@ from numpy import array
 import lmfit
 import matplotlib.pyplot as plt
 import pycqed.analysis.measurement_analysis as ma
+from pycqed.analysis import analysis_toolbox as a_tools
 from scipy.interpolate import interp1d
 
 #############################################################################
@@ -169,7 +170,7 @@ def find_nearest_idx(array, value):
 
 def find_ampl_spacing_for_exp(dyn_model, dyn_model_amplitudes, amin=0, amax=0.35,
                               phase_sep=160,
-                              max_spacing=0.05, search_window_size=0.01,
+                              max_spacing=0.0005, search_window_size=0.0001,
                               plot=False):
     """
     Generates the array of amplitudes at which the dynamic phase should be evaluated in the experiment,
@@ -180,14 +181,27 @@ def find_ampl_spacing_for_exp(dyn_model, dyn_model_amplitudes, amin=0, amax=0.35
         dyn_model (array): unwraped dynamic phase estimated from model (radian)
         dyn_model_amplitudes (array): array corresponding to the amplitudes at which dyn_model is evaluated
         phase_sep (float, array): max phase separation between two points (deg), can also be array shaped like dyn_model_amplitudes
-        max_spacing (float): maximal spacing between two values (trucates gradient)
+        max_spacing (float): maximal spacing between two values (trucates
+        gradient) or list of tuples [(low_ampl, high_ampl, value of max spacing)]
         search_window_size (float):  will search the max spacing for each amplitude in window: (a-search_window_size, a + search_window_size)
             to avoid undersampling around a if there is a narrow peak (due to noise) around a.
     """
     deriv_dphase_dV = np.abs(
         np.gradient(dyn_model * 180 / np.pi, np.diff(dyn_model_amplitudes)[0]))
-    max_ampl_spacing = np.minimum(phase_sep / deriv_dphase_dV,
-                                  np.ones_like(deriv_dphase_dV) * max_spacing)
+    max_ampl_spacing = phase_sep / deriv_dphase_dV
+    if np.ndim(max_spacing) == 0:
+        max_ampl_spacing = np.minimum(phase_sep / deriv_dphase_dV,
+                                      np.ones_like(deriv_dphase_dV) * max_spacing)
+    else:
+        for (low, high, val) in max_spacing:
+            idx_low = find_nearest_idx(dyn_model_amplitudes, low)
+            idx_high = find_nearest_idx(dyn_model_amplitudes, high)
+            print(idx_low, idx_high)
+            max_ampl_spacing[idx_low: idx_high] = np.minimum(max_ampl_spacing[
+                                                             idx_low: idx_high],
+                                                             np.ones(idx_high -
+                                                                     idx_low)* val)
+
     if plot:
         plt.plot(dyn_model_amplitudes, max_ampl_spacing)
         plt.yscale('log')
@@ -197,27 +211,67 @@ def find_ampl_spacing_for_exp(dyn_model, dyn_model_amplitudes, amin=0, amax=0.35
         search_window_max = find_nearest_idx(dyn_model_amplitudes,
                                              ampl[-1] + max_ampl_spacing[
                                                  search_window_min])
-        #         search_window_min =  find_nearest(dyn_model_amplitudes, ampl[-1] - search_window_size)
-        #         search_window_max = find_nearest(dyn_model_amplitudes, ampl[-1] + search_window_size)
+                # search_window_min =  find_nearest(dyn_model_amplitudes, ampl[-1] - search_window_size)
+                # search_window_max = find_nearest(dyn_model_amplitudes, ampl[-1] + search_window_size)
         try:
             min_val = np.min(max_ampl_spacing[search_window_min:search_window_max])
+            if np.ndim(max_spacing) != 0:
+                for (low, high, val) in max_spacing:
+                    if low < ampl[-1] < high:
+                        min_val = min(val, min_val)
+                search_window_min = find_nearest_idx(dyn_model_amplitudes,
+                                                     ampl[-1] - search_window_size)
+                search_window_max = find_nearest_idx(dyn_model_amplitudes, ampl[-1]
+                                                     + search_window_size)
+                # print(search_window_min, search_window_max)
+                min_val = min(min_val, np.min(
+                    max_ampl_spacing[search_window_min:search_window_max]))
         except Exception as e:
-            print(e)
             min_val = 0.001
+            if np.ndim(max_spacing) == 0:
+                min_val = max_spacing
+            else:
+                min_val = 1
+                for (low, high, val) in max_spacing:
+                    if low < ampl[-1] < high:
+                        min_val = min(val, min_val)
+                search_window_min =  find_nearest_idx(dyn_model_amplitudes,
+                                                   ampl[-1] - search_window_size)
+                search_window_max = find_nearest_idx(dyn_model_amplitudes, ampl[-1]
+                                                  + search_window_size)
+                # print(search_window_min, search_window_max)
+                min_val = min(min_val, np.min(
+                    max_ampl_spacing[search_window_min:search_window_max]))
         ampl.append(ampl[-1] + min_val)
     return np.asarray(ampl)
 
 
 #################### reloading parameter functions and build arb phase dict###
+def get_calib_dict(name=None):
+    import os
+    l = []
+    for file in os.listdir("."):
+        if file.startswith("carb_calib_ts_dict"):
+            print(os.path.join(file))
+            l.append(file)
+    if name is None and len(l)> 0:
+        name = l[-1]
+    print(f'Loading {name}')
+    return np.load(name)[0]
+def save_calib_dict(calib_dict, name=None):
+    import datetime
+    if name is None:
+        name = "carb_calib_ts_dict_{:%Y%m%d_%H%M%S}.npy".format(datetime.datetime.now())
+    np.save(name, [calib_dict])
+
 def load_dyn_phase(timestamp, qb_names, plot=True):
-    a = ma.MeasurementAnalysis(timestamp=timestamp, auto=False)
-    a.get_naming_and_values()
-    amplitudes = np.load(a.folder + "\\amplitudes.npy")
+    f = a_tools.get_folder(timestamp=timestamp)
+    amplitudes = np.load(f + "\\amplitudes.npy")
     dph_all = {}
     if isinstance(qb_names, str):
         qb_names = [qb_names]
     for qbn in qb_names:
-        dph = np.load(a.folder + f"\\dynamic_phases_{qbn}.npy")
+        dph = np.load(f + f"\\dynamic_phases_{qbn}.npy")
         if plot:
             plt.scatter(amplitudes, np.unwrap(dph / 180 * np.pi) * 180 / np.pi,
                      label=f"{qbn} measured")
@@ -229,7 +283,7 @@ def load_dyn_phase(timestamp, qb_names, plot=True):
                                                      period=360)
         #         dyn_phase_func_str = f"lambda ampl_test: np.interp(ampl_test, {repr(amplitudes)}, {repr( np.unwrap(dph/180*np.pi)*180/np.pi)}, period=360)"
         dyn_phase_func_str = f"lambda ampl_test: interp1d({repr(amplitudes)}, " \
-                            f"{repr(np.unwrap(dph / 180 * np.pi) * 180 / np.pi)}, kind='cubic')(ampl_test)"
+                            f"{repr(np.unwrap(dph / 180 * np.pi) * 180 /np.pi)}, kind='cubic', fill_value='extrapolate' )(ampl_test)"
         dph_all[qbn] = dyn_phase_func_str
     return dph_all
 
