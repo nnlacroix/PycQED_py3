@@ -1019,6 +1019,9 @@ class UnresolvedPulse:
         self.basis = pulse_pars.get('basis', None)
         self.operation_type = pulse_pars.get('operation_type', None)
         self.basis_rotation = pulse_pars.pop('basis_rotation', {})
+        if 'CZ' in pulse_pars['pulse_type']:
+            self.cz_target_qb = pulse_pars.get('cz_target_qb', None)
+        self.ro_target = pulse_pars.get('target', ())
 
         try:
             # Look for the function in pl = pulse_lib

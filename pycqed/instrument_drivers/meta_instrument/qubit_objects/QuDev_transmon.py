@@ -594,8 +594,7 @@ class QuDev_transmon(Qubit):
         operation_dict['X180 ' + self.name]['operation_type'] = 'MW'
         operation_dict['X180_ef ' + self.name]['operation_type'] = 'MW'
         operation_dict['X180 ' + self.name]['basis'] = self.name
-        operation_dict['X180_ef ' + self.name]['basis'] = self.name + \
-                                                                   '_ef'
+        operation_dict['X180_ef ' + self.name]['basis'] = self.name + '_ef'
         operation_dict['X180_ef ' + self.name]['I_channel'] = \
             operation_dict['X180 ' + self.name]['I_channel']
         operation_dict['X180_ef ' + self.name]['Q_channel'] = \
@@ -624,6 +623,7 @@ class QuDev_transmon(Qubit):
             delta_freqs = np.diff(self.ro_freq(), prepend=self.ro_freq()[0])
             mods = [self.ro_mod_freq() + d for d in delta_freqs]
             operation_dict['RO ' + self.name]['mod_frequency'] = mods
+        operation_dict['RO ' + self.name]['target'] = [self.name]
 
         return operation_dict
 

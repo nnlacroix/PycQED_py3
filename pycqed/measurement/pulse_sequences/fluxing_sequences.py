@@ -973,7 +973,6 @@ def cphase_interleaved_fluxed_spectators_seqs(qbc_name, qbt_name, qbs_names,
 
     # the phases in the hard_sweep_dict must be tiled by 4!
     hsl = len(list(hard_sweep_dict.values())[0]['values'])
-    print(hsl)
     params = {'cphase_init_pi_qbc.amplitude': np.tile(np.concatenate(
         [initial_rotations[0]['amplitude']*np.ones(hsl//4), np.zeros(hsl//4)]), 2),
               'cphase_final_pi_qbc.amplitude': np.tile(np.concatenate(
@@ -983,12 +982,6 @@ def cphase_interleaved_fluxed_spectators_seqs(qbc_name, qbt_name, qbs_names,
             hsl//4)]), 2) for i in range(len(qbs_names))})
     params.update({f'cphase_final_pihalf_qbt.{k}': v['values']
                    for k, v in hard_sweep_dict.items()})
-    # params = {'cphase_init_pi_qbc.amplitude': np.concatenate(
-    #     [initial_rotations[0]['amplitude']*np.ones(hsl//2), np.zeros(hsl//2)]),
-    #           'cphase_final_pi_qbc.amplitude': np.concatenate(
-    #     [final_rotations[0]['amplitude']*np.ones(hsl//2), np.zeros(hsl//2)])}
-    # params.update({f'cphase_final_pihalf_qbt.{k}': v['values']
-    #                for k, v in hard_sweep_dict.items()})
 
     ssl = len(list(soft_sweep_dict_list[0].values())[0]['values'])
     print(ssl)

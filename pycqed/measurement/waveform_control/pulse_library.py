@@ -653,6 +653,7 @@ class GaussFilteredCosIQPulse(Pulse):
             phi_skew=self.phi_skew,
             alpha=self.alpha,
             phase_lock=self.phase_lock)
+
         if chan == self.I_channel:
             return I_mod
         if chan == self.Q_channel:
