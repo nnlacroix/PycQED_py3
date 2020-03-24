@@ -205,9 +205,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     def extract_data(self):
         super().extract_data()
-        self.metadata = self.raw_data_dict.get('exp_metadata', [])
-        if len(self.metadata) == 0:
-            self.metadata = {}
 
         self.channel_map = self.get_param_value('channel_map')
         if self.channel_map is None:
