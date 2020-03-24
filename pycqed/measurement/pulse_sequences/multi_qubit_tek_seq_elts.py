@@ -1154,7 +1154,7 @@ def Ramsey_add_pulse_seq(times, measured_qubit_name,
 
 def ramsey_add_pulse_seq_active_reset(
         times, measured_qubit_name, pulsed_qubit_name,
-        operation_dict, cal_points, n=1, artificial_detunings = 0,
+        operation_dict, cal_points, n=1, artificial_detunings=0,
         upload=True, for_ef=False, last_ge_pulse=False, prep_params=dict()):
     '''
      Azz sequence:  Ramsey on measured_qubit
@@ -1168,26 +1168,29 @@ def ramsey_add_pulse_seq_active_reset(
     # Operations
     if for_ef:
         ramsey_ops_measured = ["X180"] + ["X90_ef"] * 2 * n
-        ramsey_ops_pulsed = ["X180"]
         if last_ge_pulse:
             ramsey_ops_measured += ["X180"]
     else:
         ramsey_ops_measured = ["X90"] * 2 * n
-        ramsey_ops_pulsed = ["X180"]
 
     ramsey_ops_measured += ["RO"]
-    ramsey_ops_measured = add_suffix(ramsey_ops_measured, " " + measured_qubit_name)
+    ramsey_ops_measured = add_suffix(ramsey_ops_measured,
+                                     " " + measured_qubit_name)
+
+    ramsey_ops_pulsed = ["X180"]
     ramsey_ops_pulsed = add_suffix(ramsey_ops_pulsed, " " + pulsed_qubit_name)
     ramsey_ops_init = ramsey_ops_pulsed + ramsey_ops_measured
     ramsey_ops_det = ramsey_ops_measured
 
     # pulses
-    ramsey_pulses_init = [deepcopy(operation_dict[op]) for op in ramsey_ops_init]
-    ramsey_pulses_det = [deepcopy(operation_dict[op]) for op in ramsey_ops_det]
+    ramsey_pulses_init = [deepcopy(operation_dict[op]) for
+                          op in ramsey_ops_init]
+    ramsey_pulses_det = [deepcopy(operation_dict[op]) for
+                         op in ramsey_ops_det]
 
     # name and reference swept pulse
     for i in range(n):
-        idx = -2 #(2 if for_ef else 1) + i * 2 + 1
+        idx = -2  # (2 if for_ef else 1) + i * 2 + 1
         ramsey_pulses_init[idx]["name"] = f"Ramsey_x2_{i}"
         ramsey_pulses_init[idx]['ref_point'] = 'start'
         ramsey_pulses_det[idx]["name"] = f"Ramsey_x2_{i}"
