@@ -1,10 +1,22 @@
 """
-This module defines functions that calculate the energy levels for the full
-transmon model, including a coupled resonator according to Koch et al.,
-Phys. Rev. A, 76, 042319 (2007) eqs. (2.1) and (3.1).
+This module contains different functions to calculate properties of transmon
+qubits and resonators coupled to them. In particular it includes
 
-Also defines the inverse functions, calculating the Hamiltonian parameters
-from experimental quantities.
+i) functions that calculate the energy levels for the full transmon model,
+including a coupled resonator according to Koch et al., Phys. Rev. A, 76,
+042319 (2007) eqs. (2.1) and (3.1), and  the inverse functions, calculating
+the Hamiltonian parameters from experimental quantities,
+
+ii) function to calculate, by finding the eigenvalues of pseudo-Hamiltonians,
+the effective linewidth of a Purcell-protected readout resonator and the
+Purcell-limited lifetime of a qubit coupled to one or two series resonators
+
+iii) functions to calculate the dispersive shifts of energy levels and
+transitions of two coupled anharmonic oscillators, as calculated from second
+order perturbation theory, and
+
+iv) functions to calculate the process and average fidelities of CZ gates in the
+presence of phase and swap errors, decomposed as a Fourier sum.
 """
 
 import numpy as np
@@ -143,8 +155,8 @@ def transmon_ej_fge(fef: float, ec: float, ng: float = 0.,
         fs = transmon_levels(fef_ec[1], ej_fge_[0], ng_, dim_charge_)
         return [fs[0] - ej_fge_[1], fs[1] - fs[0] - fef_ec[0]]
 
-    ej0 = (fef + 2*ec)**2 / 8 / ec
-    fge0 = fef+ec
+    ej0 = (fef + 2 * ec)**2 / 8 / ec
+    fge0 = fef + ec
     ej_fge = sp.optimize.fsolve(func, np.array([ej0, fge0]),
                                 args=([fef, ec], ng, dim_charge))
     return ej_fge[0], ej_fge[1]
@@ -328,7 +340,7 @@ def transmon_resonator_ej_anh_frg_chi(fge: float, ec: float, frb: float,
     transmon-resonator system from the qubit transition frequency and
     Hamiltonian parameters
 
-    Calculates the Josephson energy, the transmon anharmonicity  with the
+    Calculates the Josephson energy, the transmon anharmonicity with the
     resonator in the ground state, the resonator frequency for the qubit in
     the ground state and the dispersive shift of the resonator.
 
@@ -363,17 +375,18 @@ def transmon_resonator_ej_anh_frg_chi(fge: float, ec: float, frb: float,
                                               ng, dim_charge, dim_resonator))
     return tuple(ej_anh_frg_chi)
 
+
 def transmon_resonator_ej_anh_frb_chi(fge: float, ec: float, frg: float,
                                       gb: float, ng: float = 0.,
                                       dim_charge: int = 31,
                                       dim_resonator: int = 10):
-    """Calculate Josephson energy and observable frequencies of a coupled
-    transmon-resonator system from the qubit transition frequency and
-    Hamiltonian parameters
+    """Calculate Josephson energy, resonator bare frequency and observable
+    frequencies of a coupled transmon-resonator system from the qubit transition
+    frequency, coupled resonator frequency and Hamiltonian parameters.
 
-    Calculates the Josephson energy, the transmon anharmonicity  with the
-    resonator in the ground state, the resonator frequency for the qubit in
-    the ground state and the dispersive shift of the resonator.
+    Calculates the Josephson energy, the transmon anharmonicity with the
+    resonator in the ground state, the bare resonator frequency and the
+    dispersive shift of the resonator.
 
     Args:
         ec: Charging energy of the Hamiltonian.
@@ -470,3 +483,164 @@ def resonator_purcell_effective_linewidth(fr, jrp, fp, kp):
     m = np.array([[kp + 2j * fp, 2j * jrp],
                   [2j * jrp, 2j * fr]])
     return np.linalg.eigvals(m).min().real
+
+
+def energy_level_dispersive_shift(n1, n2, f1, ah1, f2, ah2, j=1):
+    """Analytical model for energy level shift of coupled anharmonic oscillators
+
+    Args:
+        n1: Excitation number of the first oscillator
+        n2: Excitation number of the second oscillator
+        f1: Frequency of the first oscillator
+        ah1: Anharmonicity of the first oscillator
+        f2: Frequency of the second oscillator
+        ah2: Anharmonicity of the second oscillator
+        j: j-coupling between the oscillator
+
+    Returns:
+        The frequency shift of the state |n1, n2> as calulated according to
+        second order perturbation theory
+    """
+    return j * j * (n1 * (n2 + 1) / (f1 + (n1 - 1) * ah1 - f2 - n2 * ah2) -
+                    (n1 + 1) * n2 / (f1 + n1 * ah1 - f2 - (n2 - 1) * ah2))
+
+
+def transition_dispersive_shift(n_transition, fqb, anh, fqb_spec, anh_spec, j=1,
+                                state_spec=1):
+    """Analytical model for trans. freq. shift of coupled anharmonic oscillators
+
+    Args:
+        n_transition: Index of the transition under consideration
+        fqb: Frequency of the oscillator
+        anh: Anharmonicity of the oscillator
+        fqb_spec: Frequency of the neighboring oscillator
+        anh_spec: Anharmonicity of the neighboring oscillator
+        j: j-coupling between the oscillators
+        state_spec: Excitation number of the neighboring resonator
+
+    Returns:
+        The frequency shift of the state n_transition-th transition, calculated
+        as the difference of the corresponding energy levels from second order
+        perturbation theory
+
+    Examples:
+        Calulating the standard residual zz coupling between the first
+        transitions of two coupled qubits, detuned by 1000 MHz, with
+        anharmonicity of -200 MHz, to find it equal to 83 kHz
+
+        >>> transition_dispersive_shift(1, 5000, -200, 4000, -200, 10)
+        -0.08333333333333333
+
+        Calulating the shift of the qubit frequency due to a neighboring qubit
+        being in the f-level
+
+        >>> transition_dispersive_shift(1, 5000, -200, 4000, -200, 10, 2)
+        -0.11904761904761904
+
+        Calculating the shift of the second transition frequency when a neighbor
+        is in the excited state
+
+        >>> transition_dispersive_shift(2, 5000, -200, 4000, -200, 10)
+        -0.16666666666666666
+    """
+    fs = [energy_level_dispersive_shift(n1, n2, fqb, anh, fqb_spec, anh_spec, j)
+          for n1, n2 in [(n_transition, state_spec),
+                         (n_transition - 1, state_spec),
+                         (n_transition, 0),
+                         (n_transition - 1, 0)]]
+    return (fs[0] - fs[1]) - (fs[2] - fs[3])
+
+
+def cz_process_fidelity(z1=0, z2=0, zc=0, s=0):
+    r"""Analytical formula for two-qubit CZ gate process fidelity
+
+    Calculates the process fidelity of the following unitary to the ideal
+    CZ unitary
+
+    .. math:: U = \begin{pmatrix}
+        1 & 0                 & 0                 &  0                        \\
+        0 & e^{-i z_1} \cos s & \sin s            &  0                        \\
+        0 & \sin s            & e^{-i z_2} \cos s &  0                        \\
+        0 & 0                 & 0                 & -e^{-i (z_1 + z_2 + z_c)} \\
+    \end{pmatrix}.
+
+    The validity of the Fourier-decomposition of the function was verified by
+    comparing to outcomes of random inputs to the qutip direct implementation
+
+    Args:
+        z1: First qubit Z rotation error in radians
+        z2: Second qubit Z rotation error in radians
+        zc: Conditional Z rotation error in radians
+        s: Swap rotation angle
+
+    Returns:
+        The process fidelity, defined as the trace of the product of the
+        chi-matrices corresponding to the ideal and actual unitary.
+
+    Examples:
+        Calculate the two-qubit gate fidelity in the presence of frequency
+        detunings of the first and second transitions of the two qubits.
+
+        >>> j = 7  # MHz
+        >>> t_gate = 1/(np.sqrt(8)*j)  # us
+        >>> zeta1_ge = -0.10  # MHz
+        >>> zeta2_ge = -0.07  # MHz
+        >>> zeta2_ef = -0.15  # MHz
+        >>> z1 = 2*np.pi*zeta1_ge*t_gate  # rad
+        >>> z2 = 2*np.pi*zeta2_ge*t_gate  # rad
+        >>> zc = np.pi*(zeta2_ef - zeta1_ge)*t_gate  # rad
+        >>> cz_process_fidelity(z1, z2, zc)
+        0.9995061478640974
+
+        Calculate the swap error due to finite detuning of the ge<->eg
+        transition during the CZ gate, involving the ee<->gf transition.
+        >>> j = 7  # MHz
+        >>> anh = -200  # MHz
+        >>> s = np.arctan(2*j/anh)  # rad
+        >>> cz_process_fidelity(s=s)
+        0.9975604568019807
+
+    """
+    return (+ 6
+            + 1 * np.cos(1 * z1 - 1 * z2 + 0 * zc - 2 * s)
+            + 2 * np.cos(1 * z1 - 1 * z2 + 0 * zc + 0 * s)
+            + 1 * np.cos(1 * z1 - 1 * z2 + 0 * zc + 2 * s)
+            + 2 * np.cos(0 * z1 + 0 * z2 + 0 * zc + 2 * s)
+            + 2 * np.cos(1 * z1 + 0 * z2 + 0 * zc - 1 * s)
+            + 2 * np.cos(1 * z1 + 0 * z2 + 0 * zc + 1 * s)
+            + 2 * np.cos(1 * z1 + 0 * z2 + 1 * zc - 1 * s)
+            + 2 * np.cos(1 * z1 + 0 * z2 + 1 * zc + 1 * s)
+            + 2 * np.cos(0 * z1 + 1 * z2 + 0 * zc - 1 * s)
+            + 2 * np.cos(0 * z1 + 1 * z2 + 0 * zc + 1 * s)
+            + 2 * np.cos(0 * z1 + 1 * z2 + 1 * zc - 1 * s)
+            + 2 * np.cos(0 * z1 + 1 * z2 + 1 * zc + 1 * s)
+            + 4 * np.cos(1 * z1 + 1 * z2 + 1 * zc + 0 * s)) / 32
+
+
+def cz_average_fidelity(z1=0, z2=0, zc=0, s=0):
+    r"""Analytical formula for two-qubit CZ gate average fidelity
+
+    State fidelity of the output of the following unitary to the one from  the
+    ideal CZ unitary, averaged over all possible input states.
+
+    .. math:: U = \begin{pmatrix}
+        1 & 0                 & 0                 &  0                        \\
+        0 & e^{-i z_1} \cos s & \sin s            &  0                        \\
+        0 & \sin s            & e^{-i z_2} \cos s &  0                        \\
+        0 & 0                 & 0                 & -e^{-i (z_1 + z_2 + z_c)} \\
+    \end{pmatrix}.
+
+    For unitary operations :math:`F_{a} = (F_{p}*d + 1)/(d + 1)`,
+    where :math:`d` is the dimension of the Hilbert space. In our case
+    :math:`d=4` and :math:`F_{a} = 0.8*F_{p} + 0.2`.
+
+    Args:
+        z1: First qubit Z rotation error in radians
+        z2: Second qubit Z rotation error in radians
+        zc: Conditional Z rotation error in radians
+        s: Swap rotation angle
+
+    Returns:
+        The average gate fidelity.
+    """
+    return 0.8 * cz_process_fidelity(z1, z2, zc, s) + 0.2
