@@ -41,7 +41,7 @@ class SweepPoints(list):
     sp.add_sweep_dimension()
     for qb in ['qb1', 'qb2', 'qb3']:
         sp.add_sweep_parameter(f'lengths_{qb}', np.arange(100),
-        'V', 'Pulse length')
+        's', 'Pulse length')
     """
     def __init__(self, param_name=None, values=None, unit='', label=None):
         super().__init__()
