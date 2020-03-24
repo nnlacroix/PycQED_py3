@@ -799,7 +799,6 @@ class RamseyAnalysis(object):
                              fit_res.params['tau'].stderr*1e6))
 
                 fit_name = 'exp_decay'
-                print(self.data_dict['fit_dicts'].keys())
                 fit_res = self.data_dict['fit_dicts'][
                     fit_name + '_' + self.mobjn + keyi]['fit_res']
                 old_qb_freq = ana_res_dict['old_freq_' + self.mobjn]

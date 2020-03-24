@@ -97,9 +97,10 @@ def add_letter_to_subplots(fig, axes, xoffset_right_subplots=0):
         - axes[0::2] (axes[1::2]) correspond to the left (right) column
             of subplots
     """
+    ax_geom = get_axes_geometry_from_figure(fig)
     letters = [f'({chr(x+97)})' for x in range(len(axes))]
     for letter, ax in zip(letters, axes):
-        if letter in letters[1::2]:
+        if ax_geom[1] > 1 and letter in letters[1::2]:
             ax.text(0.5 + xoffset_right_subplots,
                     ax.bbox.transformed(fig.transFigure.inverted()).y1, letter,
                     ha='left', va='top', transform=fig.transFigure)
@@ -109,6 +110,10 @@ def add_letter_to_subplots(fig, axes, xoffset_right_subplots=0):
                     ha='left', va='top', transform=fig.transFigure)
     return fig, axes
 
+
+def get_axes_geometry_from_figure(fig):
+    return fig.axes[0].get_subplotspec().get_topmost_subplotspec().\
+        get_gridspec().get_geometry()
 
 ## Prepare plot dicts functions ##
 def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
@@ -782,7 +787,6 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
     if fit_names == 'all':
         fit_names = list(fit_dicts)
     for fit_name in fit_names:
-        print(fit_name in fit_dicts)
         fit_dict = hlp_mod.get_param(fit_name, fit_dicts, raise_error=True)
         fit_res = fit_dict['fit_res']
         plot_params = hlp_mod.get_param('plot_params', fit_dict,

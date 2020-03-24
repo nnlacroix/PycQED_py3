@@ -234,7 +234,6 @@ def get_param(param, data_dict, default_value=None, raise_error=False, **params)
                 p = p[all_keys[i]]
                 md = md[all_keys[i]]
                 dd = dd[all_keys[i]]
-        print('in get_param', all_keys)
         value = p.get(all_keys[-1],
                       dd.get(all_keys[-1],
                              md.get(all_keys[-1], default_value)))
