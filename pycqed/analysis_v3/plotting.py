@@ -23,54 +23,91 @@ import datetime
 import sys
 this_mod = sys.modules[__name__]
 
+prx_single_column_width = 3.404
+prx_two_column_width = 7.057
+# Default to PRX style, change these global variables according to journal
+FIGURE_WIDTH_1COL = prx_single_column_width
+FIGURE_WIDTH_2COL = prx_two_column_width
 
 #####################################
 ### Functions related to Plotting ###
 #####################################
-def get_default_plot_params(set_pars=True, **kwargs):
-    font_size = kwargs.get('font_size', 18)
-    marker_size = kwargs.get('marker_size', 6)
-    line_width = kwargs.get('line_width', 2.5)
-    axes_line_width = kwargs.get('axes_line_width', 1)
-    tick_length = kwargs.pop('tick_length', 5)
-    tick_width = kwargs.pop('tick_width', 1)
-    tick_color = kwargs.get('tick_color', 'k')
-    ticks_direction = kwargs.get('ticks_direction', 'out')
-    axes_labelcolor = kwargs.get('axes_labelcolor', 'k')
+def default_figure_height(figure_width):
+    return figure_width*2/(1 + np.sqrt(5))
 
-    fig_size_dim = 10
-    golden_ratio = (1+np.sqrt(5))/2
-    fig_size = kwargs.get('fig_size',
-                          (fig_size_dim, fig_size_dim/golden_ratio))
-    dpi = kwargs.get('dpi', 300)
 
-    params = {'figure.figsize': fig_size,
-              'figure.dpi': dpi,
-              'savefig.dpi': dpi,
-              'font.size': font_size,
-              'figure.titlesize': font_size,
-              'legend.fontsize': font_size,
-              'axes.labelsize': font_size,
-              'axes.labelcolor': axes_labelcolor,
-              'axes.titlesize': font_size,
-              'axes.linewidth': axes_line_width,
-              'lines.markersize': marker_size,
-              'lines.linewidth': line_width,
-              'xtick.direction': ticks_direction,
-              'ytick.direction': ticks_direction,
-              'xtick.labelsize': font_size,
-              'ytick.labelsize': font_size,
-              'xtick.color': tick_color,
-              'ytick.color': tick_color,
-              'xtick.major.size': tick_length,
-              'ytick.major.size': tick_length,
-              'xtick.major.width': tick_width,
-              'ytick.major.width': tick_width,
-              'axes.formatter.useoffset': False,
-              }
-    if set_pars:
+def get_default_plot_params(set_params=True, figure_width='1col',
+                            figure_height=None, **params):
+    """
+    Generates the rcParams that produce nice paper-style figures.
+    Optionally updates the rcParams if set_pars == True.
+    :param set_pars: whether to update the rcParams with the ones generated here
+    :param figure_width: wight of the figure. Can be a float representing the
+        width in inches, can be the string "2col" for a two column PRX style
+        figure, or can be a string of the form "Xcol" with X a float <= 1
+        representing a fraction of 1 column PRX style.
+    :param figure_height: height of the figure in inches. If None, uses
+        the function default_figure_height defined above.
+    :param params: keyword arguments
+    :return: rcParams dictionary
+    """
+    if hasattr(figure_width, '__iter__'):
+        # assumes figure_width is of the form "Xcol" where X is either a
+        # fraction of a column width, or X = 2.
+        if figure_width == '2col':
+            FIGURE_WIDTH = FIGURE_WIDTH_2COL
+        else:
+            X = float(figure_width[:-3])
+            FIGURE_WIDTH = X*FIGURE_WIDTH_1COL
+    else:
+        FIGURE_WIDTH = figure_width
+
+    FIGURE_HEIGHT = figure_height
+    if FIGURE_HEIGHT is None:
+        FIGURE_HEIGHT = default_figure_height(FIGURE_WIDTH)
+
+    params = {
+        'font.size': 8,
+        'lines.markersize' : 2.0,
+        'figure.facecolor': '0.9',
+        'xtick.direction': 'in',
+        'ytick.direction': 'in',
+        'figure.titlesize': 'medium',
+        'axes.titlesize': 'medium',
+        'figure.dpi': 600,
+        'figure.figsize': (FIGURE_WIDTH, FIGURE_HEIGHT)}
+
+    if set_params:
+        plt.rcParams.update(plt.rcParamsDefault)
         plt.rcParams.update(params)
     return params
+
+
+def add_letter_to_subplots(fig, axes, xoffset_right_subplots=0):
+    """
+    Adds letters to top left corner of subplots corresponding to axes from fig.
+    :param fig: figure object
+    :param axes: subplots axes on fig
+    :param xoffset_right_subplots: for the right column of subplots, the letter
+        is placed in the middle of the figure. This might not always work well.
+        xoffset_right_subplots if the offset from the middle of the figure.
+    :return: fig, axes
+
+    Assumptions:
+        - axes[0::2] (axes[1::2]) correspond to the left (right) column
+            of subplots
+    """
+    letters = [f'({chr(x+97)})' for x in range(len(axes))]
+    for letter, ax in zip(letters, axes):
+        if letter in letters[1::2]:
+            ax.text(0.5 + xoffset_right_subplots,
+                    ax.bbox.transformed(fig.transFigure.inverted()).y1, letter,
+                    ha='left', va='top', transform=fig.transFigure)
+        else:
+            ax.text(0,
+                    ax.bbox.transformed(fig.transFigure.inverted()).y1, letter,
+                    ha='left', va='top', transform=fig.transFigure)
+    return fig, axes
 
 
 ## Prepare plot dicts functions ##
@@ -208,7 +245,7 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
 
             plot_names_cal += [plot_dict_name_cal, plot_dict_name_cal + '_line']
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_names_cal, **params)
     return plot_dicts
@@ -340,7 +377,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
             'legend_pos': 'center left'}
         plot_dict_names += [plot_dict_name]
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
     return plot_dicts
@@ -459,7 +496,7 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
                 'clabel': zlabel}
             plot_dict_names += [plot_dict_name]
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
     return plot_dicts
@@ -586,7 +623,7 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             'legend_pos': 'center left'}
         plot_dict_names += [plot_dict_name]
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
     return plot_dicts
@@ -708,7 +745,7 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
                 'clabel': zlabel}
             plot_dict_names += [plot_dict_name]
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=plot_dict_names, **params)
     return plot_dicts
@@ -739,11 +776,13 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
         data_dict, props_to_extract=['mobjn'], **params)
 
     fit_dicts = hlp_mod.get_param('fit_dicts', data_dict, raise_error=True)
-    figure_name += '_' + mobjn
+    if mobjn not in figure_name:
+        figure_name += '_' + mobjn
     plot_dicts = {}
     if fit_names == 'all':
         fit_names = list(fit_dicts)
     for fit_name in fit_names:
+        print(fit_name in fit_dicts)
         fit_dict = hlp_mod.get_param(fit_name, fit_dicts, raise_error=True)
         fit_res = fit_dict['fit_res']
         plot_params = hlp_mod.get_param('plot_params', fit_dict,
@@ -780,7 +819,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
                 'plotfn': 'plot_text',
                 'text_string': textstr}
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=list(plot_dicts), **params)
     return plot_dicts
@@ -871,7 +910,7 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
                                pdict['ax_id']])
                     axs[pdict['fig_id']].flatten()[
                         pdict['ax_id']].figure.subplots_adjust(
-                        hspace=0.35)
+                        hspace=0.4, wspace=0.3)
 
             # most normal plot functions also work, it is required
             # that these accept an "ax" argument to plot on and
@@ -888,12 +927,19 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
                                pdict['ax_id']])
                     axs[pdict['fig_id']].flatten()[
                         pdict['ax_id']].figure.subplots_adjust(
-                        hspace=0.35)
+                        hspace=0.4, wspace=0.3)
             else:
                 raise ValueError(
                     f'"{plotfn}" is not a valid plot function')
 
         format_datetime_xaxes(data_dict, keys_in, axs)
+
+    hlp_mod.add_param('figs', figs, data_dict, append_value=True)
+    hlp_mod.add_param('axes', axs, data_dict, append_value=True)
+    for plot_name, axes in axs.items():
+        if hasattr(axes, '__iter__'):
+            add_letter_to_subplots(figs[plot_name], axes.flatten())
+    # add_letter_to_subplots(fig)
     if params.get('save_figs', True):
         getattr(save_mod, 'save_figures')(data_dict, figs, keys_in=list(figs),
                                           **params)

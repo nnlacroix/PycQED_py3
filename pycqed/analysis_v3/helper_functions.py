@@ -53,6 +53,13 @@ def get_sweep_points_from_timestamp(timestamp):
     return sweep_points
 
 
+def get_data_file_from_timestamp(timestamp):
+    folder = a_tools.get_folder(timestamp)
+    h5filepath = a_tools.measurement_filename(folder)
+    data_file = h5py.File(h5filepath, 'r+')
+    return data_file
+
+
 def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                              folder=None, **params):
     """
@@ -67,9 +74,9 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
         be converted to floats.
     :param folder: path to file from which data will be read
     :param params: keyword arguments:
-        append_key (bool, default: True): whether to append an
+        append_value (bool, default: True): whether to append an
             already-existing key
-        update_key (bool, default: False): whether to replace an
+        update_value (bool, default: False): whether to replace an
             already-existing key
         h5mode (str, default: 'r+'): reading mode of the HDF file
     """
@@ -79,12 +86,12 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
     if numeric_params is None:
         numeric_params = get_param('numeric_params', data_dict,
                                    default_value=[], **params)
-    append_key = get_param('append_key', data_dict, default_value=True,
+    append_value = get_param('append_value', data_dict, default_value=True,
                            **params)
-    update_key = get_param('update_key', data_dict, default_value=False,
+    update_value = get_param('update_value', data_dict, default_value=False,
                            **params)
-    if append_key is True and update_key is True:
-        raise ValueError('"append_key" and "update_key" cannot both be True.')
+    if append_value is True and update_value is True:
+        raise ValueError('"append_value" and "update_value" cannot both be True.')
 
     # if folder is not specified, will take the last folder in the list from
     # data_dict['folders']
@@ -124,7 +131,7 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                     add_param(all_keys[-1],
                               get_hdf_param_value(data_file[group_name],
                                                   par_name),
-                              epd, append_key=append_key, update_key=update_key)
+                              epd, append_value=append_value, update_value=update_value)
         else:
             group_name = '/'.join(file_par.split('.')[:-1])
             par_name = file_par.split('.')[-1]
@@ -133,12 +140,12 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                     add_param(all_keys[-1],
                               get_hdf_param_value(data_file[group_name],
                                                   par_name),
-                              epd, append_key=append_key, update_key=update_key)
+                              epd, append_value=append_value, update_value=update_value)
                 elif par_name in list(data_file[group_name].keys()):
                     add_param(all_keys[-1],
                               read_dict_from_hdf5(
                                   {}, data_file[group_name][par_name]),
-                              epd, append_key=append_key, update_key=update_key)
+                              epd, append_value=append_value, update_value=update_value)
 
         if all_keys[-1] not in epd:
             log.warning(f'Parameter {file_par} was not found.')
@@ -210,43 +217,58 @@ def get_param(param, data_dict, default_value=None, raise_error=False, **params)
     p = params
     md = data_dict.get('exp_metadata', dict())
     dd = data_dict
-    all_keys = param.split('.')
-    if len(all_keys) > 1:
-        for i in range(len(all_keys)-1):
-            if all_keys[i] not in p:
-                p[all_keys[i]] = OrderedDict()
-            if all_keys[i] not in md:
-                md[all_keys[i]] = OrderedDict()
-            if all_keys[i] not in dd:
-                dd[all_keys[i]] = OrderedDict()
-            p = p[all_keys[i]]
-            md = md[all_keys[i]]
-            dd = dd[all_keys[i]]
-    value = p.get(all_keys[-1],
-                  dd.get(all_keys[-1],
-                         md.get(all_keys[-1], default_value)
-                         )
-                  )
+    value = p.get(param,
+                  dd.get(param,
+                         md.get(param, default_value)))
+
+    if value is None:
+        all_keys = param.split('.')
+        if len(all_keys) > 1:
+            for i in range(len(all_keys)-1):
+                if all_keys[i] not in p:
+                    p[all_keys[i]] = OrderedDict()
+                if all_keys[i] not in md:
+                    md[all_keys[i]] = OrderedDict()
+                if all_keys[i] not in dd:
+                    dd[all_keys[i]] = OrderedDict()
+                p = p[all_keys[i]]
+                md = md[all_keys[i]]
+                dd = dd[all_keys[i]]
+        print('in get_param', all_keys)
+        value = p.get(all_keys[-1],
+                      dd.get(all_keys[-1],
+                             md.get(all_keys[-1], default_value)))
+
     if raise_error and value is None:
         raise ValueError(f'{param} was not found in either data_dict, or '
                          f'exp_metadata or input params.')
     return value
 
 
-def add_param(name, value, data_dict, update_key=False, append_key=False,
-              **params):
+def add_param(name, value, data_dict, update_value=False, append_value=False,
+              replace_value=False, **params):
     """
     Adds a new key-value pair to the data_dict, with key = name.
     If update, it will try data_dict[name].update(value), else raises KeyError.
     :param name: key of the new parameter in the data_dict
     :param value: value of the new parameter
     :param data_dict: OrderedDict containing data to be processed
-    :param update: whether to try data_dict[name].update(value)
+    :param update_value: whether to try data_dict[name].update(value).
+        Both value and the already-existing entry in data_dict need to be dicts.
+    :param append_value: whether to try data_dict[name].extend(value). If either
+        value or already-existing entry in data_dict are not lists, they will be
+        converted to lists.
+    :param replace_value: whether to replaced the already-existing key in
+        data_dict
     :param params: keyword arguments
-    :return:
+
+    Assumptions:
+        - if update_value == True, both value and the already-existing entry in
+            data_dict need to be dicts.
     """
-    if append_key is True and update_key is True:
-        raise ValueError('"append_key" and "update_key" cannot both be True.')
+    if any([append_value, update_value]) and replace_value:
+        raise ValueError('"replace_value" cannot be True when either '
+                         '"append_value" or "update_value" is True.')
 
     dd = data_dict
     all_keys = name.split('.')
@@ -257,21 +279,28 @@ def add_param(name, value, data_dict, update_key=False, append_key=False,
             dd = dd[all_keys[i]]
 
     if all_keys[-1] in dd:
-        if update_key:
-            if isinstance(value, dict):
-                dd[all_keys[-1]].update(value)
-            else:
-                dd[all_keys[-1]] = value
-        elif append_key:
+        if update_value:
+            if not isinstance(value, dict):
+                raise ValueError(f'The value corresponding to {all_keys[-1]} '
+                                 f'is not a dict. Cannot update_value in '
+                                 f'data_dict')
+            dd[all_keys[-1]].update(value)
+        elif append_value:
             v = dd[all_keys[-1]]
-            dd[all_keys[-1]] = [v]
-            dd[all_keys[-1]].extend([value])
-
+            if not isinstance(v, list):
+                dd[all_keys[-1]] = [v]
+            else:
+                dd[all_keys[-1]] = v
+            if not isinstance(value, list):
+                dd[all_keys[-1]].extend([value])
+            else:
+                dd[all_keys[-1]].extend(value)
+        elif replace_value:
+            dd[all_keys[-1]] = value
         else:
             raise KeyError(f'{all_keys[-1]} already exists in data_dict and it'
                            f' is unclear how to add it to the data_dict.')
     else:
-        print('in key not in dd')
         dd[all_keys[-1]] = value
 
 
@@ -410,9 +439,9 @@ def get_cal_sweep_points(sweep_points_array, cal_points, qb_name):
     """
     if cal_points is None:
         return np.array([])
-
     if isinstance(cal_points, str):
         cal_points = repr(cal_points)
+
     if qb_name in cal_points.qb_names:
         n_cal_pts = len(cal_points.get_states(qb_name)[qb_name])
         if n_cal_pts == 0:

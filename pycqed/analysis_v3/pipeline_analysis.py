@@ -231,8 +231,8 @@ class PipelineDataAnalysis_multi_timestamp(object):
             # raw_data_dict_ts
             hlp_mod.get_params_from_hdf_file(
                 raw_data_dict, params_dict=self.params_dict,
-                numeric_params=self.numeric_params,
-                folder=folder, append_key=False, update_key=True)
+                numeric_params=self.numeric_params, folder=folder,
+                append_value=False, update_value=True, replace_value=True)
         return raw_data_dict
 
 
@@ -265,9 +265,9 @@ def get_timestamps(data_dict=OrderedDict(), t_start=None, t_stop=None,
     return data_dict
 
 
-def extract_data_hdf(timestamps=None, data_dict=OrderedDict(),
+def extract_data_hdf(timestamps=None, data_dict=None,
                      params_dict=OrderedDict(), numeric_params=OrderedDict(),
-                     append_data=False, update_data=False, **params):
+                     append_data=False, replace_data=False, **params):
     """
     Extracts the data specified in
         params_dict
@@ -275,18 +275,21 @@ def extract_data_hdf(timestamps=None, data_dict=OrderedDict(),
     from each timestamp in timestamps and stores it into
     data_dict
     """
+    if data_dict is None:
+        data_dict = OrderedDict()
+
     if timestamps is None:
         timestamps = hlp_mod.get_param('timestamps', data_dict,
                                        raise_error=True)
     if isinstance(timestamps, str):
         timestamps = [timestamps]
-        hlp_mod.add_param('timestamps', timestamps, data_dict, update_key=True)
+        hlp_mod.add_param('timestamps', timestamps, data_dict, replace_value=True)
 
     data_dict['folders'] = []
     for i, timestamp in enumerate(timestamps):
         folder = a_tools.get_folder(timestamp)
         data_dict['folders'] += [folder]
-        add_measured_data_hdf(data_dict, folder, append_data, update_data)
+        add_measured_data_hdf(data_dict, folder, append_data, replace_data)
 
     params_dict_temp = params_dict
     params_dict = OrderedDict(
@@ -301,17 +304,18 @@ def extract_data_hdf(timestamps=None, data_dict=OrderedDict(),
     # in params_dict and adds them to the dictionary data_dict
     hlp_mod.get_params_from_hdf_file(
         data_dict, params_dict=params_dict, numeric_params=numeric_params,
-        folder=data_dict['folders'][-1], append_key=False, update_key=True)
+        folder=data_dict['folders'][-1],
+        append_value=False, update_value=True, replace_value=True)
     add_measured_data_dict(data_dict)
 
     metadata = hlp_mod.get_param('exp_metadata', data_dict,
-                                 default_value=OrderedDict())
+                                  default_value=OrderedDict())
     data_dict['exp_metadata'].update(metadata)
     return data_dict
 
 
 def add_measured_data_hdf(data_dict, folder=None, append_data=False,
-                          update_data=False, **params):
+                          replace_data=False, **params):
 
     if folder is None:
         folder = hlp_mod.get_param('folders', data_dict, raise_error=True,
@@ -325,13 +329,13 @@ def add_measured_data_hdf(data_dict, folder=None, append_data=False,
     data_file = h5py.File(h5filepath, h5mode)
     meas_data_array = np.array(data_file['Experimental Data']['Data']).T
     if 'measured_data' in data_dict:
-        if update_data:
+        if replace_data:
             data_dict['measured_data'] = meas_data_array
         elif append_data:
             data_dict['measured_data'] = np.concatenate(
                 (data_dict['measured_data'], meas_data_array), axis=1)
         else:
-            raise ValueError('Both "append_data" and "update_data" are False. '
+            raise ValueError('Both "append_data" and "replace_data" are False. '
                              'Unclear how to add "measured_data" to data_dict.')
     else:
         data_dict['measured_data'] = meas_data_array
@@ -384,7 +388,7 @@ def process_pipe(data_dict, processing_pipe=None):
                                             raise_error=True)
     else:
         hlp_mod.add_param('processing_pipe', processing_pipe, data_dict,
-                          update_key=True)
+                          replace_value=True)
 
     for node_dict in processing_pipe:
         node = None
