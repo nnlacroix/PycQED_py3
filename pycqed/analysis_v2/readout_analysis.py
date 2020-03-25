@@ -1666,7 +1666,6 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
 
             val_list = [self.proc_data_dict['probability_table'][idx_ro]
                         [observabele_idxs] for idx_ro in cal_point[0]]
-            print('val_list ', val_list)
             means[i] = np.mean(val_list, axis=0)
 
         # find the means for all the products of the operators and the average

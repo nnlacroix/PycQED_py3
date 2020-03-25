@@ -1,7 +1,7 @@
 import logging
 log = logging.getLogger(__name__)
 from copy import deepcopy
-from pycqed.analysis_v3 import helper_functions as help_func_mod
+from pycqed.analysis_v3 import helper_functions as hlp_mod
 
 ##################################################
 #### This module creates an analysis pipeline ####
@@ -58,11 +58,11 @@ class ProcessingPipeline(list):
         :return: keys_in, keys_out, meas_obj_names, mobj_keys
         """
         if meas_obj_names == 'all':
-            mobj_keys = help_func_mod.flatten_list_func(
+            mobj_keys = hlp_mod.flatten_list(
                 list(self.movnm.values()))
             meas_obj_names = list(self.movnm) 
         else:
-            mobj_keys = help_func_mod.flatten_list_func(
+            mobj_keys = hlp_mod.flatten_list(
                 [self.movnm[mo] for mo in meas_obj_names])
 
         prev_keys_out = []
@@ -78,8 +78,8 @@ class ProcessingPipeline(list):
                 # a space
                 keys_in_split = keys_in.split(' ')
                 if len(keys_in_split) > 1:
-                    keys_in = help_func_mod.get_sublst_with_all_strings_of_list(
-                        lst_to_search=help_func_mod.flatten_list_func(
+                    keys_in = hlp_mod.get_sublst_with_all_strings_of_list(
+                        lst_to_search=hlp_mod.flatten_list(
                             prev_keys_out),
                         lst_to_match=mobj_keys)
                     keys_in = [ki for ki in keys_in if keys_in_split[1] in ki]
@@ -88,7 +88,7 @@ class ProcessingPipeline(list):
                         raise KeyError(
                             f'The previous node {self[-1]["node_type"]} does '
                             f'not have the key "keys_out".')
-                    keys_in = help_func_mod.get_sublst_with_all_strings_of_list(
+                    keys_in = hlp_mod.get_sublst_with_all_strings_of_list(
                         lst_to_search=self[-1]['keys_out'],
                         lst_to_match=mobj_keys)
             else:
@@ -113,7 +113,7 @@ class ProcessingPipeline(list):
                         keyo_temp = deepcopy(keyo)
                         keyo = f'{keys_out_container}.{keyo_temp}'
                         num_previously_used = len(
-                            help_func_mod.get_sublst_with_all_strings_of_list(
+                            hlp_mod.get_sublst_with_all_strings_of_list(
                                 lst_to_search=[keyo],
                                 lst_to_match=prev_keys_out))
                         if num_previously_used > 0 and not update_key:
@@ -121,7 +121,7 @@ class ProcessingPipeline(list):
                             keyo = f'{keys_out_container}.{keyo_temp}'
                     else:
                         num_previously_used = len(
-                            help_func_mod.get_sublst_with_all_strings_of_list(
+                            hlp_mod.get_sublst_with_all_strings_of_list(
                                 lst_to_search=[keyo],
                                 lst_to_match=prev_keys_out))
                         if num_previously_used > 0 and not update_key:
@@ -342,6 +342,7 @@ class ProcessingPipeline(list):
             keys_in, meas_obj_names=meas_obj_names, **params)
         std_keys, _, meas_obj_names, mobj_keys = self.check_keys_mobjn(
             std_keys, meas_obj_names=meas_obj_names)
+
         return {'node_type': 'SingleQubitRBAnalysis',
                 'keys_in': keys_in,
                 'std_keys': std_keys,
