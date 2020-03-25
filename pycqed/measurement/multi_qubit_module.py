@@ -928,8 +928,6 @@ def measure_tomography(qubits, prep_sequence, state_name,
     if run:
         MC.run_2D(label, exp_metadata=exp_metadata)
 
-    return
-
 
 def measure_two_qubit_randomized_benchmarking(
         qb1, qb2, cliffords, nr_seeds, cz_pulse_name,
