@@ -8,7 +8,7 @@ from collections import OrderedDict
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import fitting as fit_module
 from pycqed.analysis_v3 import plotting as plot_module
-from pycqed.analysis_v3 import helper_functions as help_func_mod
+from pycqed.analysis_v3 import helper_functions as hlp_mod
 from sklearn.mixture import GaussianMixture as GM
 from copy import deepcopy
 
@@ -40,18 +40,18 @@ def filter_data(data_dict, keys_in, keys_out=None, **params):
         indicate a path in the data_dict.
         - len(keys_out) == len(keys_in)
     """
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     if keys_out is None:
         keys_out = [k+' filtered' for k in keys_in]
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
-    data_filter_func = help_func_mod.get_param('data_filter', data_dict,
+    data_filter_func = hlp_mod.get_param('data_filter', data_dict,
                                   default_value=lambda data: data, **params)
     if hasattr(data_filter_func, '__iter__'):
         data_filter_func = eval(data_filter_func)
     for keyo, keyi in zip(keys_out, list(data_to_proc_dict)):
-        help_func_mod.add_param(
+        hlp_mod.add_param(
             keyo, data_filter_func(data_to_proc_dict[keyi]), data_dict,
             update_key=params.get('update_key', False))
     return data_dict
@@ -82,12 +82,12 @@ def get_std_deviation(data_dict, keys_in, keys_out=None, **params):
         - num_bins exists in params
         - num_bins exactly divides data_dict[keyi] for all keyi in keys_in.
     """
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     if keys_out is None:
         keys_out = [k + ' std' for k in keys_in]
-    shape = help_func_mod.get_param('shape', data_dict, raise_error=True,
+    shape = hlp_mod.get_param('shape', data_dict, raise_error=True,
                                     **params)
-    averaging_axis = help_func_mod.get_param('averaging_axis', data_dict,
+    averaging_axis = hlp_mod.get_param('averaging_axis', data_dict,
                                              default_value=-1, **params)
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
@@ -99,7 +99,7 @@ def get_std_deviation(data_dict, keys_in, keys_out=None, **params):
                              f'{len(data_to_proc_dict[keyi])}.')
         data_for_std = data_to_proc_dict[keyi] if shape is None else \
             np.reshape(data_to_proc_dict[keyi], shape)
-        help_func_mod.add_param(keys_out[k],
+        hlp_mod.add_param(keys_out[k],
                                 np.std(data_for_std, axis=averaging_axis),
             data_dict, update_key=params.get('update_key', False))
     return data_dict
@@ -146,13 +146,13 @@ def classify_gm(data_dict, keys_out, keys_in, **params):
         - clf_params exist in **params
     """
     pass
-    # clf_params = help_func_mod.get_param('clf_params', data_dict, **params)
+    # clf_params = hlp_mod.get_param('clf_params', data_dict, **params)
     # if clf_params is None:
     #     raise ValueError('clf_params is not specified.')
     # reqs_params = ['means_', 'covariances_', 'covariance_type',
     #                'weights_', 'precisions_cholesky_']
     #
-    # data_to_proc_dict = help_func_mod.get_data_to_process(
+    # data_to_proc_dict = hlp_mod.get_data_to_process(
     #     data_dict, keys_in)
     #
     # data = data_dict
@@ -208,15 +208,15 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                          'the same length.')
 
     keys_in = params.get('keys_in', None)
-    presel_ro_idxs = help_func_mod.get_param('presel_ro_idxs', data_dict,
+    presel_ro_idxs = hlp_mod.get_param('presel_ro_idxs', data_dict,
                                default_value=lambda idx: idx % 2 == 0, **params)
-    presel_condition = help_func_mod.get_param('presel_condition', data_dict,
+    presel_condition = hlp_mod.get_param('presel_condition', data_dict,
                                  default_value=0, **params)
     if keys_in is not None:
         if len(keys_in) != len(classified_data):
             raise ValueError('classified_data and keys_in do not have '
                              'the same length.')
-        data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+        data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
         for i, keyi in enumerate(data_to_proc_dict):
             # Check if the entry in classified_data is an array or a string
             # denoting a key in the data_dict
@@ -238,7 +238,7 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                 else:
                     mask[idx] = val
             preselected_data = data_to_proc_dict[keyi][mask]
-            help_func_mod.add_param(keys_out[i], preselected_data, data_dict,
+            hlp_mod.add_param(keys_out[i], preselected_data, data_dict,
                                     update_key=params.get('update_key', False))
     else:
         for i, keyo in enumerate(keys_out):
@@ -261,7 +261,7 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                     mask[idx] = False
                 else:
                     mask[idx] = val
-            help_func_mod.add_param(keyo, classif_data[mask], data_dict,
+            hlp_mod.add_param(keyo, classif_data[mask], data_dict,
                                     update_key=params.get('update_key', False))
     return data_dict
 
@@ -285,11 +285,11 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
         - num_bins exists in params
         - num_bins exactly divides data_dict[keyi] for all keyi in keys_in.
     """
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     if keys_out is None:
         keys_out = [k + ' averaged' for k in keys_in]
-    shape = help_func_mod.get_param('shape', data_dict, **params)
-    averaging_axis = help_func_mod.get_param('averaging_axis', data_dict,
+    shape = hlp_mod.get_param('shape', data_dict, **params)
+    averaging_axis = hlp_mod.get_param('averaging_axis', data_dict,
                                              default_value=-1, **params)
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
@@ -301,7 +301,7 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
                              f'{len(data_to_proc_dict[keyi])}.')
         data_to_avg = data_to_proc_dict[keyi] if shape is None else \
             np.reshape(data_to_proc_dict[keyi], shape)
-        help_func_mod.add_param(keys_out[k],
+        hlp_mod.add_param(keys_out[k],
                                 np.mean(data_to_avg, axis=averaging_axis),
             data_dict, update_key=params.get('update_key', False))
     return data_dict
@@ -324,21 +324,21 @@ def transform_data(data_dict, keys_in, keys_out, **params):
             transform_func
 
     """
-    transform_func = help_func_mod.get_param('transform_func',
+    transform_func = hlp_mod.get_param('transform_func',
                                              data_dict, **params)
-    tf_kwargs = help_func_mod.get_param('transform_func_kwargs', data_dict,
+    tf_kwargs = hlp_mod.get_param('transform_func_kwargs', data_dict,
                                         default_value=dict(), **params)
     if transform_func is None:
         raise ValueError('mapping is not specified.')
     elif isinstance(transform_func, str):
         transform_func = eval(transform_func)
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
 
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have the same length.')
 
     for keyi, keyo in zip(data_to_proc_dict, keys_out):
-        help_func_mod.add_param(
+        hlp_mod.add_param(
             keyo, transform_func(data_to_proc_dict[keyi], **tf_kwargs),
             data_dict, update_key=params.get('update_key', False))
     return data_dict
@@ -362,7 +362,7 @@ def correct_readout(data_dict, keys_in, keys_out, state_prob_mtx, **params):
         the order of the rows and columns in the state_prob_mtx (usually
         'g', 'e', 'f').
     """
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
 
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have the same length.')
@@ -370,7 +370,7 @@ def correct_readout(data_dict, keys_in, keys_out, state_prob_mtx, **params):
     uncorrected_data = np.stack(list(data_to_proc_dict.values()))
     corrected_data = (np.linalg.inv(state_prob_mtx).T @ uncorrected_data).T
     for i, keyo in enumerate(keys_out):
-        help_func_mod.add_param(
+        hlp_mod.add_param(
             keyo, corrected_data[:, i],
             data_dict, update_key=params.get('update_key', False))
     return data_dict
@@ -402,7 +402,7 @@ def rotate_iq(data_dict, keys_in, keys_out=None, **params):
         CalibrationPoints.get_indices(), CalibrationPoints.get_rotations()
         - keys_in exist in meas_obj_value_names_map
     """
-    data_to_proc_dict = help_func_mod.get_data_to_process(
+    data_to_proc_dict = hlp_mod.get_data_to_process(
         data_dict, keys_in)
     keys_in = list(data_to_proc_dict)
     if keys_out is None:
@@ -411,13 +411,13 @@ def rotate_iq(data_dict, keys_in, keys_out=None, **params):
         raise ValueError(f'keys_in must have length two. {len(keys_in)} '
                          f'entries were given.')
 
-    cp = help_func_mod.get_param('cal_points', data_dict, raise_error=True,
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=True,
                                  **params)
     if isinstance(cp, str):
         cp = eval(cp)
-    last_ge_pulse = help_func_mod.get_param('last_ge_pulse', data_dict,
+    last_ge_pulse = hlp_mod.get_param('last_ge_pulse', data_dict,
                                              default_value=[], **params)
-    mobjn = help_func_mod.get_param('meas_obj_names', data_dict,
+    mobjn = hlp_mod.get_param('meas_obj_names', data_dict,
                                     raise_error=True, **params)
     if isinstance(mobjn, list):
         mobjn = mobjn[0]
@@ -436,7 +436,7 @@ def rotate_iq(data_dict, keys_in, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    help_func_mod.add_param(keys_out[0], rotated_data, data_dict,
+    hlp_mod.add_param(keys_out[0], rotated_data, data_dict,
                             update_key=params.get('update_key', False))
     return data_dict
 
@@ -465,7 +465,7 @@ def rotate_1d_array(data_dict, keys_in, keys_out=None, **params):
         CalibrationPoints.get_indices(), CalibrationPoints.get_rotations()
         - keys_in exists in meas_obj_value_names_map
     """
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     keys_in = list(data_to_proc_dict)
     if keys_out is None:
         keys_out = [f'rotated data [{keys_in[0]}]']
@@ -475,13 +475,13 @@ def rotate_1d_array(data_dict, keys_in, keys_out=None, **params):
     if len(keys_out) != len(data_to_proc_dict):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
-    cp = help_func_mod.get_param('cal_points', data_dict, raise_error=True,
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=True,
                                  **params)
     if isinstance(cp, str):
         cp = eval(cp)
-    last_ge_pulses = help_func_mod.get_param('last_ge_pulses', data_dict,
+    last_ge_pulses = hlp_mod.get_param('last_ge_pulses', data_dict,
                                              default_value=[], **params)
-    mobjn = help_func_mod.get_param('meas_obj_names', data_dict,
+    mobjn = hlp_mod.get_param('meas_obj_names', data_dict,
                                     raise_error=True, **params)
     if isinstance(mobjn, list):
         mobjn = mobjn[0]
@@ -500,7 +500,7 @@ def rotate_1d_array(data_dict, keys_in, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    help_func_mod.add_param(keys_out[0], rotated_data, data_dict,
+    hlp_mod.add_param(keys_out[0], rotated_data, data_dict,
                             update_key=params.get('update_key', False))
     return data_dict
 
@@ -537,7 +537,7 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
     if not hasattr(threshold_list, '__iter__'):
         threshold_list = [threshold_list]
 
-    data_to_proc_dict = help_func_mod.get_data_to_process(data_dict, keys_in)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     if len(threshold_list) != len(data_to_proc_dict):
         raise ValueError('threshold_list and keys_in do not have '
                          'the same length.')
@@ -545,7 +545,7 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
         raise ValueError('The data arrays corresponding to keys_in must all '
                          'have the same length.')
     keys_in = list(data_to_proc_dict)
-    threshold_map = help_func_mod.get_param('threshold_map', data_dict,
+    threshold_map = hlp_mod.get_param('threshold_map', data_dict,
                                             raise_error=False, **params)
     if threshold_map is None:
         if len(threshold_list) == 1:
@@ -575,7 +575,7 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
             if all_keys[i] not in dd:
                 dd[all_keys[i]] = OrderedDict()
             dd = dd[all_keys[i]]
-        help_func_mod.add_param(all_keys[-1], np.zeros(
+        hlp_mod.add_param(all_keys[-1], np.zeros(
             len(list(data_to_proc_dict.values())[0])), dd,
                                 update_key=params.get('update_key', False))
 
@@ -609,7 +609,7 @@ class RabiAnalysis(object):
             meas_obj_sweep_points_map[mobjn]][0] as sweep points
         """
         self.data_dict = data_dict
-        self.data_to_proc_dict = help_func_mod.get_data_to_process(
+        self.data_to_proc_dict = hlp_mod.get_data_to_process(
             self.data_dict, keys_in)
         self.keys_in = keys_in
 
@@ -639,7 +639,7 @@ class RabiAnalysis(object):
 
     def process_data(self, **params):
         self.cp, self.sp, self.mospm, self.mobjn = \
-            help_func_mod.get_measobj_properties(
+            hlp_mod.get_measobj_properties(
                 self.data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'],
                 enforce_one_meas_obj=True, **params)
         # Get from the hdf5 file any parameters specified in
@@ -651,7 +651,7 @@ class RabiAnalysis(object):
                 s+f'.{trans_name}_amp180'
             params_dict[f'{trans_name}_amp90scale_'+self.mobjn] = \
                 s+f'.{trans_name}_amp90_scale'
-        help_func_mod.get_params_from_hdf_file(self.data_dict,
+        hlp_mod.get_params_from_hdf_file(self.data_dict,
                                                params_dict=params_dict,
                                                numeric_params=list(params_dict),
                                                **params)
@@ -680,7 +680,7 @@ class RabiAnalysis(object):
             rabi_amplitudes[self.mobjn] = self.get_amplitudes(
                 fit_res=fit_res, sweep_points=self.physical_swpts)
 
-        help_func_mod.add_param('analysis_params_dict', rabi_amplitudes,
+        hlp_mod.add_param('analysis_params_dict', rabi_amplitudes,
                                 self.data_dict, update_key=True)
 
     def prepare_plots(self, **params):
@@ -689,7 +689,7 @@ class RabiAnalysis(object):
             swpts = deepcopy(self.physical_swpts)
             if len(self.cp.states) != 0:
                 swpts = np.concatenate([
-                    swpts, help_func_mod.get_cal_sweep_points(
+                    swpts, hlp_mod.get_cal_sweep_points(
                         self.physical_swpts, self.cp, self.mobjn)])
             swpts = np.repeat(swpts, self.reset_reps+1)
             swpts = np.arange(len(swpts))
@@ -775,7 +775,7 @@ class RabiAnalysis(object):
                         rabi_amplitudes[self.mobjn]['piPulse'],
                         **fit_res.best_values)],
                     'xmin': self.physical_swpts[0],
-                    'xmax': help_func_mod.get_cal_sweep_points(
+                    'xmax': hlp_mod.get_cal_sweep_points(
                         self.physical_swpts, self.cp, self.mobjn)[-1],
                     'colors': 'gray'}
 
@@ -804,7 +804,7 @@ class RabiAnalysis(object):
                         rabi_amplitudes[self.mobjn]['piHalfPulse'],
                         **fit_res.best_values)],
                     'xmin': self.physical_swpts[0],
-                    'xmax': help_func_mod.get_cal_sweep_points(
+                    'xmax': hlp_mod.get_cal_sweep_points(
                         self.physical_swpts, self.cp, self.mobjn)[-1],
                     'colors': 'gray'}
 
@@ -842,7 +842,7 @@ class RabiAnalysis(object):
                         'plotfn': 'plot_text',
                         'text_string': textstr}
 
-        help_func_mod.add_param('plot_dicts', plot_dicts,
+        hlp_mod.add_param('plot_dicts', plot_dicts,
                                 self.data_dict, update_key=True)
 
     def get_amplitudes(self, fit_res, sweep_points):
@@ -975,7 +975,7 @@ class SingleQubitRBAnalysis(object):
             filtered data if you want the filtered raw data to be plotted
         """
         self.data_dict = data_dict
-        self.data_to_proc_dict = help_func_mod.get_data_to_process(
+        self.data_to_proc_dict = hlp_mod.get_data_to_process(
             self.data_dict, keys_in)
         self.keys_in = keys_in
 
@@ -1005,7 +1005,7 @@ class SingleQubitRBAnalysis(object):
 
     def process_data(self, **params):
         self.cp, self.sp, self.mospm, self.mobjn = \
-            help_func_mod.get_measobj_properties(
+            hlp_mod.get_measobj_properties(
                 self.data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'],
                 enforce_one_meas_obj=True, **params)
         # Get from the hdf5 file any parameters specified in
@@ -1022,7 +1022,7 @@ class SingleQubitRBAnalysis(object):
                 s+f'.{trans_name}_sigma'
             params_dict[f'{trans_name}_nr_sigma_'+self.mobjn] = \
                 s+f'.{trans_name}_nr_sigma'
-        help_func_mod.get_params_from_hdf_file(self.data_dict,
+        hlp_mod.get_params_from_hdf_file(self.data_dict,
                                                params_dict=params_dict,
                                                numeric_params=list(params_dict),
                                                **params)
@@ -1031,13 +1031,13 @@ class SingleQubitRBAnalysis(object):
         if len(self.data_dict['timestamps']) > 1:
             self.nr_seeds *= len(self.data_dict['timestamps'])
         self.cliffords = self.sp[1][self.mospm[self.mobjn][1]][0]
-        self.conf_level = help_func_mod.get_param('conf_level', self.data_dict,
+        self.conf_level = hlp_mod.get_param('conf_level', self.data_dict,
                                                   default_value=0.68, **params)
-        self.gate_decomp = help_func_mod.get_param('gate_decomp', self.data_dict,
+        self.gate_decomp = hlp_mod.get_param('gate_decomp', self.data_dict,
                                                    default_value='HZ', **params)
-        self.do_simple_fit = help_func_mod.get_param(
-            'do_simple_fit', self.data_dict, default_value=False, **params)
-        self.std_keys = help_func_mod.get_param('std_keys', self.data_dict,
+        self.do_simple_fit = hlp_mod.get_param(
+            'do_simple_fit', self.data_dict, default_value=True, **params)
+        self.std_keys = hlp_mod.get_param('std_keys', self.data_dict,
                                                 raise_error=False, **params)
         if self.std_keys is None:
             self.std_keys = [None] * len(self.keys_in)
@@ -1054,7 +1054,7 @@ class SingleQubitRBAnalysis(object):
                     'reset_reps', 0)
 
     def prepare_fitting(self, **params):
-        d = help_func_mod.get_param('d', self.data_dict, default_value=2,
+        d = hlp_mod.get_param('d', self.data_dict, default_value=2,
                                     **params)
         print('d: ', d)
         fit_dicts = OrderedDict()
@@ -1086,7 +1086,7 @@ class SingleQubitRBAnalysis(object):
                     fit_key='rbleak_fit_' + self.mobjn + keyi, **params)
 
             key = 'rb_fit_' + self.mobjn + keyi
-            data_fit = help_func_mod.get_msmt_data(
+            data_fit = hlp_mod.get_msmt_data(
                 self.data_to_proc_dict[keyi], self.cp, self.mobjn)
 
             model = deepcopy(rb_mod)
@@ -1097,10 +1097,10 @@ class SingleQubitRBAnalysis(object):
                 'guess_pars': guess_pars}
 
             if self.do_simple_fit:
-                fit_kwargs = {'scale_covar': False}
+                fit_kwargs = {}
             elif keys is not None:
                 fit_kwargs = {'scale_covar': False,
-                              'weights': 1/help_func_mod.get_param(
+                              'weights': 1/hlp_mod.get_param(
                                   keys, self.data_dict)}
             else:
                 # Run once to get an estimate for the error per Clifford
@@ -1108,7 +1108,7 @@ class SingleQubitRBAnalysis(object):
                                     params=guess_pars)
                 # Use the found error per Clifford to standard errors for
                 # the data points fro Helsen et al. (2017)
-                epsilon_guess = help_func_mod.get_param('epsilon_guess',
+                epsilon_guess = hlp_mod.get_param('epsilon_guess',
                                                         self.data_dict,
                                                         default_value=0.01,
                                                         **params)
@@ -1119,7 +1119,7 @@ class SingleQubitRBAnalysis(object):
                     conf_level=self.conf_level,
                     epsilon_guess=epsilon_guess, d=2)
 
-                help_func_mod.add_param(
+                hlp_mod.add_param(
                     keys, epsilon, self.data_dict,
                     update_key=params.get('update_key', False))
                 # Run fit again with scale_covar=False, and
@@ -1131,7 +1131,7 @@ class SingleQubitRBAnalysis(object):
                 fit_kwargs = {'scale_covar': False, 'weights': 1/epsilon}
             fit_dicts[key]['fit_kwargs'] = fit_kwargs
 
-        help_func_mod.add_param('fit_dicts', fit_dicts,
+        hlp_mod.add_param('fit_dicts', fit_dicts,
                                 self.data_dict, update_key=True)
 
     def analyze_fit_results(self):
@@ -1176,7 +1176,7 @@ class SingleQubitRBAnalysis(object):
                     'stderr': fit_res.params['pd'].stderr}
 
         self.analysis_params_dict = ap_dict
-        help_func_mod.add_param(
+        hlp_mod.add_param(
             'analysis_params_dict', ap_dict, self.data_dict, update_key=True)
 
     @staticmethod
@@ -1230,7 +1230,7 @@ class SingleQubitRBAnalysis(object):
                 swpts = deepcopy(np.repeat(self.cliffords, self.nr_seeds))
                 if len(self.cp.states) != 0:
                     swpts = np.concatenate([
-                        swpts, help_func_mod.get_cal_sweep_points(
+                        swpts, hlp_mod.get_cal_sweep_points(
                             swpts, self.cp, self.mobjn)])
                 swpts_with_rst = np.repeat(swpts, self.reset_reps+1)
                 swpts_with_rst = np.arange(len(swpts_with_rst))
@@ -1271,7 +1271,7 @@ class SingleQubitRBAnalysis(object):
                 figure_name=base_plot_name,
                 sp_name=sp_name,
                 meas_obj_names=params.pop('meas_obj_names', self.mobjn),
-                yerr=help_func_mod.get_param(keys, self.data_dict),
+                yerr=hlp_mod.get_param(keys, self.data_dict),
                 do_plotting=False, **params))
 
             if len(self.cp.states) != 0:
@@ -1324,7 +1324,7 @@ class SingleQubitRBAnalysis(object):
                     'legend_bbox_to_anchor': (1, -0.15),
                     'legend_pos': 'upper right'}
 
-                if help_func_mod.get_param(
+                if hlp_mod.get_param(
                         'plot_T1_lim', self.data_dict,
                         default_value=False, **params) and 'pf' not in keyi:
                     # plot T1 limited curve
@@ -1371,7 +1371,7 @@ class SingleQubitRBAnalysis(object):
                     'box_props': None,
                     'text_string': textstr}
 
-        help_func_mod.add_param('plot_dicts', self.plot_dicts,
+        hlp_mod.add_param('plot_dicts', self.plot_dicts,
                                 self.data_dict, update_key=True)
 
     @staticmethod

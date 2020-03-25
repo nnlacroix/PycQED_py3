@@ -6,6 +6,7 @@ import h5py
 import numpy as np
 from copy import deepcopy
 from collections import OrderedDict
+from more_itertools import unique_everseen
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
 from pycqed.measurement.calibration_points import CalibrationPoints
@@ -27,6 +28,29 @@ def get_hdf_param_value(group, param_name):
         return eval(s)
     except Exception:
         return s
+
+
+def get_channel_names_from_timestamp(timestamp):
+    folder = a_tools.get_folder(timestamp)
+    h5filepath = a_tools.measurement_filename(folder)
+    data_file = h5py.File(h5filepath, 'r+')
+    channel_names = get_hdf_param_value(data_file['Experimental Data'],
+                                        'value_names')
+    data_file.close()
+    return channel_names
+
+
+def get_sweep_points_from_timestamp(timestamp):
+    folder = a_tools.get_folder(timestamp)
+    h5filepath = a_tools.measurement_filename(folder)
+    data_file = h5py.File(h5filepath, 'r+')
+
+    group = data_file['Experimental Data'][
+        'Experimental Metadata']['sweep_points']
+    sweep_points = OrderedDict()
+    sweep_points = read_dict_from_hdf5(sweep_points, group)
+    data_file.close()
+    return sweep_points
 
 
 def get_params_from_hdf_file(data_dict, **params):
@@ -51,6 +75,10 @@ def get_params_from_hdf_file(data_dict, **params):
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, h5mode)
 
+    if 'data_files' in data_dict:
+        data_dict['data_files'] += [data_file]
+    else:
+        data_dict['data_files'] = [data_file]
     if 'measurementstrings' in params_dict:
         # assumed data_dict['measurementstrings'] is a list
         if 'measurementstrings' in data_dict:
@@ -110,6 +138,7 @@ def get_params_from_hdf_file(data_dict, **params):
                 data_dict[par_name] = np.asarray(data_dict[par_name])
             else:
                 data_dict[par_name] = np.double(data_dict[par_name])
+    data_file.close()
     return data_dict
 
 
@@ -192,6 +221,7 @@ def add_param(name, value, data_dict, update_key=False, append_key=False,
     :param params: keyword arguments
     :return:
     """
+
     dd = data_dict
     all_keys = name.split('.')
     if len(all_keys) > 1:
@@ -207,11 +237,10 @@ def add_param(name, value, data_dict, update_key=False, append_key=False,
             else:
                 dd[all_keys[-1]] = value
         elif append_key:
-            # print(all_keys[-1])
-            # print(dd.keys())
             v = dd[all_keys[-1]]
-            dd[all_keys[-1]] = list(v)
-            dd[all_keys[-1]].append(value)
+            dd[all_keys[-1]] = [v]
+            dd[all_keys[-1]].extend([value])
+
         else:
             raise KeyError(f'{all_keys[-1]} already exists in data_dict.')
     else:
@@ -391,19 +420,24 @@ def get_latex_prob_label(prob_label):
         return prob_label
 
 
-def flatten_list_func(lst):
-    if all([isinstance(e, list) for e in lst]):
-        return [e for l1 in lst for e in l1]
-    elif any([isinstance(e, list) for e in lst]):
+def flatten_list(lst_of_lsts):
+    """
+    Flattens the list of lists lst_of_lsts.
+    :param lst_of_lsts: a list of lists
+    :return: flattened list
+    """
+    if all([isinstance(e, list) for e in lst_of_lsts]):
+        return [e for l1 in lst_of_lsts for e in l1]
+    elif any([isinstance(e, list) for e in lst_of_lsts]):
         l = []
-        for e in lst:
+        for e in lst_of_lsts:
             if isinstance(e, list):
                 l.extend(e)
             else:
                 l.append(e)
         return l
     else:
-        return lst
+        return lst_of_lsts
 
 
 def get_sublst_with_all_strings_of_list(lst_to_search, lst_to_match):
@@ -421,4 +455,4 @@ def get_sublst_with_all_strings_of_list(lst_to_search, lst_to_match):
             r = re.search(etm, ets)
             if r is not None:
                 lst_w_matches += [ets]
-    return list(set(lst_w_matches))
+    return list(unique_everseen(lst_w_matches))

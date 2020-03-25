@@ -263,7 +263,6 @@ def ResidZZFunc(t, amplitude, tau, alpha, x, frequency, phase, offset):
 def ExpDecayFunc(t, tau, amplitude, offset, n):
     return amplitude * np.exp(-(t / tau) ** n) + offset
 
-
 def ExpDecayPmod(t, T2echo, delta, n0, chi, kappa, phase, amplitude, offset):
     """
     specific form of exponential decay used for residual resonator photon readout
@@ -271,7 +270,6 @@ def ExpDecayPmod(t, T2echo, delta, n0, chi, kappa, phase, amplitude, offset):
 
     return amplitude * (1 - np.imag(np.exp(-t*(1/T2echo + 2j*np.pi*delta)+1j*(
         phase-2*n0*chi*(1-np.exp(-t*(kappa + 2j*chi)))/(kappa + 2j*chi)))))+offset
-
 
 def CombinedOszExpDecayFunc(t, tau, tau_gauss, phase, n0, chi, delta, amplitude,
                          oscillation_offset, offset):
