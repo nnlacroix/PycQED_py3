@@ -3690,7 +3690,10 @@ class RamseyAnalysis(MultiQubit_TimeDomain_Analysis):
                     'T2_star_stderr'] = fit_res.params['tau'].stderr
                 self.proc_data_dict['analysis_params_dict'][qbn][key][
                     'artificial_detuning'] = artificial_detuning_dict[qbn]
-        self.save_processed_data(key='analysis_params_dict')
+        hdf_group_name_suffix = self.options_dict.get(
+            'hdf_group_name_suffix', '')
+        self.save_processed_data(key='analysis_params_dict' +
+                                     hdf_group_name_suffix)
 
     def prepare_plots(self):
         super().prepare_plots()
@@ -4123,15 +4126,22 @@ class RamseyAddPulseAnalysis(MultiQubit_TimeDomain_Analysis):
     def __init__(self, *args, **kwargs):
         auto = kwargs.pop('auto', True)
         super().__init__(*args, auto=False, **kwargs)
+        options_dict = kwargs.pop('options_dict', OrderedDict())
+        options_dict_no = deepcopy(options_dict)
+        options_dict_no.update(dict(
+            data_filter=lambda raw: np.concatenate([
+                raw[:-4][1::2], raw[-4:]]),
+            hdf_group_name_suffix='_no_pulse'))
         self.ramsey_analysis = RamseyAnalysis(
-            *args, auto=False, options_dict=dict(
-                data_filter=lambda raw: np.concatenate([
-                    raw[:-4][1::2], raw[-4:]])),
+            *args, auto=False, options_dict=options_dict_no,
             **kwargs)
+        options_dict_with = deepcopy(options_dict)
+        options_dict_with.update(dict(
+            data_filter=lambda raw: np.concatenate([
+                raw[:-4][0::2], raw[-4:]]),
+            hdf_group_name_suffix='_with_pulse'))
         self.ramsey_add_pulse_analysis = RamseyAnalysis(
-            *args, auto=False, options_dict=dict(
-                data_filter=lambda raw: np.concatenate([
-                    raw[:-4][0::2], raw[-4:]])),
+            *args, auto=False, options_dict=options_dict_with,
             **kwargs)
 
 

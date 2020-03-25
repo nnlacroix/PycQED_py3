@@ -22,18 +22,15 @@ import pycqed.measurement.detector_functions as det
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.measurement.calibration_points import CalibrationPoints
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
-from pycqed.measurement.pulse_sequences.single_qubit_tek_seq_elts import \
-    one_qubit_reset
 from pycqed.measurement.waveform_control import pulsar as ps
-import pycqed.measurement.composite_detector_functions as cdet
 import pycqed.analysis.measurement_analysis as ma
 import pycqed.analysis.randomized_benchmarking_analysis as rbma
 from pycqed.analysis_v3 import pipeline_analysis as pla
 import pycqed.analysis_v2.readout_analysis as ra
 import pycqed.analysis_v2.timedomain_analysis as tda
+from pycqed.analysis_v3 import helper_functions as hlp_mod
 import pycqed.measurement.waveform_control.sequence as sequence
 from pycqed.utilities.general import temporary_value
-import pycqed.analysis.analysis_toolbox as a_tools
 
 try:
     import \
@@ -304,22 +301,32 @@ def get_multi_qubit_prep_params(prep_params_list):
     return prep_params
 
 
-def get_meas_obj_value_names_map(qubits, det_type):
-    if det_type == 'int_avg_classif_det':
+def get_meas_obj_value_names_map(mobjs, multi_uhf_det_func):
+    # we cannot just use the value_names from the qubit detector functions
+    # because the UHF_multi_detector function adds suffixes
+
+    if multi_uhf_det_func.detectors[0].name == 'raw_UHFQC_classifier_det':
         meas_obj_value_names_map = {
-            qb.name: [vn + ' ' + qb.instr_uhf() for
-                      vn in qb.int_avg_classif_det.value_names]
-            for qb in qubits}
-    elif det_type == 'inp_avg_det':
+            qb.name: hlp_mod.get_sublst_with_all_strings_of_list(
+                multi_uhf_det_func.value_names,
+                qb.int_avg_classif_det.value_names)
+            for qb in mobjs}
+    elif multi_uhf_det_func.detectors[0].name == 'UHFQC_input_average_detector':
         meas_obj_value_names_map = {
-            qb.name: [vn + ' ' + qb.instr_uhf() for
-                      vn in qb.inp_avg_det.value_names]
-            for qb in qubits}
+            qb.name: hlp_mod.get_sublst_with_all_strings_of_list(
+                multi_uhf_det_func.value_names, qb.inp_avg_det.value_names)
+            for qb in mobjs}
     else:
         meas_obj_value_names_map = {
-            qb.name: [vn + ' ' + qb.instr_uhf() for
-                      vn in qb.int_avg_det.value_names]
-            for qb in qubits}
+            qb.name: hlp_mod.get_sublst_with_all_strings_of_list(
+                multi_uhf_det_func.value_names, qb.int_avg_det.value_names)
+            for qb in mobjs}
+
+    meas_obj_value_names_map.update({
+        name: [name] for name in
+        [vn for vn in multi_uhf_det_func.value_names if vn not in
+         hlp_mod.flatten_list(list(meas_obj_value_names_map.values()))]})
+
     return meas_obj_value_names_map
 
 
@@ -1013,31 +1020,27 @@ def measure_two_qubit_randomized_benchmarking(
     sp.add_sweep_parameter('cliffords', cliffords, '',
                            'Number of applied Cliffords, $m$')
 
-    qb_names = [qb1n, qb2n] + (['corr'] if (classified and correlated) else [])
     # create analysis pipeline object
-    meas_obj_value_names_map = get_meas_obj_value_names_map(qubits, det_type)
-    if classified and correlated:
-        # FIXME: do the proper thing (SEPT)
-        meas_obj_value_names_map['corr'] = ['correlation ' + qb1.instr_uhf()]
-    pp = ProcessingPipeline()
-    for i, mobjn in enumerate(qb_names):
-        num_avg_bins = [len(cliffords)]*len(meas_obj_value_names_map[mobjn])
+    meas_obj_value_names_map = get_meas_obj_value_names_map(qubits, det_func)
+    mobj_names = list(meas_obj_value_names_map)
+    pp = ProcessingPipeline(meas_obj_value_names_map)
+    for i, mobjn in enumerate(mobj_names):
         pp.add_node(
-            'get_std_deviation', keys_in=meas_obj_value_names_map[mobjn],
-            num_bins=num_avg_bins)
+            'average_data', keys_in='raw',
+            shape=(len(cliffords), nr_seeds), meas_obj_names=[mobjn])
         pp.add_node(
-            'average', keys_in=meas_obj_value_names_map[mobjn],
-            num_bins=num_avg_bins)
+            'get_std_deviation', keys_in='raw',
+            shape=(len(cliffords), nr_seeds), meas_obj_names=[mobjn])
         pp.add_node(
-            'SingleQubitRBAnalysis', keys_in='previous',
-            std_keys=[k+' std' for k in meas_obj_value_names_map[mobjn]],
-            meas_obj_name=mobjn, do_plotting=(i == len(qb_names)-1))
+            'SingleQubitRBAnalysis', keys_in='previous average_data',
+            std_keys='previous get_std_deviation',
+            meas_obj_names=[mobjn], plot_T1_lim=False, d=4)
     # create experimental metadata
     exp_metadata = {'preparation_params': prep_params,
                     'cal_points': repr(cp),
                     'sweep_points': sp,
                     'meas_obj_sweep_points_map':
-                       {qbn: ['nr_seeds', 'cliffords'] for qbn in qb_names},
+                       {qbn: ['nr_seeds', 'cliffords'] for qbn in mobj_names},
                     'meas_obj_value_names_map': meas_obj_value_names_map,
                     'processing_pipe': pp}
     MC.run_2D(name=label, exp_metadata=exp_metadata)
