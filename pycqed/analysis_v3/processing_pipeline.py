@@ -59,7 +59,8 @@ def check_keys_mobjn(pipeline, meas_obj_value_names_map, keys_in,
     :return: keys_in, keys_out, meas_obj_names, mobj_keys
 
     Assumptions:
-        -
+        -   what comes after 'previous' in the keys_in entries is separated by
+        a space
     """
     prev_keys_out = []
     for d in pipeline:
@@ -73,6 +74,8 @@ def check_keys_mobjn(pipeline, meas_obj_value_names_map, keys_in,
             list(meas_obj_value_names_map.values()))
         meas_obj_names = list(meas_obj_value_names_map)
     else:
+        if isinstance(meas_obj_names, str):
+            meas_obj_names = [meas_obj_names]
         mobj_keys = hlp_mod.flatten_list(
             [meas_obj_value_names_map[mo] for mo in meas_obj_names])
 

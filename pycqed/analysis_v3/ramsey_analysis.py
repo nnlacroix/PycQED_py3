@@ -15,7 +15,9 @@ from copy import deepcopy
 def ramsey_iq_pipeline(meas_object_name):
     pp = ppmod.RawPipeline()
     pp.add_node('rotate_iq', keys_in='raw', meas_obj_names=meas_object_name)
-    pp.add_node('ramsey_analysis', keys_in='previous rotate_iq',
+    pp.add_node('ramsey_analysis',
+                keys_in=f'previous {meas_object_name}.rotate_iq',
+                keys_out=None,
                 meas_obj_names=meas_object_name)
     return pp
 
