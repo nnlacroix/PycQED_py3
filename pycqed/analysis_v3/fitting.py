@@ -298,7 +298,7 @@ def prepare_expdamposc_fit_dict(data_dict, keys_in=None, **params):
     cp, sp, mospm, mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'], **params)
     indep_var_array = hlp_mod.get_param('indep_var_array', data_dict,
-                                              raise_error=False, **params)
+                                        raise_error=False, **params)
     if indep_var_array is None:
         indep_var_array = sp[0][mospm[mobjn][0]][0]
     plot_params = hlp_mod.get_param('plot_params', data_dict, default_value={},

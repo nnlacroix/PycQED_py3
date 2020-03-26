@@ -21,7 +21,7 @@ from pycqed.analysis.tools.plotting import (
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import datetime
 import sys
-this_mod = sys.modules[__name__]
+this_module = sys.modules[__name__]
 
 prx_single_column_width = 3.404
 prx_two_column_width = 7.057
@@ -341,7 +341,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
         data_labels = len(data_to_proc_dict) * [data_labels]
     do_legend = params.get('do_legend', True)
     plotsize = get_default_plot_params(set=False)['figure.figsize']
-    plotsize = (plotsize[0], plotsize[0]/1.25)
+    plotsize = (plotsize[0], 1.5*plotsize[1])
     ncols = params.get('ncols', 2 if len(data_to_proc_dict) > 2 else 1)
     nrows = params.get('nrows', 2 if len(data_to_proc_dict) == 2 else
     len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
@@ -790,7 +790,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
         fit_dict = hlp_mod.get_param(fit_name, fit_dicts, raise_error=True)
         fit_res = fit_dict['fit_res']
         plot_params = hlp_mod.get_param('plot_params', fit_dict,
-                                        default_value={})
+                                        default_value={}, **params)
         plot_dicts[fit_name] = {
             'fig_id': figure_name,
             'plotfn': 'plot_fit',
@@ -893,7 +893,7 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
             plot_touching = pdict.get('touching', False)
 
             if type(pdict['plotfn']) is str:
-                plotfn = getattr(this_mod, pdict['plotfn'])
+                plotfn = getattr(this_module, pdict['plotfn'])
             else:
                 plotfn = pdict['plotfn']
 
@@ -1284,10 +1284,13 @@ def plot_line(pdict, axs, tight_fig=True):
         legend_pos = pdict.get('legend_pos', 'best')
         legend_frameon = pdict.get('legend_frameon', False)
         legend_bbox_to_anchor = pdict.get('legend_bbox_to_anchor', None)
+        legend_bbox_transform = pdict.get('legend_bbox_transform',
+                                          axs.transAxes)
         axs.legend(title=legend_title,
                    loc=legend_pos,
                    ncol=legend_ncol,
                    bbox_to_anchor=legend_bbox_to_anchor,
+                   bbox_transform=legend_bbox_transform,
                    frameon=legend_frameon)
 
     if plot_xlabel is not None:
@@ -1695,14 +1698,15 @@ def plot_text(pdict, axs):
     """
     pfunc = getattr(axs, pdict.get('func', 'text'))
     plot_text_string = pdict['text_string']
-    plot_xpos = pdict.get('xpos', .98)
-    plot_ypos = pdict.get('ypos', .98)
+    plot_xpos = pdict.get('xpos', -0.125)
+    plot_ypos = pdict.get('ypos', -0.225)
+
     verticalalignment = pdict.get('verticalalignment', 'top')
     horizontalalignment = pdict.get('horizontalalignment', 'right')
     color = pdict.get('color', 'k')
 
     # fancy box props is based on the matplotlib legend
-    box_props = pdict.get('box_props', 'fancy')
+    box_props = pdict.get('box_props', None)
     if box_props == 'fancy':
         box_props = dict(boxstyle='round', pad=.4,
                          facecolor='white', alpha=0.5)

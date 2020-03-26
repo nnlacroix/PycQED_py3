@@ -203,7 +203,8 @@ def get_data_to_process(data_dict, keys_in):
     return data_to_proc_dict
 
 
-def get_param(param, data_dict, default_value=None, raise_error=False, **params):
+def get_param(param, data_dict, default_value=None,
+              raise_error=False, **params):
     """
     Get the value of the parameter "param" from params, data_dict, or metadata.
     :param name: name of the parameter being sought
@@ -237,6 +238,48 @@ def get_param(param, data_dict, default_value=None, raise_error=False, **params)
         value = p.get(all_keys[-1],
                       dd.get(all_keys[-1],
                              md.get(all_keys[-1], default_value)))
+
+    if raise_error and value is None:
+        raise ValueError(f'{param} was not found in either data_dict, or '
+                         f'exp_metadata or input params.')
+    return value
+
+
+def pop_param(param, data_dict, default_value=None,
+              raise_error=False, **params):
+    """
+    Pop the value of the parameter "param" from params, data_dict, or metadata.
+    :param name: name of the parameter being sought
+    :param data_dict: OrderedDict where param is to be searched
+    :param default_value: default value for the parameter being sought in case
+        it is not found.
+    :param raise_error: whether to raise error if the parameter is not found
+    :param params: keyword args where parameter is to be sough
+    :return: the value of the parameter
+    """
+    p = params
+    md = data_dict.get('exp_metadata', dict())
+    dd = data_dict
+    value = p.pop(param,
+                  dd.pop(param,
+                         md.pop(param, default_value)))
+
+    if value is None:
+        all_keys = param.split('.')
+        if len(all_keys) > 1:
+            for i in range(len(all_keys)-1):
+                if all_keys[i] not in p:
+                    p[all_keys[i]] = OrderedDict()
+                if all_keys[i] not in md:
+                    md[all_keys[i]] = OrderedDict()
+                if all_keys[i] not in dd:
+                    dd[all_keys[i]] = OrderedDict()
+                p = p[all_keys[i]]
+                md = md[all_keys[i]]
+                dd = dd[all_keys[i]]
+        value = p.pop(all_keys[-1],
+                      dd.pop(all_keys[-1],
+                             md.pop(all_keys[-1], default_value)))
 
     if raise_error and value is None:
         raise ValueError(f'{param} was not found in either data_dict, or '

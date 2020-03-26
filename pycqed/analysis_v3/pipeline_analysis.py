@@ -6,13 +6,15 @@ import numpy as np
 from collections import OrderedDict
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import helper_functions as hlp_mod
-from pycqed.analysis_v3 import data_processing as dat_proc
-from pycqed.analysis_v3 import fitting as fit_module
-from pycqed.analysis_v3 import plotting as plot_module
+from pycqed.analysis_v3 import data_processing
+from pycqed.analysis_v3 import fitting
+from pycqed.analysis_v3 import plotting
+from pycqed.analysis_v3 import ramsey_analysis
 import copy
 import logging
 log = logging.getLogger(__name__)
 
+search_modules = [data_processing, plotting, fitting, ramsey_analysis]
 
 class PipelineDataAnalysis(object):
     def __init__(self, data_dict: dict = None,
@@ -372,8 +374,8 @@ def process_pipe(data_dict, processing_pipe=None):
     'processing_pipe'], which is a list of dictionaries of the form:
 
     [
-        {'node_type': obj0_name, **kw},
-        {'node_type': obj1_name, **kw},
+        {'node_name': obj0_name, **kw},
+        {'node_name': obj1_name, **kw},
     ]
 
     These classes all live in the data_processing.py module, and will
@@ -392,13 +394,13 @@ def process_pipe(data_dict, processing_pipe=None):
 
     for node_dict in processing_pipe:
         node = None
-        for module in [dat_proc, plot_module, fit_module]:
+        for module in search_modules:
             try:
-                node = getattr(module, node_dict["node_type"])
+                node = getattr(module, node_dict["node_name"])
                 break
             except AttributeError:
                 continue
         if node is None:
-            raise KeyError(f'Processing node "{node_dict["node_type"]}" '
+            raise KeyError(f'Processing node "{node_dict["node_name"]}" '
                            f'not recognized')
         node(data_dict, **node_dict)
