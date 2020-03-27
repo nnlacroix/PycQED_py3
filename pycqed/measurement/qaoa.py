@@ -735,6 +735,7 @@ class QAOAHelper(HelperBase):
                     c_arb_pulse['element_name'] = "flux_arb_gate"
                     c_arb_pulse['basis_rotation'].update(dyn_phase)
                     c_arb_pulse['pulse_type'] = 'BufferedCZPulseEffectiveTime'
+                    c_arb_pulse['op_code'] = f'CPhi{(angle/np.pi*180)} {qbt} {qbc}'
                     two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                          [z_qbc, z_qbt, c_arb_pulse])
                     if doswap:
