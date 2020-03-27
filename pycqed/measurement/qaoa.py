@@ -272,9 +272,10 @@ class HelperBase:
             angle, qbn = op.split(" ")[0][1:], op.split(" ")[1]
             p = self.get_pulse(f"Z180 {qbn}", parse_z_gate=False)
             p['basis_rotation'] = {qbn: float(angle)}
-            return p
-
-        return deepcopy(self.operation_dict[op])
+        else:
+            p = deepcopy(self.operation_dict[op])
+        p['op_code'] = op
+        return p
 
     def initialize(self, init_state='0', qubits='all', prep_params=None,
                    simultaneous=True, block_name=None):
@@ -478,6 +479,9 @@ class HelperBase:
 
         :return: Pulse dict of the Z-gate
         """
+
+        # FIXME: shouldn't this function rather call block_from_ops(f'Z{theta} {qb}') for all qb in qubits?
+
         # if qubits is the name of a qb, expects single pulse output
         single_qb_given = False
         if qubits in self.qb_names:
@@ -490,6 +494,7 @@ class HelperBase:
         for qbn in qubits:
             zgate = deepcopy(self.operation_dict[zgate_base_name + f" {qbn}"])
             zgate['basis_rotation'] = {qbn: theta}
+            zgate['op_code'] = f'Z{theta} {qbn}'
             pulses.append(zgate)
 
         return pulses[0] if single_qb_given else pulses
@@ -608,6 +613,14 @@ class QAOAHelper(HelperBase):
                     gates_info['qbs'] = (gates_info['qbs'],)
                 if len(gates_info['qbs']) == 1:
                     single_qb_terms[gates_info['qbs'][0]] += C
+                    add_start = gates_info.get('add_start', '')
+                    if add_start != '':
+                        qb = self.qb_names[gates_info['qbs'][0]]
+                        if add_start == 'Had':
+                            add_start = ["Z180 {qb:}", "Y90 {qb:}"]
+                        fill_values = dict(qb=qb)
+                        add_start_block = self.block_from_ops(f"{simult_bname} add_start {qb}", add_start, fill_values, {})
+                        simultaneous.extend(add_start_block.build(ref_pulse=f"start"))
                     continue
                 gates_info['gate_name'] = \
                     gates_info['gate_name'] if 'gate_name' in gates_info else 'upCZ'
@@ -616,6 +629,7 @@ class QAOAHelper(HelperBase):
                 nbody = (len(gates_info['qbs'])>2)
                 assert not (nbody and doswap), \
                     f"Combination of n-body interaction and swap is not implemented!"
+                remove_had = gates_info.get('remove_had', False) or nbody
                 zero_angle_threshold = gates_info.get("zero_angle_threshold",
                                                       global_zero_angle_threshold)
                 if abs((2 * gamma * C) % (2*np.pi))<zero_angle_threshold \
@@ -637,8 +651,8 @@ class QAOAHelper(HelperBase):
                         break
                 else:
                     assert False, \
-                    f"The logical qubits {gates_info['qbs']} are currently " \
-                        f"not connected by a {gates_info['gate_name']} gate!"
+                    f"The logical qubits {gates_info['qbs']} ({[self.qb_names[qbi] for qbi in gates_info['qbs']]}) are currently " \
+                        f"not connected by a {gates_info['gate_name']} gate! ({self.qb_names})"
                 if nbody:
                     opsH = ["Z180 {qbx:}", "Y90 {qbx:}"] # Hadamard gate
                     nbody_start = self.block_from_ops(f"Had", opsH, dict(qbx=qbx), {}).build()
@@ -680,7 +694,7 @@ class QAOAHelper(HelperBase):
                                     nbody else qbt),
                                 gamma, C, gate_name,
                                 f"software qbc:{qbc} qbt:{qbt}",
-                                remove_had=nbody,
+                                remove_had=remove_had,
                                 remove_1stCZ=(remove_1stCZ if first_layer else ''))
                 elif cphase_implementation == "hardware":
                     # TODO: clean up in function just as above
@@ -721,6 +735,7 @@ class QAOAHelper(HelperBase):
                     c_arb_pulse['element_name'] = "flux_arb_gate"
                     c_arb_pulse['basis_rotation'].update(dyn_phase)
                     c_arb_pulse['pulse_type'] = 'BufferedCZPulseEffectiveTime'
+                    c_arb_pulse['op_code'] = f'CPhi{(angle/np.pi*180)} {qbt} {qbc}'
                     two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                          [z_qbc, z_qbt, c_arb_pulse])
                     if doswap:
@@ -732,11 +747,12 @@ class QAOAHelper(HelperBase):
                     simultaneous.extend(Block(f"{qbx} nbody_end", nbody_end).build())
                 else:
                     simultaneous.extend(two_qb_block.build(ref_pulse=f"start"))
+                if doswap:
+                    # print(f"swapping {(self.qb_names[gates_info['qbs'][0]], self.qb_names[gates_info['qbs'][1]])}")
+                    self.qb_names[gates_info['qbs'][0]], self.qb_names[gates_info['qbs'][1]] \
+                        = self.qb_names[gates_info['qbs'][1]], self.qb_names[gates_info['qbs'][0]]
             # add block referenced to start of U_k
             U.extend(simultaneous.build())
-            if doswap:
-                self.qb_names[gates_info['qbs'][0]],self.qb_names[gates_info['qbs'][1]] \
-                    = self.qb_names[gates_info['qbs'][1]],self.qb_names[gates_info['qbs'][0]]
             #print(self.qb_names)
 
         # add single qb z rotation for single qb terms of hamiltonian
@@ -773,8 +789,6 @@ class QAOAHelper(HelperBase):
             will be applied. Cannot be used with 'early_init' or 'late_init'.
         :return:
         """
-        assert remove_1stCZ == '' or not remove_had, \
-            "The combination of remove_1stCZ and remove_had is not supported."
         assert remove_1stCZ in ['', 'early_init', 'late_init'], \
             f"remove_1stCZ=\'{remove_1stCZ}\' is not supported."
 
@@ -783,12 +797,13 @@ class QAOAHelper(HelperBase):
             ops += ["Z180 {qbt:}", "Y90 {qbt:}"]
         ops += ["Z{two_phi:} {qbt:}", "Z180 {qbt:}",
                 "Y90 {qbt:}", cz_gate_name]
-        if remove_had:
+        if remove_had and remove_1stCZ == '':
             # put flux pulses in same element
             pulse_modifs = {0: dict(element_name="flux_arb_gate"),
                             6: dict(element_name="flux_arb_gate")}
         elif remove_1stCZ != '':
-            ops = ops + ["Z180 {qbt:}", "Y90 {qbt:}"]
+            if not remove_had:
+                ops = ops + ["Z180 {qbt:}", "Y90 {qbt:}"]
             # put flux pulses in same element
             if remove_1stCZ == 'early_init':
                 pulse_modifs = {3: dict(element_name="flux_arb_gate")}
@@ -906,5 +921,5 @@ class QAOAHelper(HelperBase):
         flattened_info = deepcopy(gates_info['gate_list'])
 
         corr_info = [i['qbs'] for i in flattened_info]
-        couplings = [i['J'] if 'J' in i else i['C'] if 'C' in i else 0 for i in flattened_info]
+        couplings = [i['J_for_analysis'] if 'J_for_analysis' in i else i['J'] if 'J' in i else i['C'] if 'C' in i else 0 for i in flattened_info]
         return corr_info, couplings
