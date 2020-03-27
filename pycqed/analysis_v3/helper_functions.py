@@ -40,17 +40,20 @@ def get_channel_names_from_timestamp(timestamp):
     return channel_names
 
 
-def get_sweep_points_from_timestamp(timestamp):
+def get_param_from_metadata_group(param_name, timestamp):
     folder = a_tools.get_folder(timestamp)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, 'r+')
 
     group = data_file['Experimental Data'][
-        'Experimental Metadata']['sweep_points']
-    sweep_points = OrderedDict()
-    sweep_points = read_dict_from_hdf5(sweep_points, group)
+        'Experimental Metadata']
+    if param_name not in group:
+        raise KeyError(f'{param_name} was not found in metadata.')
+    group = group[param_name]
+    param_dict = OrderedDict()
+    param_dict = read_dict_from_hdf5(param_dict, group)
     data_file.close()
-    return sweep_points
+    return param_dict
 
 
 def get_data_file_from_timestamp(timestamp):
@@ -87,11 +90,12 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
         numeric_params = get_param('numeric_params', data_dict,
                                    default_value=[], **params)
     append_value = get_param('append_value', data_dict, default_value=True,
-                           **params)
+                             **params)
     update_value = get_param('update_value', data_dict, default_value=False,
-                           **params)
+                             **params)
     if append_value is True and update_value is True:
-        raise ValueError('"append_value" and "update_value" cannot both be True.')
+        raise ValueError('"append_value" and "update_value" '
+                         'cannot both be True.')
 
     # if folder is not specified, will take the last folder in the list from
     # data_dict['folders']
@@ -131,7 +135,8 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                     add_param(all_keys[-1],
                               get_hdf_param_value(data_file[group_name],
                                                   par_name),
-                              epd, append_value=append_value, update_value=update_value)
+                              epd, append_value=append_value,
+                              update_value=update_value)
         else:
             group_name = '/'.join(file_par.split('.')[:-1])
             par_name = file_par.split('.')[-1]
@@ -140,12 +145,14 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                     add_param(all_keys[-1],
                               get_hdf_param_value(data_file[group_name],
                                                   par_name),
-                              epd, append_value=append_value, update_value=update_value)
+                              epd, append_value=append_value,
+                              update_value=update_value)
                 elif par_name in list(data_file[group_name].keys()):
                     add_param(all_keys[-1],
                               read_dict_from_hdf5(
                                   {}, data_file[group_name][par_name]),
-                              epd, append_value=append_value, update_value=update_value)
+                              epd, append_value=append_value,
+                              update_value=update_value)
 
         if all_keys[-1] not in epd:
             log.warning(f'Parameter {file_par} was not found.')

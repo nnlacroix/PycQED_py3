@@ -68,7 +68,8 @@ def prepare_fitting(data_dict, keys_in, **params):
             meas_obj_names=mobjn, fit_name=fit_name,
             indep_var_array=physical_swpts,
             guess_params={'n': i+1},
-            plot_params={'color': 'r'if i == 0 else 'C4'})
+            plot_params={'color': 'r'if i == 0 else 'C4',
+                         'setlabel': 'expFit' if i == 0 else 'gaussFit'})
 
 
 def analyze_fit_results(data_dict, keys_in, **params):
@@ -80,7 +81,7 @@ def analyze_fit_results(data_dict, keys_in, **params):
     params_dict = {}
     s = 'Instrument settings.' + mobjn
     for trans_name in ['ge', 'ef']:
-        params_dict[f'{trans_name}_freq_'+mobjn] = \
+        params_dict[f'{mobjn}.{trans_name}_freq'] = \
             s+f'.{trans_name}_freq'
     hlp_mod.get_params_from_hdf_file(data_dict, params_dict=params_dict,
                                      numeric_params=list(params_dict), **params)
@@ -90,29 +91,31 @@ def analyze_fit_results(data_dict, keys_in, **params):
                                                  **params)
 
     fit_dicts = hlp_mod.get_param('fit_dicts', data_dict, raise_error=True)
-    ana_res_dict = OrderedDict()
     for keyi in keys_in:
         trans_name = 'ef' if 'f' in keyi else 'ge'
-        old_qb_freq = data_dict[f'{trans_name}_freq_'+mobjn]
+        old_qb_freq = hlp_mod.get_param(f'{mobjn}.{trans_name}_freq', data_dict)
         if old_qb_freq != old_qb_freq:
             old_qb_freq = 0
-        ana_res_dict['old_freq_' + mobjn] = old_qb_freq
+        hlp_mod.add_param(f'{mobjn}.old_freq', old_qb_freq, data_dict,
+                          replace_value=True)
         for fit_name in fit_names:
-            key = fit_name + '_' + mobjn + keyi
+            key = fit_name + keyi
             fit_res = fit_dicts[key]['fit_res']
-            ana_res_dict['new_freq_' + mobjn + fit_name] = \
-                old_qb_freq + artificial_detuning_dict[mobjn] - \
-                fit_res.best_values['frequency']
-            ana_res_dict[
-                'new_freq_' + mobjn + fit_name + '_stderr'] = \
-                fit_res.params['frequency'].stderr
-            ana_res_dict['T2_star_' + mobjn + fit_name] = \
-                fit_res.best_values['tau']
-            ana_res_dict['T2_star_' + mobjn + fit_name + '_stderr'] = \
-                fit_res.params['tau'].stderr
-    hlp_mod.add_param('ana_res_dict', ana_res_dict,
-                      data_dict, update_value=True)
-    save_mod.save_analysis_results(data_dict, ana_res_dict)
+            hlp_mod.add_param(f'{mobjn}.new_freq ' + fit_name,
+                              old_qb_freq + artificial_detuning_dict[mobjn] -
+                              fit_res.best_values['frequency'],
+                              data_dict, replace_value=True)
+            hlp_mod.add_param(f'{mobjn}.new_freq ' + fit_name + '_stderr',
+                              fit_res.params['frequency'].stderr,
+                              data_dict, replace_value=True)
+            hlp_mod.add_param(f'{mobjn}.T2_star ' + fit_name,
+                              fit_res.best_values['tau'],
+                              data_dict, replace_value=True)
+            hlp_mod.add_param(f'{mobjn}.T2_star ' + fit_name + '_stderr',
+                              fit_res.params['tau'].stderr,
+                              data_dict, replace_value=True)
+
+    # save_mod.save_analysis_results(data_dict, ana_res_dict)
 
 
 def prepare_plots(data_dict, data_to_proc_dict, **params):
@@ -165,14 +168,18 @@ def prepare_plots(data_dict, data_to_proc_dict, **params):
                                                  data_dict, raise_error=True,
                                                  **params)
     plot_dicts = OrderedDict()
+    # the prepare plot dict functions below also iterate over data_to_proc_dict,
+    # however the prepare functions add all the data corresponding to keys_in
+    # to the same figure.
+    # Here we want a figure for each keyi
     for keyi, data in data_to_proc_dict.items():
-        base_plot_name = 'Ramsey_' + mobjn + '_' + keyi
+        figure_name = 'Ramsey_' + keyi
         sp_name = mospm[mobjn][0]
         # plot data
         plot_module.prepare_1d_plot_dicts(
             data_dict=data_dict,
             keys_in=[keyi],
-            figure_name=base_plot_name,
+            figure_name=figure_name,
             sp_name=sp_name,
             meas_obj_names=params.pop('meas_obj_names', mobjn),
             do_plotting=False, **params)
@@ -182,7 +189,7 @@ def prepare_plots(data_dict, data_to_proc_dict, **params):
             plot_module.prepare_cal_states_plot_dicts(
                 data_dict=data_dict,
                 keys_in=[keyi],
-                figure_name=base_plot_name,
+                figure_name=figure_name,
                 sp_name=sp_name,
                 meas_obj_names=params.pop('meas_obj_names', mobjn),
                 do_plotting=False, **params)
@@ -190,45 +197,44 @@ def prepare_plots(data_dict, data_to_proc_dict, **params):
         if 'fit_dicts' in data_dict:
             textstr = ''
             T2_star_str = ''
-            ana_res_dict = hlp_mod.get_param('ana_res_dict', data_dict,
-                                             raise_error=True)
             for i, fit_name in enumerate(fit_names):
                 plot_module.prepare_fit_plot_dicts(
                     data_dict=data_dict,
-                    figure_name=base_plot_name,
-                    fit_names=[fit_name + '_' + mobjn + keyi],
+                    figure_name=figure_name,
+                    fit_names=[fit_name + keyi],
                     meas_obj_names=params.pop('meas_obj_names', mobjn),
-                    plot_params={'legend_bbox_to_anchor': (1, -0.625)},
+                    plot_params={'legend_bbox_to_anchor': (1, -0.55),
+                                 'legend_ncol': 1},
                     do_plotting=False, **params)
 
                 fit_res = data_dict['fit_dicts'][
-                    fit_name + '_' + mobjn + keyi]['fit_res']
+                    fit_name + keyi]['fit_res']
                 if i != 0:
                     textstr += '\n'
                 textstr += \
                     ('$f_{{qubit \_ new \_ {{{key}}} }}$ = '.format(
                         key=('exp' if i == 0 else 'gauss')) +
-                     '{:.6f} GHz '.format(ana_res_dict[
-                         'new_freq_'+mobjn+fit_name]*1e-9) +
-                     '$\pm$ {:.2E} GHz '.format(
-                         ana_res_dict['new_freq_' + mobjn +
-                                      fit_name + '_stderr']*1e-9))
+                     '{:.6f} GHz '.format(hlp_mod.get_param(
+                         f'{mobjn}.new_freq '+fit_name, data_dict)*1e-9) +
+                     '$\pm$ {:.2E} GHz '.format(hlp_mod.get_param(
+                         f'{mobjn}.new_freq ' + fit_name + '_stderr',
+                         data_dict)*1e-9))
                 T2_star_str += \
                     ('\n$T_{{2,{{{key}}} }}^\star$ = '.format(
                         key=('exp' if i == 0 else 'gauss')) +
                      '{:.2f} $\mu$s'.format(
                          fit_res.params['tau'].value*1e6) +
-                     '$\pm$ {:.2f} $\mu$s'.format(
+                     ' $\pm$ {:.2f} $\mu$s'.format(
                          fit_res.params['tau'].stderr*1e6))
 
             fit_name = 'exp_decay'
             fit_res = data_dict['fit_dicts'][
-                fit_name + '_' + mobjn + keyi]['fit_res']
-            old_qb_freq = ana_res_dict['old_freq_' + mobjn]
+                fit_name + keyi]['fit_res']
+            old_qb_freq = hlp_mod.get_param(f'{mobjn}.old_freq', data_dict)
             textstr += '\n$f_{qubit \_ old}$ = '+'{:.6f} GHz '.format(
                 old_qb_freq*1e-9)
             textstr += ('\n$\Delta f$ = {:.4f} MHz '.format(
-                (ana_res_dict['new_freq_' + mobjn + fit_name] -
+                (hlp_mod.get_param(f'{mobjn}.new_freq ' + fit_name, data_dict) -
                  old_qb_freq)*1e-6) +
                         '$\pm$ {:.2E} MHz'.format(
                 fit_res.params['frequency'].stderr*1e-6) +
@@ -240,17 +246,17 @@ def prepare_plots(data_dict, data_to_proc_dict, **params):
             textstr += '\nartificial detuning = {:.2f} MHz'.format(
                 artificial_detuning_dict[mobjn]*1e-6)
 
-            plot_dicts['text_msg_' + mobjn + keyi] = {
-                'fig_id': base_plot_name,
-                'ypos': -0.225,
+            plot_dicts['text_msg_' + keyi] = {
+                'fig_id': figure_name,
+                'ypos': -0.3,
                 'xpos': -0.125,
                 'horizontalalignment': 'left',
                 'verticalalignment': 'top',
                 'plotfn': 'plot_text',
                 'text_string': textstr}
 
-        plot_dicts['half_hline_' + mobjn + keyi] = {
-            'fig_id': base_plot_name,
+        plot_dicts['half_hline_' + keyi] = {
+            'fig_id': figure_name,
             'plotfn': 'plot_hlines',
             'y': 0.5,
             'xmin': physical_swpts[0],

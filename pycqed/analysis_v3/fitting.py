@@ -124,7 +124,7 @@ def prepare_cos_fit_dict(data_dict, keys_in=None, **params):
         fit_name_to_set = fit_name
         if fit_name_to_set is None:
             fit_name_to_set = 'CosFit'
-        fit_name_to_set += '_' + mobjn + keyi
+        fit_name_to_set += keyi
         fit_dicts[fit_name_to_set] = {
             'fit_fn': fit_mods.CosFunc,
             'fit_xvals': {'t': indep_var_array},
@@ -202,7 +202,7 @@ def prepare_joint_residzz_fit_dict(data_dict, keys_in=None, **params):
     fit_name_to_set = fit_name
     if fit_name_to_set is None:
         fit_name_to_set = 'residzz_fit'
-    fit_name_to_set += '_' + mobjn
+    fit_name_to_set += ','.join(mobjn)
     fit_dicts[fit_name] = {
         'fit_fn': fit_mods.ResidZZFuncJoint,
         'fit_xvals': {'t': indep_var_array},
@@ -264,7 +264,7 @@ def prepare_residzz_fit_dict(data_dict, keys_in=None, **params):
         fit_name_to_set = fit_name
         if fit_name_to_set is None:
             fit_name_to_set = 'residzz_fit'
-        fit_name_to_set += '_' + mobjn + keyi
+        fit_name_to_set += keyi
         fit_dicts[fit_name_to_set] = {
             'fit_fn': fit_mods.ResidZZFunc,
             'fit_xvals': {'t': indep_var_array},
@@ -332,13 +332,14 @@ def prepare_expdamposc_fit_dict(data_dict, keys_in=None, **params):
         fit_name_to_set = fit_name
         if fit_name_to_set is None:
             fit_name_to_set = 'expdamposc_fit'
-        fit_name_to_set += '_' + mobjn + keyi
+        fit_name_to_set += keyi
         fit_dicts[fit_name_to_set] = {
             'fit_fn': fit_mods.ExpDampOscFunc,
             'fit_xvals': {'t': indep_var_array},
             'fit_yvals': {'data': data_fit},
             'guess_pars': guess_pars,
-            'params_to_print': params_to_print, **plot_params}
+            'params_to_print': params_to_print,
+            'plot_params': plot_params}
 
     hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_value=True)
 
@@ -387,7 +388,7 @@ def prepare_rbleakage_fit_dict(data_dict, keys_in=None, **params):
         fit_name_to_set = fit_name
         if fit_name_to_set is None:
             fit_name_to_set = 'rbleak_fit'
-        fit_name_to_set += '_' + mobjn + keyi
+        fit_name_to_set += keyi
     fit_dicts[fit_name_to_set] = {
             'fit_fn': fit_mods.RandomizedBenchmarkingLeakage,
             'fit_xvals': {'numCliff': indep_var_array},
