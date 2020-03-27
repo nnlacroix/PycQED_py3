@@ -1245,7 +1245,7 @@ def measure_tomography(qubits, prep_sequence, state_name,
                        use_cal_points=True,
                        preselection=True,
                        rho_target=None,
-                       shots=None,
+                       shots=4096,
                        ro_spacing=1e-6,
                        ro_slack=10e-9,
                        thresholded=False,
@@ -1274,27 +1274,20 @@ def measure_tomography(qubits, prep_sequence, state_name,
     else:
         label = '{}_tomography_ssro_{}'.format(state_name, '-'.join(
             [qb.name for qb in qubits]))
-    seq = sequence.Sequence(label)
 
-    seq_tomo, seg_list_tomo = mqs.n_qubit_tomo_seq(qubit_names,
-                                                   operation_dict,
-                                                   prep_sequence=prep_sequence,
-                                                   rots_basis=rots_basis,
-                                                   return_seq=True,
-                                                   upload=False,
-                                                   preselection=preselection,
-                                                   ro_spacing=ro_spacing)
+    operation_dict = get_operation_dict(qubits)
+    seq_tomo, seg_list_tomo = mqs.n_qubit_tomo_seq(
+        qubit_names, operation_dict, prep_sequence=prep_sequence,
+        rots_basis=rots_basis, return_seq=True, upload=False,
+        preselection=preselection, ro_spacing=ro_spacing)
     seg_list = seg_list_tomo
 
     if use_cal_points:
-        seq_cal, seg_list_cal = mqs.n_qubit_ref_all_seq(qubit_names,
-                                                        operation_dict,
-                                                        return_seq=True,
-                                                        upload=False,
-                                                        preselection=preselection,
-                                                        ro_spacing=ro_spacing)
-        # seq += seq_cal
+        seq_cal, seg_list_cal = mqs.n_qubit_ref_all_seq(
+            qubit_names, operation_dict, return_seq=True, upload=False,
+            preselection=preselection, ro_spacing=ro_spacing)
         seg_list += seg_list_cal
+
     seq = sequence.Sequence(label)
     for seg in seg_list:
         seq.add(seg)
@@ -1303,36 +1296,24 @@ def measure_tomography(qubits, prep_sequence, state_name,
     for qbn in qubit_names:
         seq.repeat_ro(f"RO {qbn}", operation_dict)
 
-    n_segments = seq.n_acq_elements() #len(seg_list)
-    print(n_segments)
-    # if preselection:
-    #     n_segments *= 2
-
-    # from this point on number of segments is fixed
+    n_segments = seq.n_acq_elements()
     sf = awg_swf2.n_qubit_seq_sweep(seq_len=n_segments)
-
-    # shots *= n_segments
     if shots > 1048576:
         shots = 1048576 - 1048576 % n_segments
-    # if shots is None:
-    #     shots = 4094 - 4094 % n_segments
-    # # shots = 600000
-
     if thresholded:
-        df = get_multiplexed_readout_detector_functions(qubits,
-                                                        nr_shots=shots)[
-            'dig_log_det']
+        df = get_multiplexed_readout_detector_functions(
+            qubits, nr_shots=shots)['dig_log_det']
     else:
-        df = get_multiplexed_readout_detector_functions(qubits,
-                                                        nr_shots=shots)[
-            'int_log_det']
+        df = get_multiplexed_readout_detector_functions(
+            qubits, nr_shots=shots)['int_log_det']
 
-    # make a channel map
-    # fixme - channels and qubits are not always in the same order
-    # getting a channel map should be a nice function, but where ?
-    channel_map = {}
-    for qb, channel_name in zip(qubits, df.value_names):
-        channel_map[qb.name] = channel_name
+    # get channel map
+    channel_map = get_meas_obj_value_names_map(qubits, df)
+    # the above function returns channels in a list, but the state tomo analysis
+    # expects a single string as values, not list
+    for qb in qubits:
+        if len(channel_map[qb.name]) == 1:
+            channel_map[qb.name] = channel_map[qb.name][0]
 
     # todo Calibration point description code should be a reusable function
     #   but where?
@@ -1340,7 +1321,6 @@ def measure_tomography(qubits, prep_sequence, state_name,
         # calibration definition for all combinations
         cal_defs = []
         for i, name in enumerate(itertools.product("ge", repeat=len(qubits))):
-            name = ''.join(name)  # tuple to string
             cal_defs.append({})
             for qb in qubits:
                 if preselection:
@@ -1367,13 +1347,11 @@ def measure_tomography(qubits, prep_sequence, state_name,
     MC.soft_avg(1)
     MC.set_sweep_function(sf)
     MC.set_sweep_points(np.arange(n_segments))
-    # MC.set_sweep_function_2D(swf.None_Sweep())
-    # MC.set_sweep_points_2D(np.arange(nreps))
+    MC.set_sweep_function_2D(swf.None_Sweep())
+    MC.set_sweep_points_2D(np.arange(nreps))
     MC.set_detector_function(df)
     if run:
         MC.run(label, exp_metadata=exp_metadata)
-
-    return
 
 
 def measure_two_qubit_randomized_benchmarking(
