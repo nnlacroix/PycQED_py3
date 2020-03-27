@@ -546,6 +546,22 @@ def flatten_list(lst_of_lsts):
         return lst_of_lsts
 
 
+def is_string_in(string, lst_to_search):
+    """
+    Checks whether string is in the list lst_to_serach
+    :param string: a string
+    :param lst_to_search: list of strings or list of lists of strings
+    :return: True or False
+    """
+    lst_to_search_flat = flatten_list(lst_to_search)
+    found = False
+    for el in lst_to_search_flat:
+        if string in el:
+            found = True
+            break
+    return found
+
+
 def get_sublst_with_all_strings_of_list(lst_to_search, lst_to_match):
     """
     Finds all string elements in lst_to_search that contain the
@@ -561,4 +577,6 @@ def get_sublst_with_all_strings_of_list(lst_to_search, lst_to_match):
             r = re.search(etm, ets)
             if r is not None:
                 lst_w_matches += [ets]
+    # unique_everseen takes unique elements while also keeping the original
+    # order of the elements
     return list(unique_everseen(lst_w_matches))

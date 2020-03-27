@@ -14,6 +14,9 @@ from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.measurement.hdf5_data import write_dict_to_hdf5
 
 
+# def create_processed_data_file(data_dict, filename, datadict):
+
+
 def save_analysis_results(data_dict, ana_res_dict, **params):
     """
     Saves the analysis results.

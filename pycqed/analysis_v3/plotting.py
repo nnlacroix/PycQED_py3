@@ -688,7 +688,7 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     :param keys_in: list of key names or dictionary keys paths in
                     data_dict for the data to be processed
     :param figure_name: name of the figure on which all the plot dicts created
-            will be plotted
+                        will be plotted
     :param params:
         sp_name (str, default: mospm[mobjn]): name of the sweep parameter in
             sweep_points. To be used on x-axis.
