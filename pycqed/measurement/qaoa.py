@@ -651,8 +651,8 @@ class QAOAHelper(HelperBase):
                         break
                 else:
                     assert False, \
-                    f"The logical qubits {gates_info['qbs']} are currently " \
-                        f"not connected by a {gates_info['gate_name']} gate!"
+                    f"The logical qubits {gates_info['qbs']} ({[self.qb_names[qbi] for qbi in gates_info['qbs']]}) are currently " \
+                        f"not connected by a {gates_info['gate_name']} gate! ({self.qb_names})"
                 if nbody:
                     opsH = ["Z180 {qbx:}", "Y90 {qbx:}"] # Hadamard gate
                     nbody_start = self.block_from_ops(f"Had", opsH, dict(qbx=qbx), {}).build()
@@ -747,11 +747,12 @@ class QAOAHelper(HelperBase):
                     simultaneous.extend(Block(f"{qbx} nbody_end", nbody_end).build())
                 else:
                     simultaneous.extend(two_qb_block.build(ref_pulse=f"start"))
+                if doswap:
+                    # print(f"swapping {(self.qb_names[gates_info['qbs'][0]], self.qb_names[gates_info['qbs'][1]])}")
+                    self.qb_names[gates_info['qbs'][0]], self.qb_names[gates_info['qbs'][1]] \
+                        = self.qb_names[gates_info['qbs'][1]], self.qb_names[gates_info['qbs'][0]]
             # add block referenced to start of U_k
             U.extend(simultaneous.build())
-            if doswap:
-                self.qb_names[gates_info['qbs'][0]],self.qb_names[gates_info['qbs'][1]] \
-                    = self.qb_names[gates_info['qbs'][1]],self.qb_names[gates_info['qbs'][0]]
             #print(self.qb_names)
 
         # add single qb z rotation for single qb terms of hamiltonian
