@@ -331,6 +331,10 @@ class BaseDataAnalysis(object):
         from each timestamp in self.timestamps
         and stores it into: self.raw_data_dict
         """
+        if not hasattr(self, 'params_dict'):
+            self.params_dict = OrderedDict()
+        if not hasattr(self, 'numeric_params'):
+            self.numeric_params = []
 
         self.params_dict.update(
             {'sweep_parameter_names': 'sweep_parameter_names',
@@ -355,9 +359,15 @@ class BaseDataAnalysis(object):
                     self.add_measured_data(rd_dict))
             self.raw_data_dict = tuple(temp_dict_list)
 
-        self.metadata = self.raw_data_dict.get('exp_metadata', [])
-        if len(self.metadata) == 0:
-            self.metadata = {}
+        # this is needed because of exp_metadata is not found in
+        # the hdf file, then it is set to raw_data_dict['exp_metadata'] = [] by
+        # the method get_data_from_timestamp_list.
+        # But we need it to be an empty dict.
+        # (exp_metadata will always exist in raw_data_dict becuase it is
+        # hardcoded in self.params_dict above)
+        if len(self.raw_data_dict['exp_metadata']) == 0:
+            self.raw_data_dict['exp_metadata'] = {}
+        self.metadata = self.raw_data_dict['exp_metadata']
 
     def process_data(self):
         """
