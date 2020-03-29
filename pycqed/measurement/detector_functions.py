@@ -1259,7 +1259,6 @@ class UHFQC_classifier_detector(UHFQC_Base):
             result_logging_mode)
         self.state_labels = ['pg', 'pe', 'pf']
         self.channels = channels
-        self.correlated = get_values_function_kwargs.get('correlated', True)
 
         # Currently doesn't work with single readout channel;
         # assumes 2 channels per data point
@@ -1274,9 +1273,6 @@ class UHFQC_classifier_detector(UHFQC_Base):
                 self.value_names[idx] = '{}_{} w{}'.format(UHFQC.name,
                     state, ch_pair)
                 idx += 1
-
-        # if self.correlated:
-        #     self.value_names += ['correlation']
 
         if result_logging_mode == 'raw':
             self.value_units = ['']*len(self.value_names)

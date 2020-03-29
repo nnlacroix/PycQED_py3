@@ -182,10 +182,13 @@ def dynamic_phase_seq(qb_name,
 
     pulse_list += [ge_half_start, flux_pulse, ge_half_end, ro_pulse]
     hsl = len(list(hard_sweep_dict.values())[0]['values'])
-    if 'amplitude' in flux_pulse:
-        param_to_set = 'amplitude'
+    params_to_set = []
+    if 'amplitude' in flux_pulse and 'amplitude2' not in flux_pulse:
+        params_to_set = ['amplitude']
     elif 'dv_dphi' in flux_pulse:
-        param_to_set = 'dv_dphi'
+        params_to_set = ['dv_dphi']
+    elif 'amplitude' in flux_pulse and 'amplitude2' in flux_pulse:
+        params_to_set = ['amplitude', 'amplitude2']
     else:
         raise ValueError('Unknown flux pulse amplitude control parameter. '
                          'Cannot do measurement without flux pulse.')
@@ -194,7 +197,7 @@ def dynamic_phase_seq(qb_name,
         f'flux.{param_to_set}':
         np.concatenate(
             [flux_pulse[param_to_set] * np.ones(hsl // 2),
-             np.zeros(hsl // 2)])
+             np.zeros(hsl // 2)]) for param_to_set in params_to_set
     }
     params.update(
         {f'pi_half_end.{k}': v['values']
@@ -298,6 +301,7 @@ def chevron_seqs(qbc_name,
                  soft_sweep_dict,
                  operation_dict,
                  cz_pulse_name,
+                 num_cz_gates=1,
                  prep_params=dict(),
                  cal_points=None,
                  upload=True):
@@ -332,21 +336,26 @@ def chevron_seqs(qbc_name,
     if 'pulse_length' in hard_sweep_dict:
         max_flux_length = max(hard_sweep_dict['pulse_length']['values'])
         ro_pulses[0]['ref_pulse'] = 'chevron_pi_qbc'
-        ro_pulses[0]['pulse_delay'] = \
-            max_flux_length + flux_pulse.get('buffer_length_start', 0) + \
+        ro_pulses[0]['pulse_delay'] = num_cz_gates * \
+            (max_flux_length + flux_pulse.get('buffer_length_start', 0) + \
             flux_pulse.get('buffer_length_end', 0) + \
             2*flux_pulse.get('flux_buffer_length', 0) + \
-            2*flux_pulse.get('flux_buffer_length2', 0)
+            2*flux_pulse.get('flux_buffer_length2', 0))
 
     ssl = len(list(soft_sweep_dict.values())[0]['values'])
     sequences = []
     for i in range(ssl):
+        fp_list = []
         flux_p = deepcopy(flux_pulse)
         flux_p.update({k: v['values'][i] for k, v in soft_sweep_dict.items()})
-        pulses = [ge_pulse_qbc, ge_pulse_qbt, flux_p] + ro_pulses
+        for j in range(num_cz_gates):
+            fp = deepcopy(flux_p)
+            fp['name'] = f'chevron_flux_{j}'
+            fp_list += [fp]
+        pulses = [ge_pulse_qbc, ge_pulse_qbt] + fp_list + ro_pulses
         swept_pulses = sweep_pulse_params(pulses, {
-            f'chevron_flux.{k}': v['values']
-            for k, v in hard_sweep_dict.items()
+            f'chevron_flux_{j}.{k}': v['values']
+            for k, v in hard_sweep_dict.items() for j in range(num_cz_gates)
         })
         swept_pulses_with_prep = \
             [add_preparation_pulses(p, operation_dict, [qbc_name, qbt_name],

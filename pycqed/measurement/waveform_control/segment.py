@@ -1011,6 +1011,7 @@ class UnresolvedPulse:
         elif pulse_pars.get('ref_point', 'end') == 'start':
             self.ref_point = 0
         else:
+            print(pulse_pars)
             raise ValueError(
                 'Passed invalid value for ref_point. Allowed '
                 'values are: start, end, middle. Default value: end')

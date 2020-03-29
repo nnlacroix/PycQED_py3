@@ -983,7 +983,7 @@ def n_qubit_tomo_seq(
             ro_pulses_presel = generate_mux_ro_pulse_list(qubit_names, 
                                                           operation_dict,
                                                           'RO_presel',
-                                                          True, -ro_spacing)
+                                                          'end', -ro_spacing)
             pulse_list.extend(ro_pulses_presel)
         seg = segment.Segment('tomography_{}'.format(i), pulse_list)
         seg_list.append(seg)
@@ -1073,7 +1073,7 @@ def n_qubit_ref_seq(qubit_names, operation_dict, ref_desc, upload=True,
             ro_pulses_presel = generate_mux_ro_pulse_list(qubit_names, 
                                                           operation_dict,
                                                           'RO_presel',
-                                                          True, -ro_spacing)
+                                                          'end', -ro_spacing)
             pulse_list.extend(ro_pulses_presel)
         seg = segment.Segment('calibration_{}'.format(i), pulse_list)
         seg_list.append(seg)
