@@ -3,7 +3,6 @@ log = logging.getLogger(__name__)
 
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis import fitting_models as fit_mods
-from pycqed.analysis_v3 import saving as save_mod
 from collections import OrderedDict
 import numpy as np
 import lmfit
@@ -37,10 +36,6 @@ def run_fitting(data_dict, keys_in='all', **params):
             if fit_dict['fit_res'].params[par].stderr is None:
                 fit_dict['fit_res'].params[par].stderr = 0
         fit_res_dict[fit_name] = fit_dict['fit_res']
-
-    if params.get('save_fit_results', True):
-        getattr(save_mod, 'save_fit_results')(data_dict, fit_res_dict,
-                                              **params)
 
 
 def fit_one_dict(fit_dict, **params):

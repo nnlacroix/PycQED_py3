@@ -211,7 +211,7 @@ def get_data_to_process(data_dict, keys_in):
 
 
 def get_param(param, data_dict, default_value=None,
-              raise_error=False, **params):
+              raise_error=False, error_message=None, **params):
     """
     Get the value of the parameter "param" from params, data_dict, or metadata.
     :param name: name of the parameter being sought
@@ -247,13 +247,15 @@ def get_param(param, data_dict, default_value=None,
                              md.get(all_keys[-1], default_value)))
 
     if raise_error and value is None:
-        raise ValueError(f'{param} was not found in either data_dict, or '
-                         f'exp_metadata or input params.')
+        if error_message is None:
+            error_message = f'{param} was not found in either data_dict, or ' \
+                            f'exp_metadata or input params.'
+        raise ValueError(error_message)
     return value
 
 
 def pop_param(param, data_dict, default_value=None,
-              raise_error=False, **params):
+              raise_error=False, error_message=None, **params):
     """
     Pop the value of the parameter "param" from params, data_dict, or metadata.
     :param name: name of the parameter being sought
@@ -289,8 +291,10 @@ def pop_param(param, data_dict, default_value=None,
                              md.pop(all_keys[-1], default_value)))
 
     if raise_error and value is None:
-        raise ValueError(f'{param} was not found in either data_dict, or '
-                         f'exp_metadata or input params.')
+        if error_message is None:
+            error_message = f'{param} was not found in either data_dict, or ' \
+                            f'exp_metadata or input params.'
+        raise ValueError(error_message)
     return value
 
 

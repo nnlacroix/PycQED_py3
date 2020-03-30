@@ -7,13 +7,12 @@ from pycqed.analysis_v3 import fitting as fit_module
 from pycqed.analysis_v3 import plotting as plot_module
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import processing_pipeline as ppmod
-from pycqed.analysis_v3 import saving as save_mod
 from copy import deepcopy
 
 
 # Create pipelines
 def ramsey_iq_pipeline(meas_object_name):
-    pp = ppmod.RawPipeline()
+    pp = ppmod.ProcessingPipeline()
     pp.add_node('rotate_iq', keys_in='raw', meas_obj_names=meas_object_name)
     pp.add_node('ramsey_analysis',
                 keys_in=f'previous {meas_object_name}.rotate_iq',
@@ -114,8 +113,6 @@ def analyze_fit_results(data_dict, keys_in, **params):
             hlp_mod.add_param(f'{mobjn}.T2_star ' + fit_name + '_stderr',
                               fit_res.params['tau'].stderr,
                               data_dict, replace_value=True)
-
-    # save_mod.save_analysis_results(data_dict, ana_res_dict)
 
 
 def prepare_plots(data_dict, data_to_proc_dict, **params):

@@ -9,7 +9,6 @@ from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import fitting as fit_module
 from pycqed.analysis_v3 import plotting as plot_module
 from pycqed.analysis_v3 import helper_functions as hlp_mod
-from pycqed.analysis_v3 import saving as save_mod
 from sklearn.mixture import GaussianMixture as GM
 from copy import deepcopy
 
@@ -683,7 +682,6 @@ class RabiAnalysis(object):
 
         hlp_mod.add_param('ana_res_dict', ana_res_dict,
                           self.data_dict, update_value=True)
-        save_mod.save_analysis_results(self.data_dict, ana_res_dict)
 
     def prepare_plots(self, **params):
         # prepare raw data plot
@@ -1169,7 +1167,6 @@ class SingleQubitRBAnalysis(object):
         self.ana_res_dict = ana_res_dict
         hlp_mod.add_param('ana_res_dict', ana_res_dict, self.data_dict,
                           update_value=True)
-        save_mod.save_analysis_results(self.data_dict, ana_res_dict)
 
     @staticmethod
     def calculate_confidence_intervals(

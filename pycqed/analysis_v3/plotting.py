@@ -7,7 +7,6 @@ from inspect import signature
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from collections import OrderedDict
-from pycqed.analysis_v3 import saving as save_mod
 from copy import deepcopy
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -133,11 +132,11 @@ def get_axes_geometry_from_figure(fig):
 
 def default_figure_title(data_dict):
     if len(data_dict['timestamps']) > 1:
-        return f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]} ' \
-               f'{data_dict["measurementstrings"][-1]}'
+        return f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]}' \
+               f' {data_dict["measurementstrings"][-1]}'
     else:
-        return f'{data_dict["timestamps"][-1]} ' \
-               f'{data_dict["measurementstrings"][-1]}'
+        return f'{data_dict["timestamps"][-1]}' \
+               f' {data_dict["measurementstrings"][-1]}'
 
 
 ## Prepare plot dicts functions ##
@@ -993,16 +992,13 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
 
         format_datetime_xaxes(data_dict, keys_in, axs)
 
-    hlp_mod.add_param('figs', figs, data_dict, append_value=True)
+    hlp_mod.add_param('figures', figs, data_dict, append_value=True)
     hlp_mod.add_param('axes', axs, data_dict, append_value=True)
+    # add_letter_to_subplots(fig)
     for plot_name, axes in axs.items():
         if hasattr(axes, '__iter__'):
             figs[plot_name].tight_layout()
             add_letter_to_subplots(figs[plot_name], axes.flatten())
-    # add_letter_to_subplots(fig)
-    if params.get('save_figs', True):
-        getattr(save_mod, 'save_figures')(data_dict, figs, keys_in=list(figs),
-                                          **params)
 
 
 def plot_vlines_auto(pdict, axs):

@@ -4,6 +4,7 @@ File containing the BaseDataAnalyis class.
 import h5py
 import numpy as np
 from collections import OrderedDict
+from pycqed.analysis_v3 import saving as save_module
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import data_processing
@@ -15,6 +16,7 @@ import logging
 log = logging.getLogger(__name__)
 
 search_modules = [data_processing, plotting, fitting, ramsey_analysis]
+
 
 class PipelineDataAnalysis(object):
     def __init__(self, data_dict: dict = None,
@@ -73,7 +75,7 @@ class PipelineDataAnalysis(object):
         if self.data_dict is None:
             self.extract_data()  # extract data specified in params dict
         if len(self.processing_pipe) > 0:
-            process_pipe(self.data_dict, self.processing_pipe)
+            process_pipeline(self.data_dict, self.processing_pipe)
         else:
             print('There is no data processing pipe.')
 
@@ -180,7 +182,7 @@ class PipelineDataAnalysis_multi_timestamp(object):
         if self.data_dict is None:
             self.extract_data()  # extract data specified in params dict
         if len(self.processing_pipe) > 0:
-            process_pipe(self.data_dict, self.processing_pipe)
+            process_pipeline(self.data_dict, self.processing_pipe)
         else:
             print('There is no data processing pipe.')
 
@@ -368,7 +370,7 @@ def add_measured_data_dict(data_dict):
     return data_dict
 
 
-def process_pipe(data_dict, processing_pipe=None):
+def process_pipeline(data_dict, processing_pipe=None, save_data=True):
     """
     Calls all the classes/functions found in metadata[
     'processing_pipe'], which is a list of dictionaries of the form:
@@ -404,3 +406,6 @@ def process_pipe(data_dict, processing_pipe=None):
             raise KeyError(f'Processing node "{node_dict["node_name"]}" '
                            f'not recognized')
         node(data_dict, **node_dict)
+
+    if save_data:
+        save_module.Save(data_dict)
