@@ -353,22 +353,25 @@ class BaseDataAnalysis(object):
         if len(self.timestamps) == 1:
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict)
+            # the if statement below is needed because if exp_metadata is not
+            # found in the hdf file, then it is set to
+            # raw_data_dict['exp_metadata'] = [] by the method
+            # get_data_from_timestamp_list. But we need it to be an empty dict.
+            # (exp_metadata will always exist in raw_data_dict because it is
+            # hardcoded in self.params_dict above)
+            if len(self.raw_data_dict['exp_metadata']) == 0:
+                self.raw_data_dict['exp_metadata'] = {}
+            self.metadata = self.raw_data_dict['exp_metadata']
         else:
             temp_dict_list = []
             for i, rd_dict in enumerate(self.raw_data_dict):
                 temp_dict_list.append(
                     self.add_measured_data(rd_dict))
+                if len(rd_dict['exp_metadata']) == 0:
+                    rd_dict['exp_metadata'] = {}
             self.raw_data_dict = tuple(temp_dict_list)
-
-        # this is needed because of exp_metadata is not found in
-        # the hdf file, then it is set to raw_data_dict['exp_metadata'] = [] by
-        # the method get_data_from_timestamp_list.
-        # But we need it to be an empty dict.
-        # (exp_metadata will always exist in raw_data_dict becuase it is
-        # hardcoded in self.params_dict above)
-        if len(self.raw_data_dict['exp_metadata']) == 0:
-            self.raw_data_dict['exp_metadata'] = {}
-        self.metadata = self.raw_data_dict['exp_metadata']
+            self.metadata = [rd_dict['exp_metadata'] for
+                             rd in self.raw_data_dict]
 
     def process_data(self):
         """
