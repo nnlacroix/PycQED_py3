@@ -603,6 +603,7 @@ class QAOAHelper(HelperBase):
         for i, gates_same_timing in enumerate(gate_sequence_info['gate_order']):
             simult_bname = f"simultaneous_{i}"
             simultaneous = Block(simult_bname, [])
+            simultaneous_end_pulses = []
             for gates_info in [gate_sequence_info['gate_list'][i]
                                for i in gates_same_timing]:
                 #gate info
@@ -621,6 +622,8 @@ class QAOAHelper(HelperBase):
                         fill_values = dict(qb=qb)
                         add_start_block = self.block_from_ops(f"add_start {qb}", add_start, fill_values, {})
                         simultaneous.extend(add_start_block.build(ref_pulse=f"start"))
+                        simultaneous_end_pulses.append(
+                            simultaneous.pulses[-1]['name'])
                     continue
                 gates_info['gate_name'] = \
                     gates_info['gate_name'] if 'gate_name' in gates_info else 'upCZ'
@@ -721,6 +724,7 @@ class QAOAHelper(HelperBase):
                                 simultaneous.extend(Block(f"{qbx} nbody_end", nbody_end).build())
                             else:
                                 simultaneous.extend(two_qb_block.build(ref_pulse=f"start"))
+                            simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
                             continue
                         elif isinstance(strategy, dict):
                             ampl = strategy.get("amplitude", ampl)
@@ -751,6 +755,17 @@ class QAOAHelper(HelperBase):
                     # print(f"swapping {(self.qb_names[gates_info['qbs'][0]], self.qb_names[gates_info['qbs'][1]])}")
                     self.qb_names[gates_info['qbs'][0]], self.qb_names[gates_info['qbs'][1]] \
                         = self.qb_names[gates_info['qbs'][1]], self.qb_names[gates_info['qbs'][0]]
+                simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
+
+            if isinstance(simultaneous_end_pulses, list) and len(simultaneous_end_pulses) > 1:
+                simultaneous.extend([{"name": f"simultaneous_end_pulse",
+                                      "pulse_type": "VirtualPulse",
+                                      "pulse_delay": 0,
+                                      "ref_pulse": simultaneous_end_pulses,
+                                      "ref_point": 'end',
+                                      "ref_function": 'max'
+                                     }])
+
             # add block referenced to start of U_k
             U.extend(simultaneous.build())
             #print(self.qb_names)
