@@ -757,7 +757,8 @@ class QAOAHelper(HelperBase):
 
         # add single qb z rotation for single qb terms of hamiltonian
         for qb, h in enumerate(single_qb_terms):
-            U.extend([self.Z_gate(2 * gamma * h * 180 / np.pi, self.qb_names[qb])])
+            if abs(h) > global_zero_angle_threshold: # TODO: we should use the local value?
+                U.extend([self.Z_gate(2 * gamma * h * 180 / np.pi, self.qb_names[qb])])
 
         return U
 

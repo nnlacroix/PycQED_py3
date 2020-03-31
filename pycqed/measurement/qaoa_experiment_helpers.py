@@ -257,7 +257,7 @@ def get_calib_dict(name=None):
     if name is None and len(l)> 0:
         name = l[-1]
     print(f'Loading {name}')
-    return np.load(name)[0]
+    return np.load(name, allow_pickle=True)[0]
 def save_calib_dict(calib_dict, name=None):
     import datetime
     if name is None:
