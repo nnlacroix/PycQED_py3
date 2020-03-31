@@ -601,7 +601,7 @@ class QAOAHelper(HelperBase):
             single_qb_terms = [0]*len(self.qb_names)
         U = Block(name, [])
         for i, gates_same_timing in enumerate(gate_sequence_info['gate_order']):
-            simult_bname = f"simultanenous_{i}"
+            simult_bname = f"simultaneous_{i}"
             simultaneous = Block(simult_bname, [])
             for gates_info in [gate_sequence_info['gate_list'][i]
                                for i in gates_same_timing]:
@@ -619,7 +619,7 @@ class QAOAHelper(HelperBase):
                         if add_start == 'Had':
                             add_start = ["Z180 {qb:}", "Y90 {qb:}"]
                         fill_values = dict(qb=qb)
-                        add_start_block = self.block_from_ops(f"{simult_bname} add_start {qb}", add_start, fill_values, {})
+                        add_start_block = self.block_from_ops(f"add_start {qb}", add_start, fill_values, {})
                         simultaneous.extend(add_start_block.build(ref_pulse=f"start"))
                     continue
                 gates_info['gate_name'] = \
