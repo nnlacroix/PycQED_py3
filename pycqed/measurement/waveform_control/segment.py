@@ -140,7 +140,7 @@ class Segment:
         self.elements = odict()
 
         visited_pulses = []
-        ref_points = []
+        ref_pulses_dict = {}
         i = 0
 
         pulses = self.gen_refpoint_dict()
@@ -148,7 +148,7 @@ class Segment:
         # add pulses that refer to segment start
         for pulse in pulses['segment_start']:
             if pulse.pulse_obj.name in pulses:
-                ref_points.append((pulse.pulse_obj.name, pulse))
+                ref_pulses_dict.update({pulse.pulse_obj.name: pulse})
             t0 = pulse.delay - pulse.ref_point_new * pulse.pulse_obj.length
             pulse.pulse_obj.algorithm_time(t0)
             visited_pulses.append((t0, i, pulse))
@@ -158,15 +158,15 @@ class Segment:
             raise ValueError('No pulse references to the segment start!')
 
         # add remaining pulses
-        while len(ref_points) > 0:
-            new_ref_points = []
-            for (name, pulse) in ref_points:
+        while len(ref_pulses_dict) > 0:
+            ref_pulses_dict_new = {}
+            for name, pulse in ref_pulses_dict.items():
                 for p in pulses[name]:
 
                     # add p.name to reference list if it is used as a key
                     # in pulses
                     if p.pulse_obj.name in pulses:
-                        new_ref_points.append((p.pulse_obj.name, p))
+                        ref_pulses_dict_new.update({p.pulse_obj.name: p})
 
                     t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
                         p.ref_point_new * p.pulse_obj.length + \
@@ -176,9 +176,10 @@ class Segment:
                     visited_pulses.append((t0, i, p))
                     i += 1
 
-            ref_points = new_ref_points
+            ref_pulses_dict = ref_pulses_dict_new
+
         if len(visited_pulses) != len(self.unresolved_pulses):
-            log.error(len(visited_pulses), len(self.unresolved_pulses))
+            log.error(f"{len(visited_pulses), len(self.unresolved_pulses)}")
             for unpulse in visited_pulses:
                 if unpulse not in self.unresolved_pulses:
                     log.error(unpulse)
