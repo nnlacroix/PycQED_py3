@@ -1094,7 +1094,6 @@ def get_pulse_dict_from_pars(pulse_pars):
     if target_qubit is not None:
         Z0 = {'pulse_type': 'VirtualPulse',
               'basis_rotation': {target_qubit: 0},
-              'basis': target_qubit,
               'operation_type': 'Virtual',
               'pulse_length': 0,
               'pulse_delay': 0}
