@@ -24,6 +24,13 @@ digs = string.digits + string.ascii_letters
 
 
 def get_git_info():
+    '''
+    Returns the SHA1 ID (hash) of the current git HEAD plus a diff against the HEAD
+    The hash is shortened to the first 10 digits.
+
+    :return: hash string, diff string
+    '''
+
     diff = "Could not extract diff"
     hash = '00000'
     try:
