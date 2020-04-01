@@ -23,17 +23,26 @@ log = logging.getLogger(__name__)
 digs = string.digits + string.ascii_letters
 
 
-def get_git_revision_hash():
+def get_git_info():
+    '''
+    Returns the SHA1 ID (hash) of the current git HEAD plus a diff against the HEAD
+    The hash is shortened to the first 10 digits.
+
+    :return: hash string, diff string
+    '''
+
+    diff = "Could not extract diff"
+    hash = '00000'
     try:
         # Refers to the global qc_config
         PycQEDdir = pq.__path__[0]
         hash = subprocess.check_output(['git', 'rev-parse',
                                         '--short=10', 'HEAD'], cwd=PycQEDdir)
+        diff = subprocess.run(['git', '-C', PycQEDdir, "diff"],
+                              stdout=subprocess.PIPE).stdout.decode('utf-8')
     except:
-        logging.warning('Failed to get Git revision hash, using 00000 instead')
-        hash = '00000'
-
-    return hash
+        pass
+    return hash, diff
 
 
 def str_to_bool(s):
