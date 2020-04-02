@@ -1,6 +1,7 @@
 import logging
 log = logging.getLogger(__name__)
 
+import sys
 import lmfit
 import numpy as np
 from scipy import optimize
@@ -10,19 +11,12 @@ from pycqed.analysis_v3 import fitting as fit_module
 from pycqed.analysis_v3 import plotting as plot_module
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import processing_pipeline as ppmod
+from pycqed.analysis_v3 import pipeline_analysis as pla
 from copy import deepcopy
 
+pla.search_modules.add(sys.modules[__name__])
 
 # Create pipelines
-def ramsey_iq_pipeline(meas_object_name):
-    pp = ppmod.ProcessingPipeline()
-    pp.add_node('rotate_iq', keys_in='raw', meas_obj_names=meas_object_name)
-    pp.add_node('ramsey_analysis',
-                keys_in=f'previous {meas_object_name}.rotate_iq',
-                keys_out=None,
-                meas_obj_names=meas_object_name)
-    return pp
-
 
 # run ramsey analysis
 def rb_analysis(data_dict, keys_in, **params):
@@ -424,7 +418,7 @@ def get_leakage_ibm_textstr(fit_res, **params):
 def get_rb_textstr(fit_res, F_T1=None, **params):
     textstr = ('$r_{\mathrm{Cl}}$' + ' = {:.4f}% $\pm$ {:.3f}%'.format(
         (1-fit_res.params['fidelity_per_Clifford'].value)*100,
-        (fit_res.params['fidelity_per_Clifford'].stderr)*100))
+        fit_res.params['fidelity_per_Clifford'].stderr*100))
     if F_T1 is not None:
         textstr += ('\n$r_{\mathrm{coh-lim}}$  = ' +
                     '{:.3f}%'.format((1-F_T1)*100))
@@ -451,7 +445,6 @@ def get_rb_textbox_properties(data_dict, fit_res, F_T1=None,
         if len(textstr) == 0:
             raise NotImplementedError(f'The textstring style {textstr_style} '
                                       f'has not been implemented yet.')
-
     ha = params.pop('ha', 'right')
     hp = 0.975
     if ha == 'left':

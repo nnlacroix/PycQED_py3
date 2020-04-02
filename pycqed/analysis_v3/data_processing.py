@@ -9,9 +9,11 @@ from pycqed.analysis_v3 import plotting as plot_module
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from sklearn.mixture import GaussianMixture as GM
 from copy import deepcopy
-
 from pycqed.measurement.calibration_points import CalibrationPoints
 
+import sys
+from pycqed.analysis_v3 import pipeline_analysis as pla
+pla.search_modules.add(sys.modules[__name__])
 
 def filter_data(data_dict, keys_in, keys_out=None, **params):
     """

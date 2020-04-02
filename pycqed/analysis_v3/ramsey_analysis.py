@@ -9,6 +9,9 @@ from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import processing_pipeline as ppmod
 from copy import deepcopy
 
+import sys
+from pycqed.analysis_v3 import pipeline_analysis as pla
+pla.search_modules.add(sys.modules[__name__])
 
 # Create pipelines
 def ramsey_iq_pipeline(meas_object_name):

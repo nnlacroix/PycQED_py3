@@ -22,6 +22,9 @@ import datetime
 import sys
 this_module = sys.modules[__name__]
 
+from pycqed.analysis_v3 import pipeline_analysis as pla
+pla.search_modules.add(this_module)
+
 prx_single_column_width = 3.404
 prx_two_column_width = 7.057
 # Default to PRX style, change these global variables according to journal
@@ -82,46 +85,29 @@ def get_default_plot_params(set_params=True, figure_width='1col',
     return params
 
 
-def add_letter_to_subplots(fig, axes, xoffset_column_subplots=0,
-                           yoffset_raw_subplots=0):
+def add_letter_to_subplots(fig, axes, xoffset=0.0, yoffset=0.0):
     """
     Adds letters to top left corner of subplots corresponding to axes from fig.
     :param fig: figure object
     :param axes: subplots axes on fig
-    :param xoffset_column_subplots: for the right column of subplots, the letter
-        is placed in the middle of the figure. This might not always work well.
-        xoffset_right_subplots if the offset from the middle of the figure.
+    :param xoffset: the x location of the letter is the left margin of the axis.
+        This might not always work well. xoffset is added to this position.
+    :param yoffset: the y location of the letter is the top margin of the axis.
+        This might not always work well. yoffset is added to this position.
     :return: fig, axes
 
     Assumptions:
         - axes[0::2] (axes[1::2]) correspond to the left (right) column
             of subplots
     """
-    ax_geom = get_axes_geometry_from_figure(fig)
+    # ax_geom = get_axes_geometry_from_figure(fig)
     letters = [f'({chr(x+97)})' for x in range(len(np.array(axes).flatten()))]
     for i, ax in enumerate(np.array(axes).flatten()):
         letter = letters[i]
-        if i == 0:
-            ax.text(0, 1, letter, ha='left', va='top',
-                    transform=fig.transFigure)
-        elif i % ax_geom[1] == 0:  # first column
-            ax.text(0,
-                    1/ax_geom[0] + yoffset_raw_subplots, letter,
-                    ha='left', va='top', transform=fig.transFigure)
-        else:
-            ax.text(1/ax_geom[1] + xoffset_column_subplots,
-                    ax.bbox.transformed(fig.transFigure.inverted()).y1 +
-                    yoffset_raw_subplots, letter,
-                    ha='left', va='top', transform=fig.transFigure)
-
-        # if ax_geom[1] > 1 and letter in letters[1::2]:
-        #     ax.text(0.5 + xoffset_right_subplots,
-        #             ax.bbox.transformed(fig.transFigure.inverted()).y1, letter,
-        #             ha='left', va='top', transform=fig.transFigure)
-        # else:
-        #     ax.text(0,
-        #             ax.bbox.transformed(fig.transFigure.inverted()).y1, letter,
-        #             ha='left', va='top', transform=fig.transFigure)
+        ax.text(ax.bbox.transformed(fig.transFigure.inverted()).x0 + xoffset,
+                ax.bbox.transformed(fig.transFigure.inverted()).y1 + yoffset,
+                letter,
+                ha='left', va='top', transform=fig.transFigure)
     return fig, axes
 
 
@@ -939,73 +925,74 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
             # transparent background around axes for presenting data
             figs[pdict['fig_id']].patch.set_alpha(0)
 
-    if presentation_mode:
-        plot_for_presentation(data_dict, key_list=keys_in, no_label=no_label)
-    else:
-        for key in keys_in:
-            pdict = plot_dicts[key]
-            plot_touching = pdict.get('touching', False)
+    for key in keys_in:
+        pdict = plot_dicts[key]
+        plot_touching = pdict.get('touching', False)
 
-            if type(pdict['plotfn']) is str:
-                plotfn = getattr(this_module, pdict['plotfn'])
+        if type(pdict['plotfn']) is str:
+            plotfn = getattr(this_module, pdict['plotfn'])
+        else:
+            plotfn = pdict['plotfn']
+
+        # used to ensure axes are touching
+        if plot_touching:
+            axs[pdict['fig_id']].figure.subplots_adjust(
+                wspace=0, hspace=0)
+
+        # Check if pdict is one of the accepted arguments,
+        # these are the plotting functions in this module.
+        if 'pdict' in signature(plotfn).parameters:
+            if pdict['ax_id'] is None:
+                plotfn(pdict=pdict, axs=axs[pdict['fig_id']])
             else:
-                plotfn = pdict['plotfn']
+                plotfn(pdict=pdict,
+                       axs=axs[pdict['fig_id']].flatten()[
+                           pdict['ax_id']])
+                axs[pdict['fig_id']].flatten()[
+                    pdict['ax_id']].figure.subplots_adjust(
+                    hspace=0.8, wspace=0.3)
 
-            # used to ensure axes are touching
-            if plot_touching:
-                axs[pdict['fig_id']].figure.subplots_adjust(
-                    wspace=0, hspace=0)
-
-            # Check if pdict is one of the accepted arguments,
-            # these are the plotting functions in the
-            # analysis base class.
-            if 'pdict' in signature(plotfn).parameters:
-                if pdict['ax_id'] is None:
-                    plotfn(pdict=pdict, axs=axs[pdict['fig_id']])
-                else:
-                    plotfn(pdict=pdict,
-                           axs=axs[pdict['fig_id']].flatten()[
-                               pdict['ax_id']])
-                    axs[pdict['fig_id']].flatten()[
-                        pdict['ax_id']].figure.subplots_adjust(
-                        hspace=0.8, wspace=0.3)
-
-            # most normal plot functions also work, it is required
-            # that these accept an "ax" argument to plot on and
-            # **kwargs the pdict is passed in as kwargs to such
-            # a function
-            elif 'ax' in signature(plotfn).parameters:
-                # Calling the function passing along anything
-                # defined in the specific plot dict as kwargs
-                if pdict['ax_id'] is None:
-                    plotfn(ax=axs[pdict['fig_id']], **pdict)
-                else:
-                    plotfn(pdict=pdict,
-                           axs=axs[pdict['fig_id']].flatten()[
-                               pdict['ax_id']])
-                    axs[pdict['fig_id']].flatten()[
-                        pdict['ax_id']].figure.subplots_adjust(
-                        hspace=0.8, wspace=0.3)
+        # most normal plot functions also work, it is required
+        # that these accept an "ax" argument to plot on and
+        # **kwargs the pdict is passed in as kwargs to such
+        # a function
+        elif 'ax' in signature(plotfn).parameters:
+            # Calling the function passing along anything
+            # defined in the specific plot dict as kwargs
+            if pdict['ax_id'] is None:
+                plotfn(ax=axs[pdict['fig_id']], **pdict)
             else:
-                raise ValueError(
-                    f'"{plotfn}" is not a valid plot function')
+                plotfn(pdict=pdict,
+                       axs=axs[pdict['fig_id']].flatten()[
+                           pdict['ax_id']])
+                axs[pdict['fig_id']].flatten()[
+                    pdict['ax_id']].figure.subplots_adjust(
+                    hspace=0.8, wspace=0.3)
+        else:
+            raise ValueError(
+                f'"{plotfn}" is not a valid plot function')
 
-        format_datetime_xaxes(data_dict, keys_in, axs)
+    format_datetime_xaxes(data_dict, keys_in, axs)
 
-    for fig_name in figs:
-        plt.close(figs[fig_name])
-    hlp_mod.add_param('figures', figs, data_dict, append_value=True)
-    hlp_mod.add_param('axes', axs, data_dict, append_value=True)
     # add_letter_to_subplots
     for plot_name, axes in axs.items():
         if hasattr(axes, '__iter__'):
             figs[plot_name].tight_layout()
-            add_letter_to_subplots(figs[plot_name], axes.flatten())
+            add_letter_to_subplots(figs[plot_name], axes.flatten(),
+                                   xoffset=-0.07)
+
+    # close figures
+    for fig_name in figs:
+        plt.close(figs[fig_name])
+
+    # add figures and axes to data_dict
+    hlp_mod.add_param('figures', figs, data_dict, append_value=True)
+    hlp_mod.add_param('axes', axs, data_dict, append_value=True)
 
 
 def plot_vlines_auto(pdict, axs):
     xs = pdict.get('xdata')
-    for i,x in enumerate(xs):
+    for i, x in enumerate(xs):
         d = {}
         for k in pdict:
             lk = k[:-1]
@@ -1330,8 +1317,7 @@ def plot_line(pdict, axs, tight_fig=True):
     if plot_title is not None:
         axs.figure.text(0.5, 1, plot_title,
                         horizontalalignment='center',
-                        verticalalignment='bottom',
-                        transform=axs.transAxes)
+                        verticalalignment='bottom')
         # axs.set_title(plot_title)
 
     if do_legend:

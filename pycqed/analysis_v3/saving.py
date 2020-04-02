@@ -21,7 +21,7 @@ class Save:
     The new file will contain everything in data_dict execept values
     corresponding to the keys "plot_dicts", "axes", "figures", "data_files."
     """
-    def __init__(self, data_dict, savedir=None, save_data_dict=True,
+    def __init__(self, data_dict, savedir=None, save_processed_data=True,
                  save_figures=True, **save_figs_params):
         self.data_dict = data_dict
         if savedir is None:
@@ -31,7 +31,7 @@ class Save:
         filename = data_dict['folders'][-1].split('\\')[-1] + \
                    '_AnalysisResults.hdf'
         self.filepath = self.savedir + '\\' + filename
-        if save_data_dict:
+        if save_processed_data:
             self.save_data_dict()
         if save_figures:
             self.save_figures(**save_figs_params)
@@ -44,7 +44,8 @@ class Save:
         :return:
         """
         with h5py.File(self.filepath, 'a') as analysis_file:
-            self.save_fit_results(analysis_file)
+            if 'fit_dicts' in self.data_dict:
+                self.save_fit_results(analysis_file)
 
             # Iterate over all the fit result dicts as not to overwrite
             # old/other analysis

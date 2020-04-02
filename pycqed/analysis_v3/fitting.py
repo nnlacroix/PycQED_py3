@@ -9,6 +9,8 @@ import lmfit
 import sys
 this_mod = sys.modules[__name__]
 
+from pycqed.analysis_v3 import pipeline_analysis as pla
+pla.search_modules.add(this_mod)
 
 #####################################
 ### Functions related to Fitting ###
