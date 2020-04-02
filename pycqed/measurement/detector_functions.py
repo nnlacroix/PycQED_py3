@@ -518,7 +518,7 @@ class UHFQC_multi_detector(UHFQC_Base):
         self.averaged = kw.get('averaged', True)
         if 'classifier' in self.detectors[0].name:
             self.correlated = self.detectors[0].get_values_function_kwargs.get(
-                'correlated', True)
+                'correlated', False)
             self.averaged = self.detectors[0].get_values_function_kwargs.get(
                 'averaged', True)
 

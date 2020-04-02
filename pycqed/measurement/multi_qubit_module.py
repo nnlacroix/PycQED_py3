@@ -323,7 +323,7 @@ def get_meas_obj_value_names_map(mobjs, multi_uhf_det_func):
             for qb in mobjs}
 
     meas_obj_value_names_map.update({
-        name: [name] for name in
+        name + '_object': [name] for name in
         [vn for vn in multi_uhf_det_func.value_names if vn not in
          hlp_mod.flatten_list(list(meas_obj_value_names_map.values()))]})
 

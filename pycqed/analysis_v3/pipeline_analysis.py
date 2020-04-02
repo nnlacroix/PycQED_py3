@@ -4,6 +4,11 @@ File containing the BaseDataAnalyis class.
 import h5py
 import numpy as np
 from collections import OrderedDict
+
+import logging
+log = logging.getLogger(__name__)
+
+# analysis_v3 node modules
 from pycqed.analysis_v3 import saving as save_module
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import helper_functions as hlp_mod
@@ -11,11 +16,11 @@ from pycqed.analysis_v3 import data_processing
 from pycqed.analysis_v3 import fitting
 from pycqed.analysis_v3 import plotting
 from pycqed.analysis_v3 import ramsey_analysis
-import copy
-import logging
-log = logging.getLogger(__name__)
+from pycqed.analysis_v3 import randomized_benchmarking_analysis
 
-search_modules = [data_processing, plotting, fitting, ramsey_analysis]
+
+search_modules = [data_processing, plotting, fitting, ramsey_analysis,
+                  randomized_benchmarking_analysis]
 
 
 class PipelineDataAnalysis(object):
@@ -240,8 +245,13 @@ class PipelineDataAnalysis_multi_timestamp(object):
         return raw_data_dict
 
 
-def get_timestamps(data_dict=OrderedDict(), t_start=None, t_stop=None,
+def get_timestamps(data_dict=None, t_start=None, t_stop=None,
                    label='', data_file_path=None, **params):
+    # if i put data_dict = OrderedDict() in the input params, somehow this
+    # function sees the data_dict i have in my notebook. How???
+    if data_dict is None:
+        data_dict = OrderedDict()
+
     timestamps = None
     if data_file_path is None:
         if t_start is None:
@@ -370,31 +380,33 @@ def add_measured_data_dict(data_dict):
     return data_dict
 
 
-def process_pipeline(data_dict, processing_pipe=None, save_data=True):
+def process_pipeline(data_dict, processing_pipeline=None, save_data=True):
     """
-    Calls all the classes/functions found in metadata[
-    'processing_pipe'], which is a list of dictionaries of the form:
+    Calls all the classes/functions found in processing_pipeline,
+    which is a list of dictionaries of the form:
 
     [
-        {'node_name': obj0_name, **kw},
-        {'node_name': obj1_name, **kw},
+        {'node_name': function_name0, **node_params0},
+        {'node_name': function_name1, **node_params1},
     ]
 
-    These classes all live in the data_processing.py module, and will
-    process the data corresponding to the channels passed in as kwargs.
+    All node functions must exist in the modules specified in the global vaiable
+    "search_modules" define at the top of this module, and will process the
+    data corresponding to the keys specified as "keys_in" in the **node_params
+    of each node.
 
     Each node in the pipeline will put the processed data in the data_dict,
-    under the key/dictionary keys path specified in 'chs_out' in the
-    **kw of each node.
+    under the key(s)/dictionary key path(s) specified in 'keys_out' in the
+    the **node_params of each node.
     """
-    if processing_pipe is None:
-        processing_pipe = hlp_mod.get_param('processing_pipe', data_dict,
-                                            raise_error=True)
+    if processing_pipeline is None:
+        processing_pipeline = hlp_mod.get_param('processing_pipeline',
+                                                data_dict, raise_error=True)
     else:
-        hlp_mod.add_param('processing_pipe', processing_pipe, data_dict,
+        hlp_mod.add_param('processing_pipeline', processing_pipeline, data_dict,
                           replace_value=True)
 
-    for node_dict in processing_pipe:
+    for node_dict in processing_pipeline:
         node = None
         for module in search_modules:
             try:
@@ -403,7 +415,7 @@ def process_pipeline(data_dict, processing_pipe=None, save_data=True):
             except AttributeError:
                 continue
         if node is None:
-            raise KeyError(f'Processing node "{node_dict["node_name"]}" '
+            raise KeyError(f'Node function "{node_dict["node_name"]}" '
                            f'not recognized')
         node(data_dict, **node_dict)
 

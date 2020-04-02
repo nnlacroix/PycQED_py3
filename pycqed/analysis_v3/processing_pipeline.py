@@ -234,61 +234,51 @@ class ProcessingPipeline(list):
             self.append(node_params)
 
     def __call__(self, meas_obj_value_names_map):
-        for node_params in self:
-            if 'keys_in' in node_params:
-                keys_in, keys_out, meas_obj_names, mobj_keys = \
-                    self.check_keys_mobjn(meas_obj_value_names_map,
-                                          **node_params)
-                node_params['keys_in'] = keys_in
+        for i, node_params in enumerate(self):
+            if 'keys_in' not in node_params:
+                raise KeyError('Each node dictionary must contain the key '
+                               '"keys_in".')
+            # get the measued object name(s) and their corresponding
+            # value names
+            mobj_names, mobj_value_names = self.process_meas_obj_names(
+                meas_obj_value_names_map, **node_params)
+            node_params['meas_obj_names'] = mobj_names
+            # get keys_in and any other key in node_params that contains keys_in
+            for k, v in node_params.items():
+                if 'keys_in' in k:
+                    keys = self.process_keys_in(v, mobj_value_names, node_idx=i)
+                    node_params[k] = keys
+            # get keys_out
+            keys_out = self.process_keys_out(
+                meas_obj_value_names_map=meas_obj_value_names_map,
+                **node_params)
+            if keys_out is not None:
                 node_params['keys_out'] = keys_out
-                node_params['meas_obj_names'] = meas_obj_names
 
     def add_node(self, node_name, **node_params):
         node_params['node_name'] = node_name
         self.append(node_params)
 
-    def check_keys_mobjn(self, meas_obj_value_names_map, keys_in,
-                         keys_out=(), meas_obj_names='all', **node_params):
-        """
-        Returns the explicit list of keys_in, keys_out, and meas_obj_names.
-        :param pipeline: a processing pipeline (not raw!)
-        :param meas_obj_value_names_map: dictionary with measured objects as keys
-            and list of their corresponding readout channels as values
-        :param keys_in:
-            'raw': takes all channels from self._movnm for meas_obj_names
-            'previous': takes the keys_out of the previous node which contain
-                the channels of meas_obj_names
-            'previous node_name': takes the keys_out of the previous node
-                which contain the channels of meas_obj_names and the node_name
-        :param keys_out:
-            list or tuple of strings (can be empty). Can also be None
-            If empty, populates with keys_in. Useful if keys_in have a '.' char,
-            because this function will set keys_out to only what comes after '.'
-        :param meas_obj_names:
-            'all': returns all keys of self._movnm
-            list of string containing measurement object names
-        :return: keys_in, keys_out, meas_obj_names, mobj_keys
-
-        Assumptions:
-            -   what comes after 'previous' in the keys_in entries is separated by
-            a space
-        """
-        prev_keys_out = []
-        for d in self:
-            if 'keys_out' in d:
-                if d['keys_out'] is not None:
-                    prev_keys_out += d['keys_out']
-
-        # check keys_in
+    @staticmethod
+    def process_meas_obj_names(meas_obj_value_names_map,
+                               meas_obj_names='all', **node_params):
         if meas_obj_names == 'all':
-            mobj_keys = hlp_mod.flatten_list(
+            mobj_value_names = hlp_mod.flatten_list(
                 list(meas_obj_value_names_map.values()))
             meas_obj_names = list(meas_obj_value_names_map)
         else:
             if isinstance(meas_obj_names, str):
                 meas_obj_names = [meas_obj_names]
-            mobj_keys = hlp_mod.flatten_list(
+            mobj_value_names = hlp_mod.flatten_list(
                 [meas_obj_value_names_map[mo] for mo in meas_obj_names])
+        return meas_obj_names, mobj_value_names
+
+    def process_keys_in(self, keys_in, mobj_value_names, node_idx=None):
+        prev_keys_out = []
+        for d in self:
+            if 'keys_out' in d:
+                if d['keys_out'] is not None:
+                    prev_keys_out += d['keys_out']
 
         # convert keys_in to a list if it is a string such that I can iterate
         # over the keys in
@@ -299,7 +289,7 @@ class ProcessingPipeline(list):
         keys_in = []
         for keyi in keys_in_temp:
             if keyi == 'raw':
-                keys_in += mobj_keys
+                keys_in += mobj_value_names
             elif 'previous' in keyi:
                 if len(self) > 0:
                     # assumes that what comes after 'previous' is separated by
@@ -308,17 +298,21 @@ class ProcessingPipeline(list):
                     if len(keys_in_split) > 1:
                         keys_in0 = hlp_mod.get_sublst_with_all_strings_of_list(
                             lst_to_search=hlp_mod.flatten_list(prev_keys_out),
-                            lst_to_match=mobj_keys)
+                            lst_to_match=mobj_value_names)
                         keys_in += [ki for ki in keys_in0 if
                                     keys_in_split[-1] in ki]
                     else:
-                        if 'keys_out' not in self[-1]:
-                            raise KeyError(
-                                f'The previous node {self[-1]["node_name"]} '
-                                f'does not have the key "keys_out".')
+                        if node_idx is None:
+                            raise ValueError('Currnet node index ("node_idx") '
+                                             'unknown. "keys_in" cannot be '
+                                             '"previous".')
+                        if 'keys_out' not in self[node_idx-1]:
+                            raise KeyError(f'The previous node '
+                                           f'{self[node_idx-1]["node_name"]} '
+                                           f'does not have the key "keys_out".')
                         keys_in += hlp_mod.get_sublst_with_all_strings_of_list(
-                            lst_to_search=self[-1]['keys_out'],
-                            lst_to_match=mobj_keys)
+                            lst_to_search=self[node_idx-1]['keys_out'],
+                            lst_to_match=mobj_value_names)
                 else:
                     raise ValueError('This is the first node in the pipeline. '
                                      'keys_in cannot be "previous".')
@@ -327,64 +321,221 @@ class ProcessingPipeline(list):
         except AttributeError:
             pass
 
-        if len(keys_in) == 0:
+        if len(keys_in) == 0 or keys_in is None:
             raise ValueError('No "keys_in" could be determined.')
+        return keys_in
 
-        # check keys_out
-        if keys_out is not None:
-            if len(keys_out) == 0:
-                node_name = node_params['node_name']
-                num_keys_out = node_params.get('num_keys_out', len(keys_in))
-                # ensure all keys_in are used
-                assert len(keys_in) % num_keys_out == 0
-                n = len(keys_in) // num_keys_out
+    def process_keys_out(self, keys_in, meas_obj_value_names_map,
+                         meas_obj_names, keys_out=(),
+                         joint_processing=False, **node_params):
+        if keys_out is None:
+            return keys_out
 
-                keys_out = []
-                for keyis in [keys_in[i*n: i*n + n] for i
-                              in range(num_keys_out)]:
-                    # check whether node_name is already in keyis
-                    node_name_repeated = False
-                    keyis_mod = deepcopy(keyis)
-                    for i, keyi in enumerate(keyis):
-                        if node_name in keyi:
-                            node_name_repeated = True
-                            # take the substring in keyi that comes after the
-                            # already used node_name
-                            keyis_mod[i] = keyi[len(keyi.split(' ')[0])+1:]
+        if len(keys_out) == 0:
+            prev_keys_out = []
+            for d in self:
+                if 'keys_out' in d:
+                    if d['keys_out'] is not None:
+                        prev_keys_out += d['keys_out']
+            node_name = node_params['node_name']
+            num_keys_out = node_params.get('num_keys_out', len(keys_in))
+            # ensure all keys_in are used
+            assert len(keys_in) % num_keys_out == 0
+            n = len(keys_in) // num_keys_out
 
-                    node_name_to_use = deepcopy(node_name)
-                    if node_name_repeated:
-                        # find how many times was the node_name used and add
-                        # 1 to that
-                        num_previously_used = len(
+            keys_out = []
+            for keyis in [keys_in[i*n: i*n + n] for i
+                          in range(num_keys_out)]:
+                # check whether node_name is already in keyis
+                node_name_repeated = False
+                keyis_mod = deepcopy(keyis)
+                for i, keyi in enumerate(keyis):
+                    if node_name in keyi:
+                        node_name_repeated = True
+                        # take the substring in keyi that comes after the
+                        # already used node_name
+                        keyis_mod[i] = keyi[len(keyi.split(' ')[0])+1:]
+
+                node_name_to_use = deepcopy(node_name)
+                if node_name_repeated:
+                    # find how many times was the node_name used and add
+                    # 1 to that
+                    num_previously_used = len(
+                        hlp_mod.get_sublst_with_all_strings_of_list(
+                            lst_to_search=[node_name],
+                            lst_to_match=prev_keys_out))
+                    node_name_to_use = f'{node_name}{num_previously_used+1}'
+
+                if not joint_processing:
+                    for mobjn in meas_obj_names:
+                        # make preliminary key out by joining together they
+                        # keys in keysi
+                        keyis_mod_to_use = \
                             hlp_mod.get_sublst_with_all_strings_of_list(
-                                lst_to_search=[node_name],
-                                lst_to_match=prev_keys_out))
-                        node_name_to_use = f'{node_name}{num_previously_used+1}'
+                                lst_to_search=keyis_mod,
+                                lst_to_match=meas_obj_value_names_map[
+                                    mobjn])
+                        if len(keyis_mod_to_use) != 0:
+                            keyo = ','.join([keyi.split('.')[-1] for keyi in
+                                             keyis_mod_to_use])
+                            keys_out += [f'{mobjn}.'
+                                         f'{node_name_to_use} {keyo}']
+                else:
+                    keys_out_container = ','.join(meas_obj_names)
+                    keyo = ','.join([keyi.split('.')[-1] for keyi
+                                     in keyis_mod])
+                    keys_out += [f'{keys_out_container}.'
+                                 f'{node_name_to_use} {keyo}']
 
-                    if num_keys_out == len(keys_in):
-                        for mobjn in meas_obj_names:
-                            # make preliminary key out by joining together they
-                            # keys in keysi
-                            keyis_mod_to_use = \
-                                hlp_mod.get_sublst_with_all_strings_of_list(
-                                    lst_to_search=keyis_mod,
-                                    lst_to_match=meas_obj_value_names_map[
-                                        mobjn])
-                            if len(keyis_mod_to_use) != 0:
-                                keyo = ','.join([keyi.split('.')[-1] for keyi in
-                                                 keyis_mod_to_use])
-                                keys_out += [f'{mobjn}.'
-                                             f'{node_name_to_use} {keyo}']
-                    else:
-                        keys_out_container = ','.join(meas_obj_names)
-                        keyo = ','.join([keyi.split('.')[-1] for keyi
-                                         in keyis_mod])
-                        keys_out += [f'{keys_out_container}.'
-                                     f'{node_name_to_use} {keyo}']
+        return keys_out
 
-        return keys_in, keys_out, meas_obj_names, mobj_keys
-
+    # def check_keys_mobjn(self, meas_obj_value_names_map, keys_in, keys_out=(),
+    #                      meas_obj_names='all', node_idx=None,
+    #                      joint_processing=False, **node_params):
+    #     """
+    #     Returns the explicit list of keys_in, keys_out, and meas_obj_names.
+    #     :param pipeline: a processing pipeline (not raw!)
+    #     :param meas_obj_value_names_map: dictionary with measured objects as keys
+    #         and list of their corresponding readout channels as values
+    #     :param keys_in:
+    #         'raw': takes all channels from self._movnm for meas_obj_names
+    #         'previous': takes the keys_out of the previous node which contain
+    #             the channels of meas_obj_names
+    #         'previous node_name': takes the keys_out of the previous node
+    #             which contain the channels of meas_obj_names and the node_name
+    #     :param keys_out:
+    #         list or tuple of strings (can be empty). Can also be None
+    #         If empty, populates with keys_in. Useful if keys_in have a '.' char,
+    #         because this function will set keys_out to only what comes after '.'
+    #     :param meas_obj_names:
+    #         'all': returns all keys of self._movnm
+    #         list of string containing measurement object names
+    #     :param node_idx: index in self of the current node
+    #     :param joint_processing: relevant if len(meas_obj_names) > 1;
+    #         if False, num_keys_out*len(meas_obj_names) keys_out will be added;
+    #         if True, num_keys_out keys_out will be added.
+    #     :return: keys_in, keys_out, meas_obj_names, mobj_keys
+    #
+    #     Assumptions:
+    #         -   what comes after 'previous' in the keys_in entries is separated by
+    #         a space
+    #     """
+    #     prev_keys_out = []
+    #     for d in self:
+    #         if 'keys_out' in d:
+    #             if d['keys_out'] is not None:
+    #                 prev_keys_out += d['keys_out']
+    #
+    #     # check keys_in
+    #     if meas_obj_names == 'all':
+    #         mobj_keys = hlp_mod.flatten_list(
+    #             list(meas_obj_value_names_map.values()))
+    #         meas_obj_names = list(meas_obj_value_names_map)
+    #     else:
+    #         if isinstance(meas_obj_names, str):
+    #             meas_obj_names = [meas_obj_names]
+    #         mobj_keys = hlp_mod.flatten_list(
+    #             [meas_obj_value_names_map[mo] for mo in meas_obj_names])
+    #
+    #     # convert keys_in to a list if it is a string such that I can iterate
+    #     # over the keys in
+    #     keys_in_temp = deepcopy(keys_in)
+    #     if isinstance(keys_in_temp, str):
+    #         keys_in_temp = [keys_in_temp]
+    #
+    #     keys_in = []
+    #     for keyi in keys_in_temp:
+    #         if keyi == 'raw':
+    #             keys_in += mobj_keys
+    #         elif 'previous' in keyi:
+    #             if len(self) > 0:
+    #                 # assumes that what comes after 'previous' is separated by
+    #                 # a space
+    #                 keys_in_split = keyi.split(' ')
+    #                 if len(keys_in_split) > 1:
+    #                     keys_in0 = hlp_mod.get_sublst_with_all_strings_of_list(
+    #                         lst_to_search=hlp_mod.flatten_list(prev_keys_out),
+    #                         lst_to_match=mobj_keys)
+    #                     keys_in += [ki for ki in keys_in0 if
+    #                                 keys_in_split[-1] in ki]
+    #                 else:
+    #                     if node_idx is None:
+    #                         raise ValueError('Currnet node index ("node_idx") '
+    #                                          'unknown. "keys_in" cannot be '
+    #                                          '"previous".')
+    #                     if 'keys_out' not in self[node_idx-1]:
+    #                         raise KeyError(f'The previous node '
+    #                                        f'{self[node_idx-1]["node_name"]} '
+    #                                        f'does not have the key "keys_out".')
+    #                     keys_in += hlp_mod.get_sublst_with_all_strings_of_list(
+    #                         lst_to_search=self[node_idx-1]['keys_out'],
+    #                         lst_to_match=mobj_keys)
+    #             else:
+    #                 raise ValueError('This is the first node in the pipeline. '
+    #                                  'keys_in cannot be "previous".')
+    #     try:
+    #         keys_in.sort()
+    #     except AttributeError:
+    #         pass
+    #
+    #     if len(keys_in) == 0:
+    #         raise ValueError('No "keys_in" could be determined.')
+    #
+    #     # check keys_out
+    #     if keys_out is not None:
+    #         if len(keys_out) == 0:
+    #             node_name = node_params['node_name']
+    #             num_keys_out = node_params.get('num_keys_out', len(keys_in))
+    #             # ensure all keys_in are used
+    #             assert len(keys_in) % num_keys_out == 0
+    #             n = len(keys_in) // num_keys_out
+    #
+    #             keys_out = []
+    #             for keyis in [keys_in[i*n: i*n + n] for i
+    #                           in range(num_keys_out)]:
+    #                 # check whether node_name is already in keyis
+    #                 node_name_repeated = False
+    #                 keyis_mod = deepcopy(keyis)
+    #                 for i, keyi in enumerate(keyis):
+    #                     if node_name in keyi:
+    #                         node_name_repeated = True
+    #                         # take the substring in keyi that comes after the
+    #                         # already used node_name
+    #                         keyis_mod[i] = keyi[len(keyi.split(' ')[0])+1:]
+    #
+    #                 node_name_to_use = deepcopy(node_name)
+    #                 if node_name_repeated:
+    #                     # find how many times was the node_name used and add
+    #                     # 1 to that
+    #                     num_previously_used = len(
+    #                         hlp_mod.get_sublst_with_all_strings_of_list(
+    #                             lst_to_search=[node_name],
+    #                             lst_to_match=prev_keys_out))
+    #                     node_name_to_use = f'{node_name}{num_previously_used+1}'
+    #
+    #                 if not joint_processing:
+    #                     for mobjn in meas_obj_names:
+    #                         # make preliminary key out by joining together they
+    #                         # keys in keysi
+    #                         keyis_mod_to_use = \
+    #                             hlp_mod.get_sublst_with_all_strings_of_list(
+    #                                 lst_to_search=keyis_mod,
+    #                                 lst_to_match=meas_obj_value_names_map[
+    #                                     mobjn])
+    #                         if len(keyis_mod_to_use) != 0:
+    #                             keyo = ','.join([keyi.split('.')[-1] for keyi in
+    #                                              keyis_mod_to_use])
+    #                             keys_out += [f'{mobjn}.'
+    #                                          f'{node_name_to_use} {keyo}']
+    #                 else:
+    #                     keys_out_container = ','.join(meas_obj_names)
+    #                     keyo = ','.join([keyi.split('.')[-1] for keyi
+    #                                      in keyis_mod])
+    #                     keys_out += [f'{keys_out_container}.'
+    #                                  f'{node_name_to_use} {keyo}']
+    #
+    #     return keys_in, keys_out, meas_obj_names, mobj_keys
+    #
 
 # def add_filter_data_node(pipeline, movnm, data_filter, keys_in='previous',
 #                          meas_obj_names='all', keys_out=(), **params):

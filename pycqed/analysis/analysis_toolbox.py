@@ -840,17 +840,37 @@ def get_timestamps_in_range(timestamp_start, timestamp_end=None,
                                          each_label in x]
         else:
             matched_measdirs = all_measdirs
+
         if (date.date() - datetime_start.date()).days == 0:
             # Check if newer than starting timestamp
             timemark_start = timemark_from_datetime(datetime_start)
-            matched_measdirs = [dirname for dirname in matched_measdirs
-                            if int(dirname[:6]) >= int(timemark_start)]
+            temp = []
+            for dirname in matched_measdirs:
+                try:
+                    # if the date folder contains any file in addition to data
+                    # folders this code will give a ValueError because
+                    # dirname[:6] cannot be converted to int
+                    if int(dirname[:6]) >= int(timemark_start):
+                        temp += [dirname]
+                except ValueError:
+                    pass
+            matched_measdirs = temp
 
         if (date.date() - datetime_end.date()).days == 0:
             # Check if older than ending timestamp
             timemark_end = timemark_from_datetime(datetime_end)
-            matched_measdirs = [dirname for dirname in matched_measdirs if
-                            int(dirname[:6]) <= int(timemark_end)]
+            temp = []
+            for dirname in matched_measdirs:
+                try:
+                    # if the date folder contains any file in addition to data
+                    # folders this code will give a ValueError because
+                    # dirname[:6] cannot be converted to int
+                    if int(dirname[:6]) <= int(timemark_end):
+                        temp += [dirname]
+                except ValueError:
+                    pass
+            matched_measdirs = temp
+
         timestamps = ['{}_{}'.format(datemark, dirname[:6])
                       for dirname in matched_measdirs]
         timestamps.reverse()

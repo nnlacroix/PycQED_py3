@@ -30,7 +30,7 @@ def get_hdf_param_value(group, param_name):
         return s
 
 
-def get_channel_names_from_timestamp(timestamp):
+def get_value_names_from_timestamp(timestamp):
     folder = a_tools.get_folder(timestamp)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, 'r+')
@@ -255,7 +255,7 @@ def get_param(param, data_dict, default_value=None,
 
 
 def pop_param(param, data_dict, default_value=None,
-              raise_error=False, error_message=None, **params):
+              raise_error=False, error_message=None, node_params=None):
     """
     Pop the value of the parameter "param" from params, data_dict, or metadata.
     :param name: name of the parameter being sought
@@ -266,7 +266,10 @@ def pop_param(param, data_dict, default_value=None,
     :param params: keyword args where parameter is to be sough
     :return: the value of the parameter
     """
-    p = params
+    if node_params is None:
+        node_params = OrderedDict()
+
+    p = node_params
     md = data_dict.get('exp_metadata', dict())
     dd = data_dict
     value = p.pop(param,
@@ -505,6 +508,17 @@ def get_cal_sweep_points(sweep_points_array, cal_points, qb_name):
                              i in range(1, n_cal_pts + 1)])
     else:
         return np.array([])
+
+
+def get_reset_reps_from_data_dict(data_dict):
+    reset_reps = 0
+    metadata = data_dict.get('exp_metadata', {})
+    if 'preparation_params' in metadata:
+        if 'active' in metadata['preparation_params'].get(
+                'preparation_type', 'wait'):
+            reset_reps = metadata['preparation_params'].get(
+                'reset_reps', 0)
+    return reset_reps
 
 
 ## Plotting nodes ##

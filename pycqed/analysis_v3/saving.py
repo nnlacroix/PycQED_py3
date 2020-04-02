@@ -21,7 +21,8 @@ class Save:
     The new file will contain everything in data_dict execept values
     corresponding to the keys "plot_dicts", "axes", "figures", "data_files."
     """
-    def __init__(self, data_dict, savedir=None, **save_figs_params):
+    def __init__(self, data_dict, savedir=None, save_data_dict=True,
+                 save_figures=True, **save_figs_params):
         self.data_dict = data_dict
         if savedir is None:
             savedir = hlp_mod.get_param('folders', data_dict, raise_error=True)
@@ -30,8 +31,10 @@ class Save:
         filename = data_dict['folders'][-1].split('\\')[-1] + \
                    '_AnalysisResults.hdf'
         self.filepath = self.savedir + '\\' + filename
-        self.save_data_dict()
-        self.save_figures(**save_figs_params)
+        if save_data_dict:
+            self.save_data_dict()
+        if save_figures:
+            self.save_figures(**save_figs_params)
 
     def save_data_dict(self):
         """

@@ -133,7 +133,7 @@ def get_axes_geometry_from_figure(fig):
 def default_figure_title(data_dict):
     if len(data_dict['timestamps']) > 1:
         return f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]}' \
-               f' {data_dict["measurementstrings"][-1]}'
+               f'\n{data_dict["measurementstrings"][-1]}'
     else:
         return f'{data_dict["timestamps"][-1]}' \
                f' {data_dict["measurementstrings"][-1]}'
@@ -940,7 +940,7 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
             figs[pdict['fig_id']].patch.set_alpha(0)
 
     if presentation_mode:
-        plot_for_presentation(key_list=keys_in, no_label=no_label)
+        plot_for_presentation(data_dict, key_list=keys_in, no_label=no_label)
     else:
         for key in keys_in:
             pdict = plot_dicts[key]
@@ -992,9 +992,11 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
 
         format_datetime_xaxes(data_dict, keys_in, axs)
 
+    for fig_name in figs:
+        plt.close(figs[fig_name])
     hlp_mod.add_param('figures', figs, data_dict, append_value=True)
     hlp_mod.add_param('axes', axs, data_dict, append_value=True)
-    # add_letter_to_subplots(fig)
+    # add_letter_to_subplots
     for plot_name, axes in axs.items():
         if hasattr(axes, '__iter__'):
             figs[plot_name].tight_layout()

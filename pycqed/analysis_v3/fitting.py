@@ -384,12 +384,12 @@ def prepare_rbleakage_fit_dict(data_dict, keys_in=None, **params):
         if fit_name_to_set is None:
             fit_name_to_set = 'rbleak_fit'
         fit_name_to_set += keyi
-    fit_dicts[fit_name_to_set] = {
-            'fit_fn': fit_mods.RandomizedBenchmarkingLeakage,
-            'fit_xvals': {'numCliff': indep_var_array},
-            'fit_yvals': {'data': data_fit},
-            'guess_pars': guess_pars,
-            'params_to_print': params_to_print, **plot_params}
+        fit_dicts[fit_name_to_set] = {
+                'fit_fn': fit_mods.RandomizedBenchmarkingLeakage,
+                'fit_xvals': {'numCliff': indep_var_array},
+                'fit_yvals': {'data': data_fit},
+                'guess_pars': guess_pars,
+                'params_to_print': params_to_print, **plot_params}
 
     hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_value=True)
     if params.get('do_fitting', False):

@@ -124,14 +124,7 @@ def prepare_plots(data_dict, data_to_proc_dict, **params):
     physical_swpts = sp[0][mospm[mobjn][0]][0]
 
     # check whether active reset was used
-    reset_reps = 0
-    metadata = data_dict.get('exp_metadata', {})
-    if 'preparation_params' in metadata:
-        if 'active' in metadata['preparation_params'].get(
-                'preparation_type', 'wait'):
-            reset_reps = metadata['preparation_params'].get(
-                'reset_reps', 0)
-
+    reset_reps = hlp_mod.get_reset_reps_from_data_dict(data_dict)
     # prepare raw data plot
     if reset_reps != 0:
         swpts = deepcopy(physical_swpts)
@@ -145,8 +138,7 @@ def prepare_plots(data_dict, data_to_proc_dict, **params):
             meas_obj_names=params.pop('meas_obj_names', mobjn),
             xvals=swpts, **params)
 
-        filtered_raw_keys = [k for k in data_dict.keys() if
-                             'filter' in k]
+        filtered_raw_keys = [k for k in data_dict.keys() if 'filter' in k]
         if len(filtered_raw_keys) > 0:
             plot_module.prepare_1d_raw_data_plot_dicts(
                 data_dict=data_dict,
