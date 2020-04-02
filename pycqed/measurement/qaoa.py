@@ -745,6 +745,7 @@ class QAOAHelper(HelperBase):
                     two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                          [z_qbc, z_qbt, c_arb_pulse])
                     if doswap:
+                        self.operation_dict[gate_name]['pulse_type'] = 'BufferedCZPulse'
                         two_qb_block.extend(self._U_qb_pair_fermionic_swap(qbc, qbt, gate_name, f"FSWAP").build())
 
                 if nbody:
