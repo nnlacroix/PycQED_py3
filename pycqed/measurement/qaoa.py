@@ -170,6 +170,7 @@ def qaoa_sequence(qb_names, betas, gammas, gates_info, operation_dict,
 
     seq = sequence.Sequence(seq_name)
 
+    qb_names_orig = deepcopy(qb_names)
     builder = QAOAHelper(qb_names, deepcopy(operation_dict))
 
     prep_params = {} if prep_params is None else prep_params
@@ -217,6 +218,7 @@ def qaoa_sequence(qb_names, betas, gammas, gates_info, operation_dict,
             seg.extend(builder.mux_readout().build())
 
             seq.add(seg)
+            builder.qb_names = deepcopy(qb_names_orig)
 
     # add calibration points
     if cal_points is not None:
