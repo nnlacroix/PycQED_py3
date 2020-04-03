@@ -22,14 +22,16 @@ class Save:
     corresponding to the keys "plot_dicts", "axes", "figures", "data_files."
     """
     def __init__(self, data_dict, savedir=None, save_processed_data=True,
-                 save_figures=True, **save_figs_params):
+                 save_figures=True, filename=None, **save_figs_params):
         self.data_dict = data_dict
         if savedir is None:
             savedir = hlp_mod.get_param('folders', data_dict, raise_error=True)
             savedir = savedir[-1]
         self.savedir = savedir
+        if filename is None:
+            filename = 'AnalysisResults'
         filename = data_dict['folders'][-1].split('\\')[-1] + \
-                   '_AnalysisResults.hdf'
+                   f'_{filename}.hdf'
         self.filepath = self.savedir + '\\' + filename
         if save_processed_data:
             self.save_data_dict()

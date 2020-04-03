@@ -15,6 +15,7 @@ import sys
 from pycqed.analysis_v3 import pipeline_analysis as pla
 pla.search_modules.add(sys.modules[__name__])
 
+
 def filter_data(data_dict, keys_in, keys_out=None, **params):
     """
     Filters data in data_dict for each keys_in according to data_filter

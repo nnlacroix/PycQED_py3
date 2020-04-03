@@ -121,7 +121,7 @@ def prepare_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
     for keyi, keys in zip(data_to_proc_dict, keys_in_std):
         if 'pf' in keyi:
             # if this is the |f> state population data, then do an additional
-            # fit based on the IBM style
+            # fit based on the Google style
             fit_module.prepare_rbleakage_fit_dict(
                 data_dict, [keyi], indep_var_array=cliffords,
                 fit_name='rbleak_fit', **params)
@@ -196,7 +196,7 @@ def analyze_fit_results(data_dict, keys_in, **params):
             Aerr = fit_res.params['Amplitude'].stderr
             p = fit_res.best_values['p']
             perr = fit_res.params['p'].stderr
-            # Google-style leakage and seepage:
+            # IBM-style leakage and seepage:
             # https://journals.aps.org/pra/abstract/10.1103/PhysRevA.97.032306
             hlp_mod.add_param(f'{mobjn}.Google-style leakage value',
                               A*(1-p),
@@ -215,7 +215,7 @@ def analyze_fit_results(data_dict, keys_in, **params):
                               data_dict,
                               replace_value=True)
 
-            # IBM-style leakage and seepage:
+            # Google-style leakage and seepage:
             # https://journals.aps.org/prl/pdf/10.1103/PhysRevLett.116.020501
             fit_res = fit_dicts['rbleak_fit' + keyi]['fit_res']
             hlp_mod.add_param(f'{mobjn}.IBM-style leakage value',
@@ -299,7 +299,7 @@ def prepare_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
             fit_dicts = data_dict['fit_dicts']
             textstr = ''
             if 'pf' in keyi:
-                # plot IBM-style leakage fit + textbox
+                # plot Google-style leakage fit + textbox
                 plot_module.prepare_fit_plot_dicts(
                     data_dict=data_dict,
                     figure_name=figure_name,
@@ -310,7 +310,7 @@ def prepare_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
                     do_plotting=False, **params)
                 textstr += get_rb_textbox_properties(
                     data_dict, fit_dicts['rbleak_fit' + keyi]['fit_res'],
-                    textstr_style=['leakage_ibm'],
+                    textstr_style=['leakage_google'],
                     **params)[0]
 
             # plot fit trace
@@ -359,7 +359,7 @@ def prepare_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
             textstr, ha, hp, va, vp = get_rb_textbox_properties(
                 data_dict, fit_res, F_T1=None if 'pf' in keyi else F_T1,
                 va='top' if 'pg' in keyi else 'bottom',
-                textstr_style='leakage_google' if 'pf' in keyi else 'regular',
+                textstr_style='leakage_ibm' if 'pf' in keyi else 'regular',
                 textstr=textstr if 'pf' in keyi else '', **params)
             plot_dicts['text_msg_' + keyi] = {
                 'fig_id': figure_name,
@@ -374,10 +374,10 @@ def prepare_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
     hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
 
 
-def get_leakage_google_textstr(data_dict, fit_res, **params):
+def get_leakage_ibm_textstr(data_dict, fit_res, **params):
     mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], **params)
-    textstr = '\nGoogle style:'
+    textstr = '\nIBM style:'
     textstr += ('\n' + 'p = {:.4f}% $\pm$ {:.3f}%'.format(
         fit_res.params['p'].value*100, fit_res.params['p'].stderr*100))
 
@@ -399,8 +399,8 @@ def get_leakage_google_textstr(data_dict, fit_res, **params):
     return textstr
 
 
-def get_leakage_ibm_textstr(fit_res, **params):
-    textstr = '\nIBM style:'
+def get_leakage_google_textstr(fit_res, **params):
+    textstr = '\nGoogle style:'
     textstr += ('\n$p_{\\uparrow}$' +
                 ' = {:.4f}% $\pm$ {:.3f}%'.format(
                     fit_res.params['pu'].value*100,
@@ -415,7 +415,7 @@ def get_leakage_ibm_textstr(fit_res, **params):
     return textstr
 
 
-def get_rb_textstr(fit_res, F_T1=None, **params):
+def get_regular_textstr(fit_res, F_T1=None, **params):
     textstr = ('$r_{\mathrm{Cl}}$' + ' = {:.4f}% $\pm$ {:.3f}%'.format(
         (1-fit_res.params['fidelity_per_Clifford'].value)*100,
         fit_res.params['fidelity_per_Clifford'].stderr*100))
@@ -437,11 +437,11 @@ def get_rb_textbox_properties(data_dict, fit_res, F_T1=None,
                               textstr_style=(), textstr='', **params):
     if len(textstr_style) != 0:
         if 'regular' in textstr_style:
-            textstr += get_rb_textstr(fit_res, F_T1)
+            textstr += get_regular_textstr(fit_res, F_T1, **params)
         if 'leakage_google' in textstr_style:
-            textstr += get_leakage_google_textstr(data_dict, fit_res, **params)
+            textstr += get_leakage_google_textstr(fit_res, **params)
         if 'leakage_ibm' in textstr_style:
-            textstr += get_leakage_ibm_textstr(fit_res)
+            textstr += get_leakage_ibm_textstr(data_dict, fit_res, **params)
         if len(textstr) == 0:
             raise NotImplementedError(f'The textstring style {textstr_style} '
                                       f'has not been implemented yet.')

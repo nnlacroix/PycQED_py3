@@ -70,7 +70,7 @@ def get_default_plot_params(set_params=True, figure_width='1col',
 
     params = {
         'font.size': 8,
-        'lines.markersize' : 2.0,
+        'lines.markersize': 2.0,
         'figure.facecolor': '0.9',
         'xtick.direction': 'in',
         'ytick.direction': 'in',
@@ -85,7 +85,8 @@ def get_default_plot_params(set_params=True, figure_width='1col',
     return params
 
 
-def add_letter_to_subplots(fig, axes, xoffset=0.0, yoffset=0.0):
+def add_letter_to_subplots(fig, axes, xoffset=0.0, yoffset=0.0,
+                           ha='left', va='top'):
     """
     Adds letters to top left corner of subplots corresponding to axes from fig.
     :param fig: figure object
@@ -95,10 +96,6 @@ def add_letter_to_subplots(fig, axes, xoffset=0.0, yoffset=0.0):
     :param yoffset: the y location of the letter is the top margin of the axis.
         This might not always work well. yoffset is added to this position.
     :return: fig, axes
-
-    Assumptions:
-        - axes[0::2] (axes[1::2]) correspond to the left (right) column
-            of subplots
     """
     # ax_geom = get_axes_geometry_from_figure(fig)
     letters = [f'({chr(x+97)})' for x in range(len(np.array(axes).flatten()))]
@@ -107,7 +104,7 @@ def add_letter_to_subplots(fig, axes, xoffset=0.0, yoffset=0.0):
         ax.text(ax.bbox.transformed(fig.transFigure.inverted()).x0 + xoffset,
                 ax.bbox.transformed(fig.transFigure.inverted()).y1 + yoffset,
                 letter,
-                ha='left', va='top', transform=fig.transFigure)
+                ha=ha, va=va, transform=fig.transFigure)
     return fig, axes
 
 
@@ -882,7 +879,6 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
     axs = OrderedDict()
     figs = OrderedDict()
     plot_dicts = data_dict['plot_dicts']
-    presentation_mode = params.get('presentation_mode', False)
     no_label = params.get('no_label', False)
     if axs_dict is not None:
         for key, val in list(axs_dict.items()):
@@ -945,12 +941,14 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
             if pdict['ax_id'] is None:
                 plotfn(pdict=pdict, axs=axs[pdict['fig_id']])
             else:
+                pdict['ax_geom'] = get_axes_geometry_from_figure(
+                    figs[pdict['fig_id']])
                 plotfn(pdict=pdict,
                        axs=axs[pdict['fig_id']].flatten()[
                            pdict['ax_id']])
                 axs[pdict['fig_id']].flatten()[
                     pdict['ax_id']].figure.subplots_adjust(
-                    hspace=0.8, wspace=0.3)
+                    hspace=0.5, wspace=0.3)
 
         # most normal plot functions also work, it is required
         # that these accept an "ax" argument to plot on and
@@ -967,7 +965,7 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
                            pdict['ax_id']])
                 axs[pdict['fig_id']].flatten()[
                     pdict['ax_id']].figure.subplots_adjust(
-                    hspace=0.8, wspace=0.3)
+                    hspace=0.5, wspace=0.3)
         else:
             raise ValueError(
                 f'"{plotfn}" is not a valid plot function')
@@ -979,7 +977,7 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
         if hasattr(axes, '__iter__'):
             figs[plot_name].tight_layout()
             add_letter_to_subplots(figs[plot_name], axes.flatten(),
-                                   xoffset=-0.07)
+                                   xoffset=-0.07, yoffset=0.01, va='bottom')
 
     # close figures
     for fig_name in figs:
@@ -996,7 +994,6 @@ def plot_vlines_auto(pdict, axs):
         d = {}
         for k in pdict:
             lk = k[:-1]
-            #if lk in signature(axs.axvline).parameters:
             if k not in ['xdata', 'plotfn', 'ax_id', 'do_legend']:
                 try:
                     d[lk] = pdict[k][i]
@@ -1252,6 +1249,8 @@ def plot_line(pdict, axs, tight_fig=True):
     plot_xrange = pdict.get('xrange', None)
     plot_yrange = pdict.get('yrange', None)
     zorder = pdict.get('zorder', None)
+    ax_id = pdict.get('ax_id', None)
+    ax_geom = pdict.get('ax_geom', (1, 1))
 
     if pdict.get('color', False):
         plot_linekws['color'] = pdict.get('color')
@@ -1315,10 +1314,12 @@ def plot_line(pdict, axs, tight_fig=True):
         axs.set_xlim(xmin, xmax)
 
     if plot_title is not None:
-        axs.figure.text(0.5, 1, plot_title,
-                        horizontalalignment='center',
-                        verticalalignment='bottom')
-        # axs.set_title(plot_title)
+        if ax_geom[1] > 1:
+            axs.figure.text(0.5, 1.02, plot_title,
+                            horizontalalignment='center',
+                            verticalalignment='bottom')
+        elif ax_id in [0, None]:
+            axs.set_title(plot_title)
 
     if do_legend:
         legend_ncol = pdict.get('legend_ncol', 1)
