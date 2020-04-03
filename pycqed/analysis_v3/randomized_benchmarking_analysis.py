@@ -458,14 +458,14 @@ def get_rb_textbox_properties(data_dict, fit_res, F_T1=None,
 
 
 def calc_coherence_limited_fidelity(T1, T2, pulse_length, gate_decomp='HZ'):
-    '''
+    """
     Formula from Asaad et al.
     pulse separation is time between start of pulses
 
     Returns:
         F_cl (float): decoherence limited fildelity
         p (float): decoherence limited depolarization parameter
-    '''
+    """
     # Np = 1.875  # Avg. number of gates per Clifford for XY decomposition
     # Np = 0.9583  # Avg. number of gates per Clifford for HZ decomposition
     if gate_decomp == 'HZ':

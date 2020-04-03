@@ -95,7 +95,13 @@ def add_letter_to_subplots(fig, axes, xoffset=0.0, yoffset=0.0,
         This might not always work well. xoffset is added to this position.
     :param yoffset: the y location of the letter is the top margin of the axis.
         This might not always work well. yoffset is added to this position.
+    :param ha: horizontal alignment of letters
+    :param va: vertical alignment of letters
     :return: fig, axes
+
+    Attention!
+    Needs to be called after fig.subplots_adjust() or fig.tight_layout()
+
     """
     # ax_geom = get_axes_geometry_from_figure(fig)
     letters = [f'({chr(x+97)})' for x in range(len(np.array(axes).flatten()))]
