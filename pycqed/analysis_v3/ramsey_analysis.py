@@ -83,8 +83,7 @@ def analyze_fit_results(data_dict, keys_in, **params):
     params_dict = {}
     s = 'Instrument settings.' + mobjn
     for trans_name in ['ge', 'ef']:
-        params_dict[f'{mobjn}.{trans_name}_freq'] = \
-            s+f'.{trans_name}_freq'
+        params_dict[f'{mobjn}.{trans_name}_freq'] = s + f'.{trans_name}_freq'
     hlp_mod.get_params_from_hdf_file(data_dict, params_dict=params_dict,
                                      numeric_params=list(params_dict), **params)
     fit_names = hlp_mod.get_param('fit_names', params, raise_error=True)
@@ -137,23 +136,15 @@ def prepare_plots(data_dict, data_to_proc_dict, **params):
         swpts = np.repeat(swpts, reset_reps+1)
         swpts = np.arange(len(swpts))
         plot_module.prepare_1d_raw_data_plot_dicts(
-            data_dict,
-            meas_obj_names=params.pop('meas_obj_names', mobjn),
-            xvals=swpts, **params)
+            data_dict, xvals=swpts, **params)
 
         filtered_raw_keys = [k for k in data_dict.keys() if 'filter' in k]
         if len(filtered_raw_keys) > 0:
             plot_module.prepare_1d_raw_data_plot_dicts(
-                data_dict=data_dict,
-                keys_in=filtered_raw_keys,
-                figure_name='raw_data_filtered',
-                meas_obj_names=params.pop('meas_obj_names', mobjn),
-                **params)
+                data_dict=data_dict, keys_in=filtered_raw_keys,
+                figure_name='raw_data_filtered', **params)
     else:
-        plot_module.prepare_1d_raw_data_plot_dicts(
-            data_dict,
-            meas_obj_names=params.pop('meas_obj_names', mobjn),
-            **params)
+        plot_module.prepare_1d_raw_data_plot_dicts(data_dict, **params)
 
     fit_names = hlp_mod.pop_param('fit_names', params, raise_error=True)
     artificial_detuning_dict = hlp_mod.get_param('artificial_detuning_dict',
@@ -168,23 +159,19 @@ def prepare_plots(data_dict, data_to_proc_dict, **params):
         figure_name = 'Ramsey_' + keyi
         sp_name = mospm[mobjn][0]
         # plot data
-        plot_module.prepare_1d_plot_dicts(
-            data_dict=data_dict,
-            keys_in=[keyi],
-            figure_name=figure_name,
-            sp_name=sp_name,
-            meas_obj_names=params.pop('meas_obj_names', mobjn),
-            do_plotting=False, **params)
+        plot_module.prepare_1d_plot_dicts(data_dict=data_dict, keys_in=[keyi],
+                                          figure_name=figure_name,
+                                          sp_name=sp_name, do_plotting=False,
+                                          **params)
 
         if len(cp.states) != 0:
             # plot cal states
-            plot_module.prepare_cal_states_plot_dicts(
-                data_dict=data_dict,
-                keys_in=[keyi],
-                figure_name=figure_name,
-                sp_name=sp_name,
-                meas_obj_names=params.pop('meas_obj_names', mobjn),
-                do_plotting=False, **params)
+            plot_module.prepare_cal_states_plot_dicts(data_dict=data_dict,
+                                                      keys_in=[keyi],
+                                                      figure_name=figure_name,
+                                                      sp_name=sp_name,
+                                                      do_plotting=False,
+                                                      **params)
 
         if 'fit_dicts' in data_dict:
             textstr = ''
@@ -194,7 +181,6 @@ def prepare_plots(data_dict, data_to_proc_dict, **params):
                     data_dict=data_dict,
                     figure_name=figure_name,
                     fit_names=[fit_name + keyi],
-                    meas_obj_names=params.pop('meas_obj_names', mobjn),
                     plot_params={'legend_bbox_to_anchor': (1, -0.55),
                                  'legend_ncol': 1},
                     do_plotting=False, **params)

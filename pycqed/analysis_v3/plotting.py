@@ -119,13 +119,20 @@ def get_axes_geometry_from_figure(fig):
         get_gridspec().get_geometry()
 
 
-def default_figure_title(data_dict):
+def default_figure_title(data_dict, meas_obj_name):
     if len(data_dict['timestamps']) > 1:
-        return f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]}' \
-               f'\n{data_dict["measurementstrings"][-1]}'
+        title = f'{data_dict["timestamps"][0]} - ' \
+                f'{data_dict["timestamps"][-1]}' \
+                f'\n{data_dict["measurementstrings"][-1]}'
     else:
-        return f'{data_dict["timestamps"][-1]}' \
-               f' {data_dict["measurementstrings"][-1]}'
+        title = f'{data_dict["timestamps"][-1]} ' \
+                f'{data_dict["measurementstrings"][-1]}'
+
+    if len(meas_obj_name.split('_')) > 1:
+        title += f'\n{meas_obj_name}'
+    else:
+        title += f' {meas_obj_name}'
+    return title
 
 
 ## Prepare plot dicts functions ##
@@ -250,7 +257,7 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
                 'ylabel': ylabel,
                 'yunit': yunit,
                 'setlabel': f'prep {list(qb_cal_indxs)[ii]}',
-                'title': default_figure_title(data_dict),
+                'title': default_figure_title(data_dict, mobjn),
                 'legend_bbox_to_anchor': (1, 0.5),
                 'legend_pos': 'center left',
                 'linestyle': 'none',
@@ -383,7 +390,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
             'ylabel': ylabel,
             'yunit': yunit,
             'setlabel': data_labels[i],
-            'title': default_figure_title(data_dict),
+            'title': default_figure_title(data_dict, mobjn),
             'linestyle': params.get('linestyle', 'none'),
             'do_legend': True,
             'legend_bbox_to_anchor': (1, 0.5),
@@ -510,7 +517,7 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
                 'xunit': xunit,
                 'ylabel': sp_info[2],
                 'yunit': sp_info[1],
-                'title': default_figure_title(data_dict),
+                'title': default_figure_title(data_dict, mobjn),
                 'clabel': zlabel}
             plot_dict_names += [plot_dict_name]
 
@@ -644,7 +651,7 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             'ylabel': ylabel,
             'yunit': yunit,
             'setlabel': data_labels[i],
-            'title': default_figure_title(data_dict),
+            'title': default_figure_title(data_dict, mobjn),
             'linestyle': params.get('linestyle', '-'),
             'color': params.get('color', None),
             'do_legend': False,
@@ -778,7 +785,7 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
                 'ylabel': sp_info[2],
                 'yunit': sp_info[1],
                 'zvals': zvals.T,
-                'title': default_figure_title(data_dict),
+                'title': default_figure_title(data_dict, mobjn),
                 'clabel': zlabel}
             plot_dict_names += [plot_dict_name]
 
@@ -839,6 +846,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
             'fit_res': fit_res,
             'setlabel': 'fit',
             'zorder': 0,
+            'color': 'r',
             'do_legend': True,
             'legend_ncol': 2,
             'legend_bbox_to_anchor': (1, -0.15),
@@ -927,6 +935,9 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
             # transparent background around axes for presenting data
             figs[pdict['fig_id']].patch.set_alpha(0)
 
+    for fig_name in figs:
+        figs[fig_name].tight_layout()
+
     for key in keys_in:
         pdict = plot_dicts[key]
         plot_touching = pdict.get('touching', False)
@@ -941,20 +952,21 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
             axs[pdict['fig_id']].figure.subplots_adjust(
                 wspace=0, hspace=0)
 
+        pdict['ax_geom'] = get_axes_geometry_from_figure(
+            figs[pdict['fig_id']])
+
         # Check if pdict is one of the accepted arguments,
         # these are the plotting functions in this module.
         if 'pdict' in signature(plotfn).parameters:
             if pdict['ax_id'] is None:
                 plotfn(pdict=pdict, axs=axs[pdict['fig_id']])
             else:
-                pdict['ax_geom'] = get_axes_geometry_from_figure(
-                    figs[pdict['fig_id']])
                 plotfn(pdict=pdict,
                        axs=axs[pdict['fig_id']].flatten()[
                            pdict['ax_id']])
                 axs[pdict['fig_id']].flatten()[
                     pdict['ax_id']].figure.subplots_adjust(
-                    hspace=0.5, wspace=0.3)
+                    hspace=0.4, wspace=0.25)
 
         # most normal plot functions also work, it is required
         # that these accept an "ax" argument to plot on and
@@ -971,7 +983,7 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
                            pdict['ax_id']])
                 axs[pdict['fig_id']].flatten()[
                     pdict['ax_id']].figure.subplots_adjust(
-                    hspace=0.5, wspace=0.3)
+                    hspace=0.4, wspace=0.25)
         else:
             raise ValueError(
                 f'"{plotfn}" is not a valid plot function')
@@ -981,12 +993,13 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
     # add_letter_to_subplots
     for plot_name, axes in axs.items():
         if hasattr(axes, '__iter__'):
-            figs[plot_name].tight_layout()
+            # figs[plot_name].tight_layout()
             add_letter_to_subplots(figs[plot_name], axes.flatten(),
                                    xoffset=-0.07, yoffset=0.01, va='bottom')
 
     # close figures
     for fig_name in figs:
+        figs[fig_name].align_ylabels()
         plt.close(figs[fig_name])
 
     # add figures and axes to data_dict
@@ -1335,6 +1348,7 @@ def plot_line(pdict, axs, tight_fig=True):
         legend_bbox_to_anchor = pdict.get('legend_bbox_to_anchor', None)
         legend_bbox_transform = pdict.get('legend_bbox_transform',
                                           axs.transAxes)
+
         axs.legend(title=legend_title,
                    loc=legend_pos,
                    ncol=legend_ncol,
@@ -1749,7 +1763,6 @@ def plot_text(pdict, axs):
     plot_text_string = pdict['text_string']
     plot_xpos = pdict.get('xpos', -0.125)
     plot_ypos = pdict.get('ypos', -0.225)
-
     verticalalignment = pdict.get('verticalalignment', 'top')
     horizontalalignment = pdict.get('horizontalalignment', 'right')
     color = pdict.get('color', 'k')

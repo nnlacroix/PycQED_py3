@@ -277,22 +277,19 @@ def prepare_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
         sp_name = mospm[mobjn][1]
 
         # plot data
-        plot_module.prepare_1d_plot_dicts(
-            data_dict=data_dict,
-            keys_in=[keyi],
-            figure_name=figure_name,
-            sp_name=sp_name,
-            yerr=keys,
-            do_plotting=False, **params)
+        plot_module.prepare_1d_plot_dicts(data_dict=data_dict, keys_in=[keyi],
+                                          figure_name=figure_name,
+                                          sp_name=sp_name, yerr=keys,
+                                          do_plotting=False, **params)
 
         if len(cp.states) != 0:
             # plot cal states
-            plot_module.prepare_cal_states_plot_dicts(
-                data_dict=data_dict,
-                keys_in=[keyi],
-                figure_name=figure_name,
-                sp_name=sp_name,
-                do_plotting=False, **params)
+            plot_module.prepare_cal_states_plot_dicts(data_dict=data_dict,
+                                                      keys_in=[keyi],
+                                                      figure_name=figure_name,
+                                                      sp_name=sp_name,
+                                                      do_plotting=False,
+                                                      **params)
 
         if 'fit_dicts' in data_dict:
             # plot fits
@@ -452,7 +449,7 @@ def get_rb_textbox_properties(data_dict, fit_res, F_T1=None,
     va = params.pop('va', 'top')
     vp = 0.95
     if va == 'bottom':
-        vp = 0.025
+        vp = 0.035
 
     return textstr, ha, hp, va, vp
 
@@ -490,13 +487,13 @@ def get_meas_obj_coh_times(data_dict, **params):
     params_dict = {}
     s = 'Instrument settings.' + mobjn
     for trans_name in ['', '_ef']:
-        params_dict[f'{mobjn}.T1{trans_name}'] = s+f'.T1{trans_name}'
-        params_dict[f'{mobjn}.T2{trans_name}'] = s+f'.T2{trans_name}'
+        params_dict[f'{mobjn}.T1{trans_name}'] = s + f'.T1{trans_name}'
+        params_dict[f'{mobjn}.T2{trans_name}'] = s + f'.T2{trans_name}'
     for trans_name in ['ge', 'ef']:
         params_dict[f'{mobjn}.{trans_name}_sigma'] = \
-            s+f'.{trans_name}_sigma'
+            s + f'.{trans_name}_sigma'
         params_dict[f'{mobjn}.{trans_name}_nr_sigma'] = \
-            s+f'.{trans_name}_nr_sigma'
+            s + f'.{trans_name}_nr_sigma'
     hlp_mod.get_params_from_hdf_file(data_dict, params_dict=params_dict,
                                      numeric_params=list(params_dict), **params)
 

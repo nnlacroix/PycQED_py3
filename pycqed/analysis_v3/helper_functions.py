@@ -227,9 +227,12 @@ def get_param(param, data_dict, default_value=None,
     dd = data_dict
     value = p.get(param,
                   dd.get(param,
-                         md.get(param, default_value)))
+                         md.get(param, 'not found')))
 
-    if value is None:
+    # the check isinstance(valeu, str) is necessary because if value is an array
+    # or list then the check value == 'not found' raises an "elementwise
+    # comparison failed" warning in the notebook
+    if isinstance(value, str) and value == 'not found':
         all_keys = param.split('.')
         if len(all_keys) > 1:
             for i in range(len(all_keys)-1):
@@ -274,9 +277,12 @@ def pop_param(param, data_dict, default_value=None,
     dd = data_dict
     value = p.pop(param,
                   dd.pop(param,
-                         md.pop(param, default_value)))
+                         md.pop(param, 'not found')))
 
-    if value is None:
+    # the check isinstance(valeu, str) is necessary because if value is an array
+    # or list then the check value == 'not found' raises an "elementwise
+    # comparison failed" warning in the notebook
+    if isinstance(value, str) and value == 'not found':
         all_keys = param.split('.')
         if len(all_keys) > 1:
             for i in range(len(all_keys)-1):
