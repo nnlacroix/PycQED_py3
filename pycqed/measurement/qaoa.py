@@ -684,8 +684,6 @@ class QAOAHelper(HelperBase):
                 z_qbt = self.Z_gate(2 * gamma * C * 180 / np.pi, qbt)
 
                 if cphase_implementation == "software":
-                    # temporary hard coding of pulse type.
-                    self.operation_dict[gate_name]['pulse_type'] = 'BufferedCZPulse'
                     if doswap:
                         two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}", [z_qbc, z_qbt])
                         two_qb_block.extend(
@@ -711,12 +709,15 @@ class QAOAHelper(HelperBase):
                     if doswap:
                         angle+= np.pi # correct phase since a fermionic swap gate is used instead of a swap gate
                     angle = angle % (2*np.pi)
-                    ampl, dyn_phase = eval(gate_sequence_info['phase_func'][qbt+qbc])(angle)
+                    c_arb_pulse['cphase'] = angle
 
                     # overwrite angles for angle % 2 pi  == 0
                     if abs(angle) < zero_angle_threshold:
+                        # FIXME: check whether all the zero_angle_code still makes sense
                         if strategy == "zero_amplitude":
-                            ampl, dyn_phase = 0, {qb:0 for qb in dyn_phase.keys()}
+                            c_arb_pulse['amplitude'], c_arb_pulse['basis_rotation'] = 0, {}
+                            c_arb_pulse['cphase'] = None
+                            # FIXME: check whether setting to {} is correct
                         elif strategy == "skip_gate":
                             two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                                  [z_qbc, z_qbt])
@@ -729,23 +730,21 @@ class QAOAHelper(HelperBase):
                             simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
                             continue
                         elif isinstance(strategy, dict):
-                            ampl = strategy.get("amplitude", ampl)
-                            dyn_phase = strategy.get("dynamic_phase", dyn_phase)
+                            c_arb_pulse['amplitude'] = strategy.get("amplitude", 0)
+                            c_arb_pulse['basis_rotation'] = strategy.get("dynamic_phase", {})
+                            # FIXME: check whether setting to {} is correct
+                            c_arb_pulse['cphase'] = None
                         elif strategy is None:
                             pass
                         else:
                             raise ValueError(f"Zero angle strategy {strategy} not "
                                              f"understood")
                     # print(f"{name}:\nphase angle: {angle}\nAmpl: {ampl}\ndyn_phase: {dyn_phase}")
-                    c_arb_pulse['amplitude'] = ampl
                     c_arb_pulse['element_name'] = "flux_arb_gate"
-                    c_arb_pulse['basis_rotation'].update(dyn_phase)
-                    c_arb_pulse['pulse_type'] = 'BufferedCZPulseEffectiveTime'
                     c_arb_pulse['op_code'] = f'CPhi{(angle/np.pi*180)} {qbt} {qbc}'
                     two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                          [z_qbc, z_qbt, c_arb_pulse])
                     if doswap:
-                        self.operation_dict[gate_name]['pulse_type'] = 'BufferedCZPulse'
                         two_qb_block.extend(self._U_qb_pair_fermionic_swap(qbc, qbt, gate_name, f"FSWAP").build())
 
                 if nbody:

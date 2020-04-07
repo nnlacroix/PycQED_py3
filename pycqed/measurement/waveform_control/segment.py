@@ -656,6 +656,12 @@ class Segment:
         qubit_phases = {}
 
         for pulse in self.unresolved_pulses:
+            # the following if statement allows pulse objects to specify a
+            # basis_rotation different from the one in the instrument settings
+            # (needed, e.g., for C-ARB gates)
+            if getattr(pulse.pulse_obj, 'basis_rotation', None) is not None:
+                pulse.basis_rotation = pulse.pulse_obj.basis_rotation
+
             for qubit in pulse.basis_rotation:
                 if qubit in qubit_phases:
                     qubit_phases[qubit] += pulse.basis_rotation[qubit]
