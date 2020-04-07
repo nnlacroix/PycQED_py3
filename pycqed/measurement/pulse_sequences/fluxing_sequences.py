@@ -920,6 +920,7 @@ def cphase_interleaved_fluxed_spectators_seqs(qbc_name, qbt_name, qbs_names,
                                   operation_dict, cz_pulse_name,
                                   num_cz_gates=1, qbs_operations=None,
                                   max_flux_length=None,
+                                  dyn_decoupling=False,
                                   cal_points=None, upload=True,
                                   prep_params=dict()):
 
@@ -949,6 +950,17 @@ def cphase_interleaved_fluxed_spectators_seqs(qbc_name, qbt_name, qbs_names,
     cz_gate['element_name'] = 'cphase_flux_el'
     cz_gate['ref_pulse'] = 'cphase_init_pi_qbc'
 
+    # if dyn_decoupling:
+    #     dyn_decoupling_operations = [f'X180s {qb}' for qb in qbs_names]
+    #     dyn_decoupling_pulses = [deepcopy(operation_dict[op]) for op in dyn_decoupling_operations]
+    #     for i, dd_pulse in enumerate(dyn_decoupling_pulses):
+    #         dd_pulse['name'] = f'spec_dyn_dec_pulse_{qbs_names[i]}'
+    #         dd_pulse['element_name'] = 'dyn_decoupling_el'
+    #         dd_pulse['ref_pulse'] = 'cphase_init_pi_qbc'
+    #         dd_pulse['pulse_delay'] = 100e-9
+    # else:
+    #     dyn_decoupling_pulses = []
+
     final_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
                        deepcopy(operation_dict['X90s ' + qbt_name])]
     final_rotations[0]['name'] = 'cphase_final_pi_qbc'
@@ -967,6 +979,18 @@ def cphase_interleaved_fluxed_spectators_seqs(qbc_name, qbt_name, qbs_names,
         cz_gate.get('buffer_length_end', 0))*num_cz_gates
     final_rotations[0]['ref_pulse'] = 'cphase_init_pi_qbc'
     final_rotations[0]['pulse_delay'] = delay
+
+    if dyn_decoupling:
+        dyn_decoupling_operations = [f'X180 {qb}' for qb in qbs_names]
+        dyn_decoupling_pulses = [deepcopy(operation_dict[op]) for op in dyn_decoupling_operations]
+        for i, dd_pulse in enumerate(dyn_decoupling_pulses):
+            dd_pulse['name'] = f'spec_dyn_dec_pulse_{qbs_names[i]}'
+            dd_pulse['element_name'] = 'cphase_initial_rots_el'
+            dd_pulse['ref_pulse'] = 'cphase_init_pi_qbc'
+            dd_pulse['pulse_delay'] = delay/2
+            dd_pulse['ref_point_new'] = 'middle'
+    else:
+        dyn_decoupling_pulses = []
 
     ro_pulses = generate_mux_ro_pulse_list([qbc_name, qbt_name],
                                             operation_dict)
@@ -1020,7 +1044,7 @@ def cphase_interleaved_fluxed_spectators_seqs(qbc_name, qbt_name, qbs_names,
             cz['name'] = f'cphase_flux_{j}'
             cz_list += [cz]
         # put the pulses in each segment
-        pulses = initial_rotations + fp_lst + cz_list + final_rotations + \
+        pulses = initial_rotations + fp_lst + dyn_decoupling_pulses + cz_list + final_rotations + \
                  ro_pulses
         swept_pulses = sweep_pulse_params(pulses, params)
         swept_pulses_with_prep = \
