@@ -274,9 +274,9 @@ class HelperBase:
             angle, qbn = op.split(" ")[0][1:], op.split(" ")[1]
             p = self.get_pulse(f"Z180 {qbn}", parse_z_gate=False)
             p['basis_rotation'] = {qbn: float(angle)}
+            p['op_code'] = op
         else:
             p = deepcopy(self.operation_dict[op])
-        p['op_code'] = op
         return p
 
     def initialize(self, init_state='0', qubits='all', prep_params=None,
@@ -741,7 +741,6 @@ class QAOAHelper(HelperBase):
                                              f"understood")
                     # print(f"{name}:\nphase angle: {angle}\nAmpl: {ampl}\ndyn_phase: {dyn_phase}")
                     c_arb_pulse['element_name'] = "flux_arb_gate"
-                    c_arb_pulse['op_code'] = f'CPhi{(angle/np.pi*180)} {qbt} {qbc}'
                     two_qb_block = Block(f"qbc:{qbc} qbt:{qbt}",
                                          [z_qbc, z_qbt, c_arb_pulse])
                     if doswap:
