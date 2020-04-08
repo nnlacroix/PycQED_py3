@@ -6,6 +6,7 @@ import pycqed.analysis.measurement_analysis as ma
 from pycqed.analysis import analysis_toolbox as a_tools
 from scipy.interpolate import interp1d
 from qutip import QubitCircuit
+import sys
 import datetime as dt
 import time
 from pycqed.measurement import hdf5_data as h5d
@@ -13,6 +14,7 @@ from pycqed.measurement import qaoa as qaoa
 from pycqed.utilities import general as gen
 from pycqed.analysis_v2 import timedomain_analysis as tda
 from copy import deepcopy
+import pycqed.measurement.waveform_control.pulse_library as pl
 
 #############################################################################
 #                   C-ARB related
@@ -152,7 +154,6 @@ def ascending_phase_order(cphases_calib):
 def compute_dyn_phase(f_park, f, tend, tstart=0, fargs=()):
     # f is the function giving the frequency of qbc at time t
     from scipy.integrate import quad as integrate
-
     return -(integrate(lambda t: f(*fargs) - f_park, 0, tend)[
                  0] * 2 * np.pi * 180 / np.pi) % 360
 
@@ -160,13 +161,13 @@ def compute_dyn_phase(f_park, f, tend, tstart=0, fargs=()):
 def calc_qubit_freq_during_fluxpulse(qbc_freq_sweetspot, qbc_anharmonicity,
                                      amplitudes, dphi_dv,
                                      ej_correction_factor=1.00,
-                                     junction_asym=0.485):
+                                     junction_asym=0.485, flux_upwards=False):
     Ej_max = calc_Ej_from_ge_freq(qbc_freq_sweetspot, -qbc_anharmonicity)
     ge_freq_qbc = calc_ge_freq(voltage=amplitudes, dphi_dv=dphi_dv,
                                junction_asym=junction_asym, Ec=-qbc_anharmonicity,
                                Ej_max=Ej_max,
                                ej_correction_factor=ej_correction_factor,
-                               flux_upwards=False)
+                               flux_upwards=flux_upwards)
     return ge_freq_qbc
 
 
@@ -177,7 +178,7 @@ def find_nearest_idx(array, value):
 
 
 def find_ampl_spacing_for_exp(dyn_model, dyn_model_amplitudes, amin=0, amax=0.35,
-                              phase_sep=160,
+                              phase_sep=100,
                               max_spacing=0.0005, search_window_size=0.0001,
                               plot=False):
     """
@@ -253,6 +254,33 @@ def find_ampl_spacing_for_exp(dyn_model, dyn_model_amplitudes, amin=0, amax=0.35
         ampl.append(ampl[-1] + min_val)
     return np.asarray(ampl)
 
+# get amplitudes to measure
+def get_amplitudes_to_measure(qbc, qbt, amplitude_range, cz_pulse_name,
+                              chevron_params_dict, **kw):
+    ampl_theory = np.linspace(amplitude_range[0], amplitude_range[-1], 5000)  # take amplitude range of interest: same as cphi
+    chevron_params = deepcopy(chevron_params_dict['default'])
+    gate_dict = qbc.get_operation_dict()[cz_pulse_name]
+    pulse_class = getattr(sys.modules['pycqed.measurement.waveform_control.pulse_library'],
+                          gate_dict['pulse_type'])  # get correct pulse class from type
+
+    if f'{qbt.name}{qbc.name}' in chevron_params_dict:
+        chevron_params.update(chevron_params_dict[f'{qbt.name}{qbc.name}'])
+    dyn_phases_theory = []
+    for amp in ampl_theory:
+        pulse_length = pulse_class.calc_physical_length(amp, gate_dict['cphase_calib_dict'])
+        dph = compute_dyn_phase(qbc.ge_freq(), calc_qubit_freq_during_fluxpulse,
+                                   tend=pulse_length,
+                                   fargs=(qbc.ge_freq(), qbc.anharmonicity(), amp,
+                                          chevron_params['dphi_dv'], chevron_params['ej_correction_factor'],
+                                          chevron_params['d']))
+        dyn_phases_theory.append(dph)
+    dyn_phases_theory = np.array(dyn_phases_theory)
+    ampl_to_measure = find_ampl_spacing_for_exp(np.unwrap(dyn_phases_theory * np.pi / 180),
+                                                   ampl_theory, ampl_theory[0], ampl_theory[-1],
+                                                   phase_sep= kw.get('phase_sep', 80),
+                                                   search_window_size=kw.get('search_window_size', 0.0005),
+                                                   max_spacing=kw.get('max_ampl_spacing', 0.0008))
+    return ampl_to_measure
 
 #################### reloading parameter functions and build arb phase dict###
 def get_calib_dict(name=None):
@@ -282,14 +310,9 @@ def load_dyn_phase(timestamp, qb_names, plot=True):
         dph = np.load(f + f"\\dynamic_phases_{qbn}.npy")
         if plot:
             plt.scatter(amplitudes, np.unwrap(dph / 180 * np.pi) * 180 / np.pi,
-                     label=f"{qbn} measured")
+                     label=f"{qbn} measured", marker=".")
             plt.xlabel("Amplitude")
             plt.ylabel("Dynamic phase (deg.)")
-        dyn_phase_func = lambda ampl_test: np.interp(ampl_test, amplitudes,
-                                                     np.unwrap(
-                                                         dph / 180 * np.pi) * 180 / np.pi,
-                                                     period=360)
-        #         dyn_phase_func_str = f"lambda ampl_test: np.interp(ampl_test, {repr(amplitudes)}, {repr( np.unwrap(dph/180*np.pi)*180/np.pi)}, period=360)"
         dyn_phase_func_str = f"lambda ampl_test: interp1d({repr(amplitudes)}, " \
                             f"{repr(np.unwrap(dph / 180 * np.pi) * 180 /np.pi)}, kind='cubic', fill_value='extrapolate' )(ampl_test)"
         dph_all[qbn] = dyn_phase_func_str

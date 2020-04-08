@@ -3450,7 +3450,7 @@ def add_CZ_pulse(qbc, qbt):
                                 'gaussian_filter_sigma', initial_value=2e-9,
                                 vals=vals.Numbers(0))
         qbc.add_pulse_parameter(op_name, ps_name + '_cphase_calib_dict',
-                                'cphase_calib_dict', initial_value=None,
+                                'cphase_calib_dict', initial_value=dict(),
                                 vals=vals.Dict(),
                                 docstring="Dictionary with parameters "
                                           "for C-ARB calibration used in "
