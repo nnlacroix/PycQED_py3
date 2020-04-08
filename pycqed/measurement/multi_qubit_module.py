@@ -18,7 +18,6 @@ from pycqed.measurement import qaoa
 from pycqed.utilities.general import temporary_value
 
 log = logging.getLogger(__name__)
-log.addHandler(logging.StreamHandler())
 
 
 import pycqed.measurement.sweep_functions as swf
