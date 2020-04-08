@@ -237,13 +237,15 @@ class BufferedCZPulse(Pulse):
             if self.cphase is not None:
                 self.amplitude, self.basis_rotation = \
                     self.calc_cphase_params(self.cphase, self.cphase_calib_dict)
+                self.op_code = kw.pop('op_code', 'CZ').\
+                    replace('CZ', f'CZ{(self.cphase / np.pi * 180)}')
 
             self.pulse_physical_length = \
                 self.calc_physical_length(self.amplitude, self.cphase_calib_dict,
                                           pulse_length=self.pulse_length,
                                           adapt_pulse_length=self.force_adapt_pulse_length)
 
-        print((self.cphase, self.amplitude, self.pulse_physical_length, self.basis_rotation))
+            print((self.cphase, self.amplitude, self.pulse_physical_length, self.basis_rotation))
 
         self.buffer_length_start = kw.pop('buffer_length_start', 0)
         self.buffer_length_end = kw.pop('buffer_length_end', 0)
