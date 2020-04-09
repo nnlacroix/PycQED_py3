@@ -2,7 +2,6 @@ import numpy as np
 import logging
 from pycqed.measurement import sweep_functions as swf
 from pycqed.measurement.randomized_benchmarking import randomized_benchmarking as rb
-from pycqed.measurement.pulse_sequences import standard_sequences as st_seqs
 from pycqed.measurement.pulse_sequences import single_qubit_tek_seq_elts as sqs
 from pycqed.measurement.pulse_sequences import single_qubit_2nd_exc_seqs as sqs2
 from pycqed.measurement.pulse_sequences import fluxing_sequences as fsqs

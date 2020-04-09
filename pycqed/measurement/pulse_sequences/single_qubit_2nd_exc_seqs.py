@@ -2,8 +2,6 @@ import logging
 log = logging.getLogger(__name__)
 from copy import deepcopy
 from pycqed.measurement.pulse_sequences.single_qubit_tek_seq_elts import get_pulse_dict_from_pars
-from pycqed.measurement.pulse_sequences.standard_elements import multi_pulse_elt
-from ..waveform_control import sequence
 import numpy as np
 
 station = None
@@ -12,6 +10,9 @@ def echo_2nd_exc_seq(times, pulse_pars, pulse_pars_2nd, RO_pars,
                      cal_points=True, no_cal_points=6, artificial_detuning=None,
                      verbose=False, upload=True, return_seq=False,
                      last_ge_pulse=True):
+    raise NotImplementedError(
+        'echo_2nd_exc_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
 
     seq_name = 'Echo_2nd_exc_sequence'
     seq = sequence.Sequence(seq_name)
