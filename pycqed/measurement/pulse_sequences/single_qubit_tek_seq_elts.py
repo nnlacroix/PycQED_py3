@@ -3,19 +3,12 @@ from pprint import pprint
 
 import numpy as np
 from copy import deepcopy
-from pycqed.measurement.waveform_control.element import \
-    calculate_time_correction
-from pycqed.measurement.waveform_control import pulse
 from pycqed.measurement.waveform_control import pulsar as ps
 from pycqed.measurement.waveform_control import sequence as sequence
 from pycqed.measurement.waveform_control import segment as segment
 from pycqed.measurement.randomized_benchmarking import \
     randomized_benchmarking as rb
 
-from importlib import reload
-reload(pulse)
-from ..waveform_control import pulse_library
-reload(pulse_library)
 import logging
 log = logging.getLogger(__name__)
 
@@ -1092,13 +1085,10 @@ def get_pulse_dict_from_pars(pulse_pars):
     # Software Z-gate: apply phase offset to all subsequent X and Y pulses
     target_qubit = pulse_pars.get('basis', None)
     if target_qubit is not None:
-        Z0 = {'pulse_type': 'Z_pulse',
+        Z0 = {'pulse_type': 'VirtualPulse',
               'basis_rotation': {target_qubit: 0},
-              'basis': target_qubit,
-              'operation_type': 'Virtual',
-              'pulse_length': 0,
-              'pulse_delay': 0}
-        pulses.update({'Z0': deepcopy(Z0),
+              'operation_type': 'Virtual'}
+        pulses.update({'Z0': Z0,
                        'Z180': deepcopy(Z0),
                        'mZ180': deepcopy(Z0),
                        'Z90': deepcopy(Z0),
