@@ -5,8 +5,6 @@ import numpy as np
 from copy import deepcopy
 import pycqed.measurement.waveform_control.sequence as sequence
 from pycqed.utilities.general import add_suffix_to_dict_keys
-from pycqed.measurement.pulse_sequences.standard_elements import \
-    multi_pulse_elt, distort_and_compensate
 import pycqed.measurement.randomized_benchmarking.randomized_benchmarking as rb
 import pycqed.measurement.randomized_benchmarking.two_qubit_clifford_group as tqc
 from pycqed.measurement.pulse_sequences.single_qubit_tek_seq_elts import \
@@ -207,6 +205,11 @@ def n_qubit_simultaneous_randomized_benchmarking_seq(qubit_names_list,
         return_seq (bool): if True, returns seq, element list;
             if False, returns only seq_name
     """
+
+    raise NotImplementedError(
+        'n_qubit_simultaneous_randomized_benchmarking_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
+
     # get number of qubits
     n = len(qubit_names_list)
 
@@ -423,6 +426,10 @@ def parity_correction_seq(
         parity_op: 'ZZ', 'XX', 'XX,ZZ' or 'ZZ,XX' specifies the type of parity 
                    measurement
     """
+    raise NotImplementedError(
+        'parity_correction_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
+
     if parity_op not in ['ZZ', 'XX', 'XX,ZZ', 'ZZ,XX']:
         raise ValueError("Invalid parity operator '{}'".format(parity_op))
 
@@ -743,6 +750,9 @@ def parity_correction_no_reset_seq(
         tomography x 6**2:
             measure all observables of the two qubits X/Y/Z
     """
+    raise NotImplementedError(
+        'parity_correction_no_reset_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
 
     operation_dict['RO mux_presel'] = operation_dict['RO mux'].copy()
     operation_dict['RO mux_presel']['pulse_delay'] = \
@@ -1102,6 +1112,9 @@ def Ramsey_add_pulse_seq(times, measured_qubit_name,
                          cal_points=True,
                          verbose=False,
                          upload=True, return_seq=False):
+    raise NotImplementedError(
+        'Ramsey_add_pulse_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
 
     if np.any(times > 1e-3):
         logging.warning('The values in the times array might be too large.'
@@ -1232,6 +1245,9 @@ def Ramsey_add_pulse_sweep_phase_seq(
         verbose=False,
         upload=True, return_seq=False,
         cal_points=True):
+    raise NotImplementedError(
+        'Ramsey_add_pulse_sweep_phase_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
 
     seq_name = 'Ramsey_with_additional_pulse_sweep_phase_sequence'
     seq = sequence.Sequence(seq_name)
@@ -1289,7 +1305,6 @@ def general_multi_qubit_seq(
         upload=True,
         return_seq=False,
         verbose=False):
-
     """
     sweep_params = {
 	        Pulse_type: (pulse_pars)
@@ -1348,6 +1363,10 @@ def general_multi_qubit_seq(
             ('RO', {})
         )
     """
+    raise NotImplementedError(
+        'general_multi_qubit_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
+
 
     seq_name = 'TD_sequence'
     seq = sequence.Sequence(seq_name)
@@ -1621,6 +1640,9 @@ def pygsti_seq(qb_names, pygsti_listOfExperiments, operation_dict,
                preselection=True, ro_spacing=1e-6,
                seq_name=None, upload=True, upload_all=True,
                return_seq=False, verbose=False):
+    raise NotImplementedError(
+        'pygsti_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
 
     if seq_name is None:
         seq_name = 'GST_sequence'
