@@ -796,6 +796,9 @@ def seq2tikz(seq, qb_names, tscale=1e-6):
     start_output += '\\tikzstyle{zgate} = [rotate=0]\n'
     tmin = np.inf
     tmax = -np.inf
+    num_single_qb = 0
+    num_two_qb = 0
+    num_virtual = 0
     for seg in seq.segments.values():
         seg.resolve_segment()
         for p in seg.unresolved_pulses:
@@ -815,6 +818,7 @@ def seq2tikz(seq, qb_names, tscale=1e-6):
                 if op_code[-1:] == 's':
                     op_code = op_code[:-1]
                 if op_code[:4] == 'upCZ':
+                    num_two_qb += 1
                     if len(op_code) > 4:
                         val = -float(op_code[4:])
                         gate_formatted = f'{gate_type}{(factor * val):.1f}'.replace(
@@ -849,8 +853,10 @@ def seq2tikz(seq, qb_names, tscale=1e-6):
                             z_height = last_z[qb][1] + 1
                         z_output += f'\\draw({t / tscale:.4f},-{qb})  node[zgate,shift={{({(0, .35 + z_height * .1)})}}] {{\\tiny {gate_formatted}}};\n'
                         last_z[qb] = (t, z_height)
+                        num_virtual += 1
                     else:
                         output += f'\\draw({t / tscale:.4f},-{qb})  node[gate, minimum height={l / tscale * 100:.4f}mm] {{\\tiny {gate_formatted}}};\n'
+                        num_single_qb += 1
         qb_output = ''
         for qb, qb_name in enumerate(qb_names):
             qb_output += f'\draw ({tmin / tscale:.4f},-{qb}) node[left] {{{qb_name}}} -- ({tmax / tscale:.4f},-{qb});\n'
@@ -859,4 +865,5 @@ def seq2tikz(seq, qb_names, tscale=1e-6):
         output += f'\\foreach\\x in {{{tmin / tscale},{tmin / tscale + .2},...,{tmax / tscale}}} \\pgfmathprintnumberto[fixed]{{\\x}}{{\\tmp}} \draw (\\x,{axis_ycoord})--++(0,-.1) node[below] {{\\tmp}} ;\n'
         output += f'\\draw[->] ({tmin / tscale},{axis_ycoord}) -- ({tmax / tscale},{axis_ycoord}) node[right] {{$t/\\mathrm{{\\mu s}}$}};\n'
         output += '\\end{tikzpicture}}\end{document}'
+        output += f'\n# {num_single_qb} single-qubit gates, {num_two_qb} two-qubit gates, {num_virtual} virtual gates'
         return output
