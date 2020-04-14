@@ -11,12 +11,7 @@ from qcodes.instrument.base import Instrument
 from qcodes.instrument.parameter import (
     ManualParameter, InstrumentRefParameter)
 import qcodes.utils.validators as vals
-import pycqed.measurement.waveform_control.element as element
-import string
 import time
-import pprint
-import base64
-import hashlib
 
 from pycqed.instrument_drivers.virtual_instruments.virtual_awg5014 import \
     VirtualAWG5014
@@ -109,7 +104,7 @@ class UHFQCPulsar:
                                      'channel. Positive values move pulses'
                                      ' on this channel forward in time')
         self.add_parameter('{}_trigger_channels'.format(awg.name), 
-                           initial_value=None, 
+                           initial_value=[],
                            label='{} trigger channel'.format(awg.name), 
                            parameter_class=ManualParameter)
         self.add_parameter('{}_active'.format(awg.name), initial_value=True,
@@ -381,7 +376,7 @@ class HDAWG8Pulsar:
                                      'channel. Positive values move pulses'
                                      ' on this channel forward in time')
         self.add_parameter('{}_trigger_channels'.format(awg.name), 
-                           initial_value=None, 
+                           initial_value=[],
                            label='{} trigger channel'.format(awg.name), 
                            parameter_class=ManualParameter)
         self.add_parameter('{}_active'.format(awg.name), initial_value=True,
@@ -571,6 +566,7 @@ class HDAWG8Pulsar:
 
             counter = 1
             current_segment = 'no_segment'
+
             for element in awg_sequence:
                 if awg_sequence[element] is None:
                     current_segment = element
@@ -707,7 +703,7 @@ class AWG5014Pulsar:
                                      "Positive values move pulses on this "
                                      "channel forward in  time")
         self.add_parameter('{}_trigger_channels'.format(awg.name), 
-                           initial_value=None,
+                           initial_value=[],
                            label='{} trigger channels'.format(awg.name), 
                            parameter_class=ManualParameter)
         self.add_parameter('{}_active'.format(awg.name), initial_value=True,

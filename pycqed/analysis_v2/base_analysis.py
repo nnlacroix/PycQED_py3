@@ -17,7 +17,6 @@ from pycqed.analysis.analysis_toolbox import get_color_order as gco
 from pycqed.analysis.analysis_toolbox import get_color_list
 from pycqed.analysis.tools.plotting import (
     set_axis_label, flex_colormesh_plot_vs_xy, flex_color_plot_vs_x)
-import pycqed.analysis_v2.default_figure_settings_analysis as def_fig
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import datetime
 import json
@@ -216,6 +215,9 @@ class BaseDataAnalysis(object):
             self.save_figures(close_figs=self.options_dict.get(
                 'close_figs', False))
 
+        if self.options_dict.get('close_file', True):
+            self.data_file.close()
+
     @staticmethod
     def get_hdf_param_value(group, param_name):
         '''
@@ -328,6 +330,10 @@ class BaseDataAnalysis(object):
         from each timestamp in self.timestamps
         and stores it into: self.raw_data_dict
         """
+        if not hasattr(self, 'params_dict'):
+            self.params_dict = OrderedDict()
+        if not hasattr(self, 'numeric_params'):
+            self.numeric_params = []
 
         self.params_dict.update(
             {'sweep_parameter_names': 'sweep_parameter_names',
@@ -345,12 +351,25 @@ class BaseDataAnalysis(object):
         if len(self.timestamps) == 1:
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict)
+            # the if statement below is needed because if exp_metadata is not
+            # found in the hdf file, then it is set to
+            # raw_data_dict['exp_metadata'] = [] by the method
+            # get_data_from_timestamp_list. But we need it to be an empty dict.
+            # (exp_metadata will always exist in raw_data_dict because it is
+            # hardcoded in self.params_dict above)
+            if len(self.raw_data_dict['exp_metadata']) == 0:
+                self.raw_data_dict['exp_metadata'] = {}
+            self.metadata = self.raw_data_dict['exp_metadata']
         else:
             temp_dict_list = []
             for i, rd_dict in enumerate(self.raw_data_dict):
                 temp_dict_list.append(
                     self.add_measured_data(rd_dict))
+                if len(rd_dict['exp_metadata']) == 0:
+                    rd_dict['exp_metadata'] = {}
             self.raw_data_dict = tuple(temp_dict_list)
+            self.metadata = [rd_dict['exp_metadata'] for
+                             rd in self.raw_data_dict]
 
     def process_data(self):
         """
@@ -584,7 +603,13 @@ class BaseDataAnalysis(object):
             key: key of the data to save. All processed data is saved by 
                  default.
         """
-
+        #default: get all keys from proc_data_dict
+        if key is None:
+            try:
+                key = list(self.proc_data_dict.keys())
+            except:
+                # in case proc_data_dict does not exist
+                pass
         if isinstance(key, (list, set)):
             for k in key:
                 self.save_processed_data(k)
@@ -1656,6 +1681,72 @@ class BaseDataAnalysis(object):
                     except:
                         pass
             axs.axvline(x=x, **d)
+
+    @staticmethod
+    def get_latest_data(n=1, contains="", search_dir=None,
+                              older_than=None, newer_than=None):
+        """
+        Returns the list of n last timestamps and measurement_directories in the
+        search_dir which contain "contains".
+        Args:
+            n: number of timestamps
+            contains: filter for the labels. Any label that does not include
+                this string will be ignored. If in addition,
+            search_dir: search directory
+            older_than:
+            newer_than:
+
+        Returns: list of timestamps and corresponding directories
+
+        """
+        if search_dir is None:
+            search_dir = a_tools.datadir
+        else:
+            search_dir = search_dir
+        daydirs = os.listdir(search_dir)
+
+        if len(daydirs) == 0:
+            log.warning('No data found in datadir')
+            return None
+
+        daydirs.sort()
+
+        timestamps = []
+        measurement_directories = []
+        i = len(daydirs) - 1
+
+        while len(timestamps) < n and i >= 0:
+            print(len(timestamps) < n)
+            daydir = daydirs[i]
+            # this makes sure that (most) non day dirs do not get searched
+            # as they should start with a digit (e.g. YYYYMMDD)
+            if daydir[0].isdigit():
+                all_measdirs = [d for d in os.listdir(
+                    os.path.join(search_dir, daydir))]
+                all_measdirs.sort(reverse=True)
+                for d in all_measdirs:
+                    if len(timestamps) == n:
+                        break
+                    # this routine verifies that any output directory
+                    # is a 'valid' directory
+                    # (i.e, obeys the regular naming convention)
+                    _timestamp = daydir + d[:6]
+                    try:
+                        dstamp, tstamp = a_tools.verify_timestamp(_timestamp)
+                    except:
+                        continue
+                    timestamp = dstamp + tstamp
+                    if contains in d:
+                        if older_than is not None:
+                            if not a_tools.is_older(timestamp, older_than):
+                                continue
+                        if newer_than is not None:
+                            if not a_tools.is_older(newer_than, timestamp):
+                                continue
+                        timestamps.append(f"{dstamp}_{tstamp}")
+                        measurement_directories.append(d)
+            i -= 1
+        return timestamps, measurement_directories
 
 
 def plot_scatter_errorbar(self, ax_id, xdata, ydata, xerr=None, yerr=None, pdict=None):

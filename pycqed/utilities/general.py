@@ -23,17 +23,26 @@ log = logging.getLogger(__name__)
 digs = string.digits + string.ascii_letters
 
 
-def get_git_revision_hash():
+def get_git_info():
+    """
+    Returns the SHA1 ID (hash) of the current git HEAD plus a diff against the HEAD
+    The hash is shortened to the first 10 digits.
+
+    :return: hash string, diff string
+    """
+
+    diff = "Could not extract diff"
+    githash = '00000'
     try:
         # Refers to the global qc_config
         PycQEDdir = pq.__path__[0]
-        hash = subprocess.check_output(['git', 'rev-parse',
-                                        '--short=10', 'HEAD'], cwd=PycQEDdir)
-    except:
-        logging.warning('Failed to get Git revision hash, using 00000 instead')
-        hash = '00000'
-
-    return hash
+        githash = subprocess.check_output(['git', 'rev-parse',
+                                           '--short=10', 'HEAD'], cwd=PycQEDdir)
+        diff = subprocess.run(['git', '-C', PycQEDdir, "diff"],
+                              stdout=subprocess.PIPE).stdout.decode('utf-8')
+    except Exception:
+        pass
+    return githash, diff
 
 
 def str_to_bool(s):
@@ -699,6 +708,24 @@ def dictionify(obj, only=None, exclude=None):
             if k in exclude:
                 obj_dict.pop(k)
     return obj_dict
+
+def reverse_nested_dict(nested_dict):
+    """
+    Reverses a 2 level nested dictionary.
+    Eg. :
+    >>> reverse_nested_dict({'a': {"1": 1, "2": 2},
+    >>>                      "b": {"3": 3, "4":  4}})
+    >>> {'1': {'a': 1}, '2': {'a': 2}, '3': {'b': 3}, '4': {'b': 4}}
+    >>> reverse_nested_dict({'a': {"1": 1, "2": 2},
+    >>>                      "b": {"1": 3, "2":  4}})
+    >>> {'1': {'a': 1, 'b': 3}, '2': {'a': 2, 'b': 4}}
+    """
+    from collections import defaultdict
+    flipped = defaultdict(dict)
+    for key, val in nested_dict.items():
+        for subkey, subval in val.items():
+            flipped[subkey][key] = subval
+    return dict(flipped)
 
 class NumpyJsonEncoder(json.JSONEncoder):
     '''

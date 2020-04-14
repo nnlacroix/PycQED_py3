@@ -1,46 +1,29 @@
-# some convenience tools
-#
 import logging
 log = logging.getLogger(__name__)
-import numpy as np
-from numpy import array
+
 import os
 import time
+import h5py
 import datetime
-import warnings
+import numpy as np
 from copy import deepcopy
-from collections import OrderedDict as od
-from matplotlib import colors as mcolors
 from matplotlib.colors import LogNorm
 from matplotlib.colors import LinearSegmentedColormap as lscmap
-
-import pandas as pd
 from sklearn.mixture import GaussianMixture as GM
-
 from pycqed.utilities.get_default_datadir import get_default_datadir
 from scipy.interpolate import griddata
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-import h5py
 from scipy.optimize import Bounds, LinearConstraint, minimize
-from scipy.signal import argrelextrema
-# to allow backwards compatibility with old a_tools code
-from .tools.file_handling import *
-from .tools.data_manipulation import *
 from .tools.plotting import *
-import colorsys as colors
 from matplotlib import cm
-from pycqed.analysis import composite_analysis as RA
-from pycqed.measurement import hdf5_data
 
-
-from scipy.stats import multivariate_normal
 
 datadir = get_default_datadir()
 print('Data directory set to:', datadir)
 
 
 ######################################################################
-#     Filehandling tools
+#     File-handling tools
 ######################################################################
 
 
@@ -103,7 +86,7 @@ def is_equal(ts0, ts1, or_equal=False):
     return (dstamp0+tstamp0) == (dstamp1+tstamp1)
 
 
-def return_last_n_timestamps(n, contains=''):
+def get_last_n_timestamps(n, contains=''):
     timestamps = []
     for i in range(n):
         if i == 0:
@@ -135,14 +118,14 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
     return_all = True: returns all the folders that satisfy
         the requirements (Cristian)
     '''
-    if (folder is None):
+    if folder is None:
         search_dir = datadir
     else:
         search_dir = folder
 
     daydirs = os.listdir(search_dir)
     if len(daydirs) == 0:
-        logging.warning('No data found in datadir')
+        log.warning('No data found in datadir')
         return None
 
     daydirs.sort()
@@ -184,17 +167,22 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
         if raise_exc is True:
             raise Exception('No data found.')
         else:
-            return False
-    else:
-        measdirs.sort()
-        if return_all:
-            return search_dir, daydir, measdirs
-        measdir = measdirs[-1]
-        if return_timestamp is False:
-            return os.path.join(search_dir, daydir, measdir)
+            return log.warning('No data found in datadir')
+
+    measdirs.sort()
+    if return_all:
+        folders = [os.path.join(search_dir, daydir, md) for md in measdirs]
+        if return_timestamp:
+            return [str(daydir)+'_'+str(md[:6]) for md in measdirs], folders
         else:
-            return str(daydir)+'_'+str(measdir[:6]), os.path.join(
-                search_dir, daydir, measdir)
+            return folders
+
+    measdir = measdirs[-1]
+    if return_timestamp:
+        return str(daydir)+'_'+str(measdir[:6]), os.path.join(
+            search_dir, daydir, measdir)
+    else:
+        return os.path.join(search_dir, daydir, measdir)
 
 
 def data_from_time(timestamp, folder=None):
@@ -202,7 +190,7 @@ def data_from_time(timestamp, folder=None):
     returns the full path of the data specified by its timestamp in the
     form YYYYmmddHHMMSS.
     '''
-    if (folder is None):
+    if folder is None:
         folder = datadir
     daydirs = os.listdir(folder)
     if len(daydirs) == 0:
@@ -236,86 +224,9 @@ def measurement_filename(directory=os.getcwd(), file_id=None, ext='hdf5'):
     if os.path.exists(os.path.join(directory, fn)):
         return os.path.join(directory, fn)
     else:
-        logging.warning("Data path '%s' does not exist" %
+        log.warning("Data path '%s' does not exist" %
                         os.path.join(directory, fn))
         return None
-
-
-def get_start_stop_time(timestamp):
-    '''
-    Retrieves start and stop time from HDF5 file timestamp.
-    '''
-    from pycqed.analysis import measurement_analysis as MA
-    ma = MA.MeasurementAnalysis(timestamp=timestamp)
-    timestring_start = get_instrument_setting(
-        ma, 'MC', 'measurement_begintime')
-    timestring_stop = get_instrument_setting(
-        ma, 'MC', 'measurement_endtime')
-    date_start, time_start = timestring_start.split(' ')
-    date_stop, time_stop = timestring_stop.split(' ')
-    timestamp_start = date_start.replace(
-        '-', '')+'_'+time_start.replace(':', '')
-    timestamp_stop = date_stop.replace('-', '')+'_'+time_stop.replace(':', '')
-    return timestamp_start, timestamp_stop
-
-
-def get_data_from_timestamp_legacy(timestamps, param_names, TwoD=False, max_files=None):
-    from pycqed.analysis import measurement_analysis as MA
-    if max_files is not None:
-        get_timestamps = timestamps[:max_files]
-    else:
-        get_timestamps = timestamps
-    data = od([(param, []) for param in param_names])
-    for timestamp in get_timestamps:
-        ma = MA.MeasurementAnalysis(timestamp=timestamp)
-        if TwoD:
-            ma.get_naming_and_values_2D()
-        else:
-            ma.get_naming_and_values()
-        for param in param_names:
-            if '.' not in param:
-                special_output = {'amp': 0, 'phase': 1, 'I': 2, 'Q': 3}
-                special_output.update(
-                    {'I_raw': 0, 'Q_raw': 1, 'I_cal': 2, 'Q_cal': 3})
-                special_output.update({'I': 0, 'Q': 1})
-                # print special_output
-                if param in list(special_output.keys()):
-                    data[param].append(
-                        getattr(ma, 'measured_values')[special_output[param]])
-                elif param in dir(ma):
-                    data[param].append(getattr(ma, param))
-                elif param in ma.data_file.get('Experimental Data', {}):
-                    data[param].append(
-                        np.double(ma.data_file['Experimental Data'][param]))
-                else:
-                    warnings.warn(
-                        'This data file attribute does not exist or hasn''t been coded for extraction.')
-
-            else:
-                if param.split('.')[0] in ma.data_file.get(
-                        'Instrument settings', {}):
-                    data[param].append(eval(
-                        ma.data_file['Instrument settings'][
-                            param.split('.')[0]].attrs[param.split('.')[1]]))
-                elif param.split('.')[0] in ma.data_file.get('Analysis', {}):
-                    temp = ma.data_file['Analysis']
-                    for ii in range(len(param.split('.'))-1):
-                        temp = temp[param.split('.')[ii]]
-                    data[param].append(temp.attrs[param.split('.')[-1]])
-                elif param.split('.')[0] in list(ma.data_file.keys()):
-                    temp = ma.data_file
-                    for ii in range(len(param.split('.'))-1):
-                        temp = temp[param.split('.')[ii]]
-                    try:
-                        data[param].append(eval(temp[param.split('.')[-1]]))
-                    except KeyError:
-                        data[param].append(temp[param.split('.')[-1]])
-                else:
-                    warnings.warn(
-                        'This data file attribute does not exist or '
-                        'hasn''t been coded for extraction.')
-        ma.data_file.close()
-    return data
 
 
 def get_param_value_from_file(file_path, instr_name, param_name, h5mode='r+'):
@@ -376,301 +287,6 @@ def get_qb_thresholds_from_file(qb_names, file_path, h5mode='r+'):
     return thresholds
 
 
-def get_data_from_ma_v1(ma, param_names):
-    data = od([(param, None) for param in param_names])
-    for param in param_names:
-        if '.' not in param:
-            special_output = {'amp': 0, 'phase': 1, 'I': 2, 'Q': 3}
-            special_output.update(
-                {'I_raw': 0, 'Q_raw': 1, 'I_cal': 2, 'Q_cal': 3})
-            special_output.update({'I': 0, 'Q': 1})
-            # print special_output
-            if param in list(special_output.keys()):
-                data[param] = getattr(
-                    ma, 'measured_values')[special_output[param]]
-            elif param in dir(ma):
-                data[param] = getattr(ma, param)
-            elif param in ma.data_file.get('Experimental Data', {}):
-                data[param] = np.double(
-                    ma.data_file['Experimental Data'][param])
-            else:
-                warnings.warn(
-                    'This data file attribute does not exist or hasn''t been coded for extraction.')
-
-        else:
-            if param.split('.')[0] in ma.data_file.get(
-                    'Instrument settings', {}):
-                data[param] = eval(ma.data_file['Instrument settings'][
-                    param.split('.')[0]].attrs[param.split('.')[1]])
-            elif param.split('.')[0] in ma.data_file.get('Analysis', {}):
-                temp = ma.data_file['Analysis']
-                for ii in range(len(param.split('.'))-1):
-                    temp = temp[param.split('.')[ii]]
-                data[param] = temp.attrs[param.split('.')[-1]]
-            elif param.split('.')[0] in list(ma.data_file.keys()):
-                temp = ma.data_file
-                for ii in range(len(param.split('.'))-1):
-                    temp = temp[param.split('.')[ii]]
-                try:
-                    data[param] = eval(temp[param.split('.')[-1]])
-                except KeyError:
-                    data[param] = temp[param.split('.')[-1]]
-            else:
-                warnings.warn(
-                    'This data file attribute does not exist or '
-                    'hasn"t been coded for extraction.')
-    return data
-
-
-def get_data_from_ma_v2(ma, param_names, numeric_params=None):
-    data = od([(param, None) for param in param_names])
-    # print 'boo7', data['amp']
-    for param in param_names:
-        if param == 'all_data':
-            data[param] = ma.measured_values
-        elif param == 'exp_metadata':
-            if 'Experimental Data' not in ma.data_file or \
-               'Experimental Metadata' not in ma.data_file['Experimental Data']:
-                warnings.warn('The data file does not contain '
-                              'experimental metadata')
-            else:
-                data[param] = hdf5_data.read_dict_from_hdf5(
-                    {}, ma.data_file['Experimental Data']['Experimental Metadata'])
-        elif param == 'fit_params':
-            temp = ma.data_file['Analysis']
-            for key in list(temp.keys()):
-                if 'Fitted Params' in key:
-                    fit_key = key
-            temp = temp[fit_key]
-            data[param] = {key: temp[key].attrs['value']
-                           for key in list(temp.keys()) if key != 'covar'}
-            free_vars = 0
-            for key in list(data[param].keys()):
-                if temp[key].attrs['vary']:
-                    free_vars += 1
-            data[param].update({key+'_err': temp[key].attrs['stderr']
-                                for key in list(temp.keys()) if key != 'covar'})
-            data[param].update({'chi_squared': temp.attrs['chisqr']})
-
-            # tmp_var is a temporary fix!
-            # should be removed at some point
-            try:
-                tmp_var = eval(ma.data_file['Instrument settings'][
-                    'MC'].attrs['detector_function_name'])
-            except:
-                tmp_var = None
-            if tmp_var == 'TimeDomainDetector':
-                temp2 = ma.data_file['Instrument settings']['TD_Meas']
-                exec(
-                    ('cal_zero = %s' % (eval(temp2.attrs['cal_zero_points']))),
-                    locals())
-                exec(
-                    ('cal_one = %s' % (eval(temp2.attrs['cal_one_points']))),
-                    locals())
-                dofs = eval(temp2.attrs['NoSegments']) - \
-                    len(cal_zero) - len(cal_one)
-            else:
-                dofs = len(ma.sweep_points)
-            dofs -= free_vars+1
-            data[param].update(
-                {'chi_squared_reduced': temp.attrs['chisqr']/dofs})
-            data[param].update({'chi_squared_dofs': dofs})
-        elif '.' not in param:
-            special_output = {'amp': 0, 'phase': 1, 'I': 2, 'Q': 3}
-            special_output.update(
-                {'I_raw': 0, 'Q_raw': 1, 'I_cal': 2, 'Q_cal': 3})
-            special_output.update({'I': 0, 'Q': 1})
-            # print special_output
-            # print 'boo8', ma.measured_values[special_output[param]]
-            if param in special_output:
-                data[param] = ma.measured_values[special_output[param]]
-            elif param in dir(ma):
-                data[param] = getattr(ma, param)
-            elif param in list(ma.data_file.get('Experimental Data', {}).keys()):
-                data[param] = np.double(
-                    ma.data_file['Experimental Data'][param])
-            elif param in list(ma.data_file.get('Analysis', {}).keys()):
-                data[param] = np.double(ma.data_file['Analysis'][param])
-            else:
-                warnings.warn(
-                    'The data file attribute %s does not exist or '
-                    'hasn"t been coded for extraction.' % (param))
-        else:
-            if param.split('.')[0] in list(ma.data_file.get(
-                    'Instrument settings', {}).keys()):
-                data[param] = eval(ma.data_file['Instrument settings'][
-                    param.split('.')[0]].attrs[param.split('.')[1]])
-            else:
-                extract_param = True
-                if param.split('.')[0] in list(ma.data_file.get(
-                        'Analysis', {}).keys()):
-                    temp = ma.data_file['Analysis']
-                elif param.split('.')[0] in list(ma.data_file.keys()):
-                    temp = ma.data_file
-                else:
-                    extract_param = False
-                    warnings.warn(
-                        'The data file attribute %s does not exist or '
-                        'hasn"t been coded for extraction.' % (param))
-                if extract_param:
-                    for ii in range(len(param.split('.'))-1):
-                        temp = temp[param.split('.')[ii]]
-                    param_end = param.split('.')[-1]
-                    if param_end in list(temp.attrs.keys()):
-                        try:
-                            data[param] = eval(temp.attrs[param_end])
-                        except TypeError:
-                            data[param] = temp.attrs[param_end]
-                    elif param_end in list(temp.keys()):
-                        data[param] = temp[param_end].value
-        if numeric_params is not None:
-            if param in numeric_params:
-                data[param] = np.double(data[param])
-
-    return data
-
-
-def get_data_from_ma(ma, param_names, data_version=2, numeric_params=None):
-    if data_version == 1:
-        data = get_data_from_ma_v1(ma, param_names)
-    elif data_version == 2:
-        data = get_data_from_ma_v2(ma, param_names,
-                                   numeric_params=numeric_params)
-    return data
-
-
-def append_data_from_ma(ma, param_names, data, data_version=2,
-                        numeric_params=None):
-
-    new_data = get_data_from_ma(ma, param_names, data_version=data_version,
-                                numeric_params=numeric_params)
-    for param in param_names:
-        data[param].append(new_data[param])
-
-
-def get_data_from_timestamp_list(timestamps,
-                                 param_names,
-                                 TwoD=False,
-                                 TwoD_tuples=False,
-                                 max_files=None,
-                                 filter_no_analysis=False,
-                                 numeric_params=None,
-                                 ma_type='MeasurementAnalysis'):
-    # dirty import inside this function to prevent circular import
-    # FIXME: this function is at the base of the analysis v2 but relies
-    # on the old analysis in the most dirty way. Also not completely clear
-    # how the data extraction works here
-    from pycqed.analysis import measurement_analysis as ma
-    ma_func = getattr(ma, ma_type)
-
-    if type(timestamps) is str:
-        timestamps = [timestamps]
-        single_timestamp = True
-    else:
-        single_timestamp = False
-        if type(param_names) is list:
-            data = od([(param, []) for param in param_names])
-        elif type(param_names) is dict:
-            data = od([(param, []) for param in param_names.values()])
-        else:
-            ValueError("Key 'param_names' is incorrect type.")
-
-    if max_files is not None:
-        get_timestamps = timestamps[:max_files]
-    else:
-        get_timestamps = timestamps
-
-    remove_timestamps = []
-    for timestamp in get_timestamps:
-        try:
-            ana = ma_func(timestamp=timestamp, auto=False, close_file=False)
-        except Exception as e:
-            try:
-                ana.finish()
-                del ana
-            except Exception:
-                pass
-            logging.warning(e)
-            remove_timestamps.append(timestamp)
-        else:
-            try:
-                do_analysis = True
-                if filter_no_analysis:
-                    if 'Analysis' in ana.data_file.keys():
-                        do_analysis = True
-                    else:
-                        do_analysis = False
-                if do_analysis:
-                    if TwoD_tuples:
-                        print('Extracting 2D_tuples')
-                        ana.get_naming_and_values_2D_tuples()
-                    elif TwoD:
-                        ana.get_naming_and_values_2D()
-                        print('Extracting 2D')
-                    else:
-                        ana.get_naming_and_values()
-
-                    if 'datasaving_format' in ana.data_file[
-                            'Experimental Data'].attrs:
-                        datasaving_format = ana.get_key('datasaving_format')
-                    else:
-                        print(
-                            'Using legacy data loading, assuming old formatting')
-                        datasaving_format = 'Version 1'
-
-                    if datasaving_format == 'Version 1':
-                        if single_timestamp:
-                            data = get_data_from_ma(ana, param_names.values(),
-                                                    data_version=1)
-                        else:
-                            append_data_from_ma(ana, param_names.values(), data,
-                                                data_version=1)
-
-                    elif datasaving_format == 'Version 2':
-                        if single_timestamp:
-                            data = get_data_from_ma(ana, param_names.values(),
-                                                    data_version=2)
-                        else:
-                            append_data_from_ma(
-                                ana, param_names.values(), data, data_version=2)
-
-                else:
-                    remove_timestamps.append(timestamp)
-                    do_analysis = True
-                ana.finish()
-            except Exception as inst:
-                logging.warning('Error "%s" when processing timestamp %s' %
-                                (inst, timestamp))
-                raise
-
-    if len(remove_timestamps) > 0:
-        for timestamp in remove_timestamps:
-            get_timestamps.remove(timestamp)
-        print('timestamps removed by filtering:', remove_timestamps)
-
-    if type(param_names) is list:
-        out_data = data
-    elif type(param_names) is dict:
-        out_data = od([(key, data[val]) for key, val in param_names.items()])
-
-    if numeric_params is not None:
-        for nparam in numeric_params:
-            if nparam in out_data.keys():
-                try:
-                    out_data[nparam] = np.array(
-                        [np.double(val) for val in out_data[nparam]])
-                except ValueError as instance:
-                    raise(instance)
-
-    out_data['timestamps'] = get_timestamps
-
-    return out_data
-
-
-def convert_instr_str_list_to_numeric_array(string_list):
-    return np.double(string_list[:])
-
-
 def get_plot_title_from_folder(folder):
     measurementstring = os.path.split(folder)[1]
     timestamp = os.path.split(os.path.split(folder)[0])[1] \
@@ -678,38 +294,6 @@ def get_plot_title_from_folder(folder):
     measurementstring = measurementstring[7:]
     default_plot_title = timestamp+'\n'+measurementstring
     return default_plot_title
-
-
-def file_in_folder(folder, timestamp):
-    all_files = [f for f in os.listdir(folder) if timestamp in f]
-    all_files.sort()
-
-    if (len(all_files) > 1):
-        print(
-            'More than one file satisfies the requirements! Import: '+all_files[0])
-
-    return all_files[0]
-
-
-def get_all_msmt_filepaths(folder, suffix='hdf5', pattern=''):
-    filepaths = []
-    suffixlen = len(suffix)
-
-    for root, dirs, files in os.walk(folder):
-        for f in files:
-            if len(f) > suffixlen and f[-suffixlen:] == suffix and pattern in f:
-                filepaths.append(os.path.join(root, f))
-
-    filepaths = sorted(filepaths)
-
-    return filepaths
-
-
-def get_instrument_setting(analysis_object, instrument_name, parameter):
-    instrument_settings = analysis_object.data_file['Instrument settings']
-    instrument = instrument_settings[instrument_name]
-    attr = eval(instrument.attrs[parameter])
-    return attr
 
 
 def compare_instrument_settings_timestamp(timestamp_a, timestamp_b):
@@ -823,7 +407,8 @@ def get_timestamps_in_range(timestamp_start, timestamp_end=None,
         date = datetime_start + datetime.timedelta(days=day)
         datemark = timestamp_from_datetime(date)[:8]
         try:
-            all_measdirs = [d for d in os.listdir(os.path.join(folder, datemark))]
+            all_measdirs = [d for d in os.listdir(os.path.join(folder,
+                                                               datemark))]
         except FileNotFoundError:
             all_measdirs = []
         # Remove all hidden folders to prevent errors
@@ -859,52 +444,10 @@ def get_timestamps_in_range(timestamp_start, timestamp_end=None,
     return all_timestamps
 
 
-def get_mean_df(label, starting_timestamp, ending_timestamp,
-                return_raw_dataframes=False):
-    '''
-    Returns a dataframe containing the mean and standard error of mean (sem)
-    of all datasets that match a certain label.
-    Function assumes that the the datasets have identical sweep points.
 
-    if return raw_dataframes
-    '''
-    # Import within function statement to prevent circular import
-    from pycqed.analysis import measurement_analysis as MA
-    timestamps = get_timestamps_in_range(timestamp_start=starting_timestamp,
-                                         timestamp_end=ending_timestamp,
-                                         label=label)
-    for i, timestamp in enumerate(timestamps):
-        ana = MA.MeasurementAnalysis(timestamp=timestamp, auto=False,
-                                     close_file=True, close_fig=True)
-        ana.get_naming_and_values()
-        if i == 0:  # Initialize appropriate number of dataframes
-            n_variables = len(ana.value_names)
-            dataframes = [pd.DataFrame() for i in range(n_variables)]
-        for j in range(len(ana.value_names)):
-            dataframes[j][timestamp] = ana.measured_values[j]
-        ana.finish()
-
-    # Create the combined dataframe
-    mean_df = pd.DataFrame()
-    # Add sweep points to dataframe
-    for i, par_name in enumerate(ana.parameter_names):
-        if len(ana.parameter_names) != 1:
-            mean_df[par_name] = ana.sweep_points[i]
-        else:
-            mean_df[par_name] = ana.sweep_points
-    # Add the mean and sem to the dataframe
-    for i, val_name in enumerate(ana.value_names):
-        mean_df[val_name+'_mean'] = dataframes[i].mean(axis=1)
-        mean_df[val_name+'_sem'] = dataframes[i].sem(axis=1)
-
-    print('Found %s timestamps matching %s' % (len(timestamps), label))
-    if return_raw_dataframes:
-        return mean_df, dataframes
-    return mean_df
 ######################################################################
 #    Analysis tools
 ######################################################################
-
 
 def get_folder(timestamp=None, older_than=None, label='',
                suppress_printing=True, **kw):
@@ -974,7 +517,8 @@ def smooth(x, window_len=11, window='hanning'):
 
     if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
         raise ValueError(
-            "Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
+            "Window is on of 'flat', 'hanning', 'hamming', 'bartlett',"
+            " 'blackman'")
 
     s = np.r_[x[window_len-1:0:-1], x, x[-1:-window_len:-1]]
 
@@ -996,11 +540,11 @@ def find_second_peak(sweep_pts=None, data_dist_smooth=None,
                      verbose=False):
 
     """
-    Used for qubit spectroscopy analysis. Find the second gf/2 peak/dip based on
-    the location of the tallest peak found, given in peaks, which is the result
-    of peak_finder. The algorithm takes the index of this tallest peak and looks
-    to the right and to the left of it for the tallest peaks in these new
-    ranges. The resulting two new peaks are compared and the tallest/deepest
+    Used for qubit spectroscopy analysis. Find the second gf/2 peak/dip based
+    on the location of the tallest peak found, given in peaks, which is the
+    result of peak_finder. The algorithm takes the index of this tallest peak
+    and looks to the right and to the left of it for the tallest peaks in these
+    new ranges. The resulting two new peaks are compared and the tallest/deepest
     one is chosen.
 
     Args:
@@ -1151,7 +695,7 @@ def find_second_peak(sweep_pts=None, data_dist_smooth=None,
                   'f0 was assumed to the LEFT of f1.')
         # else:
         #     # If not, then it is just some other signal.
-        #     logging.warning('The second '+key+' was not found. Fitting to '
+        #     log.warning('The second '+key+' was not found. Fitting to '
         #                             'the next largest '+key+' found.')
 
         f0 = f0_left
@@ -1173,7 +717,7 @@ def find_second_peak(sweep_pts=None, data_dist_smooth=None,
                   'f0 was assumed to the RIGHT of f1.')
         # else:
         #     # If not, then it is just some other signal.
-        #     logging.warning('The second '+key+' was not found. Fitting to '
+        #     log.warning('The second '+key+' was not found. Fitting to '
         #                             'the next largest '+key+' found.')
         f0 = f0_right
         kappa_guess = kappa_guess_right
@@ -1183,7 +727,7 @@ def find_second_peak(sweep_pts=None, data_dist_smooth=None,
     else:
         # If the peaks on the right and left are equal, or cannot be compared,
         # then there was probably no second peak, and only noise was found.
-        logging.warning('Only f0 has been found.')
+        log.warning('Only f0 has been found.')
         f0 = tallest_peak
         kappa_guess = tallest_peak_width
         f0_gf_over_2 = tallest_peak
@@ -1191,40 +735,6 @@ def find_second_peak(sweep_pts=None, data_dist_smooth=None,
 
     return f0, f0_gf_over_2, kappa_guess, kappa_guess_ef
 
-def peak_finder_v2(x, y, perc=90, window_len=11):
-    '''
-    Peak finder based on argrelextrema function from scipy
-    only finds maximums, this can be changed to minimum by using -y instead of y
-    '''
-    smoothed_y = smooth(y, window_len=window_len)
-    percval = np.percentile(smoothed_y, perc)
-    filtered_y = np.where(smoothed_y > percval, smoothed_y, percval)
-    array_peaks = argrelextrema(filtered_y, np.greater)
-    peaks_x = x[array_peaks]
-    sort_mask = np.argsort(y[array_peaks])[::-1]
-    return peaks_x[sort_mask]
-
-def peak_finder_v3(x, y, smoothing=True, window_len=31, perc=99.6, factor=1):
-    '''
-    Peak finder based on argrelextrema function from scipy
-    only finds maximums, this can be changed to minimum by using factor=-1
-    '''
-    if smoothing:
-        y = (smooth(y,window_len=window_len)-y)
-    else:
-        y = y - np.average(y)
-    y = factor*y
-    percval = np.percentile(y, perc)
-    filtered_y = np.where(y>percval,y,percval)
-    array_peaks = argrelextrema(filtered_y, np.greater)
-    peaks_x = x[array_peaks]
-    peaks_y = y[array_peaks]
-    sort_mask = np.argsort(y[array_peaks])[::-1]
-    return peaks_x, peaks_y, y
-
-def cut_edges(array, window_len=11):
-    array = array[(window_len//2):-(window_len//2)]
-    return array
 
 def peak_finder(x, y, percentile=20, num_sigma_threshold=5, window_len=11,
                 key=None, optimize=False):
@@ -1276,14 +786,14 @@ def peak_finder(x, y, percentile=20, num_sigma_threshold=5, window_len=11,
                 key_1 = 'dip'
                 y_for_test = -y_for_test
             else:
-                logging.error('Cannot determine for sure if data set has peaks '
+                log.error('Cannot determine for sure if data set has peaks '
                               'or dips. Assume peaks.')
                 key_1 = 'peak'
 
-        if (y_for_test[search_result[key_1+'_idx']] < max(y_for_test)):
-            while ((y_for_test[search_result[key_1+'_idx']] < max(y_for_test)) and
-                    (num_sigma_threshold<100) and
-                        (len(search_result[key_1+'s_idx'])>1)):
+        if y_for_test[search_result[key_1+'_idx']] < max(y_for_test):
+            while ((y_for_test[search_result[key_1+'_idx']] < max(y_for_test))
+                   and (num_sigma_threshold < 100) and
+                   (len(search_result[key_1+'s_idx']) > 1)):
 
                 search_result_1 = deepcopy(search_result)
                 num_sigma_threshold += 1
@@ -1301,6 +811,7 @@ def peak_finder(x, y, percentile=20, num_sigma_threshold=5, window_len=11,
                   'is ', num_sigma_threshold)
 
     return search_result
+
 
 def look_for_peaks_dips(x, y_smoothed, percentile=20, window_len=11,
                         num_sigma_threshold=5, key=None):
@@ -1361,7 +872,6 @@ def look_for_peaks_dips(x, y_smoothed, percentile=20, window_len=11,
                                      np.argmax(y_smoothed[elem[0]:elem[1]])]
                 else:
                     peak_indices += [elem[0]]
-                #peak_widths += [x[elem[1]] - x[elem[0]]]
             except:
                 pass
 
@@ -1370,21 +880,21 @@ def look_for_peaks_dips(x, y_smoothed, percentile=20, window_len=11,
 
         #Take an approximate peak width for each peak index
         for i,idx in enumerate(peak_indices):
-            if (idx+i+1)<x.size and (idx-i-1)>=0:
+            if (idx+i+1) < x.size and (idx-i-1) >= 0:
                 #ensure data points idx+i+1 and idx-i-1 are inside sweep pts
-                peak_widths += [ (x[idx+i+1] - x[idx-i-1])/5 ]
-            elif (idx+i+1)>x.size and (idx-i-1)>=0:
-                peak_widths += [ (x[idx] - x[idx-i])/5 ]
-            elif (idx+i+1)<x.size and (idx-i-1)<0:
-                peak_widths += [ (x[idx+i] - x[idx])/5 ]
+                peak_widths += [(x[idx+i+1] - x[idx-i-1])/5]
+            elif (idx+i+1) > x.size and (idx-i-1) >= 0:
+                peak_widths += [(x[idx] - x[idx-i])/5]
+            elif (idx+i+1) < x.size and (idx-i-1) < 0:
+                peak_widths += [(x[idx+i] - x[idx])/5]
             else:
-                peak_widths += [ 5e6 ]
+                peak_widths += [5e6]
 
-        peaks = np.take(x, peak_indices)                   #Frequencies of peaks
-        peak_vals = np.take(y_smoothed, peak_indices)           #values of peaks
+        peaks = np.take(x, peak_indices)  # Frequencies of peaks
+        peak_vals = np.take(y_smoothed, peak_indices)  # values of peaks
         peak_index = peak_indices[np.argmax(peak_vals)]
         peak_width = peak_widths[np.argmax(peak_vals)]
-        peak = x[peak_index]                          #Frequency of highest peak
+        peak = x[peak_index]  # Frequency of highest peak
 
     else:
         peak = None
@@ -1445,9 +955,8 @@ def look_for_peaks_dips(x, y_smoothed, percentile=20, window_len=11,
 
         #Take an approximate dip width for each dip index
         for i,idx in enumerate(dip_indices):
-            if (idx+i+1)<x.size and (idx-i-1)>=0:         #ensure data points
-                                                          #idx+i+1 and idx-i-1
-                                                          #are inside sweep pts
+            if (idx+i+1)<x.size and (idx-i-1)>=0:
+                #ensure data points idx+i+1 and idx-i-1 are inside sweep pts
                 dip_widths += [ (x[idx+i+1] - x[idx-i-1])/5 ]
             elif (idx+i+1)>x.size and (idx-i-1)>=0:
                 dip_widths += [ (x[idx] - x[idx-i])/5 ]
@@ -1513,8 +1022,6 @@ def calculate_distance_ground_state(data_real, data_imag, percentile=70,
         data_dist /= np.max(data_dist)
     return data_dist
 
-# def rotate_data_to_zero(data_I, data_Q, NoCalPoints):
-
 
 def zigzag(seq, sample_0, sample_1, nr_samples):
     '''
@@ -1539,40 +1046,10 @@ def calculate_rotation_matrix(delta_I, delta_Q):
     return rotation_matrix
 
 
-def normalize_TD_data(data, data_zero, data_one):
-    """
-    Normalizes measured data to refernce signals for zero and one
-    """
-    return (data - data_zero) / (data_one - data_zero)
-
-
-def normalize_data(data):
-    print(
-        'a_tools.normalize_data is deprecated, recommend using '
-        'a_tools.normalize_data_v2()')
-    return data / np.mean(data)
-
-
 def normalize_data_v2(a, axis=-1, order=2):
     l2 = np.atleast_1d(np.linalg.norm(a, order, axis))
     l2[l2 == 0] = 1
     return a / np.expand_dims(l2, axis)
-
-
-def normalize_2D_data(data_2D):
-    for k in range(data_2D.shape[1]):
-        data_2D[:, k] /= np.mean(data_2D[:, k])
-    return data_2D
-
-
-def normalize_2D_data_on_elements(data_2D, elements):
-    '''
-    Normalizes every row in a 2D array by normalizing on the mean
-    of the elements specified in row_elements
-    '''
-    for k in range(data_2D.shape[1]):
-        data_2D[:, k] /= np.mean(data_2D[elements, k])
-    return data_2D
 
 
 def rotate_and_normalize_data_IQ(data, cal_zero_points=None, cal_one_points=None,
@@ -1796,8 +1273,8 @@ def predict_gm_proba_from_clf(X, clf_params):
             For more info see about parameters see :
             https://scikit-learn.org/stable/modules/generated/sklearn.mixture.
             GaussianMixture.html
-    Returns: (n_datapoints, n_levels) array of posterior probability of being in
-        each level
+    Returns: (n_datapoints, n_levels) array of posterior probability of being
+        in each level
 
     """
     reqs_params = ['means_', 'covariances_', 'covariance_type',
@@ -1811,6 +1288,7 @@ def predict_gm_proba_from_clf(X, clf_params):
         setattr(gm, param_name, param_value)
     probas = gm.predict_proba(X)
     return probas
+
 
 def datetime_from_timestamp(timestamp):
     try:
@@ -1849,6 +1327,7 @@ def current_datemark():
 
 def current_timemark():
     return time.strftime('%H%M%S', time.localtime())
+
 
 ######################################################################
 #    Plotting tools
@@ -1904,29 +1383,11 @@ def color_plot(x, y, z, fig, ax, cax=None,
         y_vertices += y[0]
         y_vertices[1] *= 1.00001
     cmap_chosen = kw.get('cmap_chosen', 'viridis')
-
-    # This version (below) does not plot the last row, but it possibly fixes
-    # an issue where it wouldn't plot at all on one computer
-    # Above lines work as of 26/11/2015 on La Ferrari in both
-    # MA.MeasurementAnalysis and MA.TwoD_Analysis
-    # x_vertices = np.array(x)-(x[1]-x[0])/2.0  # Shift to ensure centre of cmap
-    # y_vertices = np.array(y)-(y[1]-y[0])/2.0  # at right position
+    cmap = plt.get_cmap(kw.pop('cmap', cmap_chosen))
 
     x_grid, y_grid = np.meshgrid(x_vertices, y_vertices)
-    # print x_grid.shape, y_grid.shape
-
-
-
-    # # mgrid sets the grid points to start at x (or y) 0 and end at the
-    # latest x (or y), the slice includes the edge point through slicing
-    # tricks.
-    # mgrid points correspond to the center of each sqaure in the cmap
-
     if normalize:
         z = normalize_data_v2(z, axis=1, order=2)
-
-    cmap = plt.get_cmap(kw.pop('cmap', cmap_chosen))
-    # CMRmap is our old default
 
     # Empty values in the array are filled with np.nan, this ensures
     # the plot limits are set correctly.
@@ -1990,59 +1451,6 @@ def color_plot(x, y, z, fig, ax, cax=None,
             cbar.set_label(zlabel)
         return fig, ax, colormap, cbar
     return fig, ax, colormap
-
-
-def color_plot_slices(xvals, yvals, zvals, ax=None,
-                      normalize=False, log=False,
-                      save_name=None, **kw):
-    """
-    Originally by Nathan
-    Display a color figure for something like a tracked DAC sweep.
-    xvals should be a single vector with values for the primary sweep.
-    yvals and zvals should be a list of arrays with the sweep points and measured values.
-    """
-    # create a figure and set of axes
-    if ax is None:
-        fig = plt.figure(figsize=(12, 7))
-        ax = fig.add_subplot(111)
-
-    # calculate coordinates for corners of color blocks
-    # x coordinates
-    xvals = np.array(xvals)
-    xvertices = np.zeros(np.array(xvals.shape)+1)
-    xvertices[1:-1] = (xvals[:-1]+xvals[1:])/2.
-    xvertices[0] = xvals[0] - (xvals[1]-xvals[0])/2
-    xvertices[-1] = xvals[-1] + (xvals[-1]-xvals[-2])/2
-    # y coordinates
-    yvertices = []
-    for xx in range(len(xvals)):
-        yvertices.append(np.zeros(np.array(yvals[xx].shape)+1))
-        yvertices[xx][1:-1] = (yvals[xx][:-1]+yvals[xx][1:])/2.
-        yvertices[xx][0] = yvals[xx][0] - (yvals[xx][1]-yvals[xx][0])/2
-        yvertices[xx][-1] = yvals[xx][-1] + (yvals[xx][-1]-yvals[xx][-2])/2
-
-    # various plot options
-    # define colormap
-    cmap = kw.pop('cmap', 'viridis')
-    #clim = kw.pop('clim', [None, None])
-    # normalized plot
-    if normalize:
-        for xx in range(len(xvals)):
-            zvals[xx] /= np.mean(zvals[xx])
-    # logarithmic plot
-    if log:
-        for xx in range(len(xvals)):
-            zvals[xx] = np.log(zvals[xx])/np.log(10)
-
-    # add blocks to plot
-    #hold = kw.pop('hold', False)
-    for xx in range(len(xvals)):
-        tempzvals = np.array([np.append(zvals[xx], np.array(0)),
-                              np.append(zvals[xx], np.array(0))]).transpose()
-        # im = ax.pcolor(xvertices[xx:xx+2],
-        #                yvertices[xx],
-        #                tempzvals, cmap=cmap)
-    return ax
 
 
 def linecut_plot(x, y, z, fig, ax,
@@ -2114,6 +1522,7 @@ def color_plot_interpolated(x, y, z, ax=None,
         return ax, CS, cbar
     return ax, CS
 
+
 def plot_errorbars(x, y, ax=None, err_bars=None, label=None, **kw):
 
     color = kw.pop('color', 'C0')
@@ -2153,111 +1562,6 @@ def plot_errorbars(x, y, ax=None, err_bars=None, label=None, **kw):
         return ax
 
 
-######################################################################
-#    Calculations tools
-######################################################################
-
-def solve_quadratic_equation(a, b, c, verbose=False):
-    '''
-    returns solutions to the quadratic equation. Will raise an error if the
-    solution is negative
-    '''
-    d = b**2-4*a*c
-    if d < 0:
-        if verbose:
-            print("This equation has no real solution")
-        return [np.NAN, np.NAN]
-    elif d == 0:
-        x = (-b+np.sqrt(b**2-4*a*c))/2*a
-        if verbose:
-            print("This equation has one solution: ", x)
-        return [x, x]
-    else:
-        x1 = (-b+np.sqrt((b**2)-(4*(a*c))))/(2*a)
-        x2 = (-b-np.sqrt((b**2)-(4*(a*c))))/(2*a)
-        if verbose:
-            print("This equation has two solutions: ", x1, " or", x2)
-        return [x1, x2]
-
-
-# def find_min(x, y, min_target=None, return_fit=False, perc=30):
-#     from scipy.signal import argrelextrema
-#     from lmfit.models import QuadraticModel
-#     from functools import reduce
-#     # filtering through percentiles
-#     th_perc = np.percentile(y, perc)
-#     mask = np.where(y < th_perc, True, False)
-
-#     # function that multiplies all elements in vector
-#     multiply_vec = lambda vec: reduce(lambda x, y: x*y, vec)
-
-#     # function that multiplies all elements in vector from idx_min
-#     if min_target is None:
-#         idx_min = np.argmin(y)
-#     else:
-#         local_min_array = argrelextrema(y, np.less)[0]
-#         idx_min = local_min_array[
-#             np.argmin(np.abs(x[local_min_array]-min_target))]
-
-#     mask_ii = lambda ii: multiply_vec(
-#         mask[min(idx_min, ii):max(idx_min, ii+1)])
-#     # function that returns mask_ii applied for all elements of the vector mask
-#     continuous_mask = np.array(
-#         [m for m in map(mask_ii, np.arange(len(mask)))], dtype=np.bool)
-#     # doing the fit
-#     my_fit_model = QuadraticModel()
-
-#     # !!!!! @Ramiro the continuous mask does not seem to work (all False array)
-#     # I used the regular mask for now. We should discuss this
-#     # x_fit = x[continuous_mask]
-#     # y_fit = y[continuous_mask]
-
-#     x_fit = x[mask]
-#     y_fit = y[mask]
-#     my_fit_params = my_fit_model.guess(data=y_fit, x=x_fit)
-#     my_fit_res = my_fit_model.fit(data=y_fit,
-#                                   x=x_fit,
-#                                   pars=my_fit_params)
-#     x_min = -0.5*my_fit_res.best_values['b']/my_fit_res.best_values['a']
-#     y_min = my_fit_model.func(x_min, **my_fit_res.best_values)
-
-#     if return_fit:
-#         return x_min, y_min, my_fit_res
-#     else:
-#         return x_min, y_min
-
-def find_min(x, y, return_fit=False, perc=30):
-    from lmfit.models import QuadraticModel
-    from functools import reduce
-    # filtering through percentiles
-    th_perc = np.percentile(y, perc)
-    mask = np.where(y < th_perc, True, False)
-    # function that multiplies all elements in vector
-    multiply_vec = lambda vec: reduce(lambda x, y: x*y, vec)
-    # function that multiplies all elements in vector from idx_min
-    idx_min = np.argmin(y)
-    mask_ii = lambda ii: multiply_vec(
-        mask[min(idx_min, ii):max(idx_min, ii+1)])
-    # function that returns mask_ii applied for all elements of the vector mask
-    continuous_mask = np.array(
-        [m for m in map(mask_ii, np.arange(len(mask)))], dtype=np.bool)
-    # doing the fit
-    my_fit_model = QuadraticModel()
-    x_fit = x[continuous_mask]
-    y_fit = y[continuous_mask]
-    my_fit_params = my_fit_model.guess(data=y_fit, x=x_fit)
-    my_fit_res = my_fit_model.fit(data=y_fit,
-                                  x=x_fit,
-                                  pars=my_fit_params)
-    x_min = -0.5*my_fit_res.best_values['b']/my_fit_res.best_values['a']
-    y_min = my_fit_model.func(x_min, **my_fit_res.best_values)
-
-    if return_fit:
-        return x_min, y_min, my_fit_res
-    else:
-        return x_min, y_min
-
-
 def get_color_order(i, max_num, cmap='viridis'):
     # take a blue to red scale from 0 to max_num
     # uses HSV system, H_red = 0, H_green = 1/3 H_blue=2/3
@@ -2265,12 +1569,6 @@ def get_color_order(i, max_num, cmap='viridis'):
     if isinstance(cmap, str):
         cmap = cm.get_cmap(cmap)
     return cmap((i/max_num) % 1)
-
-
-def get_color_order_hsv(i, max_num):
-    # take a blue to red scale from 0 to max_num
-    # uses HSV system, H_red = 0, H_green = 1/3 H_blue=2/3
-    return colors.hsv_to_rgb(2.*float(i)/(float(max_num)*3.), 1., 1.)
 
 
 def get_color_list(max_num, cmap='viridis'):
@@ -2288,7 +1586,7 @@ def get_color_list(max_num, cmap='viridis'):
         try:
             cmap = cm.get_cmap(cmap)
         except ValueError:
-            logging.warning('Using Vega10 as a fallback, upgrade matplotlib')
+            log.warning('Using Vega10 as a fallback, upgrade matplotlib')
             cmap = cm.get_cmap('Vega10')
     return [cmap(i) for i in np.linspace(0.0, 1.0, max_num)]
 
@@ -2300,37 +1598,3 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
                                             b=maxval),
         cmap(np.linspace(minval, maxval, n)))
     return new_cmap
-
-
-def print_pars_table(n_ts=10, pars=None):
-    '''
-    Prints out a table containing the value for the indicated parameters from the last N timestamps.
-    Input:
-        n_ts (int), number of time-stamps to include in the table (rows).
-        pars (list), list spanning the parameters of interest (columns).
-
-    Every element on the list pars need to correspond to a parameter stored in the Instrument settings of the HDF5 data-files.
-    Examples:
-        pars = ['IVVI.dac1', 'IVVI.dac2', 'IVVI.dac3']
-        pars = ['Qubit.f_RO', 'Qubit.RO_acq_integration_length', 'Qubit.RO_pulse_power']
-        pars = ['Qubit.spec_pow', 'Qubit.RO_power_cw']
-    '''
-    ts_list = return_last_n_timestamps(n_ts)
-    pdict = {}
-    nparams = []
-    for i,p in enumerate(pars):
-        pdict.update({p:p})
-    opt_dict = {'scan_label':'','exact_label_match':True}
-    # print(ts_list)
-    scans = RA.quick_analysis(t_start=ts_list[-1],t_stop=ts_list[0], options_dict=opt_dict,
-                      params_dict_TD=pdict,numeric_params=nparams)
-
-    pars_line = 'timestamp \t'
-    for p in pars:
-        pars_line = pars_line + p + '\t'
-    print(pars_line)
-    for i,ts in enumerate(scans.TD_timestamps):
-        i_line = '%s \t'%ts
-        for p in pars:
-            i_line = i_line + scans.TD_dict[p][i]+'\t'
-        print(i_line)

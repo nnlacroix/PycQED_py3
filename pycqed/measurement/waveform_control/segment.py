@@ -10,8 +10,8 @@ import math
 import logging
 log = logging.getLogger(__name__)
 from copy import deepcopy
+import pycqed.measurement.waveform_control.pulse as bpl
 import pycqed.measurement.waveform_control.pulse_library as pl
-import pycqed.measurement.waveform_control.pulse as bpl  # base pulse lib
 import pycqed.measurement.waveform_control.pulsar as ps
 import pycqed.measurement.waveform_control.fluxpulse_predistortion as flux_dist
 from collections import OrderedDict as odict
@@ -102,6 +102,15 @@ class Segment:
         # called prior to generating the waveforms
         self.elements = odict()
 
+    def extend(self, pulses):
+        """
+        Adds sequentially all pulses to the segment
+        :param pulses: list of pulses to add
+        :return:
+        """
+        for p in pulses:
+            self.add(p)
+
     def resolve_segment(self):
         """
         Top layer method of Segment class. After having addded all pulses,
@@ -129,7 +138,7 @@ class Segment:
         self.elements = odict()
 
         visited_pulses = []
-        ref_points = []
+        ref_pulses_dict = {}
         i = 0
 
         pulses = self.gen_refpoint_dict()
@@ -137,7 +146,7 @@ class Segment:
         # add pulses that refer to segment start
         for pulse in pulses['segment_start']:
             if pulse.pulse_obj.name in pulses:
-                ref_points.append((pulse.pulse_obj.name, pulse))
+                ref_pulses_dict.update({pulse.pulse_obj.name: pulse})
             t0 = pulse.delay - pulse.ref_point_new * pulse.pulse_obj.length
             pulse.pulse_obj.algorithm_time(t0)
             visited_pulses.append((t0, i, pulse))
@@ -146,32 +155,66 @@ class Segment:
         if len(visited_pulses) == 0:
             raise ValueError('No pulse references to the segment start!')
 
+        ref_pulses_dict_all = deepcopy(ref_pulses_dict)
         # add remaining pulses
-        while len(ref_points) > 0:
-            new_ref_points = []
-            for (name, pulse) in ref_points:
+        while len(ref_pulses_dict) > 0:
+            ref_pulses_dict_new = {}
+            for name, pulse in ref_pulses_dict.items():
                 for p in pulses[name]:
+                    if isinstance(p.ref_pulse, list):
+                        if p.pulse_obj.name in [vp[2].pulse_obj.name for vp
+                                                in visited_pulses]:
+                            continue
+                        if any([ref_pulse not in [ref_pulse_name for ref_pulse_name
+                                                  in ref_pulses_dict_all.keys()]
+                                for ref_pulse in p.ref_pulse]):
+                            continue
+
+                        t0_list = []
+                        delay_list = [p.delay] * len(p.ref_pulse) if not isinstance(p.delay, list) else p.delay
+                        ref_point_list = [p.ref_point] * len(p.ref_pulse) if not isinstance(p.ref_point, list) \
+                            else p.ref_point
+
+                        for (ref_pulse, delay, ref_point) in zip(p.ref_pulse, delay_list, ref_point_list):
+                            t0_list.append(ref_pulses_dict_all[ref_pulse].pulse_obj.algorithm_time() + delay -
+                                           p.ref_point_new * p.pulse_obj.length +
+                                           ref_point * pulse.pulse_obj.length)
+
+                        if p.ref_function == 'max':
+                            t0 = max(t0_list)
+                        elif p.ref_function == 'min':
+                            t0 = min(t0_list)
+                        elif p.ref_function == 'mean':
+                            t0 = np.mean(t0_list)
+                        else:
+                            raise ValueError('Passed invalid value for ' +
+                                'ref_function. Allowed values are: max, min, mean.' +
+                                ' Default value: min')
+                    else:
+                        t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
+                            p.ref_point_new * p.pulse_obj.length + \
+                            p.ref_point * pulse.pulse_obj.length
+
+                    p.pulse_obj.algorithm_time(t0)
 
                     # add p.name to reference list if it is used as a key
                     # in pulses
                     if p.pulse_obj.name in pulses:
-                        new_ref_points.append((p.pulse_obj.name, p))
-
-                    t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
-                        p.ref_point_new * p.pulse_obj.length + \
-                        p.ref_point * pulse.pulse_obj.length
-                    p.pulse_obj.algorithm_time(t0)
+                        ref_pulses_dict_new.update({p.pulse_obj.name: p})
 
                     visited_pulses.append((t0, i, p))
                     i += 1
 
-            ref_points = new_ref_points
+            ref_pulses_dict = ref_pulses_dict_new
+            ref_pulses_dict_all.update(ref_pulses_dict_new)
+
         if len(visited_pulses) != len(self.unresolved_pulses):
-            log.error(len(visited_pulses), len(self.unresolved_pulses))
+            log.error(f"{len(visited_pulses), len(self.unresolved_pulses)}")
             for unpulse in visited_pulses:
                 if unpulse not in self.unresolved_pulses:
                     log.error(unpulse)
-            raise Exception('Not all pulses have been resolved!')
+            raise Exception(f'Not all pulses have been resolved: '
+                            f'{self.unresolved_pulses}')
 
         # adds the resolved pulses to the elements OrderedDictionary
         for (t0, i, p) in sorted(visited_pulses):
@@ -210,7 +253,7 @@ class Segment:
             if self.pulsar.get('{}_charge_buildup_compensation'.format(c)):
                 compensation_chan.add(c)
 
-        # * generate the pulse_area dictionarry containing for each channel
+        # * generate the pulse_area dictionary containing for each channel
         #   that has to be compensated the sum of all pulse areas on that
         #   channel + the name of the last element
         # * and find the end time of the last pulse of the segment
@@ -325,10 +368,14 @@ class Segment:
 
         pulses = {}
         for pulse in self.unresolved_pulses:
-            if pulse.ref_pulse not in pulses:
-                pulses[pulse.ref_pulse] = [pulse]
-            elif pulse.ref_pulse in pulses:
-                pulses[pulse.ref_pulse].append(pulse)
+            ref_pulse_list = pulse.ref_pulse
+            if not isinstance(ref_pulse_list, list):
+                ref_pulse_list = [ref_pulse_list]
+            for p in ref_pulse_list:
+                if p not in pulses:
+                    pulses[p] = [pulse]
+                else:
+                    pulses[p].append(pulse)
 
         return pulses
 
@@ -598,25 +645,27 @@ class Segment:
 
     def resolve_Z_gates(self):
         """
-        The phase of a basis rotation is acquired by an basis pulse, if the 
-        middle of the basis rotation pulse happens before the middle of the 
-        basis pulse. Using that self.unresolved_pulses was sorted by 
+        The phase of a basis rotation is acquired by an basis pulse, if the
+        middle of the basis rotation pulse happens before the middle of the
+        basis pulse. Using that self.unresolved_pulses was sorted by
         self.resolve_timing() the acquired phases can be calculated.
         """
-        qubit_phases = {}
+
+        basis_phases = {}
 
         for pulse in self.unresolved_pulses:
-            for qubit in pulse.basis_rotation:
-                if qubit in qubit_phases:
-                    qubit_phases[qubit] += pulse.basis_rotation[qubit]
-                else:
-                    qubit_phases[qubit] = pulse.basis_rotation[qubit]
+            # the following if statement allows pulse objects to specify a
+            # basis_rotation different from the one in the instrument settings
+            # (needed, e.g., for C-ARB gates)
+            if getattr(pulse.pulse_obj, 'basis_rotation', None) is not None:
+                pulse.basis_rotation = pulse.pulse_obj.basis_rotation
+
+            for basis, rotation in pulse.basis_rotation.items():
+                basis_phases[basis] = basis_phases.get(basis, 0) + rotation
 
             if pulse.basis is not None:
-                try:
-                    pulse.pulse_obj.phase -= qubit_phases[pulse.basis]
-                except KeyError:
-                    qubit_phases[pulse.basis] = 0
+                pulse.pulse_obj.phase = pulse.original_phase - \
+                                        basis_phases.get(pulse.basis, 0)
 
     def element_start_length(self, element, awg):
         """
@@ -738,7 +787,7 @@ class Segment:
                         )[pulse_start:pulse_end]
 
                     # calculate pulse waveforms
-                    pulse_wfs = pulse.get_wfs(chan_tvals)
+                    pulse_wfs = pulse.waveforms(chan_tvals)
 
                     # insert the waveforms at the correct position in wfs
                     for channel in pulse_channels:
@@ -913,14 +962,9 @@ class Segment:
         """
         return samples / self.pulsar.clock(**kw)
 
-    def plot(self,
-             instruments=None,
-             channels=None,
-             legend=True,
-             delays=dict(),
-             savefig=False,
-             cmap=None,
-             frameon=True):
+    def plot(self, instruments=None, channels=None, legend=True,
+             delays=dict(), savefig=False, prop_cycle=None, frameon=True,
+             channel_map=None, plot_kwargs=None, axes=None, demodulate=False):
         """
         Plots a segment. Can only be done if the segment can be resolved.
 
@@ -932,30 +976,48 @@ class Segment:
             instrument, such that the pulses are plotted at timing when they
             physically occur.
         :param savefig: save the plot
-        :param cmap:
-        :param frameon:
+        :param channel_map (dict): indicates which instrument channels correspond to
+            whichqubits. Keys = qb names, values = list of channels. eg.
+            dict(qb2=['AWG8_ch3', "UHF_ch1"]). If provided, will plot each qubit
+            on individual subplots.
+        :param prop_cycle (dict):
+        :param frameon (dict, bool):
+        :param axes (array or axis): 2D array of matplotlib axes. if single axes,
+            will be converted internally to array.
+        :param demodulate (bool): plot only envelope of pulses by temporarily setting
+            modulation and phase to 0. Need to recompile the sequence
+
         :return:
         """
         import matplotlib.pyplot as plt
+        if plot_kwargs is None:
+            plot_kwargs = dict()
+            plot_kwargs['linewidth'] = 0.7
         try:
+            # resolve segment and populate elements/waveforms
             self.resolve_segment()
+            if demodulate:
+                for el in self.elements.values():
+                    for pulse in el:
+                        if hasattr(pulse, "mod_frequency"):
+                            pulse.mod_frequency = 0
+                        if hasattr(pulse, "phase"):
+                            pulse.phase = 0
             wfs = self.waveforms(awgs=instruments, channels=None)
-            n_instruments = len(wfs)
-            fig, ax = plt.subplots(
-                nrows=n_instruments,
-                sharex=True,
-                squeeze=False,
-                figsize=(16, n_instruments * 3))
-            if cmap is None:
-                cmap = plt.get_cmap('Paired')
+            n_instruments = len(wfs) if channel_map is None else len(channel_map)
+            if axes is not None:
+                if np.ndim(axes) == 0:
+                    axes = [[axes]]
+                fig = axes[0,0].get_figure()
+                ax = axes
+            else:
+                fig, ax = plt.subplots(nrows=n_instruments, sharex=True,
+                                       squeeze=False,
+                                       figsize=(16, n_instruments * 3))
+            if prop_cycle is not None:
+                for a in ax[:,0]:
+                    a.set_prop_cycle(**prop_cycle)
             for i, instr in enumerate(wfs):
-                # formatting
-                ax[i, 0].set_title(instr)
-                ax[i, 0].spines["top"].set_visible(frameon)
-                ax[i, 0].spines["right"].set_visible(frameon)
-                ax[i, 0].spines["bottom"].set_visible(frameon)
-                ax[i, 0].spines["left"].set_visible(frameon)
-                ax[i, 0].set_ylabel('Voltage (V)')
                 # plotting
                 for elem_name, v in wfs[instr].items():
                     for k, wf_per_ch in v.items():
@@ -964,23 +1026,47 @@ class Segment:
                                     ch in channels.get(instr, []):
                                 tvals = \
                                 self.tvals([f"{instr}_{ch}"], elem_name[1])[
-                                    f"{instr}_{ch}"] \
-                                - delays.get(instr, 0)
-                                ax[i, 0].plot(
-                                    tvals * 1e6,
-                                    wf,
-                                    label=f"{elem_name[1]}_{k}_{ch}",
-                                    linewidth=0.7)
-                if legend:
-                    ax[i, 0].legend(loc=[1.02, 0], prop={'size': 8})
+                                    f"{instr}_{ch}"] - delays.get(instr, 0)
+                                if channel_map is None:
+                                    # plot per device
+                                    ax[i, 0].plot(tvals * 1e6, wf,
+                                                  label=f"{elem_name[1]}_{k}_{ch}",
+                                                  **plot_kwargs)
+                                else:
+                                    # plot on each qubit subplot which includes
+                                    # this channel in the channel map
+                                    match = [i for i, (_, qb_chs) in
+                                                     enumerate(channel_map.items())
+                                                     if f"{instr}_{ch}" in qb_chs]
+                                    for qbi in match:
+                                        ax[qbi, 0].plot(tvals * 1e6, wf,
+                                                      label=f"{elem_name[1]}_{k}_{ch}",
+                                                      **plot_kwargs)
+                                        if demodulate: # filling
+                                            ax[qbi, 0].fill_between(tvals * 1e6, wf,
+                                                            label=f"{elem_name[1]}_{k}_{ch}",
+                                                            alpha=0.05,
+                                                            **plot_kwargs)
+
 
             # formatting
+            for a in ax[:,0]:
+                if isinstance(frameon, bool):
+                    frameon = {k: frameon for k in ['top', 'bottom',
+                                                    "right", "left"]}
+                a.spines["top"].set_visible(frameon.get("top", True))
+                a.spines["right"].set_visible(frameon.get("right", True))
+                a.spines["bottom"].set_visible(frameon.get("bottom", True))
+                a.spines["left"].set_visible(frameon.get("left", True))
+                if legend:
+                    a.legend(loc=[1.02, 0], prop={'size': 8})
+                a.set_ylabel('Voltage (V)')
             ax[-1, 0].set_xlabel('time ($\mu$s)')
             fig.suptitle(f'{self.name}')
             plt.tight_layout()
             if savefig:
                 plt.savefig(f'{self.name}.png')
-            plt.show()
+            # plt.show()
             return fig, ax
         except Exception as e:
             log.error(f"Could not plot: {self.name}")
@@ -1027,28 +1113,30 @@ class UnresolvedPulse:
                 'Passed invalid value for ref_point_new. Allowed '
                 'values are: start, end, middle. Default value: start')
 
+        self.ref_function = pulse_pars.get('ref_function', 'max')
         self.delay = pulse_pars.get('pulse_delay', 0)
         self.original_phase = pulse_pars.get('phase', 0)
         self.basis = pulse_pars.get('basis', None)
         self.operation_type = pulse_pars.get('operation_type', None)
         self.basis_rotation = pulse_pars.pop('basis_rotation', {})
+        self.op_code = pulse_pars.get('op_code', '')
 
-        try:
-            # Look for the function in pl = pulse_lib
-            pulse_func = getattr(pl, pulse_pars['pulse_type'])
-        except AttributeError:
+        pulse_func = None
+        for module in bpl.pulse_libraries:
             try:
-                # Look for the function in bpl = pulse
-                pulse_func = getattr(bpl, pulse_pars['pulse_type'])
+                pulse_func = getattr(module, pulse_pars['pulse_type'])
             except AttributeError:
-                raise KeyError('pulse_type {} not recognized'.format(
-                    pulse_pars['pulse_type']))
+                pass
+        if pulse_func is None:
+            raise KeyError('pulse_type {} not recognized'.format(
+                pulse_pars['pulse_type']))
 
-        self.pulse_obj = \
-            pulse_func(**pulse_pars)
+        self.pulse_obj = pulse_func(**pulse_pars)
+        # allow a pulse to modify its op_code (e.g., for C-ARB gates)
+        self.op_code = getattr(self.pulse_obj, 'op_code', self.op_code)
 
         if self.pulse_obj.codeword != 'no_codeword' and \
-            self.basis_rotation != {}:
+                self.basis_rotation != {}:
             raise Exception(
                 'Codeword pulse {} does not support basis_rotation!'.format(
                     self.pulse_obj.name))

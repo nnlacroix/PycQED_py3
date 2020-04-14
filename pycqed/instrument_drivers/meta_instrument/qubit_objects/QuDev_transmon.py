@@ -151,7 +151,7 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter('RO', 'ro_nr_sigma', 'nr_sigma',
                                  initial_value=5, vals=vals.Numbers())
         self.add_pulse_parameter('RO', 'ro_phase_lock', 'phase_lock',
-                                 initial_value=True, vals=vals.Bool())
+                                 initial_value=False, vals=vals.Bool())
         self.add_pulse_parameter('RO', 'ro_basis_rotation',
                                  'basis_rotation', initial_value={},
                                  docstring='Dynamic phase acquired by other '
@@ -631,6 +631,8 @@ class QuDev_transmon(Qubit):
             mods = [self.ro_mod_freq() + d for d in delta_freqs]
             operation_dict['RO ' + self.name]['mod_frequency'] = mods
 
+        for code, op in operation_dict.items():
+            op['op_code'] = code
         return operation_dict
 
     def swf_ro_freq_lo(self):
@@ -1612,7 +1614,7 @@ class QuDev_transmon(Qubit):
                 I_channel=self.ge_I_channel(),
                 Q_channel=self.ge_Q_channel(),
                 mod_frequency=self.ge_mod_freq(),
-                phase_lock=True,
+                phase_lock=False,
             )
         sq.pulse_list_list_seq([[self.get_acq_pars(), drive_pulse]])
 
@@ -1709,7 +1711,7 @@ class QuDev_transmon(Qubit):
                             I_channel=self.ge_I_channel(),
                             Q_channel=self.ge_Q_channel(),
                             mod_frequency=self.ge_mod_freq(),
-                            phase_lock=True,
+                            phase_lock=False,
                             alpha=alphaparam(),
                             phi_skew=skewparam(),
                         )]])
@@ -1798,7 +1800,7 @@ class QuDev_transmon(Qubit):
                             I_channel=self.ge_I_channel(),
                             Q_channel=self.ge_Q_channel(),
                             mod_frequency=self.ge_mod_freq(),
-                            phase_lock=True,
+                            phase_lock=False,
                             alpha=alpha,
                             phi_skew=phi_skew,
                         )])
@@ -3790,12 +3792,20 @@ def add_CZ_pulse(qbc, qbt):
         qbc.add_pulse_parameter(op_name, ps_name + '_gaussian_filter_sigma',
                                 'gaussian_filter_sigma', initial_value=2e-9,
                                 vals=vals.Numbers(0))
-        qbc.add_pulse_parameter(op_name, ps_name + '_chevron_func',
-                                'chevron_func', initial_value=None,
-                                vals=vals.Callable(),
-                                docstring="Callable required when using "
-                                          "effective time CZ pulse to "
-                                          "straighten Chevron.")
+        qbc.add_pulse_parameter(op_name, ps_name + '_cphase_calib_dict',
+                                'cphase_calib_dict', initial_value=dict(),
+                                vals=vals.Dict(),
+                                docstring="Dictionary with parameters "
+                                          "for C-ARB calibration used in "
+                                          "BufferedCZPulse.")
+        qbc.add_pulse_parameter(op_name, ps_name + '_force_adapt_pulse_length',
+                                'force_adapt_pulse_length', initial_value=None,
+                                vals=vals.Enum(None,
+                                               'absolute',
+                                               'relative'),
+                                docstring="Forces the pulse to adapt its length "
+                                          "as a function of the amplitude according "
+                                          "to the calibration in cphase_calib_dict.")
 
 
 def add_CZ_MG_pulse(qbc, qbt):

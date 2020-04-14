@@ -21,6 +21,7 @@ class CalibrationPoints:
         self.pulse_label_map = kwargs.get("pulse_label_map", default_map)
 
     def create_segments(self, operation_dict, pulse_modifs=dict(),
+                        segment_prefix='calibration_',
                         **prep_params):
         segments = []
 
@@ -51,7 +52,7 @@ class CalibrationPoints:
 
             pulse_list += generate_mux_ro_pulse_list(self.qb_names,
                                                      operation_dict)
-            seg = segment.Segment(f'calibration_{i}', pulse_list)
+            seg = segment.Segment(segment_prefix + f'{i}', pulse_list)
             segments.append(seg)
         return segments
 
@@ -185,7 +186,13 @@ class CalibrationPoints:
         if len(sweep_points) == 0:
             log.warning("No sweep points, returning a range.")
             return np.arange(n_cal_pts)
-        step = np.abs(sweep_points[-1] - sweep_points[-2])
+        try:
+            step = np.abs(sweep_points[-1] - sweep_points[-2])
+        except IndexError:
+            log.warning(f"Less than 2 sweep point detected in: {sweep_points}"
+                        "Could not find appropriate step to extend sweep "
+                        "points. Taking default step of 1")
+            step = 1
         plot_sweep_points = \
             np.concatenate([sweep_points, [sweep_points[-1] + i * step
                                            for i in range(1, n_cal_pts + 1)]])

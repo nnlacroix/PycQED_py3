@@ -1,133 +1,100 @@
 """
-Library containing pulse shapes.
+Library containing various pulse shapes.
 """
 
+import sys
 import numpy as np
+from numpy import array # do not delete; used in eval
 import scipy as sp
-from pycqed.measurement.waveform_control.pulse import Pulse, apply_modulation
-from pycqed.utilities.general import int_to_bin
+from pycqed.measurement.waveform_control import pulse
+import logging
+log = logging.getLogger(__name__)
+
+pulse.pulse_libraries.add(sys.modules[__name__])
 
 
-class SSB_DRAG_pulse(Pulse):
-    '''
-    Gauss pulse on the I channel, derivative of Gauss on the Q channel.
-    modulated with Single Sideband (SSB)  modulation.
+class SSB_DRAG_pulse(pulse.Pulse):
+    """In-phase Gaussian pulse with derivative quadrature and SSB modulation.
 
-    Required arguments:
-        name (str) : base name of the pulse
-        I_channel (str) : name of the channel on which to act (as defined in pular)
-        Q_channel (str) : " "
+    Modulation and mixer predistortion added with `apply_modulation` function.
 
-    kwargs:
-        amplitude (V)
-        sigma (s)
-        nr_sigma (int) (default=4)
-        motzoi ( ) (default=0)
+    Args:
+        name (str): Name of the pulse, used for referencing to other pulses in a
+            sequence. Typically generated automatically by the `Segment` class.
+        element_name (str): Name of the element the pulse should be played in.
+        I_channel (str): In-phase output channel name.
+        Q_channel (str): Quadrature output channel name.
+        codeword (int or 'no_codeword'): The codeword that the pulse belongs in.
+            Defaults to 'no_codeword'.
+        amplitude (float): Pulse amplitude in Volts. Defaults to 0.1 V.
+        sigma (float): Pulse width standard deviation in seconds. Defaults to
+            250 ns.
+        nr_sigma (float): Pulse clipping length in units of pulse sigma. Total
+            pulse length will be `nr_sigma*sigma`. Defaults to 4.
+        motzoi (float): Amplitude of the derivative quadrature in units of
+            pulse sigma. Defautls to 0.
+        mod_frequency (float): Pulse modulation frequency in Hz. Defaults to
+            1 MHz.
+        phase (float): Pulse modulation phase in degrees. Defaults to 0.
+        phaselock (bool): The phase reference time is the start of the algorithm
+            if True and the middle of the pulse otherwise. Defaults to True.
+        alpha (float): Ratio of the I_channel and Q_channel output. Defaults to
+            1.
+        phi_skew (float): Phase offset between I_channel and Q_channel, in
+            addition to the nominal 90 degrees. Defaults to 0.
+    """
 
-        mod_frequency (Hz)
-        phase (deg)
-        phaselock (bool)
+    def __init__(self, name, element_name, I_channel, Q_channel,
+                 codeword='no_codeword', amplitude=0.1, sigma=250e-9,
+                 nr_sigma=4, motzoi=0, mod_frequency=1e6, phase=0,
+                 phaselock=True, alpha=1, phi_skew=0, **kw):
+        self.name = name
+        self.element_name = element_name
+        self.codeword = codeword
 
-        alpha (arb. units): QI amplitude
-        phi_skew (deg) :    phase skewness
-
-    I_env is a gaussian
-    Q_env is the derivative of a gaussian
-    The envelope is transformation:
-    Signal = predistortion * modulation * envelope
-
-    See Leo's notes on mixer predistortion in the docs for details
-
-    [I_mod] = [1        tan(phi-skew)] [cos(wt+phi)   sin(wt+phi)] [I_env]
-    [Q_mod]   [0  sec(phi-skew)/alpha] [-sin(wt+phi)  cos(wt+phi)] [Q_env]
-
-
-    The predistortion * modulation matrix is implemented in a single step using
-    the following matrix
-
-    M*mod = [cos(x)-tan(phi-skew)sin(x)      sin(x)+tan(phi-skew)cos(x) ]
-            [-sin(x)sec(phi-skew)/alpha  cos(x)sec(phi-skew)/alpha]
-
-    where: x = wt+phi
-
-    Reduces to a Gaussian pulse if motzoi == 0
-    Reduces to an unmodulated pulse if mod_frequency == 0
-    '''
-
-    def __init__(self, name, element_name, I_channel, Q_channel, **kw):
-        super().__init__(name, element_name)
         self.I_channel = I_channel
         self.Q_channel = Q_channel
-        self.channels = [I_channel, Q_channel]
 
-        self.amplitude = kw.pop('amplitude', 0.1)
-        self.sigma = kw.pop('sigma', 0.25e-6)
-        self.nr_sigma = kw.pop('nr_sigma', 4)
-        self.motzoi = kw.pop('motzoi', 0)
+        self.amplitude = amplitude
+        self.sigma = sigma
+        self.nr_sigma = nr_sigma
+        self.motzoi = motzoi
 
-        self.mod_frequency = kw.pop('mod_frequency', 1e6)
-        self.phase = kw.pop('phase', 0.)
-        self.phaselock = kw.pop('phaselock', True)
+        self.mod_frequency = mod_frequency
+        self.phase = phase
+        self.phaselock = phaselock
+        self.alpha = alpha
+        self.phi_skew = phi_skew
 
-        self.alpha = kw.pop('alpha', 1)  # QI amp ratio
-        self.phi_skew = kw.pop('phi_skew', 0)  # IQ phase skewness
+    @property
+    def channels(self):
+        return [c for c in [self.I_channel, self.Q_channel] if c is not None]
 
-        self.length = self.sigma * self.nr_sigma
-        self.codeword = kw.pop('codeword', 'no_codeword')
+    @property
+    def length(self):
+        return self.sigma*self.nr_sigma
 
-    def __call__(self, **kw):
-        self.amplitude = kw.pop('amplitude', self.amplitude)
-        self.sigma = kw.pop('sigma', self.sigma)
-        self.nr_sigma = kw.pop('nr_sigma', self.nr_sigma)
-        self.motzoi = kw.pop('motzoi', self.motzoi)
-        self.mod_frequency = kw.pop('mod_frequency', self.mod_frequency)
-        self.phase = kw.pop('phase', self.phase)
-        self.phaselock = kw.pop('phaselock', self.phaselock)
+    def chan_wf(self, channel, tvals):
+        half = self.nr_sigma * self.sigma / 2
+        tc = self.algorithm_time() + half
 
-        self.length = self.sigma * self.nr_sigma
-        return self
+        gauss_env = np.exp(-0.5 * (tvals - tc)**2 / self.sigma**2)
+        gauss_env -= np.exp(-0.5 * half**2 / self.sigma**2)
+        gauss_env *= self.amplitude * (tvals - tc >= -half) * (
+                tvals - tc < half)
+        deriv_gauss_env = -self.motzoi * (tvals - tc) * gauss_env / self.sigma
 
-    def chan_wf(self, chan, tvals):
-        idx0 = np.where(tvals >= tvals[0])[0][0]
-        idx1 = np.where(tvals <= tvals[0] + self.length)[0][-1] + 1
-        wf = np.zeros(len(tvals))
-        t = tvals - tvals[0]  # Gauss envelope should not be displaced
-        mu = self.length / 2.0
-        if not self.phaselock:
-            tvals = tvals.copy() - tvals[idx0]
+        I_mod, Q_mod = apply_modulation(
+            gauss_env, deriv_gauss_env, tvals, self.mod_frequency,
+            phase=self.phase, phi_skew=self.phi_skew, alpha=self.alpha,
+            tval_phaseref=0 if self.phaselock else tc)
 
-        gauss_env = self.amplitude * np.exp(-(0.5 * (
-            (t - mu)**2) / self.sigma**2))
-        deriv_gauss_env = self.motzoi * -1 * (t - mu) / (self.sigma **
-                                                         1) * gauss_env
-        # substract offsets
-        gauss_env -= (gauss_env[0] + gauss_env[-1]) / 2.
-        deriv_gauss_env -= (deriv_gauss_env[0] + deriv_gauss_env[-1]) / 2.
-
-        # Note prefactor is multiplied by self.sigma to normalize
-        if chan == self.I_channel:
-            I_mod, Q_mod = apply_modulation(
-                gauss_env,
-                deriv_gauss_env,
-                tvals[idx0:idx1],
-                mod_frequency=self.mod_frequency,
-                phase=self.phase,
-                phi_skew=self.phi_skew,
-                alpha=self.alpha)
-            wf[idx0:idx1] += I_mod
-
-        if chan == self.Q_channel:
-            I_mod, Q_mod = apply_modulation(
-                gauss_env,
-                deriv_gauss_env,
-                tvals[idx0:idx1],
-                mod_frequency=self.mod_frequency,
-                phase=self.phase,
-                phi_skew=self.phi_skew,
-                alpha=self.alpha)
-            wf[idx0:idx1] += Q_mod
-
-        return wf
+        if channel == self.I_channel:
+            return I_mod
+        elif channel == self.Q_channel:
+            return Q_mod
+        else:
+            return np.zeros_like(tvals)
 
     def hashables(self, tstart, channel):
         if channel not in self.channels:
@@ -136,11 +103,13 @@ class SSB_DRAG_pulse(Pulse):
         hashlist += [channel == self.I_channel, self.amplitude, self.sigma]
         hashlist += [self.nr_sigma, self.motzoi, self.mod_frequency]
         phase = self.phase
-        phase += 360*self.phaselock*self.mod_frequency*self.algorithm_time()
+        phase += 360 * self.phaselock * self.mod_frequency * (
+                self.algorithm_time() + self.nr_sigma * self.sigma / 2)
         hashlist += [self.alpha, self.phi_skew, phase]
         return hashlist
 
-class BufferedSquarePulse(Pulse):
+
+class BufferedSquarePulse(pulse.Pulse):
     def __init__(self,
                  element_name,
                  channel=None,
@@ -164,21 +133,6 @@ class BufferedSquarePulse(Pulse):
                       self.buffer_length_end
         self.codeword = kw.pop('codeword', 'no_codeword')
 
-    def __call__(self, **kw):
-        self.amplitude = kw.pop('amplitude', self.amplitude)
-        self.pulse_length = kw.pop('pulse_length', self.pulse_length)
-        self.buffer_length_start = kw.pop('buffer_length_start',
-                                          self.buffer_length_start)
-        self.buffer_length_end = kw.pop('buffer_length_end',
-                                        self.buffer_length_end)
-        self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma',
-                                            self.gaussian_filter_sigma)
-        self.length = self.pulse_length + self.buffer_length_start + \
-                      self.buffer_length_end
-        self.channels = kw.pop('channels', self.channels)
-        self.channels.append(self.channel)
-        return self
-
     def chan_wf(self, chan, tvals):
         if self.gaussian_filter_sigma == 0:
             wave = np.ones_like(tvals) * self.amplitude
@@ -192,7 +146,7 @@ class BufferedSquarePulse(Pulse):
             scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
-                    (tvals - tend) * scaling)) * self.amplitude
+                (tvals - tend) * scaling)) * self.amplitude
             return wave
 
     def hashables(self, tstart, channel):
@@ -204,7 +158,8 @@ class BufferedSquarePulse(Pulse):
         hashlist += [self.gaussian_filter_sigma]
         return hashlist
 
-class BufferedCZPulse(Pulse):
+
+class BufferedCZPulse(pulse.Pulse):
     def __init__(self,
                  channel,
                  element_name,
@@ -224,41 +179,24 @@ class BufferedCZPulse(Pulse):
         self.phase = kw.pop('phase', 0.)
 
         self.pulse_length = kw.pop('pulse_length', 0)
-        self.buffer_length_start = kw.pop('buffer_length_start', 0)
-        self.buffer_length_end = kw.pop('buffer_length_end', 0)
-        self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse', 5e-9)
-        self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma', 0)
-        self.length = self.pulse_length + self.buffer_length_start + \
-                      self.buffer_length_end
-        self.codeword = kw.pop('codeword', 'no_codeword')
+        self.pulse_physical_length = self.pulse_length
+        self.cphase = kw.pop('cphase', None)
+        self.force_adapt_pulse_length = kw.pop('force_adapt_pulse_length', None)
+        if self.cphase is not None or self.force_adapt_pulse_length is not None:
+            self.cphase_calib_dict = kw.pop('cphase_calib_dict', None)
+            assert self.cphase_calib_dict is not None, \
+                "cphase_calib_dict not provided"
 
-    def __call__(self, **kw):
-        self.amplitude = kw.pop('amplitude', self.amplitude)
-        self.pulse_length = kw.pop('pulse_length', self.pulse_length)
-        self.buffer_length_start = kw.pop('buffer_length_start',
-                                          self.buffer_length_start)
-        self.buffer_length_end = kw.pop('buffer_length_end',
-                                        self.buffer_length_end)
-        self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse',
-                                             self.extra_buffer_aux_pulse)
-        self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma',
-                                            self.gaussian_filter_sigma)
-        self.length = self.pulse_length + self.buffer_length_start + \
-                      self.buffer_length_end
-        self.channels = kw.pop('channels', self.channels)
-        self.channels.append(self.channel)
-        return self
+            if self.cphase is not None:
+                self.amplitude, self.basis_rotation = \
+                    self.calc_cphase_params(self.cphase, self.cphase_calib_dict)
+                self.op_code = kw.pop('op_code', 'CZ').\
+                    replace('CZ', f'CZ{(self.cphase / np.pi * 180)}')
 
-    def chan_wf(self, chan, tvals):
-        amp = self.amplitude
-        buffer_start = self.buffer_length_start
-        buffer_end = self.buffer_length_end
-        pulse_length = self.pulse_length
-        if chan != self.channel:
-            amp = self.aux_channels_dict[chan]
-            buffer_start -= self.extra_buffer_aux_pulse
-            buffer_end -= self.extra_buffer_aux_pulse
-            pulse_length += 2 * self.extra_buffer_aux_pulse
+            self.pulse_physical_length = \
+                self.calc_physical_length(self.amplitude, self.cphase_calib_dict,
+                                          pulse_length=self.pulse_length,
+                                          adapt_pulse_length=self.force_adapt_pulse_length)
 
         if self.gaussian_filter_sigma == 0:
             wave = np.ones_like(tvals) * amp
@@ -276,52 +214,6 @@ class BufferedCZPulse(Pulse):
             2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
         return wave - wave[0]
 
-    def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        hashlist = [type(self), self.algorithm_time() - tstart]
-
-        amp = self.amplitude
-        buffer_start = self.buffer_length_start
-        buffer_end = self.buffer_length_end
-        pulse_length = self.pulse_length
-        if channel != self.channel:
-            amp = self.aux_channels_dict[channel]
-            buffer_start -= self.extra_buffer_aux_pulse
-            buffer_end -= self.extra_buffer_aux_pulse
-            pulse_length += 2 * self.extra_buffer_aux_pulse
-
-        hashlist += [amp, pulse_length, buffer_start, buffer_end]
-        hashlist += [self.gaussian_filter_sigma]
-        hashlist += [self.frequency, self.phase%360]
-        return hashlist
-
-class BufferedCZPulseEffectiveTime(Pulse):
-    def __init__(self,
-                 channel,
-                 element_name, chevron_func,
-                 aux_channels_dict=None,
-                 name='buffered CZ pulse effective time',
-                 **kw):
-        super().__init__(name, element_name)
-
-        self.channel = channel
-        self.aux_channels_dict = aux_channels_dict
-        self.channels = [self.channel]
-        if self.aux_channels_dict is not None:
-            self.channels += list(self.aux_channels_dict)
-
-        self.amplitude = kw.pop('amplitude', 0)
-        self.frequency = kw.pop('frequency', 0)
-        self.phase = kw.pop('phase', 0.)
-
-        self.chevron_func = chevron_func
-        # length rescaled to have a "straight" chevron -- parameter set by user
-        self.pulse_length = kw.pop('pulse_length', 0)
-        # physical length of pulse, computed using the model in chevron_func,
-        # which is the true length of the pulse
-        self.pulse_physical_length = self.chevron_func(self.amplitude,
-                                                       self.pulse_length)
         self.buffer_length_start = kw.pop('buffer_length_start', 0)
         self.buffer_length_end = kw.pop('buffer_length_end', 0)
         self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse', 5e-9)
@@ -330,26 +222,47 @@ class BufferedCZPulseEffectiveTime(Pulse):
                       self.buffer_length_end
         self.codeword = kw.pop('codeword', 'no_codeword')
 
-    def __call__(self, **kw):
-        self.amplitude = kw.pop('amplitude', self.amplitude)
-        self.pulse_length = kw.pop('pulse_length', self.pulse_length)
-        self.chevron_func = kw.pop('chevron_func', self.chevron_func)
-        self.pulse_physical_length = self.chevron_func(self.amplitude,
-                                                       self.pulse_length)
+    @staticmethod
+    def calc_cphase_params(phi, cphase_calib_dict):
+        assert 'phase_amplitude_array' in cphase_calib_dict, \
+            "phase_amplitude_array not provided"
+        paa = cphase_calib_dict['phase_amplitude_array']
+        offset = cphase_calib_dict.get('offset', paa[0][0])
+        amplitude = np.interp((phi - offset) % (2 * np.pi),
+                                   paa[0] - offset, paa[1], period=2 * np.pi)
 
-        self.buffer_length_start = kw.pop('buffer_length_start',
-                                          self.buffer_length_start)
-        self.buffer_length_end = kw.pop('buffer_length_end',
-                                        self.buffer_length_end)
-        self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse',
-                                             self.extra_buffer_aux_pulse)
-        self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma',
-                                            self.gaussian_filter_sigma)
-        self.length = self.pulse_physical_length + self.buffer_length_start + \
-                      self.buffer_length_end
-        self.channels = kw.pop('channels', self.channels)
-        self.channels.append(self.channel)
-        return self
+        if 'amplitude_dynphase_dict' not in  cphase_calib_dict:
+            log.warning('amplitude_dynphase_dict not provided. '
+                        'Using basis_rotation from pulse settings.')
+            basis_rotation = None
+        else:
+            basis_rotation = {}
+            kind = cphase_calib_dict.get('dynphase_interp_kind', 'cubic')
+            for qbn, ada in cphase_calib_dict['amplitude_dynphase_dict'].items():
+                basis_rotation[qbn] = sp.interpolate.interp1d(ada[0],
+                        (np.unwrap(ada[1] / 180 * np.pi) * 180 / np.pi),
+                        kind=kind, fill_value='extrapolate'
+                    )(amplitude)
+        return (amplitude, basis_rotation)
+
+    @staticmethod
+    def calc_physical_length(amplitude, cphase_calib_dict,
+                             pulse_length=None, adapt_pulse_length=None):
+        assert 'amplitude_time_array' in cphase_calib_dict, \
+            "amplitude_time_array not provided"
+        ata = cphase_calib_dict['amplitude_time_array']
+
+        if adapt_pulse_length is None:
+            adapt_pulse_length = 'absolute'
+        if adapt_pulse_length not in ['relative', 'absolute']:
+            log.warning(f'Pulse length adaptation \'{adapt_pulse_length}\' not understood.'
+                  + f'Using relative adaptation time.')
+        pulse_physical_length = np.interp(amplitude, ata[0], ata[1])
+        if adapt_pulse_length != 'absolute':
+            assert pulse_length is not None, \
+                '...'
+            pulse_physical_length *= pulse_length / max(ata[1])
+        return pulse_physical_length
 
     def chan_wf(self, chan, tvals):
         amp = self.amplitude
@@ -372,7 +285,7 @@ class BufferedCZPulseEffectiveTime(Pulse):
             scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
-                    (tvals - tend) * scaling)) * amp
+                (tvals - tend) * scaling)) * amp
         t_rel = tvals - tvals[0]
         wave *= np.cos(
             2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
@@ -395,10 +308,11 @@ class BufferedCZPulseEffectiveTime(Pulse):
 
         hashlist += [amp, pulse_physical_length, buffer_start, buffer_end]
         hashlist += [self.gaussian_filter_sigma]
-        hashlist += [self.frequency, self.phase%360]
+        hashlist += [self.frequency, self.phase % 360]
         return hashlist
 
-class NZBufferedCZPulse(Pulse):
+
+class NZBufferedCZPulse(pulse.Pulse):
     def __init__(self, channel, element_name, aux_channels_dict=None,
                  name='NZ buffered CZ pulse', **kw):
         super().__init__(name, element_name)
@@ -409,10 +323,10 @@ class NZBufferedCZPulse(Pulse):
         if self.aux_channels_dict is not None:
             self.channels += list(self.aux_channels_dict)
 
-        self.amplitude = kw.pop('amplitude', 0) #of first half
-        self.alpha = kw.pop('alpha', 1) #this will be applied to 2nd half
+        self.amplitude = kw.pop('amplitude', 0)  # of first half
+        self.alpha = kw.pop('alpha', 1)  # this will be applied to 2nd half
         self.pulse_length = kw.pop('pulse_length', 0)
-        self.length1 = self.alpha*self.pulse_length/(self.alpha + 1)
+        self.length1 = self.alpha * self.pulse_length / (self.alpha + 1)
 
         self.buffer_length_start = kw.pop('buffer_length_start', 0)
         self.buffer_length_end = kw.pop('buffer_length_end', 0)
@@ -429,46 +343,27 @@ class NZBufferedCZPulse(Pulse):
 
         self.codeword = kw.pop('codeword', 'no_codeword')
 
-    def __call__(self, **kw):
-        self.amplitude = kw.pop('amplitude', self.amplitude)
-        self.alpha = kw.pop('alpha', self.alpha)
-        self.pulse_length = kw.pop('pulse_length', self.pulse_length)
-        self.length1 = self.alpha*self.pulse_length/(self.alpha + 1)
-        self.buffer_length_start = kw.pop('buffer_length_start',
-                                          self.buffer_length_start)
-        self.buffer_length_end = kw.pop('buffer_length_end',
-                                        self.buffer_length_end)
-        self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse',
-                                             self.extra_buffer_aux_pulse)
-        self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma',
-                                            self.gaussian_filter_sigma)
-        self.length = self.pulse_length + self.buffer_length_start + \
-                      self.buffer_length_end
-        self.channels = kw.pop('channels', self.channels)
-        self.channels.append(self.channel)
-        return self
-
     def chan_wf(self, chan, tvals):
         amp1 = self.amplitude
-        amp2 = -self.amplitude*self.alpha
+        amp2 = -self.amplitude * self.alpha
         buffer_start = self.buffer_length_start
         buffer_end = self.buffer_length_end
         pulse_length = self.pulse_length
         l1 = self.length1
         if chan != self.channel:
-            amp1 = self.aux_channels_dict[chan]*amp1
-            amp2 = -amp1*self.alpha
+            amp1 = self.aux_channels_dict[chan] * amp1
+            amp2 = -amp1 * self.alpha
             buffer_start -= self.extra_buffer_aux_pulse
             buffer_end -= self.extra_buffer_aux_pulse
-            pulse_length += 2*self.extra_buffer_aux_pulse
-            l1 = self.alpha*pulse_length/(self.alpha + 1)
+            pulse_length += 2 * self.extra_buffer_aux_pulse
+            l1 = self.alpha * pulse_length / (self.alpha + 1)
 
         if self.gaussian_filter_sigma == 0:
-            wave1 = np.ones_like(tvals)*amp1
+            wave1 = np.ones_like(tvals) * amp1
             wave1 *= (tvals >= tvals[0] + buffer_start)
             wave1 *= (tvals < tvals[0] + buffer_start + l1)
 
-            wave2 = np.ones_like(tvals)*amp2
+            wave2 = np.ones_like(tvals) * amp2
             wave2 *= (tvals >= tvals[0] + buffer_start + l1)
             wave2 *= (tvals < tvals[0] + buffer_start + pulse_length)
 
@@ -477,11 +372,11 @@ class NZBufferedCZPulse(Pulse):
             tstart = tvals[0] + buffer_start
             tend = tvals[0] + buffer_start + l1
             tend2 = tvals[0] + buffer_start + pulse_length
-            scaling = 1/np.sqrt(2)/self.gaussian_filter_sigma
-            wave = 0.5*(amp1*sp.special.erf((tvals - tstart)*scaling) -
-                        amp1*sp.special.erf((tvals - tend)*scaling) +
-                        amp2*sp.special.erf((tvals - tend)*scaling) -
-                        amp2*sp.special.erf((tvals - tend2)*scaling))
+            scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
+            wave = 0.5 * (amp1 * sp.special.erf((tvals - tstart) * scaling) -
+                          amp1 * sp.special.erf((tvals - tend) * scaling) +
+                          amp2 * sp.special.erf((tvals - tend) * scaling) -
+                          amp2 * sp.special.erf((tvals - tend2) * scaling))
         return wave
 
     def hashables(self, tstart, channel):
@@ -742,8 +637,8 @@ class NZMartinisGellarPulse(Pulse):
         if self.aux_channels_dict is not None:
             self.channels += list(self.aux_channels_dict)
 
-        self.theta_f = kw.pop('theta_f', np.pi/2)
-        self.alpha = kw.pop('alpha', 1) # this will be applied to 2nd half
+        self.theta_f = kw.pop('theta_f', np.pi / 2)
+        self.alpha = kw.pop('alpha', 1)  # this will be applied to 2nd half
         self.pulse_length = kw.pop('pulse_length', 0)
 
         self.buffer_length_start = kw.pop('buffer_length_start', 0)
@@ -758,34 +653,9 @@ class NZMartinisGellarPulse(Pulse):
         self.anharmonicity = kw.pop('anharmonicity', 0)
         self.J = kw.pop('J', 0)
         self.loop_asym = kw.pop('loop_asym', 0)
-        self.dv_dphi= kw.pop('dv_dphi', 0)
+        self.dv_dphi = kw.pop('dv_dphi', 0)
         self.lambda_2 = kw.pop('lambda_2', 0)
         self.codeword = kw.pop('codeword', 'no_codeword')
-
-    def __call__(self, **kw):
-        self.theta_f = kw.pop('theta_f', self.theta_f)
-        self.alpha = kw.pop('alpha', self.alpha)
-        self.pulse_length = kw.pop('pulse_length', self.pulse_length)
-        self.buffer_length_start = kw.pop('buffer_length_start',
-                                          self.buffer_length_start)
-        self.buffer_length_end = kw.pop('buffer_length_end',
-                                        self.buffer_length_end)
-        self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse',
-                                             self.extra_buffer_aux_pulse)
-        self.length = self.pulse_length + self.buffer_length_start + \
-                      self.buffer_length_end
-        self.channels = kw.pop('channels', self.channels)
-        self.channels.append(self.channel)
-
-        self.wave_generation_func = kw.pop('wave_generation_func',
-                                           self.wave_generation_func)
-        self.qbc_freq = kw.pop('qbc_freq', self.qbc_freq)
-        self.qbt_freq = kw.pop('qbt_freq', self.qbt_freq)
-        self.J = kw.pop('J', self.J)
-        self.loop_asym = kw.pop('loop_asym', self.loop_asym)
-        self.dv_dphi = kw.pop('dv_dphi', self.dv_dphi)
-        self.lambda_2 = kw.pop('lambda_2', self.lambda_2)
-        return self
 
     def chan_wf(self, chan, tvals):
 
@@ -818,7 +688,8 @@ class NZMartinisGellarPulse(Pulse):
         hashlist += [self.buffer_length_start, hash(self.wave_generation_func)]
         return hashlist
 
-class GaussFilteredCosIQPulse(Pulse):
+
+class GaussFilteredCosIQPulse(pulse.Pulse):
     def __init__(self,
                  I_channel,
                  Q_channel,
@@ -842,22 +713,8 @@ class GaussFilteredCosIQPulse(Pulse):
         self.nr_sigma = kw.pop('nr_sigma', 5)
         self.phase_lock = kw.pop('phase_lock', False)
         self.length = self.pulse_length + \
-                      self.gaussian_filter_sigma*self.nr_sigma
+                      self.gaussian_filter_sigma * self.nr_sigma
         self.codeword = kw.pop('codeword', 'no_codeword')
-
-    def __call__(self, **kw):
-        self.amplitude = kw.pop('amplitude', self.amplitude)
-        self.mod_frequency = kw.pop('mod_frequency', self.mod_frequency)
-        self.pulse_length = kw.pop('pulse_length', self.pulse_length)
-        self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma',
-                                            self.gaussian_filter_sigma)
-        self.nr_sigma = kw.pop('nr_sigma', self.nr_sigma)
-        self.length = self.pulse_length + \
-                      self.gaussian_filter_sigma*self.nr_sigma
-        self.channels = kw.pop('channels', self.channels)
-        self.channels.append(self.I_channel)
-        self.channels.append(self.Q_channel)
-        return self
 
     def chan_wf(self, chan, tvals, **kw):
         if self.gaussian_filter_sigma == 0:
@@ -870,7 +727,7 @@ class GaussFilteredCosIQPulse(Pulse):
             scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
-                    (tvals - tend) * scaling)) * self.amplitude
+                (tvals - tend) * scaling)) * self.amplitude
         I_mod, Q_mod = apply_modulation(
             wave,
             np.zeros_like(wave),
@@ -879,7 +736,7 @@ class GaussFilteredCosIQPulse(Pulse):
             phase=self.phase,
             phi_skew=self.phi_skew,
             alpha=self.alpha,
-            phase_lock=self.phase_lock)
+            tval_phaseref=0 if self.phase_lock else self.algorithm_time())
         if chan == self.I_channel:
             return I_mod
         if chan == self.Q_channel:
@@ -893,12 +750,13 @@ class GaussFilteredCosIQPulse(Pulse):
         hashlist += [self.mod_frequency, self.gaussian_filter_sigma]
         hashlist += [self.nr_sigma, self.pulse_length]
         phase = self.phase
-        phase += 360*(not self.phase_lock)*self.mod_frequency \
-            *self.algorithm_time()
+        phase += 360 * (not self.phase_lock) * self.mod_frequency \
+                 * self.algorithm_time()
         hashlist += [self.alpha, self.phi_skew, phase]
         return hashlist
 
-class GaussFilteredCosIQPulseMultiChromatic(Pulse):
+
+class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
     def __init__(self,
                  I_channel,
                  Q_channel,
@@ -913,7 +771,7 @@ class GaussFilteredCosIQPulseMultiChromatic(Pulse):
 
         self.amplitude = kw.pop('amplitude', 0)
         self.mod_frequency = kw.pop('mod_frequency', [0])
-        if  np.ndim(self.mod_frequency) != 1:
+        if np.ndim(self.mod_frequency) != 1:
             raise ValueError("MultiChromatic Pulse requires a list or 1D array "
                              f"of frequencies. Instead {self.mod_frequency} "
                              f"was given")
@@ -926,7 +784,7 @@ class GaussFilteredCosIQPulseMultiChromatic(Pulse):
         self.nr_sigma = kw.pop('nr_sigma', 5)
         self.phase_lock = kw.pop('phase_lock', False)
         self.length = self.pulse_length + \
-                      self.gaussian_filter_sigma*self.nr_sigma
+                      self.gaussian_filter_sigma * self.nr_sigma
         self.codeword = kw.pop('codeword', 'no_codeword')
 
         params = dict(amplitude=self.amplitude,
@@ -941,51 +799,23 @@ class GaussFilteredCosIQPulseMultiChromatic(Pulse):
                 raise ValueError(f"Received {len(p)} {pname}  but expected "
                                  f"{len(self.mod_frequency)} (number of frequencies)")
 
-    def __call__(self, **kw):
-        self.amplitude = kw.pop('amplitude', self.amplitude)
-        self.mod_frequency = kw.pop('mod_frequency', self.mod_frequency)
-        if  np.ndim(self.mod_frequency) != 1:
-            raise ValueError("MultiChromatic Pulse requires a list or 1D array "
-                             f"of frequencies. Instead {self.mod_frequency} "
-                             f"was given")
-        self.pulse_length = kw.pop('pulse_length', self.pulse_length)
-        self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma',
-                                            self.gaussian_filter_sigma)
-        self.nr_sigma = kw.pop('nr_sigma', self.nr_sigma)
-        self.length = self.pulse_length + \
-                      self.gaussian_filter_sigma*self.nr_sigma
-        self.channels = kw.pop('channels', self.channels)
-        self.channels.append(self.I_channel)
-        self.channels.append(self.Q_channel)
-
-        params = dict(amplitude=self.amplitude,
-                      phase=self.phase,
-                      phi_skew=self.phi_skew,
-                      alpha=self.alpha)
-        for pname, p in params.items():
-            if np.ndim(p) == 0:
-                setattr(self, pname, len(self.mod_frequency)*[p])
-            elif len(p) != len(self.mod_frequency):
-                raise ValueError(f"Received {len(p)} {pname}  but expected "
-                                 f"{len(self.mod_frequency)} (number of frequencies)")
-        return self
-
     def chan_wf(self, chan, tvals, **kw):
         I_mods, Q_mods = np.zeros_like(tvals), np.zeros_like(tvals)
         for a, ph, f, phi, alpha in zip(self.amplitude, self.phase,
-                                     self.mod_frequency, self.phi_skew,
-                                     self.alpha):
+                                        self.mod_frequency, self.phi_skew,
+                                        self.alpha):
             if self.gaussian_filter_sigma == 0:
                 wave = np.ones_like(tvals) * a
                 wave *= (tvals >= tvals[0])
                 wave *= (tvals < tvals[0] + self.pulse_length)
             else:
-                tstart = tvals[0] + 0.5 * self.gaussian_filter_sigma * self.nr_sigma
+                tstart = tvals[
+                             0] + 0.5 * self.gaussian_filter_sigma * self.nr_sigma
                 tend = tstart + self.pulse_length
                 scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
                 wave = 0.5 * (sp.special.erf(
                     (tvals - tstart) * scaling) - sp.special.erf(
-                        (tvals - tend) * scaling)) * a
+                    (tvals - tend) * scaling)) * a
             I_mod, Q_mod = apply_modulation(
                 wave,
                 np.zeros_like(wave),
@@ -994,7 +824,7 @@ class GaussFilteredCosIQPulseMultiChromatic(Pulse):
                 phase=ph,
                 phi_skew=phi,
                 alpha=alpha,
-                phase_lock=self.phase_lock)
+                tval_phaseref=0 if self.phase_lock else self.algorithm_time())
             I_mods += I_mod
             Q_mods += Q_mod
         if chan == self.I_channel:
@@ -1011,26 +841,121 @@ class GaussFilteredCosIQPulseMultiChromatic(Pulse):
         hashlist += self.mod_frequency
         hashlist += [self.gaussian_filter_sigma]
         hashlist += [self.nr_sigma, self.pulse_length]
-        phase = [p + 360*(not self.phase_lock)*f *self.algorithm_time()\
-                  for p,f in zip(self.phase, self.mod_frequency)]
+        phase = [p + 360 * (not self.phase_lock) * f * self.algorithm_time() \
+                 for p, f in zip(self.phase, self.mod_frequency)]
         hashlist += self.alpha
         hashlist += self.phi_skew
         hashlist += phase
         return hashlist
 
-class Z_pulse(Pulse):
-    def __init__(self, name, element_name,  **kw):
+class VirtualPulse(pulse.Pulse):
+    def __init__(self, name, element_name, **kw):
         super().__init__(name, element_name)
         self.codeword = kw.pop('codeword', 'no_codeword')
         self.pulse_length = kw.pop('pulse_length', 0)
         self.length = self.pulse_length
-        self.phase = kw.get('phase', 0)
-
-    def __call__(self, **kw):
-        return self
 
     def chan_wf(self, chan, tvals):
-        return
+        return {}
 
     def hashables(self, tstart, channel):
         return []
+
+
+class SquarePulse(pulse.Pulse):
+    def __init__(self, element_name, channel=None, channels=None,
+                 name='square pulse', **kw):
+        super().__init__(name, element_name)
+        if channel is None and channels is None:
+            raise ValueError('Must specify either channel or channels')
+        elif channels is None:
+            self.channel = channel  # this is just for convenience, internally
+            # this is the part the sequencer element wants to communicate with
+            self.channels.append(channel)
+        else:
+            self.channels = channels
+        self.amplitude = kw.pop('amplitude', 0)
+        self.length = kw.pop('length', 0)
+        self.codeword = kw.pop('codeword', 'no_codeword')
+
+    def chan_wf(self, chan, tvals):
+        return np.ones(len(tvals)) * self.amplitude
+
+    def hashables(self, tstart, channel):
+        if channel not in self.channels:
+            return []
+        hashlist = [type(self), self.algorithm_time() - tstart]
+        hashlist += [self.amplitude, self.length]
+        return hashlist
+
+
+class CosPulse(pulse.Pulse):
+    def __init__(self, channel, element_name, name='cos pulse', **kw):
+        super().__init__(name, element_name)
+
+        self.channel = channel  # this is just for convenience, internally
+        self.channels.append(channel)
+        # this is the part the sequencer element wants to communicate with
+        self.frequency = kw.pop('frequency', 1e6)
+        self.amplitude = kw.pop('amplitude', 0.)
+        self.length = kw.pop('length', 0.)
+        self.phase = kw.pop('phase', 0.)
+        self.codeword = kw.pop('codeword', 'no_codeword')
+
+    def chan_wf(self, chan, tvals):
+        return self.amplitude * np.cos(2 * np.pi *
+                                       (self.frequency * tvals +
+                                        self.phase / 360.))
+
+    def hashables(self, tstart, channel):
+        if channel not in self.channels:
+            return []
+        hashlist = [type(self), self.algorithm_time() - tstart]
+        hashlist += [self.amplitude, self.length, self.frequency]
+        hashlist += [(self.phase + self.frequency * tstart * 360) % 360.]
+        return hashlist
+
+
+def apply_modulation(ienv, qenv, tvals, mod_frequency,
+                     phase=0., phi_skew=0., alpha=1., tval_phaseref=0.):
+    """
+    Applies single sideband modulation, requires tvals to make sure the
+    phases are correct.
+
+    The modulation and predistortion is calculated as
+    [I_mod] = [cos(phi_skew)  sin(phi_skew)] [ cos(wt)  sin(wt)] [I_env]
+    [Q_mod]   [0              1/alpha      ] [-sin(wt)  cos(wt)] [Q_env],
+    where wt = 360 * mod_frequency * (tvals - tval_phaseref) + phase
+
+    The output is normalized such that the determinatnt of the transformation
+    matrix is +-1.
+
+    Args:
+        ienv (np.ndarray): In-phase envelope waveform.
+        qenv (np.ndarray): Quadrature envelope waveform.
+        tvals (np.ndarray): Sample start times in seconds.
+        mod_frequency (float): Modulation frequency in Hz.
+        phase (float): Phase of modulation in degrees. Defaults to 0.
+        phi_skew (float): Phase offset between I_channel and Q_channel, in
+            addition to the nominal 90 degrees. Defaults to 0.
+        alpha (float): Ratio of the I_channel and Q_channel output.
+            Defaults to 1.
+        tval_phaseref: The reference time in seconds for calculating phase.
+            Defaults to 0.
+
+    Returns:
+        np.ndarray, np.ndarray: The predistorted and modulated outputs.
+    """
+    phi = 360 * mod_frequency * (tvals - tval_phaseref) + phase
+    phii = phi + phi_skew
+    phiq = phi + 90
+
+    # k = 1 / np.cos(np.pi * phi_skew / 180) #  old normalization
+    k = np.sqrt(np.abs(alpha / np.cos(np.deg2rad(phi_skew))))
+
+    imod = k * (ienv * np.cos(np.deg2rad(phii)) +
+                qenv * np.sin(np.deg2rad(phii)))
+    qmod = k * (ienv * np.cos(np.deg2rad(phiq)) +
+                qenv * np.sin(np.deg2rad(phiq))) / alpha
+
+    return imod, qmod
