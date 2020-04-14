@@ -1,10 +1,9 @@
 import numpy as np
 import qutip as qtp
 from pycqed.analysis import analysis_toolbox as a_tools
-from pycqed.analysis import composite_analysis as ca
 from matplotlib import pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from plotting_tools import *
+from pycqed.analysis.tools.plotting import *
 import time
 import os
 
