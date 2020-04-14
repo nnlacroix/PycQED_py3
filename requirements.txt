@@ -8,4 +8,3 @@ pygsti
 cma
 qcodes
 spirack
-nose

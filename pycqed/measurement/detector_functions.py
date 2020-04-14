@@ -1,21 +1,16 @@
-'''
+"""
 Module containing a collection of detector functions used by the
 Measurement Control.
-'''
+"""
 import numpy as np
 from copy import deepcopy
-import logging
 import time
 from string import ascii_uppercase
 from pycqed.analysis import analysis_toolbox as a_tools
-from pycqed.analysis.fit_toolbox import functions as fn
-from pycqed.measurement.waveform_control import pulse
-from pycqed.measurement.waveform_control import element
-from pycqed.measurement.waveform_control import sequence
 from qcodes.instrument.parameter import _BaseParameter
-import pycqed.measurement.pulse_sequences.calibration_elements as cal_elts
 import logging
 log = logging.getLogger(__name__)
+
 
 class Detector_Function(object):
 
