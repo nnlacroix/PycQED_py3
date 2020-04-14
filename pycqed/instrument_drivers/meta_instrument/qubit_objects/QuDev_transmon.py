@@ -2035,7 +2035,7 @@ class QuDev_transmon(Qubit):
                     'analysis_params'].get('classifier_params', None)
                 if update:
                     state_prob_mtx = ssqtro.proc_data_dict[
-                        'analysis_params']['state_prob_mtx_masked']
+                        'analysis_params']['state_prob_mtx']#_masked'] # Quick Fix JH 04/13/20
                     self.acq_classifier_params(classifier_params)
                     self.acq_state_prob_mtx(state_prob_mtx)
                     return state_prob_mtx, classifier_params
