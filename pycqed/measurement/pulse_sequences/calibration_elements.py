@@ -1,6 +1,5 @@
 import numpy as np
 from copy import deepcopy
-from pycqed.measurement.pulse_sequences.standard_elements import multi_pulse_elt
 from pycqed.measurement.waveform_control import pulsar as ps
 from pycqed.measurement.waveform_control import sequence as sequence
 from pycqed.measurement.waveform_control import segment as segment
@@ -26,6 +25,10 @@ def cos_seq(amplitude, frequency, channels, phases,
         marker_channels (list[(str)]: optionally specify markers to play
 
     '''
+    raise NotImplementedError(
+        'cos_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
+
     seq_name = 'ModSquare'
     seq = sequence.Sequence(seq_name)
     el_list = []
@@ -69,6 +72,10 @@ def mixer_calibration_sequence(trigger_separation, amplitude, trigger_channel=No
                                RO_pars = None,
                                pulse_I_channel='AWG_ch1', pulse_Q_channel='AWG_ch2',
                                f_pulse_mod=0, phi_skew=0, alpha=1, upload=True):
+    raise NotImplementedError(
+        'mixer_calibration_sequence has not been '
+        'converted to the latest waveform generation code and can not be used.')
+
     if trigger_channel is not None:
         RO_trigger = {'pulse_type': 'SquarePulse',
                       'channel': trigger_channel,
@@ -250,6 +257,10 @@ def readout_photons_in_resonator_seq(delay_to_relax, delay_buffer, ramsey_times,
         The sequence object and the element list if return_seq is True. Else
         return the sequence name.
     """
+    raise NotImplementedError(
+        'readout_photons_in_resonator_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
+
     if cal_points is True: cal_points = ((-4, -3), (-2, -1))
     elif cal_points is False or cal_points is None: cal_points = ((), ())
 

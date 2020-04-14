@@ -1,25 +1,13 @@
 import numpy as np
 from copy import deepcopy
-
 from pycqed.measurement.waveform_control.block import Block
-
-try:
-    from math import gcd
-except:  # Moved to math in python 3.5, this is to be 3.4 compatible
-    from fractions import gcd
-from pycqed.measurement.waveform_control import pulse, segment
+from pycqed.measurement.waveform_control import segment
 from pycqed.measurement.waveform_control import sequence
 from pycqed.measurement.waveform_control import pulsar as ps
-from pycqed.measurement.pulse_sequences.standard_elements import multi_pulse_elt
 from pycqed.measurement.pulse_sequences.single_qubit_tek_seq_elts import \
     sweep_pulse_params, add_preparation_pulses, pulse_list_list_seq
 from pycqed.measurement.pulse_sequences.multi_qubit_tek_seq_elts import \
     generate_mux_ro_pulse_list
-
-from importlib import reload
-reload(pulse)
-from pycqed.measurement.waveform_control import pulse_library
-reload(pulse_library)
 
 import logging
 log = logging.getLogger(__name__)
@@ -95,6 +83,9 @@ def Ramsey_with_flux_pulse_meas_seq(thetas, qb, X90_separation, verbose=False,
         else:
             seq_name: string
     '''
+    raise NotImplementedError(
+        'Ramsey_with_flux_pulse_meas_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
 
     qb_name = qb.name
     operation_dict = qb.get_operation_dict()
@@ -472,6 +463,10 @@ def cz_bleed_through_phase_seq(phases, qb_name, CZ_pulse_name, CZ_separation,
         else:
             seq_name: string
     '''
+    raise NotImplementedError(
+        'cz_bleed_through_phase_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
+
     # if maximum_CZ_separation is None:
     #     maximum_CZ_separation = CZ_separation
 

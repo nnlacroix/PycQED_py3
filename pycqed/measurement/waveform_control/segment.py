@@ -10,8 +10,8 @@ import math
 import logging
 log = logging.getLogger(__name__)
 from copy import deepcopy
+import pycqed.measurement.waveform_control.pulse as bpl
 import pycqed.measurement.waveform_control.pulse_library as pl
-import pycqed.measurement.waveform_control.pulse as bpl  # base pulse lib
 import pycqed.measurement.waveform_control.pulsar as ps
 import pycqed.measurement.waveform_control.fluxpulse_predistortion as flux_dist
 from collections import OrderedDict as odict
@@ -255,7 +255,7 @@ class Segment:
             if self.pulsar.get('{}_charge_buildup_compensation'.format(c)):
                 compensation_chan.add(c)
 
-        # * generate the pulse_area dictionarry containing for each channel
+        # * generate the pulse_area dictionary containing for each channel
         #   that has to be compensated the sum of all pulse areas on that
         #   channel + the name of the last element
         # * and find the end time of the last pulse of the segment
@@ -648,12 +648,13 @@ class Segment:
 
     def resolve_Z_gates(self):
         """
-        The phase of a basis rotation is acquired by an basis pulse, if the 
-        middle of the basis rotation pulse happens before the middle of the 
-        basis pulse. Using that self.unresolved_pulses was sorted by 
+        The phase of a basis rotation is acquired by an basis pulse, if the
+        middle of the basis rotation pulse happens before the middle of the
+        basis pulse. Using that self.unresolved_pulses was sorted by
         self.resolve_timing() the acquired phases can be calculated.
         """
-        qubit_phases = {}
+
+        basis_phases = {}
 
         for pulse in self.unresolved_pulses:
             # the following if statement allows pulse objects to specify a
@@ -662,17 +663,12 @@ class Segment:
             if getattr(pulse.pulse_obj, 'basis_rotation', None) is not None:
                 pulse.basis_rotation = pulse.pulse_obj.basis_rotation
 
-            for qubit in pulse.basis_rotation:
-                if qubit in qubit_phases:
-                    qubit_phases[qubit] += pulse.basis_rotation[qubit]
-                else:
-                    qubit_phases[qubit] = pulse.basis_rotation[qubit]
+            for basis, rotation in pulse.basis_rotation.items():
+                basis_phases[basis] = basis_phases.get(basis, 0) + rotation
 
             if pulse.basis is not None:
-                try:
-                    pulse.pulse_obj.phase -= qubit_phases[pulse.basis]
-                except KeyError:
-                    qubit_phases[pulse.basis] = 0
+                pulse.pulse_obj.phase = pulse.original_phase - \
+                                        basis_phases.get(pulse.basis, 0)
 
     def element_start_length(self, element, awg):
         """
@@ -792,7 +788,7 @@ class Segment:
                         )[pulse_start:pulse_end]
                     
                     # calculate pulse waveforms
-                    pulse_wfs = pulse.get_wfs(chan_tvals)
+                    pulse_wfs = pulse.waveforms(chan_tvals)
 
                     # insert the waveforms at the correct position in wfs
                     for channel in pulse_channels:
@@ -1122,24 +1118,22 @@ class UnresolvedPulse:
         self.basis_rotation = pulse_pars.pop('basis_rotation', {})
         self.op_code = pulse_pars.get('op_code', '')
 
-        try:
-            # Look for the function in pl = pulse_lib
-            pulse_func = getattr(pl, pulse_pars['pulse_type'])
-        except AttributeError:
+        pulse_func = None
+        for module in bpl.pulse_libraries:
             try:
-                # Look for the function in bpl = pulse
-                pulse_func = getattr(bpl, pulse_pars['pulse_type'])
+                pulse_func = getattr(module, pulse_pars['pulse_type'])
             except AttributeError:
-                raise KeyError('pulse_type {} not recognized'.format(
-                    pulse_pars['pulse_type']))
+                pass
+        if pulse_func is None:
+            raise KeyError('pulse_type {} not recognized'.format(
+                pulse_pars['pulse_type']))
 
-        self.pulse_obj = \
-            pulse_func(**pulse_pars)
+        self.pulse_obj = pulse_func(**pulse_pars)
         # allow a pulse to modify its op_code (e.g., for C-ARB gates)
         self.op_code = getattr(self.pulse_obj, 'op_code', self.op_code)
 
         if self.pulse_obj.codeword != 'no_codeword' and \
-            self.basis_rotation != {}:
+                self.basis_rotation != {}:
             raise Exception(
                 'Codeword pulse {} does not support basis_rotation!'.format(
                     self.pulse_obj.name))
