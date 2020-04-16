@@ -935,7 +935,7 @@ def measure_two_qubit_randomized_benchmarking(
         clifford_decomposition_name='HZ', interleaved_gate=None,
         n_cal_points_per_state=2, cal_states=tuple(),
         label=None, prep_params=None, upload=True, analyze_RB=True,
-        classified=True, correlated=False, thresholded=True, averaged=True):
+        classified=True, det_get_values_kws=None):
 
     qb1n = qb1.name
     qb2n = qb2.name
@@ -984,10 +984,15 @@ def measure_two_qubit_randomized_benchmarking(
     MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
         hard_sweep_func, sequences, 'Nr. Seeds', ''))
     MC.set_sweep_points_2D(soft_sweep_points)
-    det_get_values_kws = {'classified': classified,
-                          'correlated': correlated,
-                          'thresholded': thresholded,
-                          'averaged': averaged}
+    det_get_values_kws_to_set = {'classified': classified,
+                                 'correlated': True,
+                                 'thresholded': True,
+                                 'averaged': True,
+                                 'ro_corrected_stored_mtx': False,
+                                 'ro_corrected_seq_cal_mtx': False}
+    if det_get_values_kws is None:
+        det_get_values_kws = {}
+    det_get_values_kws_to_set.update(det_get_values_kws)
     if classified:
         det_type = 'int_avg_classif_det'
         nr_shots = max(qb.acq_averages() for qb in qubits)
@@ -996,7 +1001,8 @@ def measure_two_qubit_randomized_benchmarking(
         nr_shots = max(qb.acq_shots() for qb in qubits)
     det_func = get_multiplexed_readout_detector_functions(
         qubits, nr_averages=max(qb.acq_averages() for qb in qubits),
-        nr_shots=nr_shots, det_get_values_kws=det_get_values_kws)[det_type]
+        nr_shots=nr_shots,
+        det_get_values_kws=det_get_values_kws_to_set)[det_type]
     MC.set_detector_function(det_func)
 
     # create sweep points
@@ -2187,7 +2193,8 @@ def measure_cphase_nn(qbc, qbt, qbr, lengths, amps, alphas=None,
 
 def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                    hard_sweep_params=None, max_flux_length=None,
-                   num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
+                   num_cz_gates=1, n_cal_points_per_state=1,
+                   cal_states='auto', det_get_values_kws=None,
                    prep_params=None, exp_metadata=None, label=None,
                    analyze=True, upload=True, for_ef=True, **kw):
     '''
@@ -2266,14 +2273,19 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
         channels_to_upload=channels_to_upload))
     MC.set_sweep_points_2D(soft_sweep_points)
 
-    det_get_values_kws = {'classified': classified,
-                          'correlated': False,
-                          'thresholded': True,
-                          'averaged': True}
+    det_get_values_kws_to_set = {'classified': classified,
+                                 'correlated': False,
+                                 'thresholded': True,
+                                 'averaged': True,
+                                 'ro_corrected_stored_mtx': False,
+                                 'ro_corrected_seq_cal_mtx': False}
+    if det_get_values_kws is None:
+        det_get_values_kws = {}
+    det_get_values_kws_to_set.update(det_get_values_kws)
     det_name = 'int_avg{}_det'.format('_classif' if classified else '')
     det_func = get_multiplexed_readout_detector_functions(
         [qbc, qbt], nr_averages=max(qb.acq_averages() for qb in [qbc, qbt]),
-        det_get_values_kws=det_get_values_kws)[det_name]
+        det_get_values_kws=det_get_values_kws_to_set)[det_name]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
