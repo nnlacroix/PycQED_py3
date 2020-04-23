@@ -533,6 +533,7 @@ def load_landscape_from_analyzed_files(tstart, tend, save=False, plot=True):
             if save:
                 fig.savefig(f + f"\\leakage_{qb}.png")
 
+    [a.data_file.close() for a in an]
     return np.asarray(gammas), np.asarray(betas), energy, leakages, an
 
 
@@ -713,10 +714,14 @@ def plot_colormesh(xx, yy, zz, ax=None, labels=True, colorbar=True, **plot_kwarg
     vmin = plot_kwargs.pop("vmin", None)
     vmax = plot_kwargs.pop("vmax", None)
     cmap = plot_kwargs.pop("cmap", "seismic")
-    im = ax.pcolormesh(np.pad(xx, (1, 0), "linear_ramp"),
-                       np.pad(yy, (1, 0), "linear_ramp"), zz,
+    x_off = (xx[1, 0] - xx[0, 0]) / 2
+    y_off = (yy[0, 1] - yy[0, 0]) / 2
+    im = ax.pcolormesh(np.pad(xx + x_off, (1, 0), "linear_ramp"),
+                       np.pad(yy + y_off, (1, 0), "linear_ramp"), zz,
                        cmap=cmap, vmin=vmin, vmax=vmax,
                        **plot_kwargs)
+    ax.set_xlim([np.min(xx),np.max(xx)])
+    ax.set_ylim([np.min(yy),np.max(yy)])
     if labels:
         ax.set_xlabel("gamma (rad.)")
         ax.set_ylabel("beta (rad.)")
@@ -783,6 +788,18 @@ def rotate_state(psi):
         if abs(psi[i]) > 0:
             return psi*np.exp(-1j*np.angle(psi[i]))
     raise('State is zero')
+
+def rotate_operator(U):
+    """
+        rotate such that first nonzero element is real positive
+        to make operator comparable despite different global phase
+    """
+    Utmp = np.asarray(U)
+    for i in range(np.shape(Utmp)[0]):
+        for j in range(np.shape(Utmp)[0]):
+            if abs(Utmp[i,j]) > 0:
+                Utmp = Utmp*np.exp(-1j*np.angle(Utmp[i,j]))
+    raise('Operator is zero')
 
 def seq2tikz(seq, qb_names, tscale=1e-6):
     last_z = [(-np.inf, 0)] * len(qb_names)
