@@ -21,8 +21,6 @@ from pycqed.measurement.pulse_sequences import fluxing_sequences as fsqs
 from pycqed.analysis_v3 import pipeline_analysis as pla
 from pycqed.analysis import measurement_analysis as ma
 from pycqed.analysis_v2 import timedomain_analysis as tda
-import pycqed.analysis.randomized_benchmarking_analysis as rbma
-from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.utilities.general import add_suffix_to_dict_keys
 from pycqed.utilities.general import temporary_value
 from pycqed.instrument_drivers.meta_instrument.qubit_objects.qubit_object \
@@ -295,6 +293,29 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter('X180_ef', 'ef_motzoi', 'motzoi',
                                  initial_value=0, vals=vals.Numbers())
         self.add_pulse_parameter('X180_ef', 'ef_X_phase', 'phase',
+                                 initial_value=0, vals=vals.Numbers())
+
+        # qubit 2nd excitation drive pulse parameters
+        self.add_parameter('fh_freq', label='Qubit fh drive frequency',
+                           unit='Hz', initial_value=0,
+                           parameter_class=ManualParameter)
+        self.add_operation('X180_fh')
+        self.add_pulse_parameter('X180_fh', 'fh_pulse_type', 'pulse_type',
+                                 initial_value='SSB_DRAG_pulse',
+                                 vals=vals.Enum('SSB_DRAG_pulse'))
+        self.add_pulse_parameter('X180_fh', 'fh_amp180', 'amplitude',
+                                 initial_value=0.001, vals=vals.Numbers())
+        self.add_pulse_parameter('X180_fh', 'fh_amp90_scale', 'amp90_scale',
+                                 initial_value=0.5, vals=vals.Numbers(0, 1))
+        self.add_pulse_parameter('X180_fh', 'fh_delay', 'pulse_delay',
+                                 initial_value=0, vals=vals.Numbers())
+        self.add_pulse_parameter('X180_fh', 'fh_sigma', 'sigma',
+                                 initial_value=10e-9, vals=vals.Numbers())
+        self.add_pulse_parameter('X180_fh', 'fh_nr_sigma', 'nr_sigma',
+                                 initial_value=5, vals=vals.Numbers())
+        self.add_pulse_parameter('X180_fh', 'fh_motzoi', 'motzoi',
+                                 initial_value=0, vals=vals.Numbers())
+        self.add_pulse_parameter('X180_fh', 'fh_X_phase', 'phase',
                                  initial_value=0, vals=vals.Numbers())
 
         # add qubit spectroscopy parameters
@@ -593,15 +614,25 @@ class QuDev_transmon(Qubit):
         operation_dict['RO ' + self.name]['operation_type'] = 'RO'
         operation_dict['X180 ' + self.name]['operation_type'] = 'MW'
         operation_dict['X180_ef ' + self.name]['operation_type'] = 'MW'
+        operation_dict['X180_fh ' + self.name]['operation_type'] = 'MW'
         operation_dict['X180 ' + self.name]['basis'] = self.name
         operation_dict['X180_ef ' + self.name]['basis'] = self.name + '_ef'
+        operation_dict['X180_fh ' + self.name]['basis'] = self.name + '_fh'
         operation_dict['X180_ef ' + self.name]['I_channel'] = \
+            operation_dict['X180 ' + self.name]['I_channel']
+        operation_dict['X180_fh ' + self.name]['I_channel'] = \
             operation_dict['X180 ' + self.name]['I_channel']
         operation_dict['X180_ef ' + self.name]['Q_channel'] = \
             operation_dict['X180 ' + self.name]['Q_channel']
+        operation_dict['X180_fh ' + self.name]['Q_channel'] = \
+            operation_dict['X180 ' + self.name]['Q_channel']
         operation_dict['X180_ef ' + self.name]['phi_skew'] = \
             operation_dict['X180 ' + self.name]['phi_skew']
+        operation_dict['X180_fh ' + self.name]['phi_skew'] = \
+            operation_dict['X180 ' + self.name]['phi_skew']
         operation_dict['X180_ef ' + self.name]['alpha'] = \
+            operation_dict['X180 ' + self.name]['alpha']
+        operation_dict['X180_fh ' + self.name]['alpha'] = \
             operation_dict['X180 ' + self.name]['alpha']
         operation_dict['Acq ' + self.name] = deepcopy(
             operation_dict['RO ' + self.name])
@@ -612,6 +643,11 @@ class QuDev_transmon(Qubit):
         else:
             operation_dict['X180_ef ' + self.name]['mod_frequency'] = \
                 self.ef_freq() - self.ge_freq() + self.ge_mod_freq()
+        if self.fh_freq() == 0:
+            operation_dict['X180_fh ' + self.name]['mod_frequency'] = None
+        else:
+            operation_dict['X180_fh ' + self.name]['mod_frequency'] = \
+                self.fh_freq() - self.ge_freq() + self.ge_mod_freq()
 
         operation_dict.update(add_suffix_to_dict_keys(
             sq.get_pulse_dict_from_pars(
@@ -619,6 +655,9 @@ class QuDev_transmon(Qubit):
         operation_dict.update(add_suffix_to_dict_keys(
             sq.get_pulse_dict_from_pars(
                 operation_dict['X180_ef ' + self.name]), '_ef ' + self.name))
+        operation_dict.update(add_suffix_to_dict_keys(
+            sq.get_pulse_dict_from_pars(
+                operation_dict['X180_fh ' + self.name]), '_fh ' + self.name))
         if np.ndim(self.ro_freq()) != 0:
             delta_freqs = np.diff(self.ro_freq(), prepend=self.ro_freq()[0])
             mods = [self.ro_mod_freq() + d for d in delta_freqs]
@@ -1143,7 +1182,7 @@ class QuDev_transmon(Qubit):
 
 
     def measure_ramsey(self, times, artificial_detunings=None, label=None,
-                       analyze=True, close_fig=True,
+                       analyze=True, close_fig=True, qbs_pulses=None,
                        cal_states="auto", n_cal_points_per_state=2,
                        n=1, upload=True, last_ge_pulse=False, for_ef=False,
                        classified_ro=False, prep_params=None, exp_metadata=None):
@@ -1170,6 +1209,7 @@ class QuDev_transmon(Qubit):
         # create sequence
         seq, sweep_points = sq.ramsey_active_reset(
             times=times, artificial_detunings=artificial_detunings,
+            qbs_pulses=qbs_pulses,
             qb_name=self.name, cal_points=cp, n=n, for_ef=for_ef,
             operation_dict=self.get_operation_dict(), upload=False,
             last_ge_pulse=last_ge_pulse, prep_params=prep_params)
@@ -1187,6 +1227,7 @@ class QuDev_transmon(Qubit):
              'sweep_name': 'Delay',
              'sweep_unit': 's',
              'cal_points': repr(cp),
+             'qbs_pulses': qbs_pulses,
              'preparation_params': prep_params,
              'last_ge_pulses': [last_ge_pulse],
              'artificial_detuning': artificial_detunings,
@@ -2029,14 +2070,20 @@ class QuDev_transmon(Qubit):
             self.measure_transients(analyze=True, states=levels,
                                     acq_length=acq_length, **kw)
 
-        # create label, measurement analysis and data for each level
-        if kw.get("name_extra", False):
-            labels = {l: 'timetrace_{}_'.format(l) + kw.get('name_extra')
-                         + "_{}".format(self.name) for l in levels}
+        timestamps = kw.get("timestamps", None)
+        if timestamps is not None:
+            assert len(timestamps) == len(levels)
+            m_a = {l: ma.MeasurementAnalysis(timestamp=ts) for l, ts in
+                                             zip(levels, timestamps)}
         else:
-            labels = {l: 'timetrace_{}'.format(l)
-                         + "_{}".format(self.name) for l in levels}
-        m_a = {l: ma.MeasurementAnalysis(label=labels[l]) for l in levels}
+            # create label, measurement analysis and data for each level
+            if kw.get("name_extra", False):
+                labels = {l: 'timetrace_{}_'.format(l) + kw.get('name_extra')
+                             + "_{}".format(self.name) for l in levels}
+            else:
+                labels = {l: 'timetrace_{}'.format(l)
+                             + "_{}".format(self.name) for l in levels}
+            m_a = {l: ma.MeasurementAnalysis(label=labels[l]) for l in levels}
         iq_traces = {l: m_a[l].measured_values[0]
                         + 1j * m_a[l].measured_values[1] for l in levels}
         final_basis_labels = ['ge'] # default basis vector if only qubit ro
@@ -2675,7 +2722,7 @@ class QuDev_transmon(Qubit):
             pla.PipelineDataAnalysis()
 
     def find_frequency_T2_ramsey(self, times, artificial_detunings=None,
-                                 upload=True, label=None, n=1,
+                                 upload=True, label=None, n=1, qbs_pulses=None,
                                  cal_states="auto", n_cal_points_per_state=2,
                                  analyze=True, update=False, for_ef=False,
                                  last_ge_pulse=False, classified_ro=False,
@@ -2746,7 +2793,7 @@ class QuDev_transmon(Qubit):
                             last_ge_pulse=last_ge_pulse, for_ef=for_ef,
                             classified_ro=classified_ro, upload=upload,
                             prep_params=prep_params, exp_metadata=exp_metadata,
-                            analyze=False)
+                            qbs_pulses=qbs_pulses, analyze=False)
 
         # # Check if one or more artificial detunings
         if (hasattr(artificial_detunings, '__iter__') and
@@ -3585,7 +3632,9 @@ class QuDev_transmon(Qubit):
                 ma.MeasurementAnalysis(TwoD=True)
 
     def measure_flux_pulse_amplitude(self, freqs, amplitudes,
-                                     flux_pulse_name=None,
+                                     flux_pulse_name=None, qbf_name=None,
+                                     flux_pulse_name_qbf=None,
+                                     operation_dict=None,
                                      analyze=True, cal_points=True,
                                      upload=True, label=None,
                                      n_cal_points_per_state=2, delay=None,
@@ -3612,9 +3661,14 @@ class QuDev_transmon(Qubit):
 
         if flux_pulse_name is None:
             flux_pulse_name = 'FP ' + self.name
+        if flux_pulse_name_qbf is None and qbf_name is not None:
+            flux_pulse_name_qbf = 'FP ' + qbf_name
 
         if label is None:
-            label = 'Flux_amplitude_{}'.format(self.name)
+            label = 'Flux_amplitude_'
+            if qbf_name is not None:
+                label += qbf_name + '_'
+            label += self.name
         MC = self.instr_mc.get_instr()
         self.prepare(drive='timedomain')
 
@@ -3626,11 +3680,14 @@ class QuDev_transmon(Qubit):
             cp = None
         if prep_params is None:
             prep_params = self.preparation_params()
+        if operation_dict is None:
+            operation_dict = self.get_operation_dict()
         seq, sweep_points, sweep_points_2D = \
             fsqs.fluxpulse_amplitude_sequence(
-                amplitudes=amplitudes, freqs=freqs, qb_name=self.name,
-                operation_dict=self.get_operation_dict(), delay=delay,
-                flux_pulse_name=flux_pulse_name, cal_points=cp,
+                amplitudes=amplitudes, freqs=freqs, qbr_name=self.name,
+                qbf_name=qbf_name, flux_pulse_name_qbf=flux_pulse_name_qbf,
+                operation_dict=operation_dict, delay=delay,
+                flux_pulse_name_qbr=flux_pulse_name, cal_points=cp,
                 prep_params=prep_params, upload=False)
         MC.set_sweep_function(awg_swf.SegmentHardSweep(
             sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
@@ -3658,7 +3715,7 @@ class QuDev_transmon(Qubit):
 
         if analyze:
             try:
-                MA = tda.FluxAmplitudeSweepAnalysis(
+                tda.FluxAmplitudeSweepAnalysis(
                     qb_names=[self.name], options_dict=dict(TwoD=True))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)

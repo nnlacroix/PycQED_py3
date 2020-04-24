@@ -854,7 +854,6 @@ def measure_tomography(qubits, prep_sequence, state_name,
         label = '{}_tomography_ssro_{}'.format(state_name, '-'.join(
             [qb.name for qb in qubits]))
 
-    operation_dict = get_operation_dict(qubits)
     seq_tomo, seg_list_tomo = mqs.n_qubit_tomo_seq(
         qubit_names, operation_dict, prep_sequence=prep_sequence,
         rots_basis=rots_basis, return_seq=True, upload=False,
@@ -926,8 +925,8 @@ def measure_tomography(qubits, prep_sequence, state_name,
     MC.soft_avg(1)
     MC.set_sweep_function(sf)
     MC.set_sweep_points(np.arange(n_segments))
-    MC.set_sweep_function_2D(swf.None_Sweep())
-    MC.set_sweep_points_2D(np.arange(nreps))
+    # MC.set_sweep_function_2D(swf.None_Sweep())
+    # MC.set_sweep_points_2D(np.arange(nreps))
     MC.set_detector_function(df)
     if run:
         MC.run(label, exp_metadata=exp_metadata)
@@ -2420,7 +2419,7 @@ def measure_cphase_fluxed_spectators(qbc, qbt, qbs, soft_sweep_params,
 
     det_get_values_kws = {'classified': classified,
                           'correlated': False,
-                          'thresholded': True,
+                          'thresholded': False,
                           'averaged': True}
     det_name = 'int_avg{}_det'.format('_classif' if classified else '')
     det_func = get_multiplexed_readout_detector_functions(
@@ -2474,12 +2473,12 @@ def measure_cphase_fluxed_spectators(qbc, qbt, qbs, soft_sweep_params,
 
 
 def measure_cphase_interleaved_fluxed_spectators(
-        qbc, qbt, qbs_list, soft_sweep_params_list,
+        qbc, qbt, qbs_list, qbdd_list, soft_sweep_params_list,
         cz_pulse_name, qbs_operations=None,
         hard_sweep_params=None, max_flux_length=None,
         num_cz_gates=1, n_cal_points_per_state=1,
         cal_states='auto', prep_params=None,
-        exp_metadata=None, label=None,
+        exp_metadata=None, label=None, det_get_values_kws=None,
         analyze=True, upload=True, for_ef=True, **kw):
 
     '''
@@ -2503,6 +2502,7 @@ def measure_cphase_interleaved_fluxed_spectators(
     plot_all_probs = kw.get('plot_all_probs', True)
     classified = kw.get('classified', False)
     qbs_names = [qb.name for qb in qbs_list]
+    qbdd_names = [qb.name for qb in qbdd_list]
 
     for qbs in qbs_list:
         opdict = qbs.get_operation_dict()
@@ -2511,7 +2511,8 @@ def measure_cphase_interleaved_fluxed_spectators(
 
     if prep_params is None:
         prep_params = get_multi_qubit_prep_params(
-            [qb.preparation_params() for qb in ([qbc, qbt] + qbs_list)])
+            [qb.preparation_params() for qb in ([qbc, qbt] + qbs_list + \
+                                                qbdd_list)])
 
     if label is None:
         label = 'CPhase_spectators_measurement'
@@ -2529,7 +2530,7 @@ def measure_cphase_interleaved_fluxed_spectators(
                       'unit': 'deg'}
         }
 
-    for qb in ([qbc, qbt] + qbs_list):
+    for qb in ([qbc, qbt] + qbs_list + qbdd_list):
         MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
@@ -2540,12 +2541,13 @@ def measure_cphase_interleaved_fluxed_spectators(
 
     if max_flux_length is not None:
         log.debug(f'max_flux_length = {max_flux_length*1e9:.2f} ns, set by user')
-    operation_dict = get_operation_dict([qbc, qbt] + qbs_list)
+    operation_dict = get_operation_dict([qbc, qbt] + qbs_list + qbdd_list)
     sequences, hard_sweep_points, soft_sweep_points = \
         fsqs.cphase_interleaved_fluxed_spectators_seqs(
             hard_sweep_dict=hard_sweep_params,
             soft_sweep_dict_list=soft_sweep_params_list,
             qbc_name=qbc.name, qbt_name=qbt.name, qbs_names=qbs_names,
+            qbdd_names=qbdd_names,
             cz_pulse_name=cz_pulse_name,
             operation_dict=operation_dict,
             cal_points=cp, upload=False, prep_params=prep_params,
@@ -2568,14 +2570,20 @@ def measure_cphase_interleaved_fluxed_spectators(
         channels_to_upload=channels_to_upload))
     MC.set_sweep_points_2D(soft_sweep_points)
 
-    det_get_values_kws = {'classified': classified,
-                          'correlated': False,
-                          'thresholded': True,
-                          'averaged': True}
+    det_get_values_kws_to_set = {'classified': classified,
+                                 'correlated': False,
+                                 'thresholded': False,
+                                 'averaged': True,
+                                 'ro_corrected_stored_mtx': False,
+                                 'ro_corrected_seq_cal_mtx': False}
+    if det_get_values_kws is None:
+        det_get_values_kws = {}
+    det_get_values_kws_to_set.update(det_get_values_kws)
+    print(det_get_values_kws_to_set)
     det_name = 'int_avg{}_det'.format('_classif' if classified else '')
     det_func = get_multiplexed_readout_detector_functions(
         [qbc, qbt], nr_averages=max(qb.acq_averages() for qb in [qbc, qbt]),
-        det_get_values_kws=det_get_values_kws)[det_name]
+        det_get_values_kws=det_get_values_kws_to_set)[det_name]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
@@ -2583,7 +2591,10 @@ def measure_cphase_interleaved_fluxed_spectators(
     exp_metadata.update({'leakage_qbname': qbc.name,
                          'cphase_qbname': qbt.name,
                          'spectator_qbnames': qbs_names,
+                         # 'dyn_decoupling': dyn_decoupling,
+                         'dyn_decoupling_qbnames': qbdd_names,
                          'preparation_params': prep_params,
+                         'det_get_values_kws': det_get_values_kws_to_set,
                          'cal_points': repr(cp),
                          'classified_ro': classified,
                          'rotate': len(cal_states) != 0 and not classified,
@@ -2753,7 +2764,8 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
     return results
 
 
-def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
+def measure_dynamic_phases(qbc, qbt, cz_pulse_name, num_cz_gates=1,
+                           hard_sweep_params=None,
                            qubits_to_measure=None, cal_points=True, qbss=None,
                            analyze=True, upload=True, n_cal_points_per_state=1,
                            cal_states='auto', prep_params=None,
@@ -2802,8 +2814,10 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
         seq, hard_sweep_points = \
             fsqs.dynamic_phase_seq(
                 qb_name=qb.name, hard_sweep_dict=hard_sweep_params,
-                operation_dict=get_operation_dict(qubits_to_measure+qbss),
-                cz_pulse_name=cz_pulse_name, cal_points=cp,
+                operation_dict=get_operation_dict(
+                    [qbc, qbt] + qubits_to_measure+qbss),
+                cz_pulse_name=cz_pulse_name, num_cz_gates=num_cz_gates,
+                cal_points=cp,
                 prepend_n_cz=prepend_n_cz, qbs_operations=qbs_operations,
                 upload=False, prep_params=prep_params)
 
@@ -2837,7 +2851,109 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                 'flux_pulse_amp': flux_pulse_amp})
             dyn_phases[qb.name] = \
                 MA.proc_data_dict['analysis_params_dict'][qb.name][
-                    'dynamic_phase']['val']*180/np.pi
+                    'dynamic_phase']['val']*180/np.pi/num_cz_gates
+    if update and reset_phases_before_measurement:
+        qbc.set(basis_rot_par, dyn_phases)
+    return dyn_phases
+
+
+def measure_dynamic_phases_from_spec(qbc, qbt, qbdd_list, cz_pulse_name,
+                                     num_cz_gates=1, hard_sweep_params=None,
+                                     flux1=True, flux2=True,
+                           qubits_to_measure=None, cal_points=True, qbss=None,
+                           analyze=True, upload=True, n_cal_points_per_state=1,
+                           cal_states='auto', prep_params=None,
+                           exp_metadata=None, classified=False, update=False,
+                           reset_phases_before_measurement=True,
+                           qbs_operations=None, basis_rot_par=None,
+                           prepend_n_cz=0):
+
+    if qbss is None:
+        qbss = []
+    if qubits_to_measure is None:
+        qubits_to_measure = [qbc, qbt]
+    qbdd_names = [qb.name for qb in qbdd_list]
+    if hard_sweep_params is None:
+        hard_sweep_params = {
+            'phase': {
+                'values': np.tile(np.linspace(0, 2*np.pi, 8)*180/np.pi, 2),
+                'unit': 'deg'}}
+
+    if basis_rot_par is None:
+        basis_rot_par = f'{cz_pulse_name[:-8]}_{qbt.name}_basis_rotation'
+
+    if reset_phases_before_measurement:
+        dyn_phases = {qb.name: 0 for qb in qubits_to_measure}
+        qbc.set(basis_rot_par, dyn_phases)
+    else:
+        dyn_phases = deepcopy(qbc.get(basis_rot_par))
+
+    for qb in qubits_to_measure:
+        label = f'Dynamic_phase_measurement_CZ{qbt.name}{qbc.name}'
+        if len(qbss) > 0:
+            label += '_withSpectator' + ('' if len(qbss) == 1 else 's')
+            for qbs in qbss:
+                qbs.prepare(drive='timedomain')
+        if len(qbdd_list) > 0:
+            label += '_withDD' + ('' if len(qbdd_list) == 1 else 's')
+            for qbdd in qbdd_list:
+                qbdd.prepare(drive='timedomain')
+        label += f'-{qb.name}'
+        qb.prepare(drive='timedomain')
+        MC = qbc.instr_mc.get_instr()
+
+        if cal_points:
+            cal_states = CalibrationPoints.guess_cal_states(cal_states)
+            cp = CalibrationPoints.single_qubit(
+                qb.name, cal_states, n_per_state=n_cal_points_per_state)
+        else:
+            cp = None
+
+        if prep_params is None:
+            prep_params = qb.preparation_params()
+        seq, hard_sweep_points = \
+            fsqs.dynamic_phase_from_spec_seq(
+                qb_name=qb.name,
+                qbdd_names=qbdd_names, hard_sweep_dict=hard_sweep_params,
+                flux1=flux1, flux2=flux2,
+                operation_dict=get_operation_dict(
+                    [qbc, qbt] + qubits_to_measure + qbss + qbdd_list),
+                cz_pulse_name=cz_pulse_name, num_cz_gates=num_cz_gates,
+                cal_points=cp,
+                prepend_n_cz=prepend_n_cz, qbs_operations=qbs_operations,
+                upload=False, prep_params=prep_params)
+
+        MC.set_sweep_function(awg_swf.SegmentHardSweep(
+            sequence=seq, upload=upload,
+            parameter_name=list(hard_sweep_params)[0],
+            unit=list(hard_sweep_params.values())[0]['unit']))
+        MC.set_sweep_points(hard_sweep_points)
+        MC.set_detector_function(qb.int_avg_classif_det if classified
+                                 else qb.int_avg_det)
+        if exp_metadata is None:
+            exp_metadata = {}
+        exp_metadata.update({'use_cal_points': cal_points,
+                             'preparation_params': prep_params,
+                             'cal_points': repr(cp),
+                             'rotate': cal_points,
+                             'data_to_fit': {qb.name: 'pe'},
+                             'cal_states_rotations':
+                                 {qb.name: {'g': 0, 'e': 1}},
+                             'sectator_qbname': [qbs.name for qbs in qbss],
+                             'hard_sweep_params': hard_sweep_params})
+        MC.run(label, exp_metadata=exp_metadata)
+
+        if analyze:
+            flux_pulse_amp = None
+            if 'amplitude' in qbc.get_operation_dict()[cz_pulse_name]:
+                flux_pulse_amp = qbc.get_operation_dict()[cz_pulse_name]['amplitude']
+            MA = tda.CZDynamicPhaseAnalysis(qb_names=[qb.name], options_dict={
+                'flux_pulse_length': qbc.get_operation_dict()[cz_pulse_name][
+                    'pulse_length'],
+                'flux_pulse_amp': flux_pulse_amp})
+            dyn_phases[qb.name] = \
+                MA.proc_data_dict['analysis_params_dict'][qb.name][
+                    'dynamic_phase']['val']*180/np.pi/num_cz_gates
     if update and reset_phases_before_measurement:
         qbc.set(basis_rot_par, dyn_phases)
     return dyn_phases

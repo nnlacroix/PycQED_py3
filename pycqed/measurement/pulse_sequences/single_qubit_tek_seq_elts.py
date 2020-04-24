@@ -64,7 +64,7 @@ def one_qubit_reset(qb_name, operation_dict, prep_params=dict(), upload=True,
 
 
 def rabi_seq_active_reset(amps, qb_name, operation_dict, cal_points,
-                          upload=True, n=1, for_ef=False,
+                          upload=True, n=1, transition_name='ge', for_ef=False,
                           last_ge_pulse=False, prep_params=dict()):
     '''
     Rabi sequence for a single qubit using the tektronix.
@@ -85,18 +85,25 @@ def rabi_seq_active_reset(amps, qb_name, operation_dict, cal_points,
 
     seq_name = 'Rabi_sequence'
 
-    # add Rabi amplitudes segments
-    rabi_ops = ["X180_ef " + qb_name if for_ef else "X180 " + qb_name] * n
-
+    # index, rabi_ops
+    transition_dict = {
+        'ge': (0, ['X180']*n),
+        'ef': (1, ['X180'] + ['X180_ef']*n),
+        'fh': (2, ['X180', 'X180_ef'] + ['X180_fh']*n)}
     if for_ef:
-        rabi_ops = ["X180 " + qb_name] + rabi_ops # prepend ge pulse
-        if last_ge_pulse:
-            rabi_ops += ["X180 " + qb_name] # append ge pulse
-    rabi_ops += ["RO " + qb_name]
-    rabi_pulses = [deepcopy(operation_dict[op]) for op in rabi_ops]
+        transition_name = 'ef'
+    tr_info = transition_dict[transition_name]
 
-    for i in np.arange(1 if for_ef else 0, n + 1 if for_ef else n):
-        rabi_pulses[i]["name"] = "Rabi_" + str(i-1 if for_ef else i)
+    # add Rabi amplitudes segments
+    rabi_ops = tr_info[1]
+    if transition_name == 'ef' and last_ge_pulse:
+        rabi_ops += ["X180"]  # append ge pulse
+    rabi_ops += ["RO"]
+    rabi_ops = add_suffix(rabi_ops, " " + qb_name)
+    rabi_pulses = [deepcopy(operation_dict[op]) for op in rabi_ops]
+    idx = tr_info[0]
+    for i in np.arange(idx, n + idx):
+        rabi_pulses[i]["name"] = "Rabi_" + str(i-idx)
 
     swept_pulses = sweep_pulse_params(rabi_pulses,
                                       {f'Rabi_{i}.amplitude':
@@ -117,7 +124,6 @@ def rabi_seq_active_reset(amps, qb_name, operation_dict, cal_points,
        ps.Pulsar.get_instance().program_awgs(seq)
 
     return seq, np.arange(seq.n_acq_elements())
-
 
 
 def t1_active_reset(times, qb_name, operation_dict, cal_points,
@@ -534,8 +540,9 @@ def ramsey_seq_multiple_detunings(times, pulse_pars, RO_pars,
 
 
 def ramsey_active_reset(times, qb_name, operation_dict, cal_points, n=1,
-                  artificial_detunings=0, upload=True,
-                  for_ef=False, last_ge_pulse=False, prep_params=dict()):
+                        artificial_detunings=0, upload=True, qbs_pulses=None,
+                        transition_name='ge', for_ef=False, last_ge_pulse=False,
+                        prep_params=dict()):
     '''
     Ramsey sequence for the second excited state
     Input pars:
@@ -544,25 +551,27 @@ def ramsey_active_reset(times, qb_name, operation_dict, cal_points, n=1,
     '''
     seq_name = 'Ramsey_sequence'
 
-    # Operations
+    # index, ramsey_ops
+    transition_dict = {
+        'ge': (1, ["X90"]*2),
+        'ef': (2, ["X180"] + ["X90_ef"]*2),
+        'fh': (3, ["X180", "X180_ef"] + ["X90_fh"]*2)}
     if for_ef:
-        ramsey_ops = ["X180"] + ["X90_ef"] * 2 * n
-        if last_ge_pulse:
-            ramsey_ops += ["X180"]
-    else:
-        ramsey_ops = ["X90"] * 2 * n
-
+        transition_name = 'ef'
+    tr_info = transition_dict[transition_name]
+    ramsey_ops = tr_info[1]
+    # Operations
+    if transition_name == 'ef' and last_ge_pulse:
+        ramsey_ops += ["X180"]
     ramsey_ops += ["RO"]
     ramsey_ops = add_suffix(ramsey_ops, " " + qb_name)
-
     # pulses
     ramsey_pulses = [deepcopy(operation_dict[op]) for op in ramsey_ops]
 
     # name and reference swept pulse
-    for i in range(n):
-        idx = (2 if for_ef else 1) + i * 2
-        ramsey_pulses[idx]["name"] = f"Ramsey_x2_{i}"
-        ramsey_pulses[idx]['ref_point'] = 'start'
+    idx = tr_info[0]
+    ramsey_pulses[idx]["name"] = f"Ramsey_x2"
+    ramsey_pulses[idx]['ref_point'] = 'start'
 
     # compute dphase
     a_d = artificial_detunings if np.ndim(artificial_detunings) == 1 \
@@ -570,8 +579,12 @@ def ramsey_active_reset(times, qb_name, operation_dict, cal_points, n=1,
     dphase = [((t - times[0]) * a_d[i % len(a_d)] * 360) % 360
                  for i, t in enumerate(times)]
     # sweep pulses
-    params = {f'Ramsey_x2_{i}.pulse_delay': times for i in range(n)}
-    params.update({f'Ramsey_x2_{i}.phase': dphase for i in range(n)})
+    params = {f'Ramsey_x2.pulse_delay': times,
+              f'Ramsey_x2.phase': dphase}
+
+    if qbs_pulses is not None:
+        ramsey_pulses[0]['ref_point'] = 'start'
+        ramsey_pulses = qbs_pulses + ramsey_pulses
     swept_pulses = sweep_pulse_params(ramsey_pulses, params)
 
     #add preparation pulses

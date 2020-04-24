@@ -426,8 +426,11 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         self.cal_states_dict_for_rotation[qbn][cal_state] = \
                             self.cal_states_dict[cal_state]
 
-        self.num_cal_points = np.array(list(
-            self.cal_states_dict.values())).flatten().size
+        if all([len(v)==0 for v in list(self.cal_states_dict.values())]):
+            self.num_cal_points = 0
+        else:
+            self.num_cal_points = np.array(list(
+                self.cal_states_dict.values())).flatten().size
 
     def cal_states_analysis(self):
         self.get_cal_data_points()
@@ -4092,7 +4095,7 @@ class RamseyAnalysis(MultiQubit_TimeDomain_Analysis):
         params_dict = {}
         for qbn in qb_names:
             s = 'Instrument settings.'+qbn
-            for trans_name in ['ge', 'ef']:
+            for trans_name in ['ge', 'ef', 'fh']:
                 params_dict[f'{trans_name}_freq_'+qbn] = s+f'.{trans_name}_freq'
         kwargs['params_dict'] = params_dict
         kwargs['numeric_params'] = list(params_dict)
@@ -4157,7 +4160,10 @@ class RamseyAnalysis(MultiQubit_TimeDomain_Analysis):
                     if fit_res.params[par].stderr is None:
                         fit_res.params[par].stderr = 0
 
-                trans_name = 'ef' if 'f' in self.data_to_fit[qbn] else 'ge'
+                if 'h' in self.data_to_fit[qbn]:
+                    trans_name = 'fh'
+                else:
+                    trans_name = 'ef' if 'f' in self.data_to_fit[qbn] else 'ge'
                 old_qb_freq = self.raw_data_dict[f'{trans_name}_freq_'+qbn]
                 if old_qb_freq != old_qb_freq:
                     old_qb_freq = 0

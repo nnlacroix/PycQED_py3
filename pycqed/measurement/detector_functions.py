@@ -1364,38 +1364,48 @@ class UHFQC_classifier_detector(UHFQC_Base):
             self.state_prob_mtx_list = state_prob_mtx_list
 
             classified_data = self.classify_shots(
-                data, self.classifier_params_list, self.state_prob_mtx_list,
-                self.get_values_function_kwargs.get('averaged', True),
-                self.get_values_function_kwargs.get('thresholded', True))
+                data, classifier_params_list=self.classifier_params_list,
+                state_prob_mtx_list=self.state_prob_mtx_list,
+                **self.get_values_function_kwargs)
 
         return classified_data.T
 
     def classify_shots(self, data, classifier_params_list,
-                       state_prob_mtx_list=None, averaged=False,
-                       thresholded=True):
+                       averaged=True, thresholded=False,
+                       ro_corrected_stored_mtx=False,
+                       ro_corrected_seq_cal_mtx=False,
+                       state_prob_mtx_list=None, **kw):
 
         if classifier_params_list is None:
             raise ValueError('Please specify the classifier parameters list.')
 
-        nr_states = len(self.state_labels)
-        classified_data = np.zeros(
-            (nr_states*len(self.channel_str_pairs),
-             self.nr_sweep_points if averaged else
-             self.nr_sweep_points*self.nr_shots))
+        if ro_corrected_seq_cal_mtx and ro_corrected_stored_mtx:
+            raise ValueError('"ro_corrected_seq_cal_mtx" and '
+                             '"ro_corrected_stored_mtx" cannot both be True.')
 
-        clf_data_all = np.zeros((self.nr_sweep_points*self.nr_shots,
-                                nr_states*len(self.channel_str_pairs)))
+        ro_corrected = ro_corrected_seq_cal_mtx or ro_corrected_stored_mtx
+        if (ro_corrected and thresholded) and not averaged:
+            raise ValueError('It does not make sense to apply readout '
+                             'correction if thresholded==True and '
+                             'averaged==False.')
+
+        nr_states = len(self.state_labels)
+        classified_data = np.zeros((self.nr_sweep_points if averaged else
+                                    self.nr_sweep_points*self.nr_shots,
+                                    nr_states*len(self.channel_str_pairs)))
 
         for i in range(len(self.channel_str_pairs)):
+            # classify each shot into (pg, pe, pf)
+            # clf_data will have shape (nr_shots * nr_sweep_points, nr_states)
             clf_data = a_tools.predict_gm_proba_from_clf(
                 data[2*i: 2*i+2, :].T, classifier_params_list[i])
+
             if thresholded:
                 # clf_data must be 2 dimensional, rows are shots*sweep_points,
                 # columns are nr_states
                 clf_data = np.isclose(np.repeat([np.arange(nr_states)],
                                                 clf_data.shape[0], axis=0).T,
                                       np.argmax(clf_data, axis=1)).T
-            clf_data_all[:, nr_states*i: nr_states*i+nr_states] = clf_data
 
             if averaged:
                 # reshape into (nr_shots, nr_sweep_points, nr_data_columns)
@@ -1403,15 +1413,37 @@ class UHFQC_classifier_detector(UHFQC_Base):
                     clf_data, (self.nr_shots, self.nr_sweep_points,
                                clf_data.shape[-1]))
                 clf_data = np.mean(clf_data, axis=0)
-            if state_prob_mtx_list is not None:
-                clf_data = np.linalg.inv(
-                    state_prob_mtx_list[i]).T @ clf_data.T
-                log.info('Data corrected based on state_prob_mtx.')
+
+            if ro_corrected_stored_mtx:
+                print('ro_corrected_stored_mtx')
+                if state_prob_mtx_list is not None:
+                    clf_data = (np.linalg.inv(
+                        state_prob_mtx_list[i]).T @ clf_data.T).T
+                    log.info('Data corrected based on previously-measured '
+                             'state_prob_mtx.')
+                else:
+                    raise ValueError('state_prob_mtx_list is None.')
+            elif ro_corrected_seq_cal_mtx:
+                print('ro_corrected_seq_cal_mtx')
+                if not averaged:
+                    raise NotImplementedError(
+                        'Data correction based on calibration state_prob_mtx '
+                        'from measurement sequence is currently only '
+                        'implemented for averaged data (averaged==True).')
+                # get cal matrix
+                calibration_matrix = clf_data[-nr_states:, :]
+                # normalize
+                calibration_matrix = calibration_matrix.astype('float') / \
+                                     calibration_matrix.sum(axis=1)[
+                                     :, np.newaxis]
+                # correct data
+                clf_data = (np.linalg.inv(calibration_matrix).T @ clf_data.T).T
+                log.info('Data corrected based on calibration state_prob_mtx '
+                         'from measurement sequence.')
             else:
                 log.info('not correcting data')
-                clf_data = clf_data.T
 
-            classified_data[nr_states * i: nr_states * i + nr_states, :] = \
+            classified_data[:, nr_states * i: nr_states * i + nr_states] = \
                 clf_data
 
-        return classified_data.T
+        return classified_data

@@ -947,10 +947,8 @@ def parity_single_round__phases_seq(ancilla_qubit_name, data_qubit_names, CZ_map
 
 def n_qubit_tomo_seq(
         qubit_names, operation_dict, prep_sequence=None,
-        prep_name=None,
-        rots_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
-        upload=True, return_seq=False,
-        preselection=False, ro_spacing=1e-6):
+        prep_name=None, rots_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
+        upload=True, return_seq=False, preselection=False, ro_spacing=1e-6):
     """
 
     """
@@ -970,13 +968,14 @@ def n_qubit_tomo_seq(
     tomography_sequences = get_tomography_pulses(*qubit_names,
                                                  basis_pulses=rots_basis)
     for i, tomography_sequence in enumerate(tomography_sequences):
-        pulse_list = [operation_dict[pulse] for pulse in prep_sequence]
-        # tomography_sequence.append('RO mux')
-        # if preselection:
-        #     tomography_sequence.append('RO mux_presel')
-        #     tomography_sequence.append('RO presel_dummy')
-        pulse_list.extend([operation_dict[pulse] for pulse in
-                           tomography_sequence])
+        # pulse_list = [operation_dict[pulse] for pulse in prep_sequence]
+        # pulse_list = deepcopy(prep_sequence)
+        pulse_list = []
+        pulse_list.extend(prep_sequence)
+
+        tomo_pulses = [deepcopy(operation_dict[pulse]) for pulse in
+                           tomography_sequence]
+        pulse_list.extend(tomo_pulses)
         ro_pulses = generate_mux_ro_pulse_list(qubit_names, operation_dict)
         pulse_list.extend(ro_pulses)
 
@@ -984,6 +983,7 @@ def n_qubit_tomo_seq(
             ro_pulses_presel = generate_mux_ro_pulse_list(
                 qubit_names, operation_dict, 'RO_presel', 'start', -ro_spacing)
             pulse_list.extend(ro_pulses_presel)
+
         seg = segment.Segment('tomography_{}'.format(i), pulse_list)
         seg_list.append(seg)
         seq.add(seg)
