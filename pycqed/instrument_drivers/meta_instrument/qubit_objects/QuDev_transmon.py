@@ -3329,6 +3329,7 @@ class QuDev_transmon(Qubit):
                              'cal_points': repr(cp),
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
+                             'exp_data': {'pulse_name': cz_pulse_name},
                              "sweep_name": "Delay",
                              "sweep_unit": "s"})
         MC.run_2D(label, exp_metadata=exp_metadata)
