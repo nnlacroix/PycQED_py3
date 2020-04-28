@@ -807,3 +807,19 @@ class Z_pulse(Pulse):
 
     def hashables(self, tstart, channel):
         return []
+
+class VirtualPulse(Pulse):
+    def __init__(self, name, element_name,  **kw):
+        super().__init__(name, element_name)
+        self.codeword = kw.pop('codeword', 'no_codeword')
+        self.pulse_length = kw.pop('pulse_length', 0)
+        self.length = self.pulse_length
+
+    def __call__(self, **kw):
+        return self
+
+    def chan_wf(self, chan, tvals):
+        return
+
+    def hashables(self, tstart, channel):
+        return []
