@@ -887,3 +887,24 @@ def seq2tikz(seq, qb_names, tscale=1e-6):
         output += '\\end{tikzpicture}}\end{document}'
         output += f'\n# {num_single_qb} single-qubit gates, {num_two_qb} two-qubit gates, {num_virtual} virtual gates'
         return output
+
+
+def seq_gate_count(seq, qb_names):
+    num_single_qb = 0
+    num_two_qb = 0
+    num_virtual = 0
+    for seg in seq.segments.values():
+        for p in seg.unresolved_pulses:
+            if p.op_code != '' and p.op_code[:2] != 'RO':
+                l = p.pulse_obj.length
+                op_code = p.op_code[:-4]
+                if op_code[-3:-1] == 'qb':
+                    qbt = qb_names.index(op_code[-3:])
+                    num_two_qb += 1
+                elif op_code[0] == 'I':
+                    continue
+                elif l == 0:
+                    num_virtual += 1
+                else:
+                    num_single_qb += 1
+        return (num_two_qb, num_single_qb, num_virtual)
