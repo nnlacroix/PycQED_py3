@@ -104,6 +104,15 @@ class Segment:
         # called prior to generating the waveforms
         self.elements = odict()
 
+    def extend(self, pulses):
+        """
+        Adds sequentially all pulses to the segment
+        :param pulses: list of pulses to add
+        :return:
+        """
+        for p in pulses:
+            self.add(p)
+
     def resolve_segment(self):
         """
         Top layer method of Segment class. After having addded all pulses,
