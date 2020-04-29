@@ -76,6 +76,7 @@ class CircuitBuilder:
                 raise KeyError(f'CZ gate "{self.cz_pulse_name} {qba} {qbb}" not found.')
         else:
             p = deepcopy(self.operation_dict[op])
+        p['op_code'] = op
         return p
 
     def initialize(self, init_state='0', qb_names='all', prep_params=None,
