@@ -920,10 +920,10 @@ class Segment:
         return samples / self.pulsar.clock(**kw)
 
     def plot(self, instruments=None, channels=None, legend=True,
-             delays=dict(), savefig=False, cmap=None, frameon=True):
+             delays=None, savefig=False, prop_cycle=None, frameon=True,
+             channel_map=None, plot_kwargs=None, axes=None, demodulate=False):
         """
         Plots a segment. Can only be done if the segment can be resolved.
-
         :param instruments (list): instruments for which pulses have to be plotted.
             defaults to all.
         :param channels (list):  channels to plot. defaults to all.
@@ -932,28 +932,49 @@ class Segment:
             instrument, such that the pulses are plotted at timing when they
             physically occur.
         :param savefig: save the plot
-        :param cmap:
-        :param frameon:
+        :param channel_map (dict): indicates which instrument channels correspond to
+            whichqubits. Keys = qb names, values = list of channels. eg.
+            dict(qb2=['AWG8_ch3', "UHF_ch1"]). If provided, will plot each qubit
+            on individual subplots.
+        :param prop_cycle (dict):
+        :param frameon (dict, bool):
+        :param axes (array or axis): 2D array of matplotlib axes. if single axes,
+            will be converted internally to array.
+        :param demodulate (bool): plot only envelope of pulses by temporarily setting
+            modulation and phase to 0. Need to recompile the sequence
         :return:
         """
         import matplotlib.pyplot as plt
+        if delays is None:
+            delays = dict()
+        if plot_kwargs is None:
+            plot_kwargs = dict()
+            plot_kwargs['linewidth'] = 0.7
         try:
+            # resolve segment and populate elements/waveforms
             self.resolve_segment()
+            if demodulate:
+                for el in self.elements.values():
+                    for pulse in el:
+                        if hasattr(pulse, "mod_frequency"):
+                            pulse.mod_frequency = 0
+                        if hasattr(pulse, "phase"):
+                            pulse.phase = 0
             wfs = self.waveforms(awgs=instruments, channels=None)
-            n_instruments = len(wfs)
-            fig, ax = plt.subplots(nrows=n_instruments, sharex=True,
-                                   squeeze=False,
-                                   figsize=(16, n_instruments * 3))
-            if cmap is None:
-                cmap = plt.get_cmap('Paired')
+            n_instruments = len(wfs) if channel_map is None else len(channel_map)
+            if axes is not None:
+                if np.ndim(axes) == 0:
+                    axes = [[axes]]
+                fig = axes[0,0].get_figure()
+                ax = axes
+            else:
+                fig, ax = plt.subplots(nrows=n_instruments, sharex=True,
+                                       squeeze=False,
+                                       figsize=(16, n_instruments * 3))
+            if prop_cycle is not None:
+                for a in ax[:,0]:
+                    a.set_prop_cycle(**prop_cycle)
             for i, instr in enumerate(wfs):
-                # formatting
-                ax[i, 0].set_title(instr)
-                ax[i, 0].spines["top"].set_visible(frameon)
-                ax[i, 0].spines["right"].set_visible(frameon)
-                ax[i, 0].spines["bottom"].set_visible(frameon)
-                ax[i, 0].spines["left"].set_visible(frameon)
-                ax[i, 0].set_ylabel('Voltage (V)')
                 # plotting
                 for elem_name, v in wfs[instr].items():
                     for k, wf_per_ch in v.items():
@@ -962,21 +983,47 @@ class Segment:
                                     ch in channels.get(instr, []):
                                 tvals = \
                                 self.tvals([f"{instr}_{ch}"], elem_name[1])[
-                                    f"{instr}_{ch}"] \
-                                - delays.get(instr, 0)
-                                ax[i, 0].plot(tvals * 1e6, wf,
-                                              label=f"{elem_name[1]}_{k}_{ch}",
-                                              linewidth=0.7)
-                if legend:
-                    ax[i, 0].legend(loc=[1.02, 0], prop={'size': 8})
+                                    f"{instr}_{ch}"] - delays.get(instr, 0)
+                                if channel_map is None:
+                                    # plot per device
+                                    ax[i, 0].plot(tvals * 1e6, wf,
+                                                  label=f"{elem_name[1]}_{k}_{ch}",
+                                                  **plot_kwargs)
+                                else:
+                                    # plot on each qubit subplot which includes
+                                    # this channel in the channel map
+                                    match = [i for i, (_, qb_chs) in
+                                                     enumerate(channel_map.items())
+                                                     if f"{instr}_{ch}" in qb_chs]
+                                    for qbi in match:
+                                        ax[qbi, 0].plot(tvals * 1e6, wf,
+                                                      label=f"{elem_name[1]}_{k}_{ch}",
+                                                      **plot_kwargs)
+                                        if demodulate: # filling
+                                            ax[qbi, 0].fill_between(tvals * 1e6, wf,
+                                                            label=f"{elem_name[1]}_{k}_{ch}",
+                                                            alpha=0.05,
+                                                            **plot_kwargs)
+
 
             # formatting
+            for a in ax[:,0]:
+                if isinstance(frameon, bool):
+                    frameon = {k: frameon for k in ['top', 'bottom',
+                                                    "right", "left"]}
+                a.spines["top"].set_visible(frameon.get("top", True))
+                a.spines["right"].set_visible(frameon.get("right", True))
+                a.spines["bottom"].set_visible(frameon.get("bottom", True))
+                a.spines["left"].set_visible(frameon.get("left", True))
+                if legend:
+                    a.legend(loc=[1.02, 0], prop={'size': 8})
+                a.set_ylabel('Voltage (V)')
             ax[-1, 0].set_xlabel('time ($\mu$s)')
             fig.suptitle(f'{self.name}')
             plt.tight_layout()
             if savefig:
                 plt.savefig(f'{self.name}.png')
-            plt.show()
+            # plt.show()
             return fig, ax
         except Exception as e:
             log.error(f"Could not plot: {self.name}")
