@@ -1,6 +1,7 @@
 import numpy as np
 from numpy import array
 import lmfit
+import matplotlib
 import matplotlib.pyplot as plt
 import pycqed.analysis.measurement_analysis as ma
 from pycqed.analysis import analysis_toolbox as a_tools
@@ -716,9 +717,11 @@ def plot_colormesh(xx, yy, zz, ax=None, labels=True, colorbar=True, **plot_kwarg
     cmap = plot_kwargs.pop("cmap", "seismic")
     x_off = (xx[1, 0] - xx[0, 0]) / 2
     y_off = (yy[0, 1] - yy[0, 0]) / 2
+    current_cmap = matplotlib.cm.get_cmap(cmap)
+    current_cmap.set_bad(color='yellow')
     im = ax.pcolormesh(np.pad(xx + x_off, (1, 0), "linear_ramp"),
                        np.pad(yy + y_off, (1, 0), "linear_ramp"), zz,
-                       cmap=cmap, vmin=vmin, vmax=vmax,
+                       cmap=current_cmap, vmin=vmin, vmax=vmax,
                        **plot_kwargs)
     ax.set_xlim([np.min(xx),np.max(xx)])
     ax.set_ylim([np.min(yy),np.max(yy)])
