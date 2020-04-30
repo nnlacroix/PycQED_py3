@@ -22,8 +22,16 @@ class CircuitBuilder:
         stored_qb_names = [qb.name for qb in self.qubits]
         if qb_names == 'all':
             return self.qubits, stored_qb_names
-        elif qb_names in stored_qb_names:  # qb_names == single qb name eg. 'qb1'
-             return [self.qubits[stored_qb_names.index(qb_names)]], [qb_names]
+        elif not isinstance(qb_names, list):
+            qb_names = [qb_names]
+
+        # test if qubit indices were provided instead of names
+        try:
+            ind = [int(i) for i in qb_names]
+            qb_names = [stored_qb_names[i] for i in ind]
+        except ValueError:
+            pass
+
         for qb in qb_names:
             assert qb in stored_qb_names, f"{qb} not found in {stored_qb_names}"
         return [self.qubits[stored_qb_names.index(qb)] for qb in qb_names], qb_names
@@ -42,17 +50,20 @@ class CircuitBuilder:
         Returns: deepcopy of the pulse dictionary
 
         """
+        op_info = op.split(" ")
+        # the call to get_qubits resolves qubits indices if needed
+        _, op_info[1:] = self.get_qubits(op_info[1:])
+        op = op_info[0] + ' ' + ' '.join(op_info[1:])
         if parse_z_gate and op.startswith("Z"):
             # assumes operation format of f"Z{angle} qbname"
             # FIXME: This parsing is format dependent and is far from ideal but
             #  until we can get parametrized pulses it is helpful to be able to
             #  parse Z gates
-            angle, qbn = op.split(" ")[0][1:], op.split(" ")[1]
+            angle, qbn = op_info[0][1:], op_info[1]
             p = self.get_pulse(f"Z180 {qbn}", parse_z_gate=False)
             p['basis_rotation'] = {qbn: float(angle)}
         elif op.startswith("CZ"):
-            tmp = op.split(" ")
-            qba, qbb = tmp[1], tmp[2]
+            qba, qbb = op_info[1], op_info[2]
             if f"{self.cz_pulse_name} {qba} {qbb}" in self.operation_dict:
                 p = deepcopy(
                     self.operation_dict[f"{self.cz_pulse_name} {qba} {qbb}"])
