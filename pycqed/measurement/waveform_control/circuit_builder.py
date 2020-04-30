@@ -19,14 +19,12 @@ class CircuitBuilder:
         :param qb_names: 'all', single qubit name (eg. 'qb1') or list of qb names
         :return: list of qb names
         """
-        print(qb_names)
         stored_qb_names = [qb.name for qb in self.qubits]
         if qb_names == 'all':
             return self.qubits, stored_qb_names
         elif qb_names in stored_qb_names:  # qb_names == single qb name eg. 'qb1'
              return [self.qubits[stored_qb_names.index(qb_names)]], [qb_names]
         for qb in qb_names:
-            print(qb)
             assert qb in stored_qb_names, f"{qb} not found in {stored_qb_names}"
         return [self.qubits[stored_qb_names.index(qb)] for qb in qb_names], qb_names
 
