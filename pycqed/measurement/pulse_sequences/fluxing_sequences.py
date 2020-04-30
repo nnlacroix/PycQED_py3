@@ -178,6 +178,11 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
                              [flux_pulse[param_to_set] * np.ones(hsl // 2),
                               np.zeros(hsl // 2)]) for param_to_set in params_to_set
               }
+
+    if 'aux_channels_dict' in flux_pulse:
+        params.update({'flux.aux_channels_dict': np.concatenate([
+            [flux_pulse['aux_channels_dict']] * (hsl // 2),
+             [{}] * (hsl // 2)])})
     params.update({f'pi_half_end.{k}': v['values']
                    for k, v in hard_sweep_dict.items()})
     swept_pulses = sweep_pulse_params(pulse_list, params)
