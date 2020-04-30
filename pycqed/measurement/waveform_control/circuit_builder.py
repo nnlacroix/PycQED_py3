@@ -1,29 +1,34 @@
 from copy import deepcopy
 from pycqed.measurement.waveform_control.block import Block
+from pycqed.measurement import multi_qubit_module as mqm
+
 
 class CircuitBuilder:
 
     STD_INIT = {'0': 'I', '1': 'X180', '+': 'Y90', '-': 'mY90'}
 
-    def __init__(self, qb_names, operation_dict, **kwargs):
-        self.qb_names = qb_names
-        self.operation_dict = operation_dict
+    def __init__(self, qubits, **kwargs):
+        self.qubits = qubits
+        self.operation_dict = deepcopy(mqm.get_operation_dict(qubits))
         self.cz_pulse_name = kwargs.get('cz_pulse_name', 'upCZ')
 
-    def get_qubits(self, qubits='all'):
+    def get_qubits(self, qb_names='all'):
         """
         Wrapper to get 'all' qubits, single qubit specified as string
-        or list of qubits, checking they are in self.qb_names
-        :param qubits: 'all', single qubit name (eg. 'qb1') or list of qb names
+        or list of qubits, checking they are in self.qubits
+        :param qb_names: 'all', single qubit name (eg. 'qb1') or list of qb names
         :return: list of qb names
         """
-        if qubits == 'all':
-            return self.qb_names
-        elif qubits in self.qb_names:  # qubits == single qb name eg. 'qb1'
-             qubits = [qubits]
-        for qb in qubits:
-            assert qb in self.qb_names, f"{qb} not found in {self.qb_names}"
-        return qubits
+        print(qb_names)
+        stored_qb_names = [qb.name for qb in self.qubits]
+        if qb_names == 'all':
+            return self.qubits, stored_qb_names
+        elif qb_names in stored_qb_names:  # qb_names == single qb name eg. 'qb1'
+             return [self.qubits[stored_qb_names.index(qb_names)]], [qb_names]
+        for qb in qb_names:
+            print(qb)
+            assert qb in stored_qb_names, f"{qb} not found in {stored_qb_names}"
+        return [self.qubits[stored_qb_names.index(qb)] for qb in qb_names], qb_names
 
     def get_pulse(self, op, parse_z_gate=False):
         """
@@ -63,7 +68,7 @@ class CircuitBuilder:
         p['op_code'] = op
         return p
 
-    def initialize(self, init_state='0', qubits='all', prep_params=None,
+    def initialize(self, init_state='0', qb_names='all', prep_params=None,
                    simultaneous=True, block_name=None):
         """
         Initializes the specified qubits with the corresponding init_state
@@ -75,27 +80,28 @@ class CircuitBuilder:
             - list of arbitrary pulses (which are in the operation_dict). Must be
               of the same lengths as 'qubits' and in the same order. Should not
               include space and qubit name (those are added internally).
-        :param qubits (list or 'all'): list of qubits on which init should be
+        :param qb_names (list or 'all'): list of qubits on which init should be
             applied. Defaults to all qubits.
         :param prep_params: preparation parameters
         :return: init segment
         """
         if block_name is None:
-            block_name = f"Initialization_{qubits}"
-        qubits = self.get_qubits(qubits)
+            block_name = f"Initialization_{qb_names}"
+        qubits, qb_names = self.get_qubits(qb_names)
         if prep_params is None:
-            prep_params = {}
+            prep_params =  mqm.get_multi_qubit_prep_params(
+                [qb.preparation_params() for qb in qubits])
         if len(init_state) == 1:
-            init_state = [init_state] * len(qubits)
+            init_state = [init_state] * len(qb_names)
         else:
-            assert len(init_state) == len(qubits), \
+            assert len(init_state) == len(qb_names), \
                 "There must be a one to one mapping between initializations and " \
-                f"qubits. Got {len(init_state)} init and {len(qubits)} qubits"
+                f"qubits. Got {len(init_state)} init and {len(qb_names)} qubits"
 
         pulses = []
-        pulses.extend(self.prepare(qubits, ref_pulse="start",
+        pulses.extend(self.prepare(qb_names, ref_pulse="start",
                                    **prep_params).build())
-        for i, (qbn, init) in enumerate(zip(qubits, init_state)):
+        for i, (qbn, init) in enumerate(zip(qb_names, init_state)):
             # add qb name and "s" for reference to start of previous pulse
             op = self.STD_INIT.get(init, init) + \
                  f"{'s' if len(pulses) != 0 and simultaneous else ''} " + qbn
@@ -105,14 +111,14 @@ class CircuitBuilder:
             pulses.append(pulse)
         return Block(block_name, pulses)
 
-    def prepare(self, qubits='all', ref_pulse='start', preparation_type='wait',
+    def prepare(self, qb_names='all', ref_pulse='start', preparation_type='wait',
                 post_ro_wait=1e-6, ro_separation=1.5e-6, reset_reps=3,
                 final_reset_pulse=False, threshold_mapping=None, block_name=None):
         """
         Prepares specified qb for an experiment by creating preparation pulse for
         preselection or active reset.
         Args:
-            qubits: which qubits to prepare. Defaults to all.
+            qb_names: which qubits to prepare. Defaults to all.
             ref_pulse: reference pulse of the first pulse in the pulse list.
                 reset pulse will be added in front of this. If the pulse list is empty,
                 reset pulses will simply be before the block_start.
@@ -131,8 +137,8 @@ class CircuitBuilder:
 
         """
         if block_name is None:
-            block_name = f"Preparation_{qubits}"
-        qb_names = self.get_qubits(qubits)
+            block_name = f"Preparation_{qb_names}"
+        qubits, qb_names = self.get_qubits(qb_names)
 
         if threshold_mapping is None or len(threshold_mapping) == 0:
             threshold_mapping = {qbn: {0: 'g', 1: 'e'} for qbn in qb_names}
@@ -237,12 +243,12 @@ class CircuitBuilder:
             preparation_pulses += [block_end]
             return Block(block_name, preparation_pulses)
 
-    def mux_readout(self, qubits='all', element_name='RO',ref_point='end',
+    def mux_readout(self, qb_names='all', element_name='RO', ref_point='end',
                     pulse_delay=0.0):
         block_name = "Readout"
-        qubits = self.get_qubits(qubits)
+        qubits, qb_names = self.get_qubits(qb_names)
         ro_pulses = []
-        for j, qb_name in enumerate(qubits):
+        for j, qb_name in enumerate(qb_names):
             ro_pulse = deepcopy(self.operation_dict['RO ' + qb_name])
             ro_pulse['name'] = '{}_{}'.format(element_name, j)
             ro_pulse['element_name'] = element_name
@@ -254,24 +260,21 @@ class CircuitBuilder:
             ro_pulses.append(ro_pulse)
         return Block(block_name, ro_pulses)
 
-    def Z_gate(self, theta=0, qubits='all'):
+    def Z_gate(self, theta=0, qb_names='all'):
 
         """
         Software Z-gate of arbitrary rotation.
 
         :param theta:           rotation angle, in degrees
-        :param qubits:      pulse parameters (dict)
+        :param qb_names:      pulse parameters (dict)
 
         :return: Pulse dict of the Z-gate
         """
 
-        # if qubits is the name of a qb, expects single pulse output
-        single_qb_given = False
-        if qubits in self.qb_names:
-            single_qb_given = True
-        qubits = self.get_qubits(qubits)
-
-        pulses = [self.get_pulse(f'Z{theta} {qbn}', True) for qbn in qubits]
+        # if qb_names is the name of a single qb, expects single pulse output
+        single_qb_given = not isinstance(qb_names, list)
+        qubits, qb_names = self.get_qubits(qb_names)
+        pulses = [self.get_pulse(f'Z{theta} {qbn}', True) for qbn in qb_names]
         return pulses[0] if single_qb_given else pulses
 
     def block_from_ops(self, block_name, operations, fill_values=None,
