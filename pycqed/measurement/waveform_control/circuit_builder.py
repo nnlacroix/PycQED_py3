@@ -1,5 +1,7 @@
 from copy import deepcopy
 from pycqed.measurement.waveform_control.block import Block
+from pycqed.measurement.waveform_control.sequence import Sequence
+from pycqed.measurement.waveform_control.segment import Segment
 from pycqed.measurement import multi_qubit_module as mqm
 
 
@@ -314,3 +316,15 @@ class CircuitBuilder:
         [pulses[i].update(pm) for i, pm in pulse_modifs.items()]
         return Block(block_name, pulses)
 
+    def seq_from_ops(self, operations, fill_values=None,  pulse_modifs=None,
+                     init_state='0', seq_name='Sequence', ro_kwargs=None):
+        if ro_kwargs is None:
+            ro_kwargs = {}
+        seq = Sequence(seq_name)
+        pulses = self.initialize(init_state=init_state).build()
+        pulses += self.block_from_ops("Block1", operations,
+                                      fill_values=fill_values,
+                                      pulse_modifs=pulse_modifs).build()
+        pulses += self.mux_readout(**ro_kwargs).build()
+        seq.add(Segment('Segment1', pulses))
+        return seq
