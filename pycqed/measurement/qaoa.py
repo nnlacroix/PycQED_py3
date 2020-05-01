@@ -555,20 +555,15 @@ class QAOAHelper(HelperBase):
                     'skip_gate': skips the two qb gate
                     'zero_amplitude': forces flux amplitude to zero
                      dict with keys "amplitude", "dynamic_phase": overwrite ampl and dynphase
-                     not specified: treated as any other angle with phase_func
+                     not specified: treated as any other angle
                 - (zero_angle_threshold): threshold for considering an angle to be zero  (in rad)
                     (default: use global value)
             - gate_order: list of lists of indices from the gate_list
                 All gates in the same sublist are executed simultaneously.
-            - (phase_func): Dictionary of string representations of functions predicting
-                amplitude and dynamic phase for given target conditional phase.
-                Only required when using hardware implementation
-                of arbitrary phase gate.
             - (zero_angle_threshold): global threshold for considering an angle to be zero (in rad)
                 default: 1e-10
             Example:
             >>> dict(
-            >>>     phase_func=arb_phase_func_dict,
             >>>     gate_list = [
             >>>      dict(qbs=(0,1), gate_name='upCZ', C=1),
             >>>      dict(qbs=(2,1), gate_name='upCZ', C=1),
@@ -667,11 +662,11 @@ class QAOAHelper(HelperBase):
                     for qbz in [self.qb_names[qb_ind] for qb_ind in gates_info['qbs']]:
                         if qbz==qbx or qbz==qby:
                             continue
-                        qbz_gate_name = f"{gates_info['gate_name']} {qbx} {qbz}";
+                        qbz_gate_name = f"{gates_info['gate_name']} {qbx} {qbz}"
                         if gate_name not in self.operation_dict:
-                            qbz_gate_name = f"{gates_info['gate_name']} {qbz} {qbx}";
+                            qbz_gate_name = f"{gates_info['gate_name']} {qbz} {qbx}"
                         nbody_cz = self.block_from_ops(f"CZ {qbz}", [qbz_gate_name],
-                            {}, {0: dict(element_name="flux_arb_gate")}).build();
+                            {}, {0: dict(element_name="flux_arb_gate")}).build()
                         nbody_start.extend(nbody_cz)
                         nbody_end.extend(nbody_cz)
                     if cphase_implementation != "software":
@@ -925,10 +920,6 @@ class QAOAHelper(HelperBase):
             - qbs: 2-tuple of logical qubit indices
             - gate_name: name of the 2 qb gate type
             - C: coupling btw the two qubits
-            - (phase_func): Dictionary of string representations of functions predicting
-                amplitude and dynamic phase for given target conditional phase.
-                Only required when using hardware implementation
-               of arbitrary phase gate.
         Returns:
             corr_info (list): list of tuples indicating qubits to correlate:
                 by logical qubit index.
