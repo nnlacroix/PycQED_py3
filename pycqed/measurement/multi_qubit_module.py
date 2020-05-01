@@ -2946,7 +2946,6 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                     prepend_n_cz=prepend_n_cz,
                     upload=False, prep_params=prep_params,
                     prepend_pulse_dicts=prepend_pulse_dicts)
-            # return seq
 
             MC.set_sweep_function(awg_swf.SegmentHardSweep(
                 sequence=seq, upload=upload,
