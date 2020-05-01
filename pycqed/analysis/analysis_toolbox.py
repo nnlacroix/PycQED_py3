@@ -118,39 +118,57 @@ def return_last_n_timestamps(n, contains=''):
 
 
 def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
-                return_timestamp=False, raise_exc=True,
-                folder=None, return_all=False):
-    '''
-    finds the latest taken data with <contains> in its name.
-    returns the full path of the data directory.
+                return_timestamp=False, return_path=True, raise_exc=True,
+                folder=None, list_timestamps=False, return_all=False):
+    """
+        Finds the latest taken data with <contains> in its name.
+        Returns the full path of the data directory and/or the timestamp.
+        If no fitting data is found, an exception is raised (unless raise_exc=False).
 
-    if older_than is not None, then the latest data that fits and that
-    is older than the date given by the timestamp older_than is returned.
-    if newer_than is not None, than the latest data that fits and that
-    is newer than the date given by the timestamp newer_than is returned
+        Args:
+            contains: filter for the labels. Any label that does not include
+                this string will be ignored. (default: no filter)
+            older_than: if this is not None, the latest data that fits and that is
+                older than the date given by the timestamp older_than is returned.
+            newer_than: if this is not None, the latest data that fits and that is
+                newer than the date given by the timestamp newer_than is returned.
+            or_equal: switches "older/newer than" comparisons to  "older/newer than
+                or equal" comparisons to (default: False)
+            return_timestamp: return the timestamp(s) as first return value
+                (default: False)
+            return_path: return the path(s) as the only or the second first return
+                value (default: True)
+            raise_exc: Return False instead of raising an execption if no data is
+                found. (default: False)
+            folder: search directory (default: the stored datadir)
+            list_timestamps: If set to an integer n, a list of the n latest matches
+                is returned. If False, a single item is returned.
+            return_all: returns all the folders satisfying the requirements found
+                in the last day folder in which any match is found
+        Returns: (list of) path and/or timestamps. Return format depends on the
+            choice of return_timestamp, return_path, list_timestamps, return_all.
+    """
 
-    If no fitting data is found, an exception is raised.
-    Except when you specifically ask not to to
-    this in: raise_exc = False, then a 'False' is returned.
-    return_all = True: returns all the folders that satisfy
-        the requirements (Cristian)
-    '''
-    if (folder is None):
+    if folder is None:
         search_dir = datadir
     else:
         search_dir = folder
 
     daydirs = os.listdir(search_dir)
     if len(daydirs) == 0:
-        logging.warning('No data found in datadir')
+        log.warning('No data found in datadir')
         return None
 
     daydirs.sort()
 
     measdirs = []
+    paths = []
+    timestamps = []
     i = len(daydirs)-1
+    if return_all:
+        list_timestamps = False
 
-    while len(measdirs) == 0 and i >= 0:
+    while len(measdirs) < max(list_timestamps, 1) and i >= 0:
         daydir = daydirs[i]
         # this makes sure that (most) non day dirs do not get searched
         # as they should start with a digit (e.g. YYYYMMDD)
@@ -158,7 +176,6 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
             all_measdirs = [d for d in os.listdir(
                 os.path.join(search_dir, daydir))]
             all_measdirs.sort()
-            measdirs = []
             for d in all_measdirs:
                 # this routine verifies that any output directory
                 # is a 'valid' directory
@@ -168,7 +185,7 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
                     dstamp, tstamp = verify_timestamp(_timestamp)
                 except:
                     continue
-                timestamp = dstamp+tstamp
+                timestamp = dstamp+'_'+tstamp
                 if contains in d:
                     if older_than is not None:
                         if not is_older(timestamp, older_than,
@@ -179,22 +196,32 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
                                         or_equal=or_equal):
                             continue
                     measdirs.append(d)
+                    paths.append(os.path.join(search_dir, daydir, d))
+                    timestamps.append(timestamp)
+            if newer_than is not None:
+                if not is_older(newer_than, timestamp,
+                                or_equal=or_equal):
+                    break
         i -= 1
     if len(measdirs) == 0:
         if raise_exc is True:
-            raise Exception('No data found.')
+            raise Exception('No data matches the criteria.')
         else:
+            log.warning('No data matches the criteria.')
             return False
     else:
         measdirs.sort()
-        if return_all:
-            return search_dir, daydir, measdirs
-        measdir = measdirs[-1]
-        if return_timestamp is False:
-            return os.path.join(search_dir, daydir, measdir)
+        timestamps.sort()
+        paths.sort()
+        if not return_all:
+            paths = paths[-list_timestamps:] if list_timestamps else paths[-1]
+            timestamps = timestamps[-list_timestamps:] if list_timestamps else timestamps[-1]
+        if return_timestamp and return_path:
+            return timestamps, paths
+        elif return_timestamp:
+            return timestamps
         else:
-            return str(daydir) + '_' + str(measdir[:6]), os.path.join(
-                search_dir, daydir, measdir)
+            return paths
 
 
 def data_from_time(timestamp, folder=None):
