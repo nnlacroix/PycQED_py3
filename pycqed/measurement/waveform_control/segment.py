@@ -964,11 +964,10 @@ class Segment:
         return samples / self.pulsar.clock(**kw)
 
     def plot(self, instruments=None, channels=None, legend=True,
-             delays=dict(), savefig=False, prop_cycle=None, frameon=True,
+             delays=None, savefig=False, prop_cycle=None, frameon=True,
              channel_map=None, plot_kwargs=None, axes=None, demodulate=False):
         """
         Plots a segment. Can only be done if the segment can be resolved.
-
         :param instruments (list): instruments for which pulses have to be plotted.
             defaults to all.
         :param channels (list):  channels to plot. defaults to all.
@@ -987,10 +986,11 @@ class Segment:
             will be converted internally to array.
         :param demodulate (bool): plot only envelope of pulses by temporarily setting
             modulation and phase to 0. Need to recompile the sequence
-
         :return:
         """
         import matplotlib.pyplot as plt
+        if delays is None:
+            delays = dict()
         if plot_kwargs is None:
             plot_kwargs = dict()
             plot_kwargs['linewidth'] = 0.7
