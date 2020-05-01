@@ -13,6 +13,7 @@ class CircuitBuilder:
         self.qubits = qubits
         self.operation_dict = deepcopy(mqm.get_operation_dict(qubits))
         self.cz_pulse_name = kwargs.get('cz_pulse_name', 'upCZ')
+        self.prep_params = kwargs.get('prep_params', None)
 
     def get_qubits(self, qb_names='all'):
         """
@@ -37,6 +38,14 @@ class CircuitBuilder:
         for qb in qb_names:
             assert qb in stored_qb_names, f"{qb} not found in {stored_qb_names}"
         return [self.qubits[stored_qb_names.index(qb)] for qb in qb_names], qb_names
+
+    def get_prep_params(self, qb_names='all'):
+        qubits, qb_names = self.get_qubits(qb_names)
+        if self.prep_params is not None:
+            return self.prep_params
+        else:
+            return mqm.get_multi_qubit_prep_params(
+                [qb.preparation_params() for qb in qubits])
 
     def get_pulse(self, op, parse_z_gate=False):
         """
@@ -100,8 +109,7 @@ class CircuitBuilder:
             block_name = f"Initialization_{qb_names}"
         qubits, qb_names = self.get_qubits(qb_names)
         if prep_params is None:
-            prep_params =  mqm.get_multi_qubit_prep_params(
-                [qb.preparation_params() for qb in qubits])
+            prep_params = self.get_prep_params(qb_names)
         if len(init_state) == 1:
             init_state = [init_state] * len(qb_names)
         else:
