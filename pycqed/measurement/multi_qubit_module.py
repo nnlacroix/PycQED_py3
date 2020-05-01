@@ -461,7 +461,6 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
     if tomography_options is None:
         tomography_options = {}
 
-    operation_dict = deepcopy(get_operation_dict(qubits))
     MC = qubits[0].instr_mc.get_instr()
 
     # prepare qubits
@@ -472,8 +471,8 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
     cp = None
     if tomography:
         cp = CalibrationPoints.multi_qubit(qb_names, 'ge', 1, True)
-    seq, swp = qaoa.qaoa_sequence(qb_names, betas, gammas, gates_info,
-                                  operation_dict, init_state=init_state,
+    seq, swp = qaoa.qaoa_sequence(qubits, betas, gammas, gates_info,
+                                  init_state=init_state,
                                   cal_points=cp,
                                   tomography=tomography,
                                   tomo_basis=tomography_options.get("basis_rots",
@@ -666,7 +665,6 @@ def run_qaoa(qubits, gates_info, maxiter=1,
 
     if exp_metadata is None:
         exp_metadata = {}
-    operation_dict = get_operation_dict(qubits)
 
     # optimizer params
     if optimizer_kwargs is None:
@@ -688,7 +686,7 @@ def run_qaoa(qubits, gates_info, maxiter=1,
             cp = CalibrationPoints.multi_qubit(qb_names, 'ge', 1, True)
             # sequence
             seq, swp = qaoa.qaoa_sequence(
-                qb_names, b, g, gates_info, operation_dict,
+                qubits, b, g, gates_info,
                 cal_points=cp, init_state=init_state, tomography=True,
                 tomo_basis=tomography_options.get("basis_rots",
                                                   tomo.DEFAULT_BASIS_ROTS),
