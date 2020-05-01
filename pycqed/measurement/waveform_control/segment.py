@@ -1079,6 +1079,85 @@ class Segment:
             string_repr += f"{i}: " + repr(p) + "\n"
         return string_repr
 
+    def export_tikz(self, qb_names, tscale=1e-6):
+        last_z = [(-np.inf, 0)] * len(qb_names)
+
+        output = ''
+        z_output = ''
+        start_output = '\\documentclass{standalone}\n\\usepackage{tikz}\n\\begin{document}\n\\scalebox{2}{'
+        start_output += '\\begin{tikzpicture}[x=10cm,y=2cm]\n'
+        start_output += '\\tikzstyle{CZdot} = [shape=circle, thick,draw,inner sep=0,minimum size=.5mm, fill=black]\n'
+        start_output += '\\tikzstyle{gate} = [draw,fill=white,minimum width=1cm, rotate=90]\n'
+        start_output += '\\tikzstyle{zgate} = [rotate=0]\n'
+        tmin = np.inf
+        tmax = -np.inf
+        num_single_qb = 0
+        num_two_qb = 0
+        num_virtual = 0
+        self.resolve_segment()
+        for p in self.unresolved_pulses:
+            if p.op_code != '' and p.op_code[:2] != 'RO':
+                l = p.pulse_obj.length
+                t = p.pulse_obj._t0 + l / 2
+                tmin = min(tmin, p.pulse_obj._t0)
+                tmax = max(tmax, p.pulse_obj._t0 + p.pulse_obj.length)
+                qb = qb_names.index(p.op_code[-3:])
+                op_code = p.op_code[:-4]
+                qbt = 0
+                if op_code[-3:-1] == 'qb':
+                    qbt = qb_names.index(op_code[-3:])
+                    op_code = op_code[:-4]
+                if op_code[-1:] == 's':
+                    op_code = op_code[:-1]
+                if op_code[:2] == 'CZ' or op_code[:4] == 'upCZ':
+                    num_two_qb += 1
+                    if len(op_code) > 4:
+                        val = -float(op_code[4:])
+                        gate_formatted = f'{gate_type}{(factor * val):.1f}'.replace(
+                            '.0', '')
+                        output += f'\\draw({t / tscale:.4f},-{qb})  node[CZdot] {{}} -- ({t / tscale:.4f},-{qbt}) node[gate, minimum height={l / tscale * 100:.4f}mm] {{\\tiny {gate_formatted}}};\n'
+                    else:
+                        output += f'\\draw({t / tscale:.4f},-{qb})  node[CZdot] {{}} -- ({t / tscale:.4f},-{qbt}) node[CZdot] {{}};\n'
+                elif op_code[0] == 'I':
+                    continue
+                else:
+                    if op_code[0] == 'm':
+                        factor = -1
+                        op_code = op_code[1:]
+                    else:
+                        factor = 1
+                    gate_type = 'R' + op_code[:1]
+                    val = float(op_code[1:])
+                    if val == 180:
+                        gate_formatted = op_code[:1]
+                    else:
+                        gate_formatted = f'{gate_type}{(factor * val):.1f}'.replace(
+                            '.0', '')
+                    if l == 0:
+                        if t - last_z[qb][0] > 1e-9:
+                            z_height = 0 if (
+                                        t - last_z[qb][0] > 100e-9 or last_z[qb][
+                                    1] >= 3) else last_z[qb][1] + 1
+                            z_output += f'\\draw[dashed,thick,shift={{(0,.03)}}] ({t / tscale:.4f},-{qb})--++(0,{0.3 + z_height * 0.1});\n'
+                        else:
+                            z_height = last_z[qb][1] + 1
+                        z_output += f'\\draw({t / tscale:.4f},-{qb})  node[zgate,shift={{({(0, .35 + z_height * .1)})}}] {{\\tiny {gate_formatted}}};\n'
+                        last_z[qb] = (t, z_height)
+                        num_virtual += 1
+                    else:
+                        output += f'\\draw({t / tscale:.4f},-{qb})  node[gate, minimum height={l / tscale * 100:.4f}mm] {{\\tiny {gate_formatted}}};\n'
+                        num_single_qb += 1
+        qb_output = ''
+        for qb, qb_name in enumerate(qb_names):
+            qb_output += f'\draw ({tmin / tscale:.4f},-{qb}) node[left] {{{qb_name}}} -- ({tmax / tscale:.4f},-{qb});\n'
+        output = start_output + qb_output + output + z_output
+        axis_ycoord = -len(qb_names) + .4
+        output += f'\\foreach\\x in {{{tmin / tscale},{tmin / tscale + .2},...,{tmax / tscale}}} \\pgfmathprintnumberto[fixed]{{\\x}}{{\\tmp}} \draw (\\x,{axis_ycoord})--++(0,-.1) node[below] {{\\tmp}} ;\n'
+        output += f'\\draw[->] ({tmin / tscale},{axis_ycoord}) -- ({tmax / tscale},{axis_ycoord}) node[right] {{$t/\\mathrm{{\\mu s}}$}};\n'
+        output += '\\end{tikzpicture}}\end{document}'
+        output += f'\n% {num_single_qb} single-qubit gates, {num_two_qb} two-qubit gates, {num_virtual} virtual gates'
+        return output
+
 
 class UnresolvedPulse:
     """
