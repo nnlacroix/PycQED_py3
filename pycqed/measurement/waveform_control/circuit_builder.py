@@ -88,6 +88,11 @@ class CircuitBuilder:
         p['op_code'] = op
         return p
 
+    def swap_qubit_indices(self, i, j=None):
+        if j is None:
+            i, j = i[0], i[1]
+        self.qubits[i], self.qubits[j] = self.qubits[j], self.qubits[i]
+
     def initialize(self, init_state='0', qb_names='all', prep_params=None,
                    simultaneous=True, block_name=None):
         """
