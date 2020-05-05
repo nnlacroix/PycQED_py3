@@ -178,6 +178,8 @@ class BufferedCZPulse(pulse.Pulse):
         self.phase = kw.pop('phase', 0.)
 
         self.pulse_length = kw.pop('pulse_length', 0)
+        self.buffer_length_start = kw.pop('buffer_length_start', 0)
+        self.buffer_length_end = kw.pop('buffer_length_end', 0)
         self.pulse_physical_length = self.pulse_length
         self.cphase = kw.pop('cphase', None)
         self.force_adapt_pulse_length = kw.pop('force_adapt_pulse_length', None)
@@ -193,14 +195,18 @@ class BufferedCZPulse(pulse.Pulse):
                 self.op_code = kw.pop('op_code', 'CZ').\
                     replace('CZ', f'CZ{(self.cphase)}')
 
-            self.pulse_physical_length = \
-                self.calc_physical_length(self.amplitude, self.cphase_calib_dict,
-                                          pulse_length=self.pulse_length,
-                                          adapt_pulse_length=self.force_adapt_pulse_length)
+            if self.amplitude == 0:
+                self.pulse_physical_length = 0
+                self.buffer_length_start = 0
+                self.buffer_length_end = 0
+            else:
+                self.pulse_physical_length = \
+                    self.calc_physical_length(
+                        self.amplitude, self.cphase_calib_dict,
+                        pulse_length=self.pulse_length,
+                        adapt_pulse_length=self.force_adapt_pulse_length)
 
 
-        self.buffer_length_start = kw.pop('buffer_length_start', 0)
-        self.buffer_length_end = kw.pop('buffer_length_end', 0)
         self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse', 5e-9)
         self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma', 0)
         self.length = self.pulse_physical_length + self.buffer_length_start + \
@@ -209,6 +215,9 @@ class BufferedCZPulse(pulse.Pulse):
 
     @staticmethod
     def calc_cphase_params(phi, cphase_calib_dict):
+        if 'zero_angle_threshold' in cphase_calib_dict:
+            if abs(phi) < cphase_calib_dict['zero_angle_threshold']:
+                return (0, {})
         assert 'phase_amplitude_array' in cphase_calib_dict, \
             "phase_amplitude_array not provided"
         paa = cphase_calib_dict['phase_amplitude_array']
