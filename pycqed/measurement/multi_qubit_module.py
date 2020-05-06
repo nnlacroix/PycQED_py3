@@ -2193,6 +2193,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                    hard_sweep_params=None, max_flux_length=None,
                    num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
                    prep_params=None, exp_metadata=None, label=None,
+                   leakage_qb=None,
                    analyze=True, upload=True, for_ef=True, **kw):
     '''
     method to measure the leakage and the phase acquired during a flux pulse
@@ -2205,6 +2206,8 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
     Args:
         qbc (QuDev_transmon): control qubit / fluxed qubit
         qbt (QuDev_transmon): target qubit / non-fluxed qubit
+        leakage_qb: qubit which goes into the f level and therefore the leakage
+            analysis is performed upon. defaults to qbc.
     '''
     plot_all_traces = kw.get('plot_all_traces', True)
     plot_all_probs = kw.get('plot_all_probs', True)
@@ -2237,9 +2240,15 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
         MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
+    if leakage_qb is None:
+        leakage_qb = qbc # FIXME: assuming the leaking qb is the fluxed one.
+                         #  How to have a better behavior?
+        cphase_qb = qbt
+    else:
+        cphase_qb = (qbc if qbt == leakage_qb else qbt)
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
                                                     for_ef=for_ef)
-    cp = CalibrationPoints.multi_qubit([qbc.name, qbt.name], cal_states,
+    cp = CalibrationPoints.multi_qubit([leakage_qb.name, cphase_qb.name], cal_states,
                                         n_per_state=n_cal_points_per_state)
 
     if max_flux_length is not None:
@@ -2249,7 +2258,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
         fsqs.cphase_seqs(
             hard_sweep_dict=hard_sweep_params,
             soft_sweep_dict=soft_sweep_params,
-            qbc_name=qbc.name, qbt_name=qbt.name,
+            qbc_name=leakage_qb.name, qbt_name=cphase_qb.name,
             cz_pulse_name=cz_pulse_name,
             operation_dict=operation_dict,
             cal_points=cp, upload=False, prep_params=prep_params,
@@ -2282,17 +2291,17 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'leakage_qbname': qbc.name,
-                         'cphase_qbname': qbt.name,
+    exp_metadata.update({'leakage_qbname': leakage_qb.name,
+                         'cphase_qbname': cphase_qb.name,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'classified_ro': classified,
                          'rotate': len(cal_states) != 0 and not classified,
                          'cal_states_rotations':
-                             {qbc.name: {'g': 0, 'f': 1},
-                              qbt.name: {'g': 0, 'e': 1}} if
+                             {leakage_qb.name: {'g': 0, 'f': 1},
+                              cphase_qb.name: {'g': 0, 'e': 1}} if
                              (len(cal_states) != 0 and not classified) else None,
-                         'data_to_fit': {qbc.name: 'pf', qbt.name: 'pe'},
+                         'data_to_fit': {leakage_qb.name: 'pf', cphase_qb.name: 'pe'},
                          'hard_sweep_params': hard_sweep_params,
                          'soft_sweep_params': soft_sweep_params})
     MC.run_2D(label, exp_metadata=exp_metadata)
@@ -2308,7 +2317,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                                      qb.int_avg_det.value_names]
                            for qb in [qbc, qbt]}
         flux_pulse_tdma = tda.CPhaseLeakageAnalysis(
-            qb_names=[qbc.name, qbt.name],
+            qb_names=[leakage_qb.name, cphase_qb.name],
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
                           'plot_all_probs': plot_all_probs,
                           'channel_map': channel_map})
