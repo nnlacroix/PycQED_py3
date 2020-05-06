@@ -336,3 +336,18 @@ class CircuitBuilder:
         pulses += self.mux_readout(**ro_kwargs).build()
         seq.add(Segment('Segment1', pulses))
         return seq
+
+    def simultaneous_blocks(self, block_name, blocks):
+        simultaneous = Block(block_name, [])
+        simultaneous_end_pulses = []
+        for block in blocks:
+            simultaneous.extend(block.build(ref_pulse=f"start"))
+            simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
+        simultaneous.extend([{"name": f"simultaneous_end_pulse",
+                              "pulse_type": "VirtualPulse",
+                              "pulse_delay": 0,
+                              "ref_pulse": simultaneous_end_pulses,
+                              "ref_point": 'end',
+                              "ref_function": 'max'
+                              }])
+        return simultaneous
