@@ -368,7 +368,9 @@ def plot_colormesh(xx, yy, zz, ax=None, labels=True, colorbar=True, **plot_kwarg
 def printseg(self):
     string_repr = f"---- {self.name} ----\n"
     for i, p in enumerate(self.unresolved_pulses):
-        string_repr += f"{i} {p.pulse_obj.name}: " + repr(p.__dict__) + ', ' + repr(p.pulse_obj.__dict__)  + "\n"
+        tmp = deepcopy(p.__dict__)
+        tmp.pop('pulse_obj', None)
+        string_repr += f"{i} {p.pulse_obj.name}: " + repr(tmp) + ', ' + repr(p.pulse_obj.__dict__)  + "\n"
     print(string_repr)
 
 def seq2qutip(seq, qb_names, q=None):
