@@ -4,7 +4,6 @@ Library containing various pulse shapes.
 
 import sys
 import numpy as np
-from numpy import array # do not delete; used in eval
 import scipy as sp
 from pycqed.measurement.waveform_control import pulse
 import logging
