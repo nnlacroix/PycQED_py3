@@ -2193,7 +2193,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                    hard_sweep_params=None, max_flux_length=None,
                    num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
                    prep_params=None, exp_metadata=None, label=None,
-                   leakage_qb=None,
+                   leakage_qb=None, prepend_pulse_dicts=None,
                    analyze=True, upload=True, for_ef=True, **kw):
     '''
     method to measure the leakage and the phase acquired during a flux pulse
@@ -2253,7 +2253,12 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
 
     if max_flux_length is not None:
         log.debug(f'max_flux_length = {max_flux_length*1e9:.2f} ns, set by user')
-    operation_dict = get_operation_dict([qbc, qbt])
+    if prepend_pulse_dicts is None:
+        prepend_pulse_dicts = []
+
+    operation_dict = get_operation_dict([qbc, qbt] +
+                                        [pp['qb'] for pp in prepend_pulse_dicts])
+
     sequences, hard_sweep_points, soft_sweep_points = \
         fsqs.cphase_seqs(
             hard_sweep_dict=hard_sweep_params,
@@ -2263,8 +2268,8 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
             operation_dict=operation_dict,
             cal_points=cp, upload=False, prep_params=prep_params,
             max_flux_length=max_flux_length,
-            num_cz_gates=num_cz_gates)
-
+            num_cz_gates=num_cz_gates, prepend_pulse_dicts=prepend_pulse_dicts
+        )
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
         parameter_name=list(hard_sweep_params)[0],
@@ -2303,7 +2308,8 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                              (len(cal_states) != 0 and not classified) else None,
                          'data_to_fit': {leakage_qb.name: 'pf', cphase_qb.name: 'pe'},
                          'hard_sweep_params': hard_sweep_params,
-                         'soft_sweep_params': soft_sweep_params})
+                         'soft_sweep_params': soft_sweep_params,
+                         'prepend_pulse_dicts': str(prepend_pulse_dicts)})
     MC.run_2D(label, exp_metadata=exp_metadata)
     if analyze:
         if classified:
@@ -2467,7 +2473,7 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                            exp_metadata=None, classified=False, update=False,
                            reset_phases_before_measurement=True,
                            basis_rot_par=None, prepend_n_cz=0,
-                           extract_only=False, simultaneous=False):
+                           extract_only=False, simultaneous=False, prepend_pulse_dicts=None, **kw):
 
     if qubits_to_measure is None:
         qubits_to_measure = [qbc, qbt]
@@ -2522,16 +2528,22 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
             hard_sweep_dict_ramsey = deepcopy({k: v for k, v in
                                                hard_sweep_params.items() if not
                                                k.startswith('upCZ_')})
+            if prepend_pulse_dicts is None:
+                prepend_pulse_dicts = []
+
+            operation_dict = get_operation_dict(qbs + [qbc, qbt] +
+                                                [pp['qb'] for pp in prepend_pulse_dicts])
+
             seq, hard_sweep_points = \
                 fsqs.dynamic_phase_seq(
                     qb_names=[qb.name for qb in qbs],
                     hard_sweep_dict_ramsey=hard_sweep_dict_ramsey,
                     hard_sweep_dict_flux=hard_sweep_dict_flux,
-                    operation_dict=get_operation_dict(qbs + [qbc, qbt]),
+                    operation_dict=operation_dict,
                     cz_pulse_name=cz_pulse_name, cal_points=cp,
                     prepend_n_cz=prepend_n_cz,
-                    upload=False, prep_params=prep_params)
-            # return seq
+                    upload=False, prep_params=prep_params,
+                    prepend_pulse_dicts=prepend_pulse_dicts)
 
             MC.set_sweep_function(awg_swf.SegmentHardSweep(
                 sequence=seq, upload=upload,
@@ -2557,7 +2569,9 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                                  'cal_states_rotations':
                                      {qb.name: {'g': 0, 'e': 1} for qb in qbs},
                                  'hard_sweep_params': hard_sweep_dict_ramsey,
-                                 'hard_sweep_dict_flux': hard_sweep_dict_flux})
+                                 'hard_sweep_dict_flux': hard_sweep_dict_flux,
+                                 'prepend_n_cz': prepend_n_cz,
+                                 'prepend_pulse_dicts': str(prepend_pulse_dicts)})
             MC.run(label, exp_metadata=exp_metadata)
 
             if analyze:
