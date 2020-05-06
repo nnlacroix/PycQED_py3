@@ -477,8 +477,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 for i, cal_idx in enumerate(cal_pts_idxs):
                     cal_points_data[i, :] = np.mean(raw_data[cal_idx, :],
                                                     axis=0)
-                rotated_data = a_tools.predict_proba_avg_ro(
-                    raw_data, cal_points_data, proj_pt_on_triangle=False)
+                rotated_data = predict_proba_avg_ro(raw_data, cal_points_data)
                 for i, state in enumerate(list(cal_states_dict[qb_name])):
                     rotated_data_dict[qb_name][f'p{state}'] = rotated_data[:, i]
             else:
