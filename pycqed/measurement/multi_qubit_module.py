@@ -1,6 +1,4 @@
 import numpy as np
-from numpy import array # Do not remove, used in eval(str_with_array)
-from scipy.interpolate import interp1d # Do not remove, used in eval(str_with_interp1d)
 import matplotlib.pyplot as plt
 import itertools
 import time
@@ -2755,10 +2753,12 @@ def test_arbitrary_phase(qbc, qbt, target_phases, cz_pulse_name, measure_dynamic
     '''
     label = kw.get('label', 'Arbitrary_Phase_{}_{}'.format(qbc.name, qbt.name))
     gate_dict = get_operation_dict([qbc, qbt])[cz_pulse_name]
-    if gate_dict['pulse_type'] not in ('BufferedCZPulseEffectiveTime', "BufferedCZPulse"):
-        raise NotImplementedError("Arbritrary phase measurement requires "
-                                  "'BufferedCZPulse*' pulse type but pulse type is '{}'"
-                                    .format(gate_dict['pulse_type']))
+    allowed_pulse_types = ["BufferedCZPulse"]
+    if gate_dict['pulse_type'] not in allowed_pulse_types:
+        raise NotImplementedError("Arbitrary phase measurement requires "
+                                  "'{}' pulse type but pulse type is '{}'"
+                                    .format(allowed_pulse_types,
+                                            gate_dict['pulse_type']))
 
     results = dict() #dictionary to store measurement results
     pulse_class = getattr(sys.modules['pycqed.measurement.waveform_control.pulse_library'],

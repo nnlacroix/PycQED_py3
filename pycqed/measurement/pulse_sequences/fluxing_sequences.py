@@ -635,8 +635,8 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
             fp = deepcopy(flux_p)
             fp['name'] = f'cphase_flux_{j}'
             fp_list += [fp]
-        if flux_p['pulse_type'] == 'BufferedCZPulseEffectiveTime':
-            log.warning("Pulse type is 'BufferedCZPulseEffectiveTime', adapting "
+        if flux_p['force_adapt_pulse_length'] == 'force_adapt_pulse_length':
+            log.warning("force_adapt_pulse_length is True, adapting "
                      "time between Ramsey pulses")
             final_rotations[0]['ref_pulse'] =  fp_list[-1]['name']
             final_rotations[0]['ref_point'] = 'end'

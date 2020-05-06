@@ -3413,8 +3413,7 @@ def add_CZ_pulse(qbc, qbt):
                                 initial_value='BufferedCZPulse',
                                 vals=vals.Enum('BufferedSquarePulse',
                                                'BufferedCZPulse',
-                                               'NZBufferedCZPulse',
-                                               'BufferedCZPulseEffectiveTime'))
+                                               'NZBufferedCZPulse'))
         qbc.add_pulse_parameter(op_name, ps_name + '_channel', 'channel',
                                 initial_value='', vals=vals.Strings())
         qbc.add_pulse_parameter(op_name, ps_name + '_aux_channels_dict',
