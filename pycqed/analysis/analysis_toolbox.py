@@ -138,8 +138,8 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
                 (default: False)
             return_path: return the path(s) as the only or the second first return
                 value (default: True)
-            raise_exc: Return False instead of raising an execption if no data is
-                found. (default: False)
+            raise_exc: Return False instead of raising an exception if no data is
+                found. (default: True)
             folder: search directory (default: the stored datadir)
             n_matches: If set to an integer n, a list of the n latest matches
                 is returned. If None, a single item is returned.
