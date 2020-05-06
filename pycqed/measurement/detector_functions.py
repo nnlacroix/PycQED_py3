@@ -715,7 +715,7 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
             # value corrsponds to the peak voltage of a cosine with the
             # demodulation frequency.
             self.value_units = ['Vpeak']*len(self.channels)
-            self.scaling_factor = 1/(1.8e9*integration_length*nr_averages)
+            self.scaling_factor = 1/(1.8e9*integration_length)
         elif result_logging_mode == 'lin_trans':
             self.value_units = ['a.u.']*len(self.channels)
             self.scaling_factor = 1/nr_averages
