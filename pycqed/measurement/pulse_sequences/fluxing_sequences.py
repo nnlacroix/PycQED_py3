@@ -179,13 +179,14 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict_ramsey, operation_dict,
     pulse_list = []
     for i, pp in enumerate(prepend_pulse_dicts):
         prepend_pulse = deepcopy(operation_dict[pp['pulse_name']])
-        prepend_pulse['name'] = f'prepend_cz_{i}'
+        prepend_pulse['name'] = f'prepend_{i}'
         prepend_pulse['element_name'] = pp.get('element_name', 'flux_el')
         pulse_list += [prepend_pulse]
 
-    print(pulse_list)
-    pulse_list += [deepcopy(flux_pulse)
-                  for _ in range(prepend_n_cz)]
+    for i in range(prepend_n_cz):
+        prepend_pulse = deepcopy(flux_pulse)
+        prepend_pulse['name'] = f'prepend_cz_{i}'
+        pulse_list += [prepend_pulse]
 
     pulse_list += Block("ge_half_start pulses", ge_half_start,)\
         .build(block_start=dict(element_name='flux_el'),
@@ -566,7 +567,7 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
     prepend_pulses = []
     for i, pp in enumerate(prepend_pulse_dicts):
         prepend_pulse = deepcopy(operation_dict[pp['pulse_name']])
-        prepend_pulse['name'] = f'prepend_cz_{i}'
+        prepend_pulse['name'] = f'prepend_{i}'
         prepend_pulse['element_name'] = pp.get('element_name', 'cphase_flux_el')
         prepend_pulses += [prepend_pulse]
 
