@@ -101,23 +101,40 @@ def get_last_n_timestamps(n, contains=''):
 
 
 def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
-                return_timestamp=False, raise_exc=True,
-                folder=None, return_all=False):
-    '''
-    finds the latest taken data with <contains> in its name.
-    returns the full path of the data directory.
+                return_timestamp=False, return_path=True, raise_exc=True,
+                folder=None, n_matches=None, return_all=False):
+    """
+        Finds the latest taken data with <contains> in its name.
+        Returns the full path of the data directory and/or the timestamp.
+        If no fitting data is found, an exception is raised (unless raise_exc=False).
 
-    if older_than is not None, then the latest data that fits and that
-    is older than the date given by the timestamp older_than is returned.
-    if newer_than is not None, than the latest data that fits and that
-    is newer than the date given by the timestamp newer_than is returned
+        Args:
+            contains: filter for the labels. Any label that does not include
+                this string will be ignored. (default: no filter)
+            older_than: if this is not None, the latest data that fits and that is
+                older than the date given by the timestamp older_than is returned.
+            newer_than: if this is not None, the latest data that fits and that is
+                newer than the date given by the timestamp newer_than is returned.
+            or_equal: switches "older/newer than" comparisons to  "older/newer than
+                or equal" comparisons to (default: False)
+            return_timestamp: return the timestamp(s) as first return value
+                (default: False)
+            return_path: return the path(s) as the only or the second return
+                value (default: True)
+            raise_exc: Return False instead of raising an exception if no data is
+                found. (default: True)
+            folder: search directory (default: the stored datadir)
+            n_matches: If set to an integer n, a list of the n latest matches
+                is returned. If None, a single item is returned.
+            return_all: returns all the folders satisfying the requirements found
+                in the last day folder in which any match is found
+        Returns: (list of) path and/or timestamps. Return format depends on the
+            choice of return_timestamp, return_path, list_timestamps, return_all.
+    """
 
-    If no fitting data is found, an exception is raised.
-    Except when you specifically ask not to to
-    this in: raise_exc = False, then a 'False' is returned.
-    return_all = True: returns all the folders that satisfy
-        the requirements (Cristian)
-    '''
+    assert return_timestamp or return_path, \
+        'No return value chosen (return_timestamp=return_path=False).'
+
     if folder is None:
         search_dir = datadir
     else:
@@ -131,9 +148,14 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
     daydirs.sort()
 
     measdirs = []
+    paths = []
+    timestamps = []
     i = len(daydirs)-1
+    if n_matches is None or return_all:
+        n_matches = 0
 
-    while len(measdirs) == 0 and i >= 0:
+    timestamp = None
+    while len(measdirs) < max(n_matches, 1) and i >= 0:
         daydir = daydirs[i]
         # this makes sure that (most) non day dirs do not get searched
         # as they should start with a digit (e.g. YYYYMMDD)
@@ -141,7 +163,6 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
             all_measdirs = [d for d in os.listdir(
                 os.path.join(search_dir, daydir))]
             all_measdirs.sort()
-            measdirs = []
             for d in all_measdirs:
                 # this routine verifies that any output directory
                 # is a 'valid' directory
@@ -151,7 +172,7 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
                     dstamp, tstamp = verify_timestamp(_timestamp)
                 except:
                     continue
-                timestamp = dstamp+tstamp
+                timestamp = dstamp+'_'+tstamp
                 if contains in d:
                     if older_than is not None:
                         if not is_older(timestamp, older_than,
@@ -162,20 +183,32 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
                                         or_equal=or_equal):
                             continue
                     measdirs.append(d)
+                    paths.append(os.path.join(search_dir, daydir, d))
+                    timestamps.append(timestamp)
+            if newer_than is not None and timestamp is not None:
+                if not is_older(newer_than, timestamp,
+                                or_equal=or_equal):
+                    break
         i -= 1
     if len(measdirs) == 0:
         if raise_exc is True:
-            raise Exception('No data found.')
+            raise Exception('No data matches the criteria.')
         else:
-            return log.warning('No data found in datadir')
-
-    measdirs.sort()
-    if return_all:
-        folders = [os.path.join(search_dir, daydir, md) for md in measdirs]
-        if return_timestamp:
-            return [str(daydir)+'_'+str(md[:6]) for md in measdirs], folders
+            log.warning('No data matches the criteria.')
+            return [] if n_matches or return_all else False
+    else:
+        measdirs.sort()
+        timestamps.sort()
+        paths.sort()
+        if not return_all:
+            paths = paths[-n_matches:] if n_matches else paths[-1]
+            timestamps = timestamps[-n_matches:] if n_matches else timestamps[-1]
+        if return_timestamp and return_path:
+            return timestamps, paths
+        elif return_timestamp:
+            return timestamps
         else:
-            return folders
+            return paths
 
     measdir = measdirs[-1]
     if return_timestamp:
