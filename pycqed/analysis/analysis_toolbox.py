@@ -119,7 +119,7 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
                 or equal" comparisons to (default: False)
             return_timestamp: return the timestamp(s) as first return value
                 (default: False)
-            return_path: return the path(s) as the only or the second first return
+            return_path: return the path(s) as the only or the second return
                 value (default: True)
             raise_exc: Return False instead of raising an exception if no data is
                 found. (default: True)
@@ -131,6 +131,9 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
         Returns: (list of) path and/or timestamps. Return format depends on the
             choice of return_timestamp, return_path, list_timestamps, return_all.
     """
+
+    assert return_timestamp or return_path, \
+        'No return value chosen (return_timestamp=return_path=False).'
 
     if folder is None:
         search_dir = datadir
@@ -151,6 +154,7 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
     if n_matches is None or return_all:
         n_matches = 0
 
+    timestamp = None
     while len(measdirs) < max(n_matches, 1) and i >= 0:
         daydir = daydirs[i]
         # this makes sure that (most) non day dirs do not get searched
@@ -181,7 +185,7 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
                     measdirs.append(d)
                     paths.append(os.path.join(search_dir, daydir, d))
                     timestamps.append(timestamp)
-            if newer_than is not None:
+            if newer_than is not None and timestamp is not None:
                 if not is_older(newer_than, timestamp,
                                 or_equal=or_equal):
                     break
@@ -191,7 +195,7 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
             raise Exception('No data matches the criteria.')
         else:
             log.warning('No data matches the criteria.')
-            return False
+            return [] if n_matches or return_all else False
     else:
         measdirs.sort()
         timestamps.sort()
