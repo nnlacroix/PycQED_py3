@@ -210,13 +210,6 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
         else:
             return paths
 
-    measdir = measdirs[-1]
-    if return_timestamp:
-        return str(daydir)+'_'+str(measdir[:6]), os.path.join(
-            search_dir, daydir, measdir)
-    else:
-        return os.path.join(search_dir, daydir, measdir)
-
 
 def data_from_time(timestamp, folder=None):
     '''
