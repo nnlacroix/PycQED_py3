@@ -215,7 +215,8 @@ class Segment:
             for unpulse in visited_pulses:
                 if unpulse not in self.unresolved_pulses:
                     log.error(unpulse)
-            raise Exception('Not all pulses have been resolved!')
+            raise Exception(f'Not all pulses have been resolved: '
+                            f'{self.unresolved_pulses}')
 
         # adds the resolved pulses to the elements OrderedDictionary
         for (t0, i, p) in sorted(visited_pulses):
