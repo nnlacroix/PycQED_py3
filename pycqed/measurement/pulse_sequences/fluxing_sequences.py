@@ -657,8 +657,14 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
             fp = deepcopy(flux_p)
             fp['name'] = f'cphase_flux_{j}'
             fp_list += [fp]
+        if flux_p['force_adapt_pulse_length'] == 'force_adapt_pulse_length':
+            log.warning("force_adapt_pulse_length is True, adapting "
+                     "time between Ramsey pulses")
+            final_rotations[0]['ref_pulse'] =  fp_list[-1]['name']
+            final_rotations[0]['ref_point'] = 'end'
+            final_rotations[0]['pulse_delay'] = 0
         pulses = prepend_pulses + initial_rotations + fp_list + \
-                 final_rotations + ro_pulses
+                 deepcopy(final_rotations) + ro_pulses
         swept_pulses = sweep_pulse_params(pulses, params)
         swept_pulses_with_prep = \
             [add_preparation_pulses(p, operation_dict, [qbc_name, qbt_name],

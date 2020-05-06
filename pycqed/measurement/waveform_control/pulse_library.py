@@ -6,6 +6,8 @@ import sys
 import numpy as np
 import scipy as sp
 from pycqed.measurement.waveform_control import pulse
+import logging
+log = logging.getLogger(__name__)
 
 pulse.pulse_libraries.add(sys.modules[__name__])
 
@@ -176,88 +178,26 @@ class BufferedCZPulse(pulse.Pulse):
         self.phase = kw.pop('phase', 0.)
 
         self.pulse_length = kw.pop('pulse_length', 0)
-        self.buffer_length_start = kw.pop('buffer_length_start', 0)
-        self.buffer_length_end = kw.pop('buffer_length_end', 0)
-        self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse', 5e-9)
-        self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma', 0)
-        self.length = self.pulse_length + self.buffer_length_start + \
-                      self.buffer_length_end
-        self.codeword = kw.pop('codeword', 'no_codeword')
+        self.pulse_physical_length = self.pulse_length
+        self.cphase = kw.pop('cphase', None)
+        self.force_adapt_pulse_length = kw.pop('force_adapt_pulse_length', None)
+        if self.cphase is not None or self.force_adapt_pulse_length is not None:
+            self.cphase_calib_dict = kw.pop('cphase_calib_dict', None)
+            assert self.cphase_calib_dict is not None, \
+                "cphase_calib_dict not provided"
 
-    def chan_wf(self, chan, tvals):
-        amp = self.amplitude
-        buffer_start = self.buffer_length_start
-        buffer_end = self.buffer_length_end
-        pulse_length = self.pulse_length
-        if chan != self.channel:
-            amp = self.aux_channels_dict[chan]
-            buffer_start -= self.extra_buffer_aux_pulse
-            buffer_end -= self.extra_buffer_aux_pulse
-            pulse_length += 2 * self.extra_buffer_aux_pulse
+            if self.cphase is not None:
+                self.amplitude, self.basis_rotation = \
+                    self.calc_cphase_params(self.cphase, self.cphase_calib_dict)
+                self.op_code = kw.pop('op_code', 'CZ').\
+                    replace('CZ', f'CZ{(self.cphase / np.pi * 180)}')
 
-        if self.gaussian_filter_sigma == 0:
-            wave = np.ones_like(tvals) * amp
-            wave *= (tvals >= tvals[0] + buffer_start)
-            wave *= (tvals < tvals[0] + buffer_start + pulse_length)
-        else:
-            tstart = tvals[0] + buffer_start
-            tend = tvals[0] + buffer_start + pulse_length
-            scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
-            wave = 0.5 * (sp.special.erf(
-                (tvals - tstart) * scaling) - sp.special.erf(
-                (tvals - tend) * scaling)) * amp
-        t_rel = tvals - tvals[0]
-        wave *= np.cos(
-            2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
-        return wave
-
-    def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        hashlist = [type(self), self.algorithm_time() - tstart]
-
-        amp = self.amplitude
-        buffer_start = self.buffer_length_start
-        buffer_end = self.buffer_length_end
-        pulse_length = self.pulse_length
-        if channel != self.channel:
-            amp = self.aux_channels_dict[channel]
-            buffer_start -= self.extra_buffer_aux_pulse
-            buffer_end -= self.extra_buffer_aux_pulse
-            pulse_length += 2 * self.extra_buffer_aux_pulse
-
-        hashlist += [amp, pulse_length, buffer_start, buffer_end]
-        hashlist += [self.gaussian_filter_sigma]
-        hashlist += [self.frequency, self.phase % 360]
-        return hashlist
+            self.pulse_physical_length = \
+                self.calc_physical_length(self.amplitude, self.cphase_calib_dict,
+                                          pulse_length=self.pulse_length,
+                                          adapt_pulse_length=self.force_adapt_pulse_length)
 
 
-class BufferedCZPulseEffectiveTime(pulse.Pulse):
-    def __init__(self,
-                 channel,
-                 element_name, chevron_func,
-                 aux_channels_dict=None,
-                 name='buffered CZ pulse effective time',
-                 **kw):
-        super().__init__(name, element_name)
-
-        self.channel = channel
-        self.aux_channels_dict = aux_channels_dict
-        self.channels = [self.channel]
-        if self.aux_channels_dict is not None:
-            self.channels += list(self.aux_channels_dict)
-
-        self.amplitude = kw.pop('amplitude', 0)
-        self.frequency = kw.pop('frequency', 0)
-        self.phase = kw.pop('phase', 0.)
-
-        self.chevron_func = chevron_func
-        # length rescaled to have a "straight" chevron -- parameter set by user
-        self.pulse_length = kw.pop('pulse_length', 0)
-        # physical length of pulse, computed using the model in chevron_func,
-        # which is the true length of the pulse
-        self.pulse_physical_length = self.chevron_func(self.amplitude,
-                                                       self.pulse_length)
         self.buffer_length_start = kw.pop('buffer_length_start', 0)
         self.buffer_length_end = kw.pop('buffer_length_end', 0)
         self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse', 5e-9)
@@ -265,6 +205,48 @@ class BufferedCZPulseEffectiveTime(pulse.Pulse):
         self.length = self.pulse_physical_length + self.buffer_length_start + \
                       self.buffer_length_end
         self.codeword = kw.pop('codeword', 'no_codeword')
+
+    @staticmethod
+    def calc_cphase_params(phi, cphase_calib_dict):
+        assert 'phase_amplitude_array' in cphase_calib_dict, \
+            "phase_amplitude_array not provided"
+        paa = cphase_calib_dict['phase_amplitude_array']
+        offset = cphase_calib_dict.get('offset', paa[0][0])
+        amplitude = np.interp((phi - offset) % (2 * np.pi),
+                                   paa[0] - offset, paa[1], period=2 * np.pi)
+
+        if 'amplitude_dynphase_dict' not in  cphase_calib_dict:
+            log.warning('amplitude_dynphase_dict not provided. '
+                        'Using basis_rotation from pulse settings.')
+            basis_rotation = None
+        else:
+            basis_rotation = {}
+            kind = cphase_calib_dict.get('dynphase_interp_kind', 'cubic')
+            for qbn, ada in cphase_calib_dict['amplitude_dynphase_dict'].items():
+                basis_rotation[qbn] = sp.interpolate.interp1d(ada[0],
+                        (np.unwrap(ada[1] / 180 * np.pi) * 180 / np.pi),
+                        kind=kind, fill_value='extrapolate'
+                    )(amplitude)
+        return (amplitude, basis_rotation)
+
+    @staticmethod
+    def calc_physical_length(amplitude, cphase_calib_dict,
+                             pulse_length=None, adapt_pulse_length=None):
+        assert 'amplitude_time_array' in cphase_calib_dict, \
+            "amplitude_time_array not provided"
+        ata = cphase_calib_dict['amplitude_time_array']
+
+        if adapt_pulse_length is None:
+            adapt_pulse_length = 'absolute'
+        if adapt_pulse_length not in ['relative', 'absolute']:
+            log.warning(f'Pulse length adaptation \'{adapt_pulse_length}\' not understood.'
+                  + f'Using relative adaptation time.')
+        pulse_physical_length = np.interp(amplitude, ata[0], ata[1])
+        if adapt_pulse_length != 'absolute':
+            assert pulse_length is not None, \
+                '...'
+            pulse_physical_length *= pulse_length / max(ata[1])
+        return pulse_physical_length
 
     def chan_wf(self, chan, tvals):
         amp = self.amplitude

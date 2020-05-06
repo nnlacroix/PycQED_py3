@@ -19,6 +19,7 @@ import pycqed.measurement.detector_functions as det
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.measurement.calibration_points import CalibrationPoints
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
+from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.measurement.waveform_control import pulsar as ps
 import pycqed.analysis.measurement_analysis as ma
 from pycqed.analysis_v3 import pipeline_analysis as pla
@@ -28,6 +29,7 @@ from pycqed.analysis_v3 import helper_functions as hlp_mod
 import pycqed.measurement.waveform_control.sequence as sequence
 from pycqed.utilities.general import temporary_value
 from pycqed.analysis_v2 import tomography_qudev as tomo
+import sys
 
 try:
     import \
@@ -2201,12 +2203,111 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
     else:
         return
 
-def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
-        soft_sweep_params=dict(), measure_dynamic_phase=False,
-        measure_conditional_phase=True, hard_sweep_params=None,
-        num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
-        classified_ro=True, prep_params=None, exp_metadata=dict(), label=None,
-        analyze=True, upload=True, for_ef=True, **kw):
+def calibrate_arbitrary_phase(qbc, qbt, cz_pulse_name, measure_conditional_phase=True,
+                              soft_sweep_params_cphase=None,
+                              measure_dynamic_phase=False, chevron_params_dict=None,
+                             qubits_to_measure=None,max_amps_per_meas=20, analyze=True,
+                              update=True, classified_ro=True, **kw):
+    """
+    Calibration method of arbitrary phase gate. Allows to calibrate the conditional and
+    dynamic phase separately.
+    Args:
+        qbc: contolled (fluxed) qubit
+        qbt: target qubit
+        cz_pulse_name (string): name of two qubit gate. Note that the code is not fully tested
+            for pulse names different from 'upCZ_qbt qbc'
+        measure_conditional_phase (bool):
+        soft_sweep_params_cphase (dict): parameter of the conditional phase to sweep.
+            assumes there is at
+        measure_dynamic_phase (bool):
+        chevron_params_dict (dict): parameters from chevron fitting, used to calculate the amplitudes
+            to measure the dynamic phases. Keys are f'{qbt.name}{qbc.name}' and 'default'.
+            values are dictionaries which should include 'dphi_dv', 'ej_correction_factor',
+            'd' (squid asymmetry).
+            Examples:
+                chevron_params_dict = { 'default': { 'dphi_dv': 0.55,
+                                                      'ej_correction_factor':1,
+                                                      'd': 0.485 },
+                                        'qb4qb2': {'dphi_dv': 0.7}}
+
+        qubits_to_measure: qubites to measure the dynamic phase from
+        max_amps_per_meas (int): max number of amplitudes measured in same
+            sequence for dyn_phase calib
+        analyze:
+        classified_ro(bool): whether or not to use 3-level readout
+        update (bool): whether or not to update the car_calib_dict
+        **kw:
+            amplitudes_dyn (array): used instead of the
+            see measure_cphase and measure_dynamic_phase and
+
+    Returns: calibration arrays
+
+    """
+    results = dict()
+    cphase_calib_dict = qbc.get(f'upCZ_{qbt.name}_cphase_calib_dict')
+    if measure_conditional_phase:
+        label = f"CPhase_nz_measurement_{qbc.name}_{qbt.name}_ncz_{kw.get('n_cz_gates', 1)}"
+        cphases, population_losses, leakage, flux_pulse_tdma = \
+            measure_cphase(qbc=qbc, qbt=qbt, cz_pulse_name=cz_pulse_name,
+                           soft_sweep_params=soft_sweep_params_cphase,
+                           label=label, analyze=True, classified=classified_ro,
+                           sort_phases_ascending_order=True, **kw)
+        results['phase_amplitude_array'] = [cphases, soft_sweep_params_cphase['amplitude']['values']]
+        if update:
+            cphase_calib_dict['phase_amplitude_array'] =  results['phase_amplitude_array']
+
+    if measure_dynamic_phase:
+        # find minimum amplitudes from theoretical model
+        ampl_cphase = soft_sweep_params_cphase["amplitude"]['values']
+        amplitudes_dyn = kw.get('amplitudes_dyn',
+                                qh.get_amplitudes_to_measure(qbc, qbt, (ampl_cphase[0], ampl_cphase[-1]),
+                                                       cz_pulse_name, chevron_params_dict, **kw))
+
+        # measure
+        if kw.get('measure', True):
+            assert qubits_to_measure is not None, "qubits_to_measure cannot be None if measuring dyn phase"
+            dyn_phases = []
+            for i, amps in enumerate(
+                    np.array_split(amplitudes_dyn, np.ceil(len(amplitudes_dyn) / max_amps_per_meas))):
+                hard_sweep_params = { 'upCZ_amplitude': amps,
+                                      'phase': {
+                                          'values': np.tile(np.linspace(0, 2 * np.pi, 6) * 180 / np.pi, 2),
+                                            'unit': 'deg'} }
+
+                dyn_phases.append(measure_dynamic_phases(
+                    qbc, qbt, cz_pulse_name, update=False, qubits_to_measure=qubits_to_measure,
+                    reset_phases_before_measurement=True, prepend_n_cz=0, extract_only=True, analyze=True,
+                    hard_sweep_params=hard_sweep_params, simultaneous=kw.get('simultaneous', True)))
+
+            # save
+            folder = a_tools.get_folder()
+            dyn_phases = np.asarray(dyn_phases)
+            dph_qbm = {qbi.name: np.hstack(np.asarray([d[qbi.name] for d in dyn_phases]))
+                       for qbi in qubits_to_measure}
+            np.save(folder + "\\amplitudes.npy", amplitudes_dyn)
+            for qb, dph in dph_qbm.items():
+                np.save(folder + "\\dynamic_phases_{}.npy".format(qb), dph)
+
+            if analyze:
+                results['amplitude_dynphase_dict'] = {qbn: [amplitudes_dyn, dynph]
+                                        for qbn, dynph in dph_qbm.items()}
+                for qbn, dynph in dph_qbm.items():
+                    plt.scatter(amplitudes_dyn,  np.unwrap(dynph / 180 * np.pi) * 180 / np.pi,
+                                label=f"{qbn} measured", marker=".")
+                plt.xlabel(r"Amplitude, $a$ (V)")
+                plt.ylabel(r"Dynamic phase, $\phi_D$ (deg.)")
+                plt.legend()
+                plt.savefig(folder + "\\dyn_phase_calib.png")
+
+                if update:
+                    if cphase_calib_dict.get('amplitude_dynphase_dict', None) is None:
+                        cphase_calib_dict['amplitude_dynphase_dict'] = dict()
+                    cphase_calib_dict['amplitude_dynphase_dict'].update(results['amplitude_dynphase_dict'])
+    return results
+
+def test_arbitrary_phase(qbc, qbt, target_phases, cz_pulse_name, measure_dynamic_phase=False,
+                         measure_conditional_phase=True,
+                         classified_ro=True, analyze=True, **kw):
     '''
     method to measure the leakage and the phase acquired during a flux pulse
     conditioned on the state of the control qubit (self).
@@ -2218,32 +2319,37 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
     Args:
         qbc (QuDev_transmon): control qubit / fluxed qubit
         qbt (QuDev_transmon): target qubit / non-fluxed qubit
-        phase_func (callable): function with input the target phase, returning
-         (flux pulse amplitude, dyn_phase)
+        measure_dynamic_phase (bool/list): whether to measure or not the
+            dynamic phase.
+        qubits_to_measure (list):  measures  dynamic phase of qubits in
+            the list. Defaults to [qbc]
+        phase_func_str (string): string representation of function with input the target phase, returning
+         (flux pulse amplitude, dyn_phase). Is called using eval(phase_func_str)
+    Other arguments see mqm.measure_cphase and mqm.measure_dynamic_phase
     '''
+    label = kw.get('label', 'Arbitrary_Phase_{}_{}'.format(qbc.name, qbt.name))
+    gate_dict = get_operation_dict([qbc, qbt])[cz_pulse_name]
+    allowed_pulse_types = ["BufferedCZPulse"]
+    if gate_dict['pulse_type'] not in allowed_pulse_types:
+        raise NotImplementedError("Arbitrary phase measurement requires "
+                                  "'{}' pulse type but pulse type is '{}'"
+                                    .format(allowed_pulse_types,
+                                            gate_dict['pulse_type']))
 
-    if label is None:
-        label = 'Arbitrary_Phase_{}_{}'.format(qbc.name, qbt.name)
-    assert qbc.get_operation_dict()[cz_pulse_name]['pulse_type'] == \
-        'BufferedCZPulseEffectiveTime', "Arbritrary phase measurement requires" \
-            "'BufferedCZPulseEffectiveTime' pulse type but pulse type is '{}'" \
-        .format(qbc.get_operation_dict()[cz_pulse_name]['pulse_type'])
     results = dict() #dictionary to store measurement results
-    amplitudes, predicted_dyn_phase = phase_func(target_phases)
-    soft_sweep_params['amplitude'] = dict(values=amplitudes, unit='V')
-    exp_metadata.update(dict(target_phases=target_phases))
+    pulse_class = getattr(sys.modules['pycqed.measurement.waveform_control.pulse_library'],
+                            gate_dict['pulse_type']) # get correct pulse class from type
+    amplitudes, predicted_dyn_phase = \
+        pulse_class.calc_cphase_params(target_phases, gate_dict['cphase_calib_dict'])
+    soft_sweep_params = kw.get('soft_sweep_params', dict(cphase=dict(values=amplitudes, unit='V')))
+    exp_metadata = kw.get('exp_metadata', {})
+    exp_metadata.update(dict(target_phases=target_phases,
+                             sort_phases_ascending_order=True))
     if measure_conditional_phase:
         cphases, population_losses, leakage, flux_pulse_tdma = \
             measure_cphase(qbc=qbc, qbt=qbt, soft_sweep_params=soft_sweep_params,
-                           cz_pulse_name=cz_pulse_name,
-                           hard_sweep_params=hard_sweep_params,
-                           num_cz_gates=num_cz_gates,
-                           n_cal_points_per_state=n_cal_points_per_state,
-                           cal_states=cal_states,
-                           prep_params=prep_params, exp_metadata=exp_metadata,
-                           label=label, analyze=True, upload=upload, for_ef=for_ef,
-                           classified= classified_ro,
-                           **kw)
+                           cz_pulse_name=cz_pulse_name, exp_metadata=exp_metadata,
+                           label=label, analyze=True, classified=classified_ro,  **kw)
         if analyze:
             # get folder to save figures.
             # FIXME: temporary while no proper analysis class is made
@@ -2287,46 +2393,51 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
             results['cphases_diff'] = diff_phases
 
     if measure_dynamic_phase:
-        dyn_phases = []
-        # FIXME: infering amplitude parameter from pulse name, but if naming
-        #  protocol changes this might fail
-        ampl_param_name = "_".join(cz_pulse_name.split(" ")[:-1] + ["amplitude"])
-        for amp in amplitudes:
-            with temporary_value(
-                    (getattr(qbc, ampl_param_name), amp)):
-                dyn_phases.append(
-                    measure_dynamic_phases(qbc, qbt, cz_pulse_name, update=False,
-                                           qubits_to_measure=[qbc],
-                                           reset_phases_before_measurement=True))
+        qubits_to_measure = kw.get('qubits_to_measure', [qbc])
+        dyn_phases_per_ampl = []
+        max_amps_per_meas = kw.pop('max_amps_per_meas', 1)
+        simultaneous = kw.pop('simultaneous', True)
+        for i, amps in enumerate(np.array_split(amplitudes, np.ceil(
+                len(amplitudes) / max_amps_per_meas))):
+            dyn_hard_sweep_params = {
+                'upCZ_amplitude': amps,
+                'phase': 'default'}
+            dyn_phases_per_ampl.append(
+                measure_dynamic_phases(qbc, qbt, cz_pulse_name, update=False,
+                                       qubits_to_measure=qubits_to_measure,
+                                       reset_phases_before_measurement=True,
+                                       extract_only=True, analyze=True,
+                                       hard_sweep_params=dyn_hard_sweep_params,
+                                       simultaneous=simultaneous, **kw))
 
         if analyze:
-            a = ma.MeasurementAnalysis(auto=False)
-            a.get_naming_and_values()
-            save_folder = a.folder
-            dyn_phases = np.array([d[qbc.name] for d in dyn_phases])
+            save_folder = a_tools.latest_data()
+            dyn_phases_per_qb = {
+                qbi.name: np.hstack(np.asarray([d[qbi.name] for d in dyn_phases_per_ampl]))
+                for qbi in qubits_to_measure}
+            for qbn, dyn_phases in dyn_phases_per_qb.items():
+                if kw.get("wrap_phase", True):
+                    dyn_phases[dyn_phases < 0 ] = dyn_phases[dyn_phases < 0] + 360
+                    dyn_phases[dyn_phases > 360] = dyn_phases[dyn_phases > 360] + 360
+                fig, ax = plt.subplots(2, sharex=True)
+                ax[0].scatter(amplitudes, predicted_dyn_phase[qbn],
+                              label=f'Predicted dynamic phase {qbn}', marker='x')
+                ax[0].scatter(amplitudes, dyn_phases, marker='x',
+                              label=f'Measured dynamic phase {qbn}')
+                ax[0].set_ylabel(f"Dynamic Phase (deg)")
+                ax[0].legend(prop=dict(size=12))
 
-            if kw.get("wrap_phase", True):
-                dyn_phases[dyn_phases < 0 ] = dyn_phases[dyn_phases < 0] + 360
-                dyn_phases[dyn_phases > 360] = dyn_phases[dyn_phases > 360] + 360
-            fig, ax = plt.subplots(2, sharex=True)
-            ax[0].scatter(amplitudes, predicted_dyn_phase,
-                          label='Predicted dynamic phase', marker='x')
-            ax[0].scatter(amplitudes, dyn_phases, marker='x',
-                          label='Measured dynamic phase')
-            ax[0].set_ylabel(f"Dynamic Phase (deg)")
-            ax[0].legend(prop=dict(size=12))
-
-            # wrapping to get difference around 0 degree
-            diff_dyn_phases = \
-                (dyn_phases - predicted_dyn_phase + 180) % 360 - 180
-            ax[1].scatter(amplitudes, diff_dyn_phases, label='Target - Measured')
-            ax[1].set_xlabel(f"Amplitude (V)")
-            ax[1].set_ylabel(f"Dynamic Phase (deg)")
-            ax[1].legend(prop=dict(size=12))
-            fig.savefig(os.path.join(save_folder, "dynamic_phase.png"))
-            results['dphases'] = dyn_phases
-            results['dphases_diff'] = diff_dyn_phases
-
+                # wrapping to get difference around 0 degree
+                diff_dyn_phases = \
+                    (dyn_phases - predicted_dyn_phase[qbn] + 180) % 360 - 180
+                ax[1].scatter(amplitudes, diff_dyn_phases, label='Target - Measured')
+                ax[1].set_xlabel(f"Amplitude (V)")
+                ax[1].set_ylabel(f"Dynamic Phase (deg)")
+                ax[1].legend(prop=dict(size=12))
+                fig.savefig(os.path.join(save_folder, f"dynamic_phase_{qbn}.png"))
+                results['dphases'] = dyn_phases
+                results['dphases_diff'] = diff_dyn_phases
+            np.save(save_folder + "\\results.npy", [results] )
     return results
 
 

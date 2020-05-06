@@ -3410,8 +3410,7 @@ def add_CZ_pulse(qbc, qbt):
                                 initial_value='BufferedCZPulse',
                                 vals=vals.Enum('BufferedSquarePulse',
                                                'BufferedCZPulse',
-                                               'NZBufferedCZPulse',
-                                               'BufferedCZPulseEffectiveTime'))
+                                               'NZBufferedCZPulse'))
         qbc.add_pulse_parameter(op_name, ps_name + '_channel', 'channel',
                                 initial_value='', vals=vals.Strings())
         qbc.add_pulse_parameter(op_name, ps_name + '_aux_channels_dict',
@@ -3446,12 +3445,20 @@ def add_CZ_pulse(qbc, qbt):
         qbc.add_pulse_parameter(op_name, ps_name + '_gaussian_filter_sigma',
                                 'gaussian_filter_sigma', initial_value=2e-9,
                                 vals=vals.Numbers(0))
-        qbc.add_pulse_parameter(op_name, ps_name + '_chevron_func',
-                                'chevron_func', initial_value=None,
-                                vals=vals.Callable(),
-                                docstring="Callable required when using "
-                                          "effective time CZ pulse to "
-                                          "straighten Chevron.")
+        qbc.add_pulse_parameter(op_name, ps_name + '_cphase_calib_dict',
+                                'cphase_calib_dict', initial_value=dict(),
+                                vals=vals.Dict(),
+                                docstring="Dictionary with parameters "
+                                          "for C-ARB calibration used in "
+                                          "BufferedCZPulse.")
+        qbc.add_pulse_parameter(op_name, ps_name + '_force_adapt_pulse_length',
+                                'force_adapt_pulse_length', initial_value=None,
+                                vals=vals.Enum(None,
+                                               'absolute',
+                                               'relative'),
+                                docstring="Forces the pulse to adapt its length "
+                                          "as a function of the amplitude according "
+                                          "to the calibration in cphase_calib_dict.")
 
 
 def add_CZ_MG_pulse(qbc, qbt):
