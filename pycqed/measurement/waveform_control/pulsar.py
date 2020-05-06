@@ -529,7 +529,6 @@ class HDAWG8Pulsar:
             codeword_el = set()
 
             current_segment = 'no_segment'
-
             for element in awg_sequence:
                 if awg_sequence[element] is None:
                     current_segment = element

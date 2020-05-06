@@ -607,6 +607,7 @@ class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
         hashlist += phase
         return hashlist
 
+
 class VirtualPulse(pulse.Pulse):
     def __init__(self, name, element_name, **kw):
         super().__init__(name, element_name)
