@@ -14,6 +14,7 @@ import re
 from pycqed.analysis.tools.plotting import SI_val_to_msg_str
 from copy import deepcopy
 from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.analysis.three_state_rotation import predict_proba_avg_ro
 import logging
 log = logging.getLogger(__name__)
 try:
@@ -431,18 +432,60 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     def cal_states_analysis(self):
         self.get_cal_data_points()
+        first_key = list(self.cal_states_dict_for_rotation)[0]
+        if len(self.cal_states_dict_for_rotation[first_key]) not in [2, 3]:
+            raise NotImplementedError('Calibration states rotation is '
+                                      'currently only implemented for 2 '
+                                      'or 3 cal states per qubit.')
+
         if self.get_param_value('TwoD', default_value=False):
-            self.proc_data_dict['projected_data_dict'] = \
-                self.rotate_data_TwoD(
-                    self.proc_data_dict['meas_results_per_qb'],
-                    self.channel_map, self.cal_states_dict_for_rotation,
-                    self.data_to_fit)
+            if len(self.cal_states_dict_for_rotation[first_key]) == 3:
+                self.proc_data_dict['projected_data_dict'] = \
+                    self.rotate_data_3_cal_states_TwoD(
+                        self.proc_data_dict['meas_results_per_qb'],
+                        self.channel_map, self.cal_states_dict_for_rotation)
+            else:
+                self.proc_data_dict['projected_data_dict'] = \
+                    self.rotate_data_TwoD(
+                        self.proc_data_dict['meas_results_per_qb'],
+                        self.channel_map, self.cal_states_dict_for_rotation,
+                        self.data_to_fit)
         else:
-            self.proc_data_dict['projected_data_dict'] = \
-                self.rotate_data(
-                    self.proc_data_dict['meas_results_per_qb'],
-                    self.channel_map, self.cal_states_dict_for_rotation,
-                    self.data_to_fit)
+            if len(self.cal_states_dict_for_rotation[first_key]) == 3:
+                self.proc_data_dict['projected_data_dict'] = \
+                    self.rotate_data_3_cal_states(
+                        self.proc_data_dict['meas_results_per_qb'],
+                        self.channel_map, self.cal_states_dict_for_rotation)
+            else:
+                self.proc_data_dict['projected_data_dict'] = \
+                    self.rotate_data(
+                        self.proc_data_dict['meas_results_per_qb'],
+                        self.channel_map, self.cal_states_dict_for_rotation,
+                        self.data_to_fit)
+
+    @staticmethod
+    def rotate_data_3_cal_states(meas_results_per_qb, channel_map,
+                                 cal_states_dict):
+        # FOR 3 CAL STATES
+        rotated_data_dict = OrderedDict()
+        for qb_name, meas_res_dict in meas_results_per_qb.items():
+            rotated_data_dict[qb_name] = OrderedDict()
+            cal_pts_idxs = list(cal_states_dict[qb_name].values())
+            cal_points_data = np.zeros((len(cal_pts_idxs), 2))
+            if list(meas_res_dict) == channel_map[qb_name]:
+                raw_data = np.array([v for v in meas_res_dict.values()]).T
+                for i, cal_idx in enumerate(cal_pts_idxs):
+                    cal_points_data[i, :] = np.mean(raw_data[cal_idx, :],
+                                                    axis=0)
+                rotated_data = a_tools.predict_proba_avg_ro(
+                    raw_data, cal_points_data, proj_pt_on_triangle=False)
+                for i, state in enumerate(list(cal_states_dict[qb_name])):
+                    rotated_data_dict[qb_name][f'p{state}'] = rotated_data[:, i]
+            else:
+                raise NotImplementedError('Calibration states rotation with 3 '
+                                          'cal states only implemented for '
+                                          '2 readout channels per qubit.')
+        return rotated_data_dict
 
     @staticmethod
     def rotate_data(meas_results_per_qb, channel_map,
@@ -505,6 +548,41 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                 data=data_array,
                                 cal_zero_points=cal_zero_points,
                                 cal_one_points=cal_one_points)
+        return rotated_data_dict
+
+    @staticmethod
+    def rotate_data_3_cal_states_TwoD(meas_results_per_qb, channel_map,
+                                      cal_states_dict):
+        # FOR 3 CAL STATES
+        rotated_data_dict = OrderedDict()
+        for qb_name, meas_res_dict in meas_results_per_qb.items():
+            rotated_data_dict[qb_name] = OrderedDict()
+            cal_pts_idxs = list(cal_states_dict[qb_name].values())
+            cal_points_data = np.zeros((len(cal_pts_idxs), 2))
+            if list(meas_res_dict) == channel_map[qb_name]:
+                # two RO channels per qubit
+                raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
+                for i, state in enumerate(list(cal_states_dict[qb_name])):
+                    rotated_data_dict[qb_name][f'p{state}'] = np.zeros(
+                        raw_data_arr.shape)
+                for col in range(raw_data_arr.shape[1]):
+                    raw_data = np.concatenate([
+                        v[:, col].reshape(len(v[:, col]), 1) for
+                        v in meas_res_dict.values()], axis=1)
+                    for i, cal_idx in enumerate(cal_pts_idxs):
+                        cal_points_data[i, :] = np.mean(raw_data[cal_idx, :],
+                                                        axis=0)
+                    # rotated data is (raw_data_arr.shape[0], 3)
+                    rotated_data = predict_proba_avg_ro(
+                        raw_data, cal_points_data, proj_pt_on_triangle=False)
+
+                    for i, state in enumerate(list(cal_states_dict[qb_name])):
+                        rotated_data_dict[qb_name][f'p{state}'][:, col] = \
+                            rotated_data[:, i]
+            else:
+                raise NotImplementedError('Calibration states rotation with 3 '
+                                          'cal states only implemented for '
+                                          '2 readout channels per qubit.')
         return rotated_data_dict
 
     @staticmethod
@@ -764,8 +842,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             # plot cal points
             for i, cal_pts_idxs in enumerate(
                     self.cal_states_dict.values()):
-                plot_dict_name_cal = list(self.cal_states_dict)[i] + \
-                                 '_' + qb_name + '_' + plot_name_suffix
+                plot_dict_name_cal = fig_name + '_' + \
+                                     list(self.cal_states_dict)[i] + '_' + \
+                                     plot_name_suffix
                 plot_names_cal += [plot_dict_name_cal]
                 self.plot_dicts[plot_dict_name_cal] = {
                     'fig_id': fig_name,
