@@ -102,7 +102,7 @@ def get_last_n_timestamps(n, contains=''):
 
 def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
                 return_timestamp=False, return_path=True, raise_exc=True,
-                folder=None, list_timestamps=False, return_all=False):
+                folder=None, n_matches=None, return_all=False):
     """
         Finds the latest taken data with <contains> in its name.
         Returns the full path of the data directory and/or the timestamp.
@@ -121,11 +121,11 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
                 (default: False)
             return_path: return the path(s) as the only or the second first return
                 value (default: True)
-            raise_exc: Return False instead of raising an execption if no data is
-                found. (default: False)
+            raise_exc: Return False instead of raising an exception if no data is
+                found. (default: True)
             folder: search directory (default: the stored datadir)
-            list_timestamps: If set to an integer n, a list of the n latest matches
-                is returned. If False, a single item is returned.
+            n_matches: If set to an integer n, a list of the n latest matches
+                is returned. If None, a single item is returned.
             return_all: returns all the folders satisfying the requirements found
                 in the last day folder in which any match is found
         Returns: (list of) path and/or timestamps. Return format depends on the
@@ -148,10 +148,10 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
     paths = []
     timestamps = []
     i = len(daydirs)-1
-    if return_all:
-        list_timestamps = False
+    if n_matches is None or return_all:
+        n_matches = 0
 
-    while len(measdirs) < max(list_timestamps, 1) and i >= 0:
+    while len(measdirs) < max(n_matches, 1) and i >= 0:
         daydir = daydirs[i]
         # this makes sure that (most) non day dirs do not get searched
         # as they should start with a digit (e.g. YYYYMMDD)
@@ -197,8 +197,8 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
         timestamps.sort()
         paths.sort()
         if not return_all:
-            paths = paths[-list_timestamps:] if list_timestamps else paths[-1]
-            timestamps = timestamps[-list_timestamps:] if list_timestamps else timestamps[-1]
+            paths = paths[-n_matches:] if n_matches else paths[-1]
+            timestamps = timestamps[-n_matches:] if n_matches else timestamps[-1]
         if return_timestamp and return_path:
             return timestamps, paths
         elif return_timestamp:
