@@ -18,7 +18,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def measure_qaoa(qubits, gates_info, single_qb_terms=None,
+def measure_qaoa(qubits, gates_info,
                  maxfev=None, optimizer_method="Nelder-Mead",
                  optimizer_kwargs=None, betas=(np.pi,), gammas=(np.pi,),
                  problem_hamiltonian="ising", tomography=False, tomography_options=None,
@@ -38,8 +38,6 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
     if exp_metadata is None:
         exp_metadata = {}
 
-    if single_qb_terms is None:
-        single_qb_terms =  {}
     if tomography_options is None:
         tomography_options = {}
 
@@ -59,7 +57,6 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
                                   tomography=tomography,
                                   tomo_basis=tomography_options.get("basis_rots",
                                                   tomo.DEFAULT_BASIS_ROTS),
-                                  single_qb_terms=single_qb_terms,
                                   cphase_implementation=cphase_implementation,
                                   prep_params=prep_params, upload=False)
     if custom_sequence:
@@ -88,7 +85,6 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
                     'init': init_state,
                     'qb_names': str(qb_names),
                     'gates_info': str(gates_info),
-                    'single_qb_terms': str(single_qb_terms),
                     'cphase_implementation': cphase_implementation,
                     # 'optimizer_method': optimizer_method,
                     'shots': shots})
@@ -177,7 +173,7 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
             elif problem_hamiltonian == "ising_with_field":
                 energy = ProblemHamiltonians.ising_with_field(
                     correlations, avg_sigmaz, coupl,
-                    [single_qb_terms[i] for i, qbn in enumerate(qb_names)])
+                    [0 for i, qbn in enumerate(qb_names)])
             elif problem_hamiltonian == 'nbody_zterms':
                 energy = ProblemHamiltonians.nbody_zterms(qb_states_filtered,
                                                           gates_info)
@@ -196,7 +192,7 @@ def run_qaoa(qubits, gates_info, maxiter=1,
                  optimizer_kwargs=None, betas_init=(np.pi,), gammas_init=(np.pi,),
                  depth=1, tomography=(), tomography_options=None,
                  analyze=True, exp_metadata=None, problem_hamiltonian="ising",
-                 single_qb_terms=None, shots=15000,
+                 shots=15000,
                  init_state="+", cphase_implementation="hardware",
                  prep_params=None, upload=True, label=None):
     """
@@ -274,7 +270,6 @@ def run_qaoa(qubits, gates_info, maxiter=1,
                 tomo_basis=tomography_options.get("basis_rots",
                                                   tomo.DEFAULT_BASIS_ROTS),
                 prep_params=prep_params, upload=False,
-                single_qb_terms=single_qb_terms,
                 cphase_implementation=cphase_implementation)
             det_get_values_kws = {'classified': True,
                                   'correlated': False,
@@ -303,7 +298,6 @@ def run_qaoa(qubits, gates_info, maxiter=1,
                                                   tomo.DEFAULT_BASIS_ROTS),
                             'gates_info': str(gates_info),
                             'qb_names': str(qb_names),
-                            "single_qb_terms": str(single_qb_terms),
                             'cphase_implementation': cphase_implementation,
                             'shots': shots}
 
@@ -402,7 +396,6 @@ def run_qaoa(qubits, gates_info, maxiter=1,
         exp_metadata.update(dict(iteration=iter, function_evaluation=feval,
                                  optimizer_method=optimizer_method))
         a[feval] = measure_qaoa(qubits, gates_info, betas=betas_feval,
-                                single_qb_terms=single_qb_terms,
                                 gammas=gammas_feval, analyze=True,
                                 problem_hamiltonian=problem_hamiltonian,
                      exp_metadata=exp_metadata, init_state=init_state,
@@ -572,7 +565,6 @@ def basis_transformation(qb_array_in_01_basis):
 
 def qaoa_sequence(qubits, betas, gammas, gates_info,
                   init_state='0', cphase_implementation='hardware',
-                  single_qb_terms=None,
                   tomography=False, tomo_basis=tomo.DEFAULT_BASIS_ROTS,
                   cal_points=None, prep_params=None, upload=True):
 
@@ -615,7 +607,7 @@ def qaoa_sequence(qubits, betas, gammas, gates_info,
                     gates_info_p['gate_order'] = deepcopy(
                         gates_info_all['gate_order'][k % (len(gates_info_all['gate_order']))])
                 seg.extend(builder.U(f"U_{k}", gates_info_p,
-                           gamma, cphase_implementation, single_qb_terms,
+                           gamma, cphase_implementation,
                                      first_layer=(k==0)).build())
                 # # Dk
                 seg.extend(builder.D(f"D_{k}", beta).build())
@@ -644,7 +636,7 @@ def qaoa_sequence(qubits, betas, gammas, gates_info,
 class QAOAHelper(CircuitBuilder):
 
     def U(self, name, gate_sequence_info, gamma, cphase_implementation,
-          single_qb_terms=None, first_layer=False):
+          first_layer=False):
         """
         Returns Unitary propagator pulse sequence (as a Block).
         :param name: name of the block
@@ -682,8 +674,6 @@ class QAOAHelper(CircuitBuilder):
         :param cphase_implementation: implementation of arbitrary phase gate.
             "software" --> gate is decomposed into single qb gates and 2x CZ gate
             "hardware" --> hardware arbitrary phase gate
-        :param single_qb_terms (dict): keys are all logical qubit indices of experiment
-            and values are the h weighting factor for that qubit.
         :param first_layer (bool): only if this is True, remove_1stCZ in
             gates_info will remove the first CZ gate of the software decomposition
         :return: Unitary U (Block)
@@ -692,13 +682,7 @@ class QAOAHelper(CircuitBuilder):
         assert cphase_implementation in ("software", "hardware")
         global_zero_angle_threshold = gate_sequence_info.get("zero_angle_threshold", 1e-10)
 
-        if single_qb_terms is not None:
-            tmp_single_qb_terms = [0]*len(self.qubits)
-            for qb, J in single_qb_terms.items():
-                tmp_single_qb_terms[qb] = J
-            single_qb_terms = tmp_single_qb_terms
-        else:
-            single_qb_terms = [0]*len(self.qubits)
+        single_qb_terms = [0]*len(self.qubits)
         U = Block(name, [])
         for i, gates_same_timing in enumerate(gate_sequence_info['gate_order']):
             simult_bname = f"simultaneous_{i}"
