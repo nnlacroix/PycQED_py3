@@ -1,19 +1,429 @@
-from pprint import pprint
-
 import numpy as np
-from numpy import array # Do not remove, used in eval(str_with_array)
-from scipy.interpolate import interp1d # Do not remove, used in eval(str_with_interp1d)
+from scipy import optimize
 from copy import deepcopy
 import pycqed.measurement.waveform_control.sequence as sequence
-import pycqed.analysis_v2.tomography_qudev as tomo
+from pycqed.analysis_v2 import tomography_qudev as tomo, timedomain_analysis as tda
+from pycqed.measurement import awg_sweep_functions as awg_swf
+from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement import multi_qubit_module as mqm
 from pycqed.measurement.pulse_sequences.multi_qubit_tek_seq_elts import get_tomography_pulses
-from pycqed.measurement.pulse_sequences.single_qubit_tek_seq_elts import \
-    get_pulse_dict_from_pars, add_preparation_pulses, pulse_list_list_seq, prepend_pulses
-import pycqed.measurement.waveform_control.segment as segment
+from pycqed.measurement.waveform_control import segment
 from pycqed.measurement.waveform_control.block import Block
 from pycqed.measurement.waveform_control.circuit_builder import CircuitBuilder
 from pycqed.measurement.waveform_control import pulsar as ps
 import itertools
+from pycqed.utilities.general import temporary_value
+
+import logging
+log = logging.getLogger(__name__)
+
+
+def measure_qaoa(qubits, gates_info, single_qb_terms=None,
+                 maxfev=None, optimizer_method="Nelder-Mead",
+                 optimizer_kwargs=None, betas=(np.pi,), gammas=(np.pi,),
+                 problem_hamiltonian="ising", tomography=False, tomography_options=None,
+                 analyze=True, exp_metadata=None, shots=15000,
+                 init_state="+", cphase_implementation="hardware",
+                 prep_params=None, upload=True, label=None,
+                 custom_sequence=None):
+    qb_names = [qb.name for qb in qubits]
+
+    if label is None:
+        label = f"QAOA_{qb_names}"
+
+    if prep_params is None:
+        prep_params = \
+            mqm.get_multi_qubit_prep_params([qb.preparation_params() for qb in qubits])
+
+    if exp_metadata is None:
+        exp_metadata = {}
+
+    if single_qb_terms is None:
+        single_qb_terms =  {}
+    if tomography_options is None:
+        tomography_options = {}
+
+    MC = qubits[0].instr_mc.get_instr()
+
+    # prepare qubits
+    for qb in qubits:
+        qb.prepare(drive='timedomain')
+
+    # sequence
+    cp = None
+    if tomography:
+        cp = CalibrationPoints.multi_qubit(qb_names, 'ge', 1, True)
+    seq, swp = qaoa_sequence(qubits, betas, gammas, gates_info,
+                                  init_state=init_state,
+                                  cal_points=cp,
+                                  tomography=tomography,
+                                  tomo_basis=tomography_options.get("basis_rots",
+                                                  tomo.DEFAULT_BASIS_ROTS),
+                                  single_qb_terms=single_qb_terms,
+                                  cphase_implementation=cphase_implementation,
+                                  prep_params=prep_params, upload=False)
+    if custom_sequence:
+        seq, swp = custom_sequence
+    # set detector and sweep functions
+    det_get_values_kws = {'classified': True,
+                          'correlated': False,
+                          'thresholded': False,
+                          'averaged': False}
+    df = mqm.get_multiplexed_readout_detector_functions(
+        qubits, nr_shots=shots,
+        nr_averages=max(qb.acq_averages() for qb in qubits),
+        det_get_values_kws=det_get_values_kws)['int_avg_classif_det']
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq, upload=upload))
+    MC.set_sweep_points(swp)
+    MC.set_detector_function(df)
+
+    # metadata and run experiment
+    exp_metadata.update({'preparation_params': prep_params,
+                    'data_to_fit': {},
+                    'rotate': False,
+                    'betas': betas,
+                    'gammas': gammas,
+                    # 'iteration': iter,
+                    # 'function_evaluation': feval,
+                    'init': init_state,
+                    'qb_names': str(qb_names),
+                    'gates_info': str(gates_info),
+                    'single_qb_terms': str(single_qb_terms),
+                    'cphase_implementation': cphase_implementation,
+                    # 'optimizer_method': optimizer_method,
+                    'shots': shots})
+    if tomography:
+        exp_metadata.update(dict(basis_rots=tomography_options.get("basis_rots",
+                                            tomo.DEFAULT_BASIS_ROTS)))
+    temp_val = [(qb.acq_shots, shots) for qb in qubits]
+    with temporary_value(*temp_val):
+        MC.run(name=label, exp_metadata=exp_metadata)
+
+    if analyze:
+        # analyze
+        channel_map = {qb.name: qb.int_avg_classif_det.value_names for qb in
+                       qubits}
+        options = dict(channel_map=channel_map, plot_proj_data=False,
+                       plot_raw_data=False)
+        a = tda.MultiQubit_TimeDomain_Analysis(
+            qb_names=qb_names,
+            options_dict=options,
+            auto=False)
+        a.extract_data()
+        a.process_data()
+        # additional processing
+        qubit_states = []
+        filter = np.ones(exp_metadata['shots'], dtype=bool)
+        a.proc_data_dict['analysis_params_dict'] = {}
+        a.proc_data_dict['analysis_params_dict']["leakage"] = {}
+        leakage = a.proc_data_dict['analysis_params_dict']["leakage"]
+        for qb in qb_names:
+            qb_probs = \
+                a.proc_data_dict['meas_results_per_qb'][qb].values()
+            qb_probs = np.asarray(list(qb_probs)).T  # (n_shots, (pg,pe,pf))
+            states = np.argmax(qb_probs, axis=1)
+            qubit_states.append(states)
+            leaked_shots = states == 2
+            leakage.update({qb: np.sum(leaked_shots) / exp_metadata['shots']})
+            filter = np.logical_and(filter, states != 2)
+        a.proc_data_dict['qubit_states'] = np.array(qubit_states).T
+        a.proc_data_dict['qubit_states_filtered'] = \
+            np.array(qubit_states).T[filter]
+        qb_states_filtered = a.proc_data_dict['qubit_states_filtered']
+        a.data_file.close()
+        a.save_processed_data()
+        if tomography and tomography_options.get("analyze", True):
+            # tomography analysis
+            options = dict(
+                n_readouts=len(seq.segments),  # number of segments
+                data_type="singleshot",
+                # give thresholded shots
+                shots_thresholded={qbn: np.array(qubit_states[i])
+                                   for i, qbn in enumerate(qb_names)},
+                shot_filter=filter,  # filter specific shots out
+                qb_names=qb_names,  # to construct channel map automatically
+                basis_rots_str=
+                tomography_options.get("basis_rots",
+                                       tomo.DEFAULT_BASIS_ROTS),
+                # filter cal points from data
+                data_filter=lambda prob_table: prob_table[:-len(cp.states)],
+                mle=tomography_options.get("mle", False))
+            if not tomography_options.get("cal_points_correction", True):
+                # ideal measurement operators
+                meas_operators = []
+                for i in range(2 ** len(qubits)):
+                    basis_state = np.zeros(2 ** len(qubits))
+                    basis_state[i] = 1
+                    meas_operators.append(np.diag(basis_state))
+                # overwrite if provided by user
+                meas_operators = tomography_options.get("meas_operators",
+                                                        meas_operators)
+                options.update(dict(meas_operators=meas_operators))
+            if tomography_options.get('analyze', True):
+                ta = tda.StateTomographyAnalysis(options_dict=options)
+                ta.save_processed_data('rho')
+        else:
+            # correlate
+            c_info, coupl = \
+                QAOAHelper.get_corr_and_coupl_info(gates_info)
+            correlations = correlate_qubits(qb_states_filtered, c_info)
+            a.proc_data_dict['correlations'] = {'names': c_info,
+                                                'values': correlations}
+            avg_sigmaz = average_sigmaz(qb_states_filtered)
+            a.proc_data_dict['avg_sigmaz'] = {str(i)+'_'+qbn: avg_sigmaz[i]
+                                              for i, qbn in enumerate(qb_names)}
+            if problem_hamiltonian == "ising":
+                energy = ProblemHamiltonians.ising(correlations, coupl)
+            elif problem_hamiltonian == "ising_with_field":
+                energy = ProblemHamiltonians.ising_with_field(
+                    correlations, avg_sigmaz, coupl,
+                    [single_qb_terms[i] for i, qbn in enumerate(qb_names)])
+            elif problem_hamiltonian == 'nbody_zterms':
+                energy = ProblemHamiltonians.nbody_zterms(qb_states_filtered,
+                                                          gates_info)
+            else:
+                raise ValueError(f"Problem hamiltonian {problem_hamiltonian} "
+                                 f"not known")
+            a.proc_data_dict['analysis_params_dict']['energy'] = energy
+
+            # save
+            a.save_processed_data()
+        return a
+
+
+def run_qaoa(qubits, gates_info, maxiter=1,
+                 maxfev=None, optimizer_method="Nelder-Mead",
+                 optimizer_kwargs=None, betas_init=(np.pi,), gammas_init=(np.pi,),
+                 depth=1, tomography=(), tomography_options=None,
+                 analyze=True, exp_metadata=None, problem_hamiltonian="ising",
+                 single_qb_terms=None, shots=15000,
+                 init_state="+", cphase_implementation="hardware",
+                 prep_params=None, upload=True, label=None):
+    """
+    Performs Quantum Approximative Optimization on given qubits.
+
+    For information about optimizer see:
+    https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html
+
+    Args:
+        qubits:
+        gates_info:
+        max_iter:
+        optimizer:
+        cphase_implementation:
+        prep_params:
+        tomography (tuple): adds tomography measurement after each specified
+            iteration. eg. (2,5,6) does a tomography after iteration 2, 4 and 6.
+            -1 does after the last iteration.
+        tomography_options (dict):
+            analyze: whether or not to analyze tomography, can be a bit slow
+                if MLE is activated. Default is True.
+            cal_points_correction (bool): Whether or not to correct the measured
+                tomography pulses using multiqubit single shot calibration points.
+                defaults to True. Overwritten by 'meas_operators' if the latter
+                is given
+            basis_rots (list of str): rotation basis (in PycQED operations).
+                defaults to ('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90').
+            mle (bool): fit tomography using MLE. Defaults to False.
+
+            any further parameter is passed in the options_dict of the
+            TomographyAnalysis
+        label:
+
+    Returns:
+
+    """
+
+    qb_names = [qb.name for qb in qubits]
+
+    if label is None:
+        label = f"QAOA_{qb_names}"
+
+    if prep_params is None:
+        prep_params = \
+            mqm.get_multi_qubit_prep_params([qb.preparation_params() for qb in qubits])
+
+    if tomography_options is None:
+        tomography_options = {}
+
+    if exp_metadata is None:
+        exp_metadata = {}
+
+    # optimizer params
+    if optimizer_kwargs is None:
+        optimizer_kwargs = {}
+
+    # callback: update gammas and betas at end of iteration
+    def update_iter(new_angles):
+        g, b = new_angles[:int(len(new_angles) / 2)], \
+               new_angles[int(len(new_angles) / 2):]
+
+        # Do tomography if needed
+        if iteration[-1] in tomography:
+            log.info(f"iter {iter}, Tomography ")
+            log.info(f"Gammas: {g}\nBetas : {b}")
+
+            # prepare qubits
+            [qb.prepare(drive='timedomain') for qb in qubits]
+
+            cp = CalibrationPoints.multi_qubit(qb_names, 'ge', 1, True)
+            # sequence
+            seq, swp = qaoa_sequence(
+                qubits, b, g, gates_info,
+                cal_points=cp, init_state=init_state, tomography=True,
+                tomo_basis=tomography_options.get("basis_rots",
+                                                  tomo.DEFAULT_BASIS_ROTS),
+                prep_params=prep_params, upload=False,
+                single_qb_terms=single_qb_terms,
+                cphase_implementation=cphase_implementation)
+            det_get_values_kws = {'classified': True,
+                                  'correlated': False,
+                                  'thresholded': False,
+                                  'averaged': False}
+            df = mqm.get_multiplexed_readout_detector_functions(
+                qubits, nr_shots=max(qb.acq_shots() for qb in qubits),
+                nr_averages=max(qb.acq_averages() for qb in qubits),
+            det_get_values_kws=det_get_values_kws)['int_avg_classif_det']
+
+            MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq,
+                                                           upload=upload))
+            MC.set_sweep_points(swp)
+            MC.set_detector_function(df)
+
+            # metadata and run experiment
+            exp_metadata = {'preparation_params': prep_params,
+                            'data_to_fit': {},
+                            "cal_points": repr(cp),
+                            'rotate': False,
+                            'betas': b,
+                            'gammas': g,
+                            'iteration': iteration[-1],
+                            'init': init_state,
+                            'basis_rots': tomography_options.get("basis_rots",
+                                                  tomo.DEFAULT_BASIS_ROTS),
+                            'gates_info': str(gates_info),
+                            'qb_names': str(qb_names),
+                            "single_qb_terms": str(single_qb_terms),
+                            'cphase_implementation': cphase_implementation,
+                            'shots': shots}
+
+            MC.run(name=tomography_options.pop("label",
+                                         f"tomography_iter_{iteration[-1]}"),
+                   exp_metadata=exp_metadata)
+            if analyze:
+                # analyze
+                channel_map = {qb.name: qb.int_avg_classif_det.value_names
+                               for qb in qubits}
+                options = dict(channel_map=channel_map, plot_proj_data=False,
+                               plot_raw_data=False, rotate=False)
+                a = tda.MultiQubit_TimeDomain_Analysis(
+                    qb_names=qb_names,
+                    options_dict=options,
+                    auto=False)
+                a.extract_data()
+                a.process_data()
+                # additional processing
+                qubit_states = []
+                filter = np.ones(len(seq.segments) * exp_metadata['shots'],
+                                 dtype=bool)
+                a.proc_data_dict['analysis_params_dict'] = {}
+                a.proc_data_dict['analysis_params_dict']["leakage"] = {}
+                leakage = a.proc_data_dict['analysis_params_dict']["leakage"]
+                for qb in qb_names:
+                    qb_probs = \
+                        a.proc_data_dict['meas_results_per_qb'][qb].values()
+                    qb_probs = np.asarray(list(qb_probs)).T  # (n_shots, (pg,pe,pf))
+                    states = np.argmax(qb_probs, axis=1)
+                    qubit_states.append(states)
+                    leaked_shots = states == 2
+                    leakage.update({qb: np.sum(leaked_shots) /
+                                        (len(seq.segments)*exp_metadata['shots'])})
+                    filter = np.logical_and(filter, states != 2)
+                a.proc_data_dict['qubit_states'] = np.array(qubit_states).T
+                qb_states_filtered = np.array(qubit_states).T[filter]
+                a.proc_data_dict['qubit_states_filtered'] = qb_states_filtered
+                a.data_file.close()
+                a.save_processed_data()
+
+                # tomography analysis
+                options = dict(
+                    n_readouts=len(seq.segments),  # number of segments
+                    data_type="singleshot",
+                    # give thresholded shots
+                    shots_thresholded={qbn: np.array(qubit_states[i])
+                                       for i, qbn in enumerate(qb_names)},
+                    shot_filter=filter,  # filter specific shots out
+                    qb_names=qb_names, # to construct channel map automatically
+                    basis_rots_str=
+                        tomography_options.get("basis_rots",
+                                               tomo.DEFAULT_BASIS_ROTS),
+                    # filter cal points from data
+                    data_filter=lambda prob_table: prob_table[:-len(cp.states)],
+                    mle=tomography_options.get("mle", False))
+                if not tomography_options.get("cal_points_correction", True):
+                    # ideal measurement operators
+                    meas_operators = []
+                    for i in range(2**len(qubits)):
+                        basis_state = np.zeros(2**len(qubits))
+                        basis_state[i] = 1
+                        meas_operators.append(np.diag(basis_state))
+                    # overwrite if provided by user
+                    meas_operators = tomography_options.get("meas_operators",
+                                                           meas_operators)
+                    options.update(dict(meas_operators=meas_operators))
+                if tomography_options.get('analyze', True):
+                    ta = tda.StateTomographyAnalysis(options_dict=options)
+                    ta.save_processed_data('rho')
+        iteration.append(iteration[-1] + 1)
+
+
+    optimizer_kwargs.update({"method": optimizer_method,
+                             "callback": update_iter})
+    options = optimizer_kwargs.get("options",{})
+    options.update({"maxiter": maxiter, "maxfev": maxfev})
+    optimizer_kwargs["options"] = options
+    MC = qubits[0].instr_mc.get_instr()
+    iteration = [0]
+    func_eval = [0]
+    exp_metadata['optimizer_kwargs'] = optimizer_kwargs
+    #analysis dictionary
+    a = {}
+
+    def minimize_energy(x, label, exp_metadata):
+        iter = deepcopy(iteration[-1])
+        feval = deepcopy(func_eval[-1])
+        log.info(f"Starting QAOA iteration: {iter}")
+        gammas_feval, betas_feval = x[:int(len(x)/2)], x[int(len(x)/2):]
+
+        log.info(f"iter {iter}, function evaluation {feval}")
+        log.info(f"Gammas: {gammas_feval}\nBetas : {betas_feval}")
+
+        label = f"{label}_iter_{iter}_feval_{feval}"
+        exp_metadata.update(dict(iteration=iter, function_evaluation=feval,
+                                 optimizer_method=optimizer_method))
+        a[feval] = measure_qaoa(qubits, gates_info, betas=betas_feval,
+                                single_qb_terms=single_qb_terms,
+                                gammas=gammas_feval, analyze=True,
+                                problem_hamiltonian=problem_hamiltonian,
+                     exp_metadata=exp_metadata, init_state=init_state,
+                     cphase_implementation=cphase_implementation, shots=shots,
+                     prep_params=prep_params, upload=upload, label=label)
+
+        func_eval.append(func_eval[-1] + 1)
+        return a[feval].proc_data_dict['analysis_params_dict']['energy']
+
+    try:
+        if -1 in tomography: # do initial tomography  if needed
+            iteration = [-1]
+            update_iter(np.ravel([gammas_init, betas_init]))
+        opt_res = optimize.minimize(minimize_energy, [gammas_init, betas_init],
+                                    args=(label, exp_metadata),
+                          **optimizer_kwargs)
+
+        return opt_res, a
+    except KeyboardInterrupt:
+        return None, a
+
 
 # TODO: Move this function to more meaningful place where others can use it
 def correlate_qubits(qubit_states, correlations='all', correlator='z',

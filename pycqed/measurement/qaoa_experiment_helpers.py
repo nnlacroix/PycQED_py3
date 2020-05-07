@@ -3,6 +3,7 @@ from numpy import array
 import matplotlib
 import matplotlib.pyplot as plt
 import pycqed.analysis.measurement_analysis as ma
+from pycqed.measurement import qaoa
 from pycqed.analysis import analysis_toolbox as a_tools
 from scipy.interpolate import interp1d
 from qutip import QubitCircuit
@@ -57,14 +58,14 @@ def qaoa_landscape_rowwise(qbs_qaoa, gates_info, nb=45, ng=45,
         label = f"QAOA_landscape_{j}"
         print(dt.datetime.now(), label)
         try:
-            mqm.measure_qaoa(qbs_qaoa,
-                             gates_info,
-                             betas=np.expand_dims(bb[:, j], -1),
-                             gammas=np.expand_dims(gg[:, j], -1),
-                             init_state=init_state, label=label,
-                             cphase_implementation=cphase_implementation,
-                             shots=shots,
-                             analyze=False)
+            qaoa.measure_qaoa(qbs_qaoa,
+                              gates_info,
+                              betas=np.expand_dims(bb[:, j], -1),
+                              gammas=np.expand_dims(gg[:, j], -1),
+                              init_state=init_state, label=label,
+                              cphase_implementation=cphase_implementation,
+                              shots=shots,
+                              analyze=False)
 
         except Exception as e:
             print(e)
