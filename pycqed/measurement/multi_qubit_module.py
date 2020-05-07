@@ -1,15 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import itertools
-import time
 import copy
 import datetime
 import os
 import lmfit
 from copy import deepcopy
 import pygsti
-from pycqed.utilities.general import temporary_value
-
 import logging
 log = logging.getLogger(__name__)
 
@@ -38,8 +35,7 @@ try:
 except ModuleNotFoundError:
     log.warning('"UHFQuantumController" not imported.')
 
-from pycqed.measurement.optimization import nelder_mead, \
-    generate_new_training_set
+from pycqed.measurement.optimization import generate_new_training_set
 from pygsti import construction as constr
 
 
