@@ -2073,7 +2073,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
     Args:
         qbc (QuDev_transmon): control qubit / fluxed qubit
         qbt (QuDev_transmon): target qubit / non-fluxed qubit
-        leakage qb: qubit which goes into the f level and therefore the leakage
+        leakage_qb: qubit which goes into the f level and therefore the leakage
             analysis is performed upon. defaults to qbc.
     '''
     plot_all_traces = kw.get('plot_all_traces', True)
@@ -2124,8 +2124,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
         prepend_pulse_dicts = []
 
     operation_dict = get_operation_dict([qbc, qbt] +
-                                        [qb for pp in prepend_pulse_dicts
-                                            for qb in pp['qbs']])
+                                        [pp['qb'] for pp in prepend_pulse_dicts])
 
     sequences, hard_sweep_points, soft_sweep_points = \
         fsqs.cphase_seqs(
@@ -2510,8 +2509,7 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                 prepend_pulse_dicts = []
 
             operation_dict = get_operation_dict(qbs + [qbc, qbt] +
-                                                [qb for pp in prepend_pulse_dicts
-                                                 for qb in pp['qbs']])
+                                                [pp['qb'] for pp in prepend_pulse_dicts])
 
             seq, hard_sweep_points = \
                 fsqs.dynamic_phase_seq(
