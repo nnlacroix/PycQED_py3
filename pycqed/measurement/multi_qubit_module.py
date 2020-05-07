@@ -8,9 +8,7 @@ import lmfit
 from copy import deepcopy
 import pygsti
 import logging
-
 log = logging.getLogger(__name__)
-
 
 import pycqed.measurement.sweep_functions as swf
 import pycqed.measurement.awg_sweep_functions as awg_swf
@@ -2140,7 +2138,6 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
             max_flux_length=max_flux_length,
             num_cz_gates=num_cz_gates, prepend_pulse_dicts=prepend_pulse_dicts
         )
-
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
         parameter_name=list(hard_sweep_params)[0],
