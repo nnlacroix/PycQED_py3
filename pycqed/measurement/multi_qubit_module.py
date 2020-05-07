@@ -820,7 +820,6 @@ def measure_parity_single_round_phases(ancilla_qubit, data_qubits, CZ_map,
 
 def measure_tomography(qubits, prep_sequence, state_name,
                        rots_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
-                       operation_dict=None,
                        use_cal_points=True,
                        preselection=True,
                        rho_target=None,
@@ -832,9 +831,6 @@ def measure_tomography(qubits, prep_sequence, state_name,
                        nreps=1, run=True,
                        upload=True):
     exp_metadata = {}
-
-    if operation_dict is None:
-        operation_dict = get_operation_dict(qubits)
 
     for qb in qubits:
         MC = qb.instr_mc.get_instr()
@@ -930,7 +926,7 @@ def measure_tomography(qubits, prep_sequence, state_name,
     MC.set_sweep_points_2D(np.arange(nreps))
     MC.set_detector_function(df)
     if run:
-        MC.run(label, exp_metadata=exp_metadata)
+        MC.run_2D(label, exp_metadata=exp_metadata)
 
 
 def measure_two_qubit_randomized_benchmarking(
