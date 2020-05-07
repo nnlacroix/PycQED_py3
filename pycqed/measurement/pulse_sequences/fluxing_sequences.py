@@ -338,7 +338,7 @@ def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
 
 def fluxpulse_scope_sequence(
               delays, freqs, qb_name, operation_dict, cz_pulse_name,
-              cal_points=None, prep_params=dict(), upload=True):
+              cal_points=None, prep_params=None, upload=True):
     '''
     Performs X180 pulse on top of a fluxpulse
 
@@ -348,6 +348,9 @@ def fluxpulse_scope_sequence(
        |        ---      | --------- fluxpulse ---------- |
                          <-  delay  ->
     '''
+    if prep_params is None:
+        prep_params = {}
+
     seq_name = 'Fluxpulse_scope_sequence'
     ge_pulse = deepcopy(operation_dict['X180 ' + qb_name])
     ge_pulse['name'] = 'FPS_Pi'
