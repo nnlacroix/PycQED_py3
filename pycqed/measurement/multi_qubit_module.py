@@ -27,6 +27,7 @@ import pycqed.analysis_v2.readout_analysis as ra
 import pycqed.analysis_v2.timedomain_analysis as tda
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 import pycqed.measurement.waveform_control.sequence as sequence
+from pycqed.utilities import cphase_calib
 from pycqed.utilities.general import temporary_value
 from pycqed.analysis_v2 import tomography_qudev as tomo
 import sys
@@ -2260,7 +2261,7 @@ def calibrate_arbitrary_phase(qbc, qbt, cz_pulse_name, measure_conditional_phase
         # find minimum amplitudes from theoretical model
         ampl_cphase = soft_sweep_params_cphase["amplitude"]['values']
         amplitudes_dyn = kw.get('amplitudes_dyn',
-                                qh.get_amplitudes_to_measure(qbc, qbt, (ampl_cphase[0], ampl_cphase[-1]),
+                                cphase_calib.get_amplitudes_to_measure(qbc, qbt, (ampl_cphase[0], ampl_cphase[-1]),
                                                        cz_pulse_name, chevron_params_dict, **kw))
 
         # measure
