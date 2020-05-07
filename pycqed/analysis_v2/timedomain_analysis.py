@@ -1936,7 +1936,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         covar_matrix: (optional) The covariance matrix of the measurement
                       operators as a 2d numpy array. Overrides the one found
                       from the calibration points.
-        use_covar_matrix (bool): Flag to define whether to use the
+        use_covariance_matrix (bool): Flag to define whether to use the
             covariance matrix
         basis_rots_str: A list of standard PycQED pulse names that were
                              applied to qubits before measurement
