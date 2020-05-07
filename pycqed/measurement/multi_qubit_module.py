@@ -24,8 +24,6 @@ import pycqed.measurement.awg_sweep_functions as awg_swf
 import pycqed.measurement.awg_sweep_functions_multi_qubit as awg_swf2
 import pycqed.measurement.pulse_sequences.multi_qubit_tek_seq_elts as mqs
 import pycqed.measurement.pulse_sequences.fluxing_sequences as fsqs
-import pycqed.measurement.waveform_control.pulse_library as pl
-import pycqed.measurement.qaoa_experiment_helpers as qh
 import pycqed.measurement.detector_functions as det
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.measurement.calibration_points import CalibrationPoints
@@ -40,6 +38,7 @@ import pycqed.analysis_v2.readout_analysis as ra
 import pycqed.analysis_v2.timedomain_analysis as tda
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 import pycqed.measurement.waveform_control.sequence as sequence
+from pycqed.utilities import cphase_calib
 from pycqed.utilities.general import temporary_value
 import sys
 
@@ -2796,7 +2795,7 @@ def calibrate_arbitrary_phase(qbc, qbt, cz_pulse_name, measure_conditional_phase
         # find minimum amplitudes from theoretical model
         ampl_cphase = soft_sweep_params_cphase["amplitude"]['values']
         amplitudes_dyn = kw.get('amplitudes_dyn',
-                                qh.get_amplitudes_to_measure(qbc, qbt, (ampl_cphase[0], ampl_cphase[-1]),
+                                cphase_calib.get_amplitudes_to_measure(qbc, qbt, (ampl_cphase[0], ampl_cphase[-1]),
                                                        cz_pulse_name, chevron_params_dict, **kw))
 
         # measure
