@@ -378,6 +378,23 @@ class QuDev_transmon(Qubit):
                            label='QCoDeS parameter to sweep the dc flux',
                            parameter_class=ManualParameter)
 
+        # ac flux parameters
+        DEFAULT_FLUX_DISTORTION = dict(channel='',
+                                       filter_path='',
+                                       IIR_filter_list=[],
+                                       FIR_filter_list=[dict(type='Gaussian',
+                                                             sigma=2e-9,
+                                                             nr_sigma=40,
+                                                             dt=1 / 2.4e9)],
+                                       scale_IIR=1,
+                                       distortion='off',
+                                       charge_buildup_compensation=True,
+                                       compensation_pulse_delay=100e-9)
+        self.add_parameter('flux_distortion', parameter_class=ManualParameter,
+                           initial_value=DEFAULT_FLUX_DISTORTION,
+                           vals=vals.Dict())
+
+
         # Pulse preparation parameters
         DEFAULT_PREP_PARAMS = dict(preparation_type='wait',
                                    post_ro_wait=1e-6, reset_reps=1,
