@@ -43,8 +43,6 @@ def qaoa_landscape_rowwise(qbs_qaoa, gates_info, nb=45, ng=45,
                            cphase_implementation="software", init_state='+',
                            analyze=True, analysis_kwargs=None, start_from=0,
                            max_b=np.pi / 2, max_g=np.pi, shots=15000):
-    reload(mqm)
-    reload(qaoa)
     b = np.linspace(0, max_b, nb)
     g = np.linspace(0, max_g, ng)
     print(b)
@@ -74,15 +72,15 @@ def qaoa_landscape_rowwise(qbs_qaoa, gates_info, nb=45, ng=45,
 
     # analysis
     # get timestamps
-    tps, mmnt = ba.BaseDataAnalysis.get_latest_data(ng)
+    tps, mmnt = a_tools.latest_data(n_matches=ng, return_timestamp=True)
     # filter by measurement name in case the measurement crashed
     # and not all rows were performed and reorder to have
     # first measurement first in list
-    tps = list(reversed([t for t, m in zip(tps, mmnt) if 'QAOA_landscape' in m]))
+    # tps = list(reversed([t for t, m in zip(tps, mmnt) if 'QAOA_landscape' in m]))
     if analyze:
         if analysis_kwargs is None:
             analysis_kwargs = {}
-        return analyze_qaoa_landscape_rowwise(tps, **analysis_kwargs)
+        return analyze_qaoa_landscape_rowwise(qbs_qaoa, tps, **analysis_kwargs)
     return tps
 
 
@@ -126,7 +124,6 @@ def load_landscape_from_analyzed_files(tstart, tend, save=False, plot=True):
                     "leakage"][qb]))
         energy.append(e)
         an.append(a)
-    clear_output()
 
     gg, bb, energy = np.asarray(gammas), np.asarray(betas), np.asarray(energy)
     print(gg.shape)
