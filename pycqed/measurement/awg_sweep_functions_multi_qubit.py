@@ -2,6 +2,7 @@ import numpy as np
 import pycqed.measurement.sweep_functions as swf
 import pycqed.measurement.pulse_sequences.multi_qubit_tek_seq_elts as sqs2
 import time
+from pycqed.analysis_v2 import tomography_qudev as tomo
 
 
 class n_qubit_seq_sweep(swf.Hard_Sweep):
@@ -180,7 +181,7 @@ class parity_correction(swf.Hard_Sweep):
     def __init__(self, q0n, q1n, q2n, operation_dict, CZ_pulses, 
                  feedback_delay, prep_sequence=None, reset=True, 
                  nr_parity_measurements=1, parity_op='ZZ',
-                 tomography_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
+                 tomography_basis=tomo.DEFAULT_BASIS_ROTS,
                  preselection=False, ro_spacing=1e-6, dd_scheme=None, 
                  nr_dd_pulses=4, skip_n_initial_parity_checks=0, skip_elem='RO',
                  upload=True, verbose=False):
