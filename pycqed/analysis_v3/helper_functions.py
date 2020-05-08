@@ -3,6 +3,7 @@ log = logging.getLogger(__name__)
 import re
 import os
 import h5py
+import itertools
 import numpy as np
 from copy import deepcopy
 from collections import OrderedDict
@@ -40,20 +41,27 @@ def get_value_names_from_timestamp(timestamp):
     return channel_names
 
 
-def get_param_from_metadata_group(param_name, timestamp):
-    folder = a_tools.get_folder(timestamp)
-    h5filepath = a_tools.measurement_filename(folder)
-    data_file = h5py.File(h5filepath, 'r+')
+def get_param_from_metadata_group(param_name, timestamp=None, data_file=None,
+                                  close_file=True):
+    if data_file is None:
+        if timestamp is None:
+            raise ValueError('Please provide either timestamp or data_file.')
+        folder = a_tools.get_folder(timestamp)
+        h5filepath = a_tools.measurement_filename(folder)
+        data_file = h5py.File(h5filepath, 'r+')
+    group = data_file['Experimental Data']['Experimental Metadata']
 
-    group = data_file['Experimental Data'][
-        'Experimental Metadata']
-    if param_name not in group:
+    if param_name in group:
+        group = group[param_name]
+        param_value = OrderedDict()
+        param_value = read_dict_from_hdf5(param_value, group)
+    elif param_name in group.attrs:
+        param_value = get_hdf_param_value(group, param_name)
+    else:
         raise KeyError(f'{param_name} was not found in metadata.')
-    group = group[param_name]
-    param_dict = OrderedDict()
-    param_dict = read_dict_from_hdf5(param_dict, group)
-    data_file.close()
-    return param_dict
+    if close_file:
+        data_file.close()
+    return param_value
 
 
 def get_data_file_from_timestamp(timestamp):
@@ -527,7 +535,97 @@ def get_reset_reps_from_data_dict(data_dict):
     return reset_reps
 
 
-## Plotting nodes ##
+def get_observables(data_dict, keys_out, preselection_shift=-1,
+                    use_preselection=False, **params):
+
+    assert len(keys_out) == 1
+
+    mobj_names = get_measurement_properties(
+        data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+        **params)
+    combination_list = list(itertools.product([False, True],
+                                              repeat=len(mobj_names)))
+    preselection_condition = dict(zip(
+        [(qb, preselection_shift) for qb in mobj_names],  # keys contain shift
+        combination_list[0]  # first comb has all ground
+    ))
+    observables = OrderedDict()
+
+    # add preselection condition also as an observable
+    if use_preselection:
+        observables["pre"] = preselection_condition
+    # add all combinations
+    for i, states in enumerate(combination_list):
+        name = ''.join(['e' if s else 'g' for s in states])
+        obs_name = '$\| ' + name + '\\rangle$'
+        observables[obs_name] = dict(zip(mobj_names, states))
+        # add preselection condition
+        if use_preselection:
+            observables[obs_name].update(preselection_condition)
+
+    add_param(keys_out[0], observables, data_dict)
+
+
+### functions that do NOT have the ana_v3 format for input parameters ###
+
+def observable_product(*observables):
+    """
+    Finds the product-observable of the input observables.
+    If the observable conditions are contradicting, returns None. For the
+    format of the observables, see the docstring of `probability_table`.
+    """
+    res_obs = {}
+    for obs in observables:
+        for k in obs:
+            if k in res_obs:
+                if obs[k] != res_obs[k]:
+                    return None
+            else:
+                res_obs[k] = obs[k]
+    return res_obs
+
+
+def convert_channel_names_to_index(cal_points, nr_segments, value_names):
+    """
+    Converts the calibration points list from the format
+    cal_points = [{'ch1': [-4, -3], 'ch2': [-4, -3]},
+                  {0: [-2, -1], 1: [-2, -1]}]
+    to the format (for a 100-segment dataset)
+    cal_points_list = [[[96, 97], [96, 97]],
+                       [[98, 99], [98, 99]]]
+
+    Args:
+        cal_points: the list of calibration points to convert
+        nr_segments: number of segments in the dataset to convert negative
+                     indices to positive indices.
+        value_names: a list of channel names that is used to determine the
+                     index of the channels
+    Returns:
+        cal_points_list in the converted format
+    """
+
+    cal_points_list = []
+    for observable in cal_points:
+        if isinstance(observable, (list, np.ndarray)):
+            observable_list = [[]] * len(value_names)
+            for i, idxs in enumerate(observable):
+                observable_list[i] = \
+                    [idx % nr_segments for idx in idxs]
+            cal_points_list.append(observable_list)
+        else:
+            observable_list = [[]] * len(value_names)
+            for channel, idxs in observable.items():
+                if isinstance(channel, int):
+                    observable_list[channel] = \
+                        [idx % nr_segments for idx in idxs]
+                else:  # assume str
+                    ch_idx = value_names.index(channel)
+                    observable_list[ch_idx] = \
+                        [idx % nr_segments for idx in idxs]
+            cal_points_list.append(observable_list)
+    return cal_points_list
+
+
 def get_cal_state_color(cal_state_label):
     if cal_state_label == 'g' or cal_state_label == r'$|g\rangle$':
         return 'k'

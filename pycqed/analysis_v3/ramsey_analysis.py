@@ -43,23 +43,23 @@ def ramsey_analysis(data_dict, keys_in, **params):
         else:
             fit_names = ['exp_decay']
         params.update({'fit_names': fit_names})
-        prepare_fitting(data_dict, keys_in, **params)
+        prepare_ramsey_fitting(data_dict, keys_in, **params)
 
     if do_fitting:
         getattr(fit_module, 'run_fitting')(data_dict, keys_in=list(
                 data_dict['fit_dicts']),**params)
         # calculate new qubit frequecy, extract T2 star
-        analyze_fit_results(data_dict, keys_in, **params)
+        analyze_ramsey_fit_results(data_dict, keys_in, **params)
 
     # prepare plots
     if prep_plot_dicts:
-        prepare_plots(data_dict, data_to_proc_dict, **params)
+        prepare_ramsey_plots(data_dict, data_to_proc_dict, **params)
     if do_plotting:
         getattr(plot_module, 'plot')(data_dict, keys_in=list(
             data_dict['plot_dicts']), **params)
 
 
-def prepare_fitting(data_dict, keys_in, **params):
+def prepare_ramsey_fitting(data_dict, keys_in, **params):
     fit_names = hlp_mod.get_param('fit_names', params, raise_error=True)
     sp, mospm, mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['sp', 'mospm', 'mobjn'], **params)
@@ -74,7 +74,7 @@ def prepare_fitting(data_dict, keys_in, **params):
                          'setlabel': 'expFit' if i == 0 else 'gaussFit'})
 
 
-def analyze_fit_results(data_dict, keys_in, **params):
+def analyze_ramsey_fit_results(data_dict, keys_in, **params):
     # Get from the hdf5 file any parameters specified in
     # params_dict and numeric_params.
     mobjn = hlp_mod.get_measurement_properties(data_dict,
@@ -117,7 +117,7 @@ def analyze_fit_results(data_dict, keys_in, **params):
                               data_dict, replace_value=True)
 
 
-def prepare_plots(data_dict, data_to_proc_dict, **params):
+def prepare_ramsey_plots(data_dict, data_to_proc_dict, **params):
 
     cp, sp, mospm, mobjn = \
         hlp_mod.get_measurement_properties(

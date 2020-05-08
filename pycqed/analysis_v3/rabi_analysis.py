@@ -37,41 +37,41 @@ def rabi_analysis(data_dict, keys_in, **params):
 
     # prepare fitting
     if prep_fit_dicts:
-        prepare_fitting(data_dict, keys_in, **params)
+        prepare_rabi_fitting(data_dict, keys_in, **params)
 
     if do_fitting:
         getattr(fit_module, 'run_fitting')(data_dict, keys_in=list(
                 data_dict['fit_dicts']),**params)
         # calculate new pi-pulse amplitude
-        analyze_fit_results(data_dict, keys_in, **params)
+        analyze_rabi_fit_results(data_dict, keys_in, **params)
 
     # prepare plots
     if prep_plot_dicts:
-        prepare_plots(data_dict, data_to_proc_dict, **params)
+        prepare_rabi_plots(data_dict, data_to_proc_dict, **params)
     if do_plotting:
         getattr(plot_module, 'plot')(data_dict, keys_in=list(
             data_dict['plot_dicts']), **params)
 
 
-def prepare_fitting(data_dict, keys_in, **params):
+def prepare_rabi_fitting(data_dict, keys_in, **params):
     fit_module.prepare_cos_fit_dict(data_dict, keys_in=keys_in,
                                     fit_name='rabi_fit', **params)
 
 
-def analyze_fit_results(data_dict, keys_in, **params):
+def analyze_rabi_fit_results(data_dict, keys_in, **params):
     sp, mospm, mobjn = hlp_mod.get_measurement_properties(
             data_dict, props_to_extract=['sp', 'mospm', 'mobjn'], **params)
     physical_swpts = sp[0][mospm[mobjn][0]][0]
     fit_dicts = hlp_mod.get_param('fit_dicts', data_dict, raise_error=True)
     for keyi in keys_in:
         fit_res = fit_dicts['rabi_fit' + keyi]['fit_res']
-        rabi_amps_dict = extract_amplitudes(fit_res=fit_res,
-                                            sweep_points=physical_swpts)
+        rabi_amps_dict = extract_rabi_amplitudes(fit_res=fit_res,
+                                                 sweep_points=physical_swpts)
         for k, v in rabi_amps_dict.items():
             hlp_mod.add_param(f'{mobjn}.{k}', v, data_dict, replace_value=True)
 
 
-def prepare_plots(data_dict, data_to_proc_dict, **params):
+def prepare_rabi_plots(data_dict, data_to_proc_dict, **params):
 
     cp, sp, mospm, mobjn = \
         hlp_mod.get_measurement_properties(
@@ -255,7 +255,7 @@ def get_rabi_textbox_properties(data_dict, textstr='',
     return textstr, hp, vp
 
 
-def extract_amplitudes(fit_res, sweep_points):
+def extract_rabi_amplitudes(fit_res, sweep_points):
     # Extract the best fitted frequency and phase.
     freq_fit = fit_res.best_values['frequency']
     phase_fit = fit_res.best_values['phase']

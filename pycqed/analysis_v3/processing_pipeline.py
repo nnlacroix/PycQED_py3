@@ -244,17 +244,21 @@ class ProcessingPipeline(list):
             meas_obj_names_raw = node_params['meas_obj_names']
             if isinstance(meas_obj_names_raw, str):
                 meas_obj_names_raw = [meas_obj_names_raw]
-            if node_params.pop('joint_processing', False):
-                meas_obj_names = ','.join(meas_obj_names_raw)
+            joint_processing = node_params.pop('joint_processing', False)
+            if joint_processing:
+                meas_obj_names = [','.join(meas_obj_names_raw)]
+                mobj_value_names = hlp_mod.flatten_list(
+                    meas_obj_value_names_map.values())
             else:
                 meas_obj_names = meas_obj_names_raw
 
             for mobj_name in meas_obj_names:
                 # mobjn is a string!
                 new_node_params = deepcopy(node_params)
-                new_node_params['meas_obj_names'] = mobj_name
+                new_node_params['meas_obj_names'] = meas_obj_names_raw
                 # get the value names corresponding to the measued object name
-                mobj_value_names = meas_obj_value_names_map[mobj_name]
+                if not joint_processing:
+                    mobj_value_names = meas_obj_value_names_map[mobj_name]
                 # get keys_in and any other key in node_params that
                 # contains keys_in
                 for k, v in new_node_params.items():

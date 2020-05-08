@@ -504,7 +504,7 @@ def rotate_1d_array(data_dict, keys_in, keys_out=None, **params):
     return data_dict
 
 
-def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
+def classify_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
     """
     Thresholds the data in data_dict specified by keys_in according to the
     threshold_mapping and the threshold values in threshold_list.
@@ -517,7 +517,7 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
     :param keys_out: list of key names or dictionary keys paths in
                     data_dict for the processed data to be saved into
     :param threshold_list: list of values around which to threshold each
-        data array in corresponding to keys_in.
+        data array corresponding to keys_in.
     :param params: keyword arguments.:
         threshold_map (dict): dict of the form {idx: state_label}.
             Ex: {0: 'e', 1: 'g', 2: 'f', 3: 'g'}. Default value if
@@ -545,7 +545,7 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
                          'have the same length.')
     keys_in = list(data_to_proc_dict)
     threshold_map = hlp_mod.get_param('threshold_map', data_dict,
-                                            raise_error=False, **params)
+                                      raise_error=False, **params)
     if threshold_map is None:
         if len(threshold_list) == 1:
             threshold_map = {0: 'g', 1: 'e'}
@@ -560,7 +560,7 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
     thresh_data_binary = np.stack(
         [data_to_proc_dict[keyi] >= th for keyi, th in
          zip(keys_in, threshold_list)], axis=1)
-
+    print(thresh_data_binary)
     # convert each row of thresh_data_binary into the decimal value whose
     # binary representation is given by the booleans in each row.
     # thresh_data_decimal is a 1d array of size nr_data_pts_per_ch
@@ -586,3 +586,270 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
                 dd[all_keys[-1]], thresh_data_decimal == idx).astype('int')
 
     return data_dict
+
+
+def threshold_data(data_dict, keys_in, threshold_list, keys_out, **params):
+    """
+    Thresholds the data in data_dict specified by keys_in according to the
+    threshold_mapping and the threshold values in threshold_list.
+    This node will create nr_states entries in the data_dict, where
+    nr_states = len(set(threshold_mapping.values())).
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+    :param keys_out: list of key names or dictionary keys paths in
+                    data_dict for the processed data to be saved into
+    :param threshold_list: list of values around which to threshold each
+        data array corresponding to keys_in.
+    :param params: keyword arguments.
+
+    Assumptions:
+        - len(threshold_list) == len(keys_in)
+        - data arrays corresponding to keys_in must all have the same length
+        - the order of the values in threshold_list is important!
+        The thresholds are in the same order as the data corresponding to
+        the keys_in.
+    """
+    if not hasattr(threshold_list, '__iter__'):
+        threshold_list = [threshold_list]
+
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+    if len(threshold_list) != len(data_to_proc_dict):
+        raise ValueError('threshold_list and keys_in do not have '
+                         'the same length.')
+    keys_in = list(data_to_proc_dict)
+    if len(keys_out) != len(keys_in):
+        raise ValueError('keys_out and keys_in do not have '
+                         'the same length.')
+
+    # generate boolean array of size (nr_data_pts_per_ch, len(keys_in).
+    thresh_dat = np.stack(
+        [data_to_proc_dict[keyi] >= th for keyi, th in
+         zip(keys_in, threshold_list)], axis=1)
+
+    for i, keyo, in enumerate(keys_out):
+        hlp_mod.add_param(
+            keyo, thresh_dat[:, i].astype('int'), data_dict,
+            update_value=params.get('update_value', False))
+
+
+def probability_table(data_dict, keys_in, keys_out, **params):
+    """
+    Creates a general table of counts averaging out all but specified set of
+    correlations.
+
+    This function has been check with a profiler and 85% of the time is
+    spent on comparison with the mask. Thus there is no trivial optimization
+    possible.
+
+    Expects:
+        data_dict
+        keys_in to specify keys in data_dict that corresponod to the
+            thresholeded shots for the qubits
+        observables: List of observables. Observable is a dictionary with
+            name of the qubit as key and boolean value indicating if it is
+            selecting exited states. If the qubit is missing from the list
+            of states it is averaged out. Instead of just the qubit name, a
+            tuple of qubit name and a shift value can be passed, where the
+            shift value specifies the relative readout index for which the
+            state is checked.
+            Example qb2-qb4 state tomo with preselection:
+                {'pre': {('qb2', -1): False,
+                        ('qb4', -1): False}, # preselection conditions
+                 '$\\| gg\\rangle$': {'qb2': False,
+                                      'qb4': False,
+                                      ('qb2', -1): False,
+                                      ('qb4', -1): False},
+                 '$\\| ge\\rangle$': {'qb2': False,
+                                      'qb4': True,
+                                      ('qb2', -1): False,
+                                      ('qb4', -1): False},
+                 '$\\| eg\\rangle$': {'qb2': True,
+                                      'qb4': False,
+                                      ('qb2', -1): False,
+                                      ('qb4', -1): False},
+                 '$\\| ee\\rangle$': {'qb2': True,
+                                      'qb4': True,
+                                      ('qb2', -1): False,
+                                      ('qb4', -1): False}}
+        n_readouts: Assumed to be the period in the list of shots between
+            experiments with the same prepared state. If shots_of_qubits
+            includes preselection readout results or if there was several
+            readouts for a single readout then n_readouts has to include
+            them.
+    Returns:
+        Saves in data_dict, under keys_out, and np.array of counts with
+            dimensions (n_readouts, len(observables))
+    """
+    if len(keys_out) != 1:
+        raise ValueError(f'keys_out must have length one. {len(keys_in)} '
+                         f'entries were given.')
+
+    # Get shots_of_qubits: Dictionary of np.arrays of thresholded shots for
+    # each qubit.
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+    n_readouts = hlp_mod.get_param('n_readouts', data_dict, raise_error=True,
+                                   **params)
+    observables_dict = hlp_mod.get_param('observables', data_dict,
+                                         raise_error=True, **params)
+    observables = list(observables_dict.values())
+
+    res_e = {}
+    res_g = {}
+
+    n_shots = next(iter(data_to_proc_dict.values())).shape[0]
+    table = np.zeros((n_readouts, len(observables)))
+
+    for qubit, results in data_to_proc_dict.items():
+        res_e[qubit] = np.array(results).reshape((n_readouts, -1),
+                                                 order='F')
+        # This makes copy, but allows faster AND later
+        res_g[qubit] = np.logical_not(
+            np.array(results)).reshape((n_readouts, -1), order='F')
+
+    for readout_n in range(n_readouts):
+        # first result all ground
+        for state_n, states_of_qubits in enumerate(observables):
+            mask = np.ones((n_shots//n_readouts), dtype=np.bool)
+            # slow qubit is the first in channel_map list
+            for qubit, state in states_of_qubits.items():
+                if isinstance(qubit, tuple):
+                    seg = (readout_n+qubit[1]) % n_readouts
+                    qubit = qubit[0]
+                else:
+                    seg = readout_n
+                if state:
+                    mask = np.logical_and(mask, res_e[qubit][seg])
+                else:
+                    mask = np.logical_and(mask, res_g[qubit][seg])
+            table[readout_n, state_n] = np.count_nonzero(mask)
+
+    hlp_mod.add_param(keys_out[0], table*n_readouts/n_shots, data_dict,
+                      update_value=params.get('update_value', False))
+
+
+def measurement_operators_and_results(self, tomography_qubits=None):
+    """
+    Calculates and returns:
+        A tuple of
+            count tables for each data segment for the observables;
+            the measurement operators corresponding to each observable;
+            and the expected covariation matrix between the operators.
+
+    If the calibration segments are passed, there must be a calibration
+    segments for each of the computational basis states of the Hilber space.
+    If there are no calibration segments, perfect readout is assumed.
+
+    The calling class must filter out the relevant data segments by itself!
+    """
+    try:
+        preselection_obs_idx = list(self.observables.keys()).index('pre')
+    except ValueError:
+        preselection_obs_idx = None
+    observabele_idxs = [i for i in range(len(self.observables))
+                        if i != preselection_obs_idx]
+
+    qubits = list(self.channel_map.keys())
+    if tomography_qubits is None:
+        tomography_qubits = qubits
+    d = 2**len(tomography_qubits)
+    data = self.proc_data_dict['probability_table']
+    data = data.T[observabele_idxs]
+    if not 'cal_points' in self.options_dict:
+        Fsingle = {None: np.array([[1, 0], [0, 1]]),
+                   True: np.array([[0, 0], [0, 1]]),
+                   False: np.array([[1, 0], [0, 0]])}
+        Fs = []
+        Omega = []
+        for obs in self.observables.values():
+            F = np.array([[1]])
+            nr_meas = 0
+            for qb in tomography_qubits:
+                # TODO: does not handle conditions on previous readouts
+                Fqb = Fsingle[obs.get(qb, None)]
+                # Kronecker product convention - assumed the same as QuTiP
+                F = np.kron(F, Fqb)
+                if qb in obs:
+                    nr_meas += 1
+            Fs.append(F)
+            # The variation is proportional to the number of qubits we have
+            # a condition on, assuming that all readout errors are small
+            # and equal.
+            Omega.append(nr_meas)
+        Omega = np.array(Omega)
+        return data, Fs, Omega
+    else:
+        means, covars = \
+            self.calibration_point_means_and_channel_covariations()
+        Fs = [np.diag(ms) for ms in means.T]
+        return data, Fs, covars
+
+
+def calibration_point_means_and_channel_covariations(self):
+    observables = [v for k, v in self.observables.items() if k != 'pre']
+    try:
+        preselection_obs_idx = list(self.observables.keys()).index('pre')
+    except ValueError:
+        preselection_obs_idx = None
+    observabele_idxs = [i for i in range(len(self.observables))
+                        if i != preselection_obs_idx]
+
+    # calculate the mean for each reference state and each observable
+    try:
+        cal_points_list = convert_channel_names_to_index(
+            self.options_dict.get('cal_points'), self.n_readouts,
+            self.raw_data_dict['value_names']
+        )
+    except KeyError:
+        cal_points_list = convert_channel_names_to_index(
+            self.options_dict.get('cal_points'), self.n_readouts,
+            list(self.channel_map.keys())
+        )
+    self.proc_data_dict['cal_points_list'] = cal_points_list
+
+    means = np.zeros((len(cal_points_list), len(observables)))
+    cal_readouts = set()
+    for i, cal_point in enumerate(cal_points_list):
+        for j, cal_point_chs in enumerate(cal_point):
+            if j == 0:
+                readout_list = cal_point_chs
+            else:
+                if readout_list != cal_point_chs:
+                    raise Exception('Different readout indices for a '
+                                    'single reference state: {} and {}'
+                                    .format(readout_list, cal_point_chs))
+        cal_readouts.update(cal_point[0])
+
+        val_list = [self.proc_data_dict['probability_table'][idx_ro]
+                    [observabele_idxs] for idx_ro in cal_point[0]]
+        means[i] = np.mean(val_list, axis=0)
+
+    # find the means for all the products of the operators and the average
+    # covariation of the operators
+    prod_obss = []
+    prod_obs_idxs = {}
+    obs_products = np.zeros([self.n_readouts] + [len(observables)]*2)
+    for i, obsi in enumerate(observables):
+        for j, obsj in enumerate(observables):
+            if i > j:
+                continue
+            obsp = self.observable_product(obsi, obsj)
+            if obsp is None:
+                obs_products[:, i, j] = 0
+                obs_products[:, j, i] = 0
+            else:
+                prod_obs_idxs[(i, j)] = len(prod_obss)
+                prod_obs_idxs[(j, i)] = len(prod_obss)
+                prod_obss.append(obsp)
+    prod_prob_table = self.probability_table(
+        self.proc_data_dict['shots_thresholded'],
+        prod_obss, self.n_readouts)
+    for (i, j), k in prod_obs_idxs.items():
+        obs_products[:, i, j] = prod_prob_table[:, k]
+    covars = -np.array([np.outer(ro, ro) for ro in self.proc_data_dict[
+                                                       'probability_table'][:,observabele_idxs]]) + obs_products
+    covars = np.mean(covars[list(cal_readouts)], 0)
+
+    return means, covars
+

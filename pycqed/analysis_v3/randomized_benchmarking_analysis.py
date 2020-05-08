@@ -65,7 +65,7 @@ def rb_analysis(data_dict, keys_in, **params):
 
     # prepare fitting
     if prep_fit_dicts:
-        prepare_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
+        prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
                         **params)
 
     if do_fitting:
@@ -73,18 +73,18 @@ def rb_analysis(data_dict, keys_in, **params):
                 data_dict['fit_dicts']),**params)
         # extract EPC, leakage, and seepage from fits and save to
         # data_dict[meas_obj_name]
-        analyze_fit_results(data_dict, keys_in, **params)
+        analyze_rb_fit_results(data_dict, keys_in, **params)
 
     # prepare plots
     if prep_plot_dicts:
-        prepare_plots(data_dict, keys_in, cliffords, nr_seeds, **params)
+        prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params)
     if do_plotting:
         getattr(plot_module, 'plot')(data_dict, keys_in=list(
             data_dict['plot_dicts']), **params)
 
 
-def prepare_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
-                    **params):
+def prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
+                       **params):
     cp, mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['cp', 'mobjn'], **params)
     conf_level = hlp_mod.get_param('conf_level', data_dict,
@@ -151,7 +151,7 @@ def prepare_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
             # the data points fro Helsen et al. (2017)
             epsilon_guess = hlp_mod.get_param('epsilon_guess', data_dict,
                                               default_value=0.01, **params)
-            epsilon = calculate_confidence_intervals(
+            epsilon = calculate_rb_confidence_intervals(
                 nr_seeds=nr_seeds,
                 nr_cliffords=cliffords,
                 depolariz_param=fit_res.best_values['p'],
@@ -173,7 +173,7 @@ def prepare_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
     hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_value=True)
 
 
-def analyze_fit_results(data_dict, keys_in, **params):
+def analyze_rb_fit_results(data_dict, keys_in, **params):
     mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], **params)
     fit_dicts = hlp_mod.get_param('fit_dicts', data_dict, raise_error=True)
@@ -236,7 +236,7 @@ def analyze_fit_results(data_dict, keys_in, **params):
                               replace_value=True)
 
 
-def prepare_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
+def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
     cp, mospm, mobjn = hlp_mod.get_measurement_properties(
             data_dict, props_to_extract=['cp', 'mospm', 'mobjn'], **params)
 
@@ -326,7 +326,7 @@ def prepare_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
                     default_value=False, **params) and 'pf' not in keyi:
                 # get T1, T2, gate length from HDF file
                 get_meas_obj_coh_times(data_dict, **params)
-                F_T1, p_T1 = calc_coherence_limited_fidelity(
+                F_T1, p_T1 = calc_rb_coherence_limited_fidelity(
                     hlp_mod.get_param(f'{mobjn}.T1', data_dict),
                     hlp_mod.get_param(f'{mobjn}.T2', data_dict),
                     hlp_mod.get_param(f'{mobjn}.ge_sigma', data_dict)*
@@ -371,7 +371,7 @@ def prepare_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
     hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
 
 
-def get_leakage_ibm_textstr(data_dict, fit_res, **params):
+def get_rb_leakage_ibm_textstr(data_dict, fit_res, **params):
     mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], **params)
     textstr = '\nIBM style:'
@@ -396,7 +396,7 @@ def get_leakage_ibm_textstr(data_dict, fit_res, **params):
     return textstr
 
 
-def get_leakage_google_textstr(fit_res, **params):
+def get_rb_leakage_google_textstr(fit_res, **params):
     textstr = '\nGoogle style:'
     textstr += ('\n$p_{\\uparrow}$' +
                 ' = {:.4f}% $\pm$ {:.3f}%'.format(
@@ -412,7 +412,7 @@ def get_leakage_google_textstr(fit_res, **params):
     return textstr
 
 
-def get_regular_textstr(fit_res, F_T1=None, **params):
+def get_rb_regular_textstr(fit_res, F_T1=None, **params):
     textstr = ('$r_{\mathrm{Cl}}$' + ' = {:.4f}% $\pm$ {:.3f}%'.format(
         (1-fit_res.params['fidelity_per_Clifford'].value)*100,
         fit_res.params['fidelity_per_Clifford'].stderr*100))
@@ -434,11 +434,11 @@ def get_rb_textbox_properties(data_dict, fit_res, F_T1=None,
                               textstr_style=(), textstr='', **params):
     if len(textstr_style) != 0:
         if 'regular' in textstr_style:
-            textstr += get_regular_textstr(fit_res, F_T1, **params)
+            textstr += get_rb_regular_textstr(fit_res, F_T1, **params)
         if 'leakage_google' in textstr_style:
-            textstr += get_leakage_google_textstr(fit_res, **params)
+            textstr += get_rb_leakage_google_textstr(fit_res, **params)
         if 'leakage_ibm' in textstr_style:
-            textstr += get_leakage_ibm_textstr(data_dict, fit_res, **params)
+            textstr += get_rb_leakage_ibm_textstr(data_dict, fit_res, **params)
         if len(textstr) == 0:
             raise NotImplementedError(f'The textstring style {textstr_style} '
                                       f'has not been implemented yet.')
@@ -454,7 +454,7 @@ def get_rb_textbox_properties(data_dict, fit_res, F_T1=None,
     return textstr, ha, hp, va, vp
 
 
-def calc_coherence_limited_fidelity(T1, T2, pulse_length, gate_decomp='HZ'):
+def calc_rb_coherence_limited_fidelity(T1, T2, pulse_length, gate_decomp='HZ'):
     """
     Formula from Asaad et al.
     pulse separation is time between start of pulses
@@ -498,7 +498,7 @@ def get_meas_obj_coh_times(data_dict, **params):
                                      numeric_params=list(params_dict), **params)
 
 
-def calculate_confidence_intervals(
+def calculate_rb_confidence_intervals(
         nr_seeds, nr_cliffords, conf_level=0.68, depolariz_param=1,
         epsilon_guess=0.01, d=2):
 
