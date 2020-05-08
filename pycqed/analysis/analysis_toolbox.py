@@ -268,7 +268,7 @@ def get_param_value_from_file(file_path, instr_name, param_name, h5mode='r+'):
     else:
         raise KeyError('"{}" does not exist in "Instrument settings."'.format(
             instr_name))
-
+    data_file.close()
     return param_val
 
 
@@ -299,6 +299,7 @@ def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r+'):
     all_values_empty = np.all([len(v) == 0 for v in channel_map.values()])
     if len(channel_map) == 0 or all_values_empty:
         raise ValueError('Did not find any channels. qb_channel_map is empty.')
+    data_file.close()
     return channel_map
 
 
@@ -311,6 +312,7 @@ def get_qb_thresholds_from_file(qb_names, file_path, h5mode='r+'):
         thresholds[qbn] = 1.5*eval(
             instr_settings['UHFQC'].attrs['qas_0_thresholds_{}_level'.format(
                 ro_channel)])
+    data_file.close()
     return thresholds
 
 
@@ -371,6 +373,8 @@ def compare_instrument_settings_timestamp(timestamp_a, timestamp_b):
         except KeyError:
             print('Instrument "%s" not present in second settings file'
                   % ins_key)
+    analysis_object_a.close()
+    analysis_object_b.close()
 
 
 def compare_instrument_settings(analysis_object_a, analysis_object_b):

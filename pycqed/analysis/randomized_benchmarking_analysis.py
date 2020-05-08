@@ -1822,7 +1822,7 @@ def load_T1_T2_pulse_length(folders, qb_names,
                     float(instr_set[qb].attrs['gauss_sigma'])
             except Exception:
                 print('Could not load pulse_length for {}.'.format(qb))
-
+        data_file.close()
     if count == len(folders):
         raise ValueError('Could not open any of the data files.')
 
