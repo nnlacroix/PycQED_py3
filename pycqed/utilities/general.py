@@ -175,6 +175,7 @@ def load_settings_onto_instrument(instrument, load_from_instr=None,
                 ins_group = sets_group[load_from_instr]
             log.info('Loaded Settings Successfully')
             success = True
+            f.close()
         except:
             older_than = os.path.split(folder)[0][-8:] \
                 + '_' + os.path.split(folder)[1][:6]
@@ -221,6 +222,7 @@ def load_settings_onto_instrument(instrument, load_from_instr=None,
                 instrument.set(parameter, value)
     f.close()
     return True
+
 
 def load_settings(instrument,
                   label: str='', folder: str=None,
@@ -404,6 +406,7 @@ def load_settings_onto_instrument_v2(instrument, load_from_instr: str=None,
             else:
                 ins_group = snapshot['instruments'][load_from_instr]
             success = True
+            f.close()
         except Exception as e:
             logging.warning(e)
             older_than = os.path.split(folder)[0][-8:] \
