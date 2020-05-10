@@ -338,15 +338,23 @@ class CircuitBuilder:
         [pulses[i].update(pm) for i, pm in pulse_modifs.items()]
         return Block(block_name, pulses)
 
-    def seq_from_ops(self, operations, fill_values=None,  pulse_modifs=None,
-                     init_state='0', seq_name='Sequence', ro_kwargs=None):
+    def seg_from_ops(self, operations, fill_values=None, pulse_modifs=None,
+                     init_state='0', seg_name='Segment1', ro_kwargs=None):
         if ro_kwargs is None:
             ro_kwargs = {}
-        seq = Sequence(seq_name)
         pulses = self.initialize(init_state=init_state).build()
         pulses += self.block_from_ops("Block1", operations,
                                       fill_values=fill_values,
                                       pulse_modifs=pulse_modifs).build()
         pulses += self.mux_readout(**ro_kwargs).build()
-        seq.add(Segment('Segment1', pulses))
+        return Segment(seg_name, pulses)
+
+    def seq_from_ops(self, operations, fill_values=None,  pulse_modifs=None,
+                     init_state='0', seq_name='Sequence', ro_kwargs=None):
+        seq = Sequence(seq_name)
+        seq.add(self.seg_from_ops(operations=operations,
+                                  fill_values=fill_values,
+                                  pulse_modifs=pulse_modifs,
+                                  init_state=init_state,
+                                  ro_kwargs=ro_kwargs))
         return seq
