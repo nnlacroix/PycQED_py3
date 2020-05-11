@@ -72,6 +72,7 @@ def calc_tau_effective(voltages, qbc_freq_sweetspot, qbc_anharmonicity,
                                flux_upwards=flux_upwards)
     if flux_upwards:
         delta = calc_delta_20_11(qbt_ge_freq, ge_freq_qbc, -qbt_anharmonicity)
+        print(ge_freq_qbc)
     else:
         delta = calc_delta_20_11(ge_freq_qbc, qbt_ge_freq, -qbc_anharmonicity)
     return effective_time(np.sqrt(2) * J_00_10, delta, n=n, time=time)

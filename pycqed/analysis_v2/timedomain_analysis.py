@@ -1985,8 +1985,6 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         covar_matrix: (optional) The covariance matrix of the measurement
                       operators as a 2d numpy array. Overrides the one found
                       from the calibration points.
-        use_covar_matrix (bool): Flag to define whether to use the
-            covariance matrix
         basis_rots_str: A list of standard PycQED pulse names that were
                              applied to qubits before measurement
         basis_rots: As an alternative to single_qubit_pulses, the basis
@@ -1998,6 +1996,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         rho_target (optional): A qutip density matrix that the result will be
                                compared to when calculating fidelity.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.single_timestamp = True
@@ -2016,13 +2015,10 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         if kwargs.get('auto', True):
             self.run_analysis()
 
-    def extract_data(self):
-        super().extract_data()
-
     def process_data(self):
         tomography_qubits = self.options_dict.get('tomography_qubits', None)
         data, Fs, Omega = self.base_analysis.measurement_operators_and_results(
-                              tomography_qubits)
+            tomography_qubits)
         if 'data_filter' in self.options_dict:
             data = self.options_dict['data_filter'](data.T).T
 
@@ -2065,7 +2061,6 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         all_mus = np.array(list(itertools.chain(*data.T)))
         all_Omegas = sp.linalg.block_diag(*[Omega] * len(data[0]))
 
-
         self.proc_data_dict['meas_operators'] = all_Fs
         self.proc_data_dict['covar_matrix'] = all_Omegas
         self.proc_data_dict['meas_results'] = all_mus
@@ -2076,17 +2071,12 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             self.proc_data_dict['rho_raw'] = rho_raw
             self.proc_data_dict['rho'] = rho_raw
         else:
-            rho_ls = tomo.least_squares_tomography(
-                all_mus, all_Fs,
-                all_Omegas if self.get_param_value('use_covariance_matrix', False)
-                else None )
+            rho_ls = tomo.least_squares_tomography(all_mus, all_Fs, all_Omegas)
             self.proc_data_dict['rho_ls'] = rho_ls
             self.proc_data_dict['rho'] = rho_ls
             if self.options_dict.get('mle', False):
-                rho_mle = tomo.mle_tomography(
-                    all_mus, all_Fs, None,
-                    all_Omegas if self.get_param_value('use_covariance_matrix', False) else None,
-                    rho_guess=rho_ls)
+                rho_mle = tomo.mle_tomography(all_mus, all_Fs, all_Omegas,
+                                              rho_guess=rho_ls)
                 self.proc_data_dict['rho_mle'] = rho_mle
                 self.proc_data_dict['rho'] = rho_mle
 
@@ -2143,7 +2133,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             legend_entries += [
                 (empty_artist, r'Concurrence, $C = {:.2f}$'.format(
                     self.proc_data_dict['concurrence']))]
-        meas_string = self.base_analysis.\
+        meas_string = self.base_analysis. \
             raw_data_dict['measurementstring']
         if isinstance(meas_string, list):
             if len(meas_string) > 1:
@@ -2210,30 +2200,30 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                           meas_string),
                 'bar_kws': dict(zorder=1),
             }
-    
+
     def generate_raw_pauli_set(self):
         nr_qubits = self.proc_data_dict['d'].bit_length() - 1
         pauli_raw_values = []
         for op in tomo.generate_pauli_set(nr_qubits)[1]:
             nr_terms = 0
             sum_terms = 0.
-            for meas_op, meas_res in zip(self.proc_data_dict['meas_operators'], 
+            for meas_op, meas_res in zip(self.proc_data_dict['meas_operators'],
                                          self.proc_data_dict['meas_results']):
-                trace = (meas_op*op).tr().real
-                clss = int(trace*2)
+                trace = (meas_op * op).tr().real
+                clss = int(trace * 2)
                 if clss < 0:
                     sum_terms -= meas_res
                     nr_terms += 1
                 elif clss > 0:
                     sum_terms += meas_res
                     nr_terms += 1
-            pauli_raw_values.append(2**nr_qubits*sum_terms/nr_terms)
+            pauli_raw_values.append(2 ** nr_qubits * sum_terms / nr_terms)
         return pauli_raw_values
 
     def prepare_pauli_basis_plot(self):
         yexp = tomo.density_matrix_to_pauli_basis(self.proc_data_dict['rho'])
         nr_qubits = self.proc_data_dict['d'].bit_length() - 1
-        labels = list(itertools.product(*[['I', 'X', 'Y', 'Z']]*nr_qubits))
+        labels = list(itertools.product(*[['I', 'X', 'Y', 'Z']] * nr_qubits))
         labels = [''.join(label_list) for label_list in labels]
         if nr_qubits == 1:
             order = [1, 2, 3]
@@ -2248,7 +2238,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                     [37, 38, 39, 41, 42, 43, 45, 46, 47] + \
                     [53, 54, 55, 57, 58, 59, 61, 62, 63]
         else:
-            order = np.arange(4**nr_qubits)[1:]
+            order = np.arange(4 ** nr_qubits)[1:]
         if self.options_dict.get('pauli_raw', False):
             fit_type = 'raw counts'
         elif self.options_dict.get('mle', False):
@@ -2271,9 +2261,9 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             'xlabel': r'Pauli operator, $\hat{O}$',
             'ylabel': r'Expectation value, $\mathrm{Tr}(\hat{O} \hat{\rho})$',
             'title': 'Pauli operators, ' + fit_type + '\n' +
-                      self.raw_data_dict['timestamp'] + ' ' + meas_string,
+                     self.raw_data_dict['timestamp'] + ' ' + meas_string,
             'yrange': (-1.1, 1.1),
-            'xtick_loc': np.arange(4**nr_qubits - 1),
+            'xtick_loc': np.arange(4 ** nr_qubits - 1),
             'xtick_rotation': 90,
             'xtick_labels': np.array(labels)[order],
             'bar_kws': dict(zorder=10),
@@ -2329,9 +2319,9 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                          (251, 130, 242), (162, 112, 251))) / 255
         n = len(cols)
         cdict = {
-            'red': [[i/n, cols[i%n][0], cols[i%n][0]] for i in range(n+1)],
-            'green': [[i/n, cols[i%n][1], cols[i%n][1]] for i in range(n+1)],
-            'blue': [[i/n, cols[i%n][2], cols[i%n][2]] for i in range(n+1)],
+            'red': [[i / n, cols[i % n][0], cols[i % n][0]] for i in range(n + 1)],
+            'green': [[i / n, cols[i % n][1], cols[i % n][1]] for i in range(n + 1)],
+            'blue': [[i / n, cols[i % n][2], cols[i % n][2]] for i in range(n + 1)],
         }
 
         return mpl.colors.LinearSegmentedColormap('DMDefault', cdict)

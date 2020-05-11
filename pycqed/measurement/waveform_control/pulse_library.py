@@ -198,22 +198,6 @@ class BufferedCZPulse(pulse.Pulse):
                                           pulse_length=self.pulse_length,
                                           adapt_pulse_length=self.force_adapt_pulse_length)
 
-        if self.gaussian_filter_sigma == 0:
-            wave = np.ones_like(tvals) * amp
-            wave *= (tvals >= tvals[0] + buffer_start)
-            wave *= (tvals < tvals[0] + buffer_start + pulse_length)
-        else:
-            tstart = tvals[0] + buffer_start
-            tend = tvals[0] + buffer_start + pulse_length
-            scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
-            wave = 0.5 * (sp.special.erf(
-                (tvals - tstart) * scaling) - sp.special.erf(
-                    (tvals - tend) * scaling)) * amp
-        t_rel = tvals - tvals[0]
-        wave *= np.cos(
-            2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
-        return wave - wave[0]
-
         self.buffer_length_start = kw.pop('buffer_length_start', 0)
         self.buffer_length_end = kw.pop('buffer_length_end', 0)
         self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse', 5e-9)
@@ -398,7 +382,7 @@ class NZBufferedCZPulse(pulse.Pulse):
         hashlist += [self.gaussian_filter_sigma, self.alpha]
         return hashlist
 
-class BufferedNZHalfwayPulse(Pulse):
+class BufferedNZHalfwayPulse(pulse.Pulse):
     def __init__(self, channel, channel2, element_name, aux_channels_dict=None,
                  name='Buffered Halfway Pulse', **kw):
         super().__init__(name, element_name)
@@ -538,7 +522,7 @@ class BufferedNZHalfwayPulse(Pulse):
         return hashlist
 
 
-class BufferedHalfwayPulse(Pulse):
+class BufferedHalfwayPulse(pulse.Pulse):
     def __init__(self, channel, channel2, element_name, aux_channels_dict=None,
                  name='Buffered Halfway Pulse', **kw):
         super().__init__(name, element_name)
@@ -625,7 +609,7 @@ class BufferedHalfwayPulse(Pulse):
         hashlist += [self.gaussian_filter_sigma]
         return hashlist
 
-class NZMartinisGellarPulse(Pulse):
+class NZMartinisGellarPulse(pulse.Pulse):
     def __init__(self, channel, element_name, wave_generation_func,
                  aux_channels_dict=None,
                  name='NZMartinisGellarPulse', **kw):

@@ -2848,6 +2848,33 @@ class QuDev_transmon(Qubit):
         return
 
 
+    def calculate_anharmonicity(self, update=False):
+
+        """
+        Computes the qubit anaharmonicity using f_ef (self.f_ef_qubit)
+        and f_ge (self.f_qubit).
+        It is assumed that the latter values exist.
+        WARNING: Does not automatically update the qubit anharmonicity
+        parameter. Set update=True if you want this!
+        """
+        if not update:
+            log.warning("Does not automatically update the qubit "
+                            "anharmonicity parameter. "
+                            "Set update=True if you want this!")
+
+        if self.ge_freq() == 0:
+            log.warning('f_ge = 0. Run qubit spectroscopy or Ramsey.')
+        if self.ef_freq() == 0:
+            log.warning('f_ef = 0. Run qubit spectroscopy or Ramsey.')
+
+        anharmonicity = self.ef_freq() - self.ge_freq()
+
+        if update:
+            self.anharmonicity(anharmonicity)
+
+        return  anharmonicity
+
+
     def find_readout_frequency(self, freqs=None, update=False, MC=None,
                                qutrit=False, **kw):
         """
@@ -3748,7 +3775,8 @@ def add_CZ_pulse(qbc, qbt):
                                                'BufferedCZPulse',
                                                'NZBufferedCZPulse',
                                                'BufferedCZPulseEffectiveTime',
-                                               'BufferedHalfwayPulse'))
+                                               'BufferedHalfwayPulse',
+                                               'BufferedNZHalfwayPulse'))
         qbc.add_pulse_parameter(op_name, ps_name + '_channel', 'channel',
                                 initial_value='', vals=vals.Strings())
         qbc.add_pulse_parameter(op_name, ps_name + '_channel2', 'channel2',

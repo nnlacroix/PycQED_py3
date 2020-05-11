@@ -577,14 +577,16 @@ def ramsey_active_reset(times, qb_name, operation_dict, cal_points, n=1,
 
     # make sure Ramsey pulses are put into separate elements
     # if possible
-    i = 0
-    for sequence in swept_pulses_with_prep:
-        for pulse in sequence:
-            if 'name' not in pulse:
-                continue
-            if pulse['pulse_delay'] > pulse_length:
-                pulse["element_name"] = f"Ramsey_x2_{i}_element"
-                i += 1
+    # AR (07.05.2020): Glitches in Ramsey noticed when splitting the segment
+    # into multiple elements. Commenting this out for now.
+    # i = 0
+    # for sequence in swept_pulses_with_prep:
+    #     for pulse in sequence:
+    #         if 'name' not in pulse:
+    #             continue
+    #         if pulse['pulse_delay'] > pulse_length:
+    #             pulse["element_name"] = f"Ramsey_x2_{i}_element"
+    #             i += 1
 
     seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
 

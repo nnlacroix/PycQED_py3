@@ -640,13 +640,21 @@ class Device(Instrument):
 
         sequences, hard_sweep_points, soft_sweep_points = \
             fsqs.chevron_seqs(
-                qbc_name=qbc.name, qbt_name=qbt.name,
+                qbc_name=qbc.name, qbt_name=qbt.name, qbr_name=qbr.name,
                 hard_sweep_dict=hard_sweep_params,
                 soft_sweep_dict=soft_sweep_params,
-                operation_dict=operation_dict,
+                operation_dict=mqm.get_operation_dict([qbc, qbt, qbr]),
                 cz_pulse_name=cz_pulse_name,
-                num_cz_gates=num_cz_gates,
                 cal_points=cp, upload=False, prep_params=prep_params)
+
+            # fsqs.chevron_seqs(
+            #     qbc_name=qbc.name, qbt_name=qbt.name,
+            #     hard_sweep_dict=hard_sweep_params,
+            #     soft_sweep_dict=soft_sweep_params,
+            #     operation_dict=operation_dict,
+            #     cz_pulse_name=cz_pulse_name,
+            #     num_cz_gates=num_cz_gates,
+            #     cal_points=cp, upload=False, prep_params=prep_params)
 
         if return_seq:
             return sequences
@@ -858,7 +866,7 @@ class Device(Instrument):
                 cp = None
 
             seq, hard_sweep_points = \
-                fsqs.dynamic_phase_seq(
+                fsqs.dynamic_phase_seq_half(
                     qb_name=qb.name, hard_sweep_dict=hard_sweep_params,
                     operation_dict=self.get_operation_dict(),
                     cz_pulse_name=cz_pulse_name + f' {qbc.name} {qbt.name}',

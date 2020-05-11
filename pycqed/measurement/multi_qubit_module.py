@@ -15,6 +15,7 @@ import logging
 from scipy import optimize
 
 from pycqed.measurement import qaoa
+from pycqed.measurement import rus
 from pycqed.utilities.general import temporary_value
 
 log = logging.getLogger(__name__)
@@ -483,6 +484,7 @@ def measure_qaoa(qubits, gates_info, single_qb_terms=None,
                                   prep_params=prep_params, upload=False)
     if custom_sequence:
         seq, swp = custom_sequence
+
     # set detector and sweep functions
     det_get_values_kws = {'classified': True,
                           'correlated': False,
@@ -882,6 +884,114 @@ def measure_active_reset(qubits, shots=5000,
     temp_values += [(MC.soft_avg, 1)]
     with temporary_value(*temp_values):
         MC.run(name=label,  exp_metadata=exp_metadata)
+
+
+def measure_rus (qubits,  thetas = [[0],[np.pi/2]],
+                 tomography=False, tomography_options = None, theta_threshold = 0.05,
+                 analyze=True, exp_metadata=None, shots=10000,
+                 init_state="000",  prep_params=None, upload=True, label=None):
+
+    qb_names = [qb.name for qb in qubits]
+
+    if label is None:
+        label = f"RUS_{qb_names}_{init_state}"
+
+    if prep_params is None:
+        prep_params = \
+            get_multi_qubit_prep_params([qb.preparation_params() for qb in qubits])
+
+    if exp_metadata is None:
+        exp_metadata = {}
+
+    if tomography_options is None:
+        tomography_options = {}
+
+    boperation_dict = deepcopy(get_operation_dict(qubits))
+    MC = qubits[0].instr_mc.get_instr()
+
+    # prepare qubits
+    for qb in qubits:
+        qb.prepare(drive='timedomain')
+
+    # sequence
+    cp = None
+    if tomography:
+        cp = CalibrationPoints.multi_qubit(qb_names, 'ge', 1, True)
+
+    seq, swp = rus.rus_sequence(qubits, thetas, operation_dict,
+                     init_state=init_state, tomography=tomography,
+                     tomography_options = tomography_options,
+                     theta_threshold = theta_threshold,
+                     cal_points=cp,  upload=upload)
+
+    #print(seq)
+
+    # set detector and sweep functions
+    det_get_values_kws = {'classified': True,
+                          'correlated': False,
+                          'thresholded': False,
+                          'averaged': False}
+    df = get_multiplexed_readout_detector_functions(
+        qubits, nr_shots=shots,
+        nr_averages=max(qb.acq_averages() for qb in qubits),
+        det_get_values_kws=det_get_values_kws)['int_avg_classif_det']
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq, upload=upload))
+    MC.set_sweep_points(swp)
+    MC.set_detector_function(df)
+
+    # metadata and run experiment
+    exp_metadata.update({'preparation_params': prep_params,
+                    'data_to_fit': {},
+                    'rotate': False,
+                    'thetas': thetas,
+                    'init': init_state,
+                    'qb_names': str(qb_names),
+                    'shots': shots})
+    if tomography:
+        exp_metadata.update(dict(basis_rots=tomography_options.get("basis_rots",
+                                            tomo.DEFAULT_BASIS_ROTS)))
+
+    temp_val = [(qb.acq_shots, shots) for qb in qubits]
+    with temporary_value(*temp_val):
+        MC.run(name=label, exp_metadata=exp_metadata)
+
+    if analyze:
+        channel_map = {qb.name: qb.int_avg_classif_det.value_names for qb in
+                       qubits}
+        options = dict(channel_map=channel_map, plot_proj_data=False,
+                       plot_raw_data=False)
+        a = tda.MultiQubit_TimeDomain_Analysis(
+            qb_names=qb_names,
+            options_dict=options,
+            auto=False)
+        a.extract_data()
+        a.process_data()
+        # additional processing
+        qubit_states = []
+        filter = np.ones(exp_metadata['shots']*np.size(exp_metadata['thetas']), dtype=bool)
+        a.proc_data_dict['analysis_params_dict'] = {}
+        a.proc_data_dict['analysis_params_dict']["leakage"] = {}
+        a.proc_data_dict['analysis_params_dict']["success_prob"] = {}
+        leakage = a.proc_data_dict['analysis_params_dict']["leakage"]
+        for qb in qb_names:
+            qb_probs = \
+                a.proc_data_dict['meas_results_per_qb'][qb].values()
+            qb_probs = np.asarray(list(qb_probs)).T  # (n_shots, (pg,pe,pf))
+            states = np.argmax(qb_probs, axis=1)
+            qubit_states.append(states)
+            # leaked_shots = states == 2
+            # leakage.update({qb: np.sum(leaked_shots) / (exp_metadata['shots']*np.size(exp_metadata['thetas']))})
+            # filter = np.logical_and(filter, states != 2)
+
+        a.proc_data_dict['qubit_states'] = np.array(qubit_states).T
+        # a.proc_data_dict['qubit_states_filtered'] = \
+        #     np.array(qubit_states).T[filter]
+        # qb_states_filtered = a.proc_data_dict['qubit_states_filtered']
+        a.data_file.close()
+        a.save_processed_data()
+        print(a)
+        return a
+
 
 def measure_arbitrary_sequence(qubits, sequence=None, sequence_function=None,
                                sequence_args=None, drive='timedomain', label=None,
@@ -2767,7 +2877,7 @@ def test_arbitrary_phase(qbc, qbt, target_phases, cz_pulse_name, measure_dynamic
                             gate_dict['pulse_type']) # get correct pulse class from type
     amplitudes, predicted_dyn_phase = \
         pulse_class.calc_cphase_params(target_phases, gate_dict['cphase_calib_dict'])
-    soft_sweep_params = kw.get('soft_sweep_params', dict(cphase=dict(values=amplitudes, unit='V')))
+    soft_sweep_params = kw.get('soft_sweep_params', dict(cphase=dict(values=target_phases, unit='rad')))
     exp_metadata = kw.get('exp_metadata', {})
     exp_metadata.update(dict(target_phases=target_phases,
                              sort_phases_ascending_order=True))
@@ -2820,6 +2930,7 @@ def test_arbitrary_phase(qbc, qbt, target_phases, cz_pulse_name, measure_dynamic
 
     if measure_dynamic_phase:
         qubits_to_measure = kw.get('qubits_to_measure', [qbc])
+        print(qubits_to_measure)
         dyn_phases_per_ampl = []
         max_amps_per_meas = kw.pop('max_amps_per_meas', 1)
         simultaneous = kw.pop('simultaneous', True)
@@ -2834,7 +2945,7 @@ def test_arbitrary_phase(qbc, qbt, target_phases, cz_pulse_name, measure_dynamic
                                        reset_phases_before_measurement=True,
                                        extract_only=True, analyze=True,
                                        hard_sweep_params=dyn_hard_sweep_params,
-                                       simultaneous=simultaneous, **kw))
+                                       simultaneous=simultaneous))#, **kw))
 
         if analyze:
             save_folder = a_tools.latest_data()
