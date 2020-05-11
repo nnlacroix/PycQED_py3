@@ -6,6 +6,8 @@ import time
 import h5py
 import datetime
 import numpy as np
+# used by compare_istrument_settings_timestamp():
+from numpy import array  # DO not remove;
 from copy import deepcopy
 from matplotlib.colors import LogNorm
 from matplotlib.colors import LinearSegmentedColormap as lscmap
@@ -303,15 +305,16 @@ def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r+'):
     return channel_map
 
 
-def get_qb_thresholds_from_file(qb_names, file_path, h5mode='r+'):
+def get_qb_thresholds_from_file(qb_names, file_path, th_scaling=1, h5mode='r+'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
     instr_settings = data_file['Instrument settings']
     thresholds = {}
     for qbn in qb_names:
-        ro_channel = eval(instr_settings[qbn].attrs['RO_acq_weight_function_I'])
-        thresholds[qbn] = 1.5*eval(
-            instr_settings['UHFQC'].attrs['qas_0_thresholds_{}_level'.format(
-                ro_channel)])
+        ro_channel = eval(instr_settings[qbn].attrs['acq_I_channel'])
+        instr_uhf = eval(instr_settings[qbn].attrs['instr_uhf'])
+        thresholds[qbn] = th_scaling*eval(
+            instr_settings[instr_uhf].attrs[
+                f'qas_0_thresholds_{ro_channel}_level'])
     data_file.close()
     return thresholds
 

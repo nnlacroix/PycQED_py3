@@ -68,6 +68,7 @@ class Test_HDF5(unittest.TestCase):
         np.testing.assert_array_equal(
             mock_parab_pars['array_like']['value'],
             np.linspace(0, 11, 23))
+        opened_hdf5_file.close()
 
     def test_writing_and_reading_dicts_to_hdf5(self):
         """
@@ -142,6 +143,7 @@ class Test_HDF5(unittest.TestCase):
                          new_dict['a list of strings'])
         self.assertEqual(test_dict['a list of strings'][0],
                          new_dict['a list of strings'][0])
+        opened_hdf5_file.close()
 
     def test_loading_settings_onto_instrument(self):
         """

@@ -244,7 +244,6 @@ class BaseDataAnalysis(object):
             h5mode = self.options_dict.get('h5mode', 'r+')
             h5filepath = a_tools.measurement_filename(folder)
             data_file = h5py.File(h5filepath, h5mode)
-            self.data_file = data_file
 
             if 'timestamp' in raw_data_dict_ts:
                 raw_data_dict_ts['timestamp'] = timestamp
@@ -280,6 +279,10 @@ class BaseDataAnalysis(object):
                         len(raw_data_dict_ts[save_par]) == 1:
                     raw_data_dict_ts[save_par] = raw_data_dict_ts[save_par][0]
             raw_data_dict.append(raw_data_dict_ts)
+            if self.options_dict.get('close_file', True):
+                data_file.close()
+            else:
+                self.data_file = data_file
 
         if len(raw_data_dict) == 1:
             raw_data_dict = raw_data_dict[0]
@@ -367,9 +370,6 @@ class BaseDataAnalysis(object):
             self.raw_data_dict = tuple(temp_dict_list)
             self.metadata = [rd_dict['exp_metadata'] for
                              rd in self.raw_data_dict]
-            
-        if self.options_dict.get('close_file', True):
-            self.data_file.close()
 
     def process_data(self):
         """
