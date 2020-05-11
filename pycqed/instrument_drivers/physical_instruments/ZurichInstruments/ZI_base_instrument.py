@@ -1453,10 +1453,13 @@ class ZI_base_instrument(Instrument):
 
         t0 = time.time()
         success_and_ready = False
+        if not hasattr(self, 'compiler_statusstring'):
+            self.compiler_statusstring = ''
 
         # This check (and while loop) is added as a workaround for #9
         while not success_and_ready:
             log.info(f'{self.devname}: Configuring AWG {awg_nr}...')
+            self.compiler_statusstring += f'{self.devname}: Configuring AWG {awg_nr}...'
 
             self._awgModule.set('awgModule/index', awg_nr)
             self._write_cmd_to_logfile(f"_awgModule.set('awgModule/index', {awg_nr})")
@@ -1504,7 +1507,8 @@ class ZI_base_instrument(Instrument):
                     break
 
         t1 = time.time()
-        print(self._awgModule.get('awgModule/compiler/statusstring')
+        self.compiler_statusstring += (self._awgModule.get(
+            'awgModule/compiler/statusstring')
               ['compiler']['statusstring'][0] + ' in {:.2f}s'.format(t1-t0))
 
         # Check status
