@@ -709,24 +709,6 @@ def dictionify(obj, only=None, exclude=None):
                 obj_dict.pop(k)
     return obj_dict
 
-def reverse_nested_dict(nested_dict):
-    """
-    Reverses a 2 level nested dictionary.
-    Eg. :
-    >>> reverse_nested_dict({'a': {"1": 1, "2": 2},
-    >>>                      "b": {"3": 3, "4":  4}})
-    >>> {'1': {'a': 1}, '2': {'a': 2}, '3': {'b': 3}, '4': {'b': 4}}
-    >>> reverse_nested_dict({'a': {"1": 1, "2": 2},
-    >>>                      "b": {"1": 3, "2":  4}})
-    >>> {'1': {'a': 1, 'b': 3}, '2': {'a': 2, 'b': 4}}
-    """
-    from collections import defaultdict
-    flipped = defaultdict(dict)
-    for key, val in nested_dict.items():
-        for subkey, subval in val.items():
-            flipped[subkey][key] = subval
-    return dict(flipped)
-
 class NumpyJsonEncoder(json.JSONEncoder):
     '''
     JSON encoder subclass that converts Numpy types to native python types
