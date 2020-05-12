@@ -338,6 +338,21 @@ class CircuitBuilder:
         return seq
 
     def simultaneous_blocks(self, block_name, blocks):
+        """
+        Creates a block with name :block_name: that consists of the parallel
+        execution of the given :blocks:. Ensures that any pulse or block
+        following the created block will occur after the longest given block.
+
+        Note that within each of the given blocks, it is assumed that the
+        pulse listed last in the block is the one that occurs last.
+        TODO: We might want to relax this assumption in a future version!
+
+        Args:
+            block_name (string): name of the block that is created
+            blocks (iterable): iterable where each element is a block that has
+            to be executed in parallel to the others.
+        """
+
         simultaneous = Block(block_name, [])
         simultaneous_end_pulses = []
         for block in blocks:
