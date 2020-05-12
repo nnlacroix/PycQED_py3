@@ -264,6 +264,10 @@ def load_settings(instrument,
         except Exception as e:
             logging.warning(e)
             success = False
+            try:
+                f.close()
+            except:
+                pass
             if timestamp is None and not folder_specified:
                 print('Trying next folder.')
                 older_than = os.path.split(folder)[0][-8:] \
@@ -326,7 +330,6 @@ def load_settings_onto_instrument_v2(instrument, load_from_instr: str=None,
             else:
                 ins_group = snapshot['instruments'][load_from_instr]
             success = True
-            f.close()
         except Exception as e:
             logging.warning(e)
             older_than = os.path.split(folder)[0][-8:] \
@@ -338,6 +341,10 @@ def load_settings_onto_instrument_v2(instrument, load_from_instr: str=None,
     if not success:
         logging.warning('Could not open settings for instrument "%s"' % (
             instrument_name))
+        try:
+            f.close()
+        except:
+            pass
         return False
 
     for parname, par in ins_group['parameters'].items():
