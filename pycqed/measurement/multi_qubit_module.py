@@ -465,8 +465,8 @@ def measure_active_reset(qubits, shots=5000,
         MC.run(name=label,  exp_metadata=exp_metadata)
 
 def measure_arbitrary_sequence(qubits, sequence=None, sequence_function=None,
-                               sequence_args=dict(), drive='timedomain', label=None,
-                               detector_function=None, df_kwargs=dict(),
+                               sequence_args=None, drive='timedomain', label=None,
+                               detector_function=None, df_kwargs=None,
                                sweep_function=awg_swf.SegmentHardSweep,
                                sweep_points=None, temporary_values=(),
                                exp_metadata=None, upload=True,
@@ -514,9 +514,13 @@ def measure_arbitrary_sequence(qubits, sequence=None, sequence_function=None,
             raise ValueError("Sweep points must be specified if sequence object"
                              "is given")
     else:
+        if sequence_args is None:
+            sequence_args = {}
         sequence, sweep_points = sequence_function(**sequence_args)
 
     # create sweep points
+    if df_kwargs is None:
+        df_kwargs = {}
     df = get_multiplexed_readout_detector_functions(qubits, **df_kwargs)[
         detector_function]
 
