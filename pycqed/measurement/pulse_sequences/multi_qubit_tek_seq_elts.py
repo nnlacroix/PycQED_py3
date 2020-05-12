@@ -2152,3 +2152,375 @@ def ro_dynamic_phase_seq(hard_sweep_dict, qbp_name, qbr_names,
         ps.Pulsar.get_instance().program_awgs(seq)
 
     return seq, np.arange(seq.n_acq_elements())
+
+
+## Multi-qubit time-domain sequences ##
+
+def n_qubit_rabi_seq(qubit_names, operation_dict, sweep_points, cal_points,
+                     upload=True, n=1, for_ef=False,
+                     last_ge_pulse=False, prep_params=dict()):
+    '''
+    Rabi sequence for n qubits.
+    Args:
+        qubit_names:     list of qubit names
+        operation_dict:  operation_dict for all qubit in qubit_names
+        sweep_points:    instance of SweepPoints class
+        cal_points:      instance of CalibrationPoints class
+        upload:          whether to upload sequence to instrument or not
+        n:               number of pulses (1 is conventional Rabi)
+        for_ef:          whether to do rabi between ef transition
+        last_ge_pulse:   whether to use a ge pulse at the end of each segment
+            for a rabi between ef transition
+        prep_params:     qubit preparation params
+    Returns:
+        sequence (Sequence): sequence object
+        segment_indices (list): array of range of n_segments including
+            calibration_segments. To be used as sweep_points for the MC.
+    '''
+
+    seq_name = 'n_qubit_Rabi_sequence'
+
+    pulse_list = []
+    # add Rabi amplitudes segments
+    for qbn in qubit_names:
+        rabi_ops = ["X180_ef " + qbn if for_ef else "X180 " + qbn] * n
+        if for_ef:
+            rabi_ops = ["X180 " + qbn] + rabi_ops  # prepend ge pulse
+            if last_ge_pulse:
+                rabi_ops += ["X180 " + qbn]  # append ge pulse
+
+        rabi_pulses = [deepcopy(operation_dict[op]) for op in rabi_ops]
+        rabi_pulses[0]['ref_pulse'] = 'segment_start'
+        for i in np.arange(1 if for_ef else 0, n + 1 if for_ef else n):
+            rabi_pulses[i]["name"] = f"Rabi_{i-1 if for_ef else i}_{qbn}"
+
+        pulse_list += rabi_pulses
+    pulse_list += generate_mux_ro_pulse_list(qubit_names, operation_dict)
+
+    params_to_sweep = {
+        f'Rabi_{i}_{qbn}.amplitude': list(sweep_points[0].values())[j][0]
+        for i in range(n) for j, qbn in enumerate(qubit_names)}
+    swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
+    swept_pulses_with_prep = \
+        [add_preparation_pulses(p, operation_dict, qubit_names, **prep_params)
+         for p in swept_pulses]
+    seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
+
+    # add calibration segments
+    seq.extend(cal_points.create_segments(operation_dict, **prep_params))
+
+    # reuse sequencer memory by repeating readout pattern
+    [seq.repeat_ro(f"RO {qbn}", operation_dict) for qbn in qubit_names]
+
+    log.debug(seq)
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements())
+
+
+def n_qubit_ramsey_seq(qubit_names, operation_dict, sweep_points, cal_points,
+                       artificial_detuning=0, upload=True, for_ef=False,
+                       last_ge_pulse=False, prep_params=dict()):
+    '''
+    Ramsey sequence for n qubits.
+    Args:
+        qubit_names:     list of qubit names
+        operation_dict:  operation_dict for all qubit in qubit_names
+        sweep_points:    instance of SweepPoints class
+        cal_points:      instance of CalibrationPoints class
+        artificial_detunings:   Detuning of second pi-half pulse.
+        upload:          whether to upload sequence to instrument or not
+        n:               number of pulses (1 is conventional Rabi)
+        for_ef:          whether to do rabi between ef transition
+        last_ge_pulse:   whether to use a ge pulse at the end of each segment
+            for a rabi between ef transition
+        prep_params:     qubit preparation params
+    Returns:
+        sequence (Sequence): sequence object
+        segment_indices (list): array of range of n_segments including
+            calibration_segments. To be used as sweep_points for the MC.
+    '''
+
+    seq_name = 'n_qubit_Ramsey_sequence'
+
+    pulse_list = []
+    # add Ramsey segments
+    for qbn in qubit_names:
+        ramsey_ops = ["X90_ef " + qbn if for_ef else "X90 " + qbn] * 2
+        if for_ef:
+            ramsey_ops = ["X180 " + qbn] + ramsey_ops  # prepend ge pulse
+            if last_ge_pulse:
+                ramsey_ops += ["X180 " + qbn]  # append ge pulse
+
+        ramsey_pulses = [deepcopy(operation_dict[op]) for op in ramsey_ops]
+        ramsey_pulses[0]['ref_pulse'] = 'segment_start'
+        ramsey_pulses[2 if for_ef else 1]["name"] = f"Ramsey_{qbn}"
+        ramsey_pulses[2 if for_ef else 1]["ref_point"] = 'start'
+
+        pulse_list += ramsey_pulses
+    pulse_list += generate_mux_ro_pulse_list(qubit_names, operation_dict)
+
+    params_to_sweep = {}
+    for j, qbn in enumerate(qubit_names):
+        times = list(sweep_points[0].values())[j][0]
+        params_to_sweep.update({f'Ramsey_{qbn}.pulse_delay': times})
+        params_to_sweep.update({
+            f'Ramsey_{qbn}.phase':
+                ((times-times[0])*artificial_detuning*360) % 360})
+    swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
+    swept_pulses_with_prep = \
+        [add_preparation_pulses(p, operation_dict, qubit_names, **prep_params)
+         for p in swept_pulses]
+    seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
+
+    # add calibration segments
+    seq.extend(cal_points.create_segments(operation_dict, **prep_params))
+
+    # reuse sequencer memory by repeating readout pattern
+    [seq.repeat_ro(f"RO {qbn}", operation_dict) for qbn in qubit_names]
+
+    log.debug(seq)
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements())
+
+
+def n_qubit_qscale_seq(qubit_names, operation_dict, sweep_points, cal_points,
+                       upload=True, for_ef=False,
+                       last_ge_pulse=False, prep_params=dict()):
+    '''
+    DRAG pulse calibration sequence for n qubits.
+    Args:
+        qubit_names:     list of qubit names
+        operation_dict:  operation_dict for all qubit in qubit_names
+        sweep_points:    instance of SweepPoints class
+        cal_points:      instance of CalibrationPoints class
+        upload:          whether to upload sequence to instrument or not
+        n:               number of pulses (1 is conventional Rabi)
+        for_ef:          whether to do rabi between ef transition
+        last_ge_pulse:   whether to use a ge pulse at the end of each segment
+            for a rabi between ef transition
+        prep_params:     qubit preparation params
+    Returns:
+        sequence (Sequence): sequence object
+        segment_indices (list): array of range of n_segments including
+            calibration_segments. To be used as sweep_points for the MC.
+    '''
+
+    seq_name = 'n_qubit_qscale_sequence'
+
+    # Operations
+    qscale_base_ops = [['X90', 'X180'], ['X90', 'Y180'], ['X90', 'mY180']]
+
+    # add DRAG calibration segments
+    final_pulses = []
+    for base_ops in qscale_base_ops:
+        pulse_list = []
+        for qbn in qubit_names:
+            qscale_ops = add_suffix(base_ops, "_ef" if for_ef else "")
+            if for_ef:
+                qscale_ops = ['X180'] + qscale_ops
+                if last_ge_pulse:
+                    qscale_ops += ["X180"]
+            qscale_ops = add_suffix(qscale_ops, " " + qbn)
+
+            qscale_pulses = [deepcopy(operation_dict[op]) for op in qscale_ops]
+            qscale_pulses[0]['ref_pulse'] = 'segment_start'
+            # name and reference swept pulse
+            for i in range(len(base_ops)):
+                idx = (1 if for_ef else 0) + i
+                qscale_pulses[idx]["name"] = f"Qscale_{i}_{qbn}"
+            pulse_list += qscale_pulses
+        pulse_list += generate_mux_ro_pulse_list(qubit_names, operation_dict)
+
+        params_to_sweep = {
+            f'Qscale_*_{qbn}.motzoi': list(sweep_points[0].values())[j][0]
+            for j, qbn in enumerate(qubit_names)}
+        # print(params_to_sweep)
+        # print(len(pulse_list))
+        swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
+        # print('len(swept_pulses) ', len(swept_pulses))
+        # from pprint import pprint
+        # pprint(swept_pulses)
+        swept_pulses_with_prep = \
+            [add_preparation_pulses(p, operation_dict, qubit_names,
+                                    **prep_params)
+             for p in swept_pulses]
+        final_pulses.append(swept_pulses_with_prep)
+
+    # print()
+    # print(len(final_pulses))
+    # intertwine pulses in same order as base_ops
+    # 1. get one list of list from the 3 lists of list
+    f_p = np.array(final_pulses)
+    reordered_pulses = [[X90X180, X90Y180, X90mY180]
+                        for X90X180, X90Y180, X90mY180
+                        in zip(f_p[0],  f_p[1], f_p[2])]
+    # 2. reshape to list of list
+    len_swp_pts = len(list(sweep_points[0].values())[0][0])
+    final_pulses = np.squeeze(np.reshape(reordered_pulses,
+                                         (3*len_swp_pts, -1))).tolist()
+    # print(len(final_pulses))
+    # for fp in final_pulses:
+    #     pprint(fp)
+
+    seq = pulse_list_list_seq(final_pulses, seq_name, upload=False)
+
+    # add calibration segments
+    seq.extend(cal_points.create_segments(operation_dict, **prep_params))
+
+    # reuse sequencer memory by repeating readout pattern
+    [seq.repeat_ro(f"RO {qbn}", operation_dict) for qbn in qubit_names]
+
+    log.debug(seq)
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements())
+
+
+def n_qubit_t1_seq(qubit_names, operation_dict, sweep_points, cal_points,
+                   upload=True, for_ef=False, last_ge_pulse=False,
+                   prep_params=dict()):
+    '''
+    T1 sequence for n qubits.
+    Args:
+        qubit_names:     list of qubit names
+        operation_dict:  operation_dict for all qubit in qubit_names
+        sweep_points:    instance of SweepPoints class
+        cal_points:      instance of CalibrationPoints class
+        upload:          whether to upload sequence to instrument or not
+        for_ef:          whether to do rabi between ef transition
+        last_ge_pulse:   whether to use a ge pulse at the end of each segment
+            for a rabi between ef transition
+        prep_params:     qubit preparation params
+    Returns:
+        sequence (Sequence): sequence object
+        segment_indices (list): array of range of n_segments including
+            calibration_segments. To be used as sweep_points for the MC.
+    '''
+
+    seq_name = 'n_qubit_T1_sequence'
+
+    pulse_list = []
+    # add delays segments
+    for j, qbn in enumerate(qubit_names):
+        t1_ops = ["X180_ef " + qbn if for_ef else "X180 " + qbn]
+        if for_ef:
+            t1_ops = ["X180 " + qbn] + t1_ops  # prepend ge pulse
+            if last_ge_pulse:
+                t1_ops += ["X180 " + qbn]  # append ge pulse
+
+        t1_pulses = [deepcopy(operation_dict[op]) for op in t1_ops]
+        t1_pulses[0]['ref_pulse'] = 'segment_start'
+        if for_ef and last_ge_pulse:
+            t1_pulses[-1]['name'] = f"delayed_pulse_{qbn}"
+
+        pulse_list += t1_pulses
+    pulse_list += generate_mux_ro_pulse_list(qubit_names, operation_dict)
+    if not (for_ef and last_ge_pulse):
+        pulse_list[-len(qubit_names)]["name"] = f"delayed_pulse"
+
+    params_to_sweep = {}
+    for j, qbn in enumerate(qubit_names):
+        delay_times = list(sweep_points[0].values())[j][0]
+        if for_ef and last_ge_pulse:
+            delays = np.array(delay_times)
+            params_to_sweep.update({f'delayed_pulse_{qbn}.pulse_delay': delays})
+        else:
+            delays = np.array(delay_times) + pulse_list[-1]["pulse_delay"]
+            params_to_sweep.update({f'delayed_pulse.pulse_delay': delays})
+
+    swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
+    swept_pulses_with_prep = \
+        [add_preparation_pulses(p, operation_dict, qubit_names, **prep_params)
+         for p in swept_pulses]
+    seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
+
+    # add calibration segments
+    seq.extend(cal_points.create_segments(operation_dict, **prep_params))
+
+    # reuse sequencer memory by repeating readout pattern
+    [seq.repeat_ro(f"RO {qbn}", operation_dict) for qbn in qubit_names]
+
+    log.debug(seq)
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements())
+
+
+def n_qubit_echo_seq(qubit_names, operation_dict, sweep_points, cal_points,
+                     artificial_detuning=0, upload=True, for_ef=False,
+                     last_ge_pulse=False, prep_params=dict()):
+    '''
+    Echo sequence for n qubits.
+    Args:
+        qubit_names:     list of qubit names
+        operation_dict:  operation_dict for all qubit in qubit_names
+        sweep_points:    instance of SweepPoints class
+        cal_points:      instance of CalibrationPoints class
+        artificial_detunings:   Detuning of second pi-half pulse.
+        upload:          whether to upload sequence to instrument or not
+        n:               number of pulses (1 is conventional Rabi)
+        for_ef:          whether to do rabi between ef transition
+        last_ge_pulse:   whether to use a ge pulse at the end of each segment
+            for a rabi between ef transition
+        prep_params:     qubit preparation params
+    Returns:
+        sequence (Sequence): sequence object
+        segment_indices (list): array of range of n_segments including
+            calibration_segments. To be used as sweep_points for the MC.
+    '''
+
+    seq_name = 'n_qubit_Ramsey_sequence'
+
+    pulse_list = []
+    # add Echo segments
+    for qbn in qubit_names:
+        echo_ops = ["X90_ef " + qbn if for_ef else "X90 " + qbn]
+        echo_ops = echo_ops + \
+                     ["X180_ef " + qbn if for_ef else "X180 " + qbn] + \
+                     echo_ops
+        if for_ef:
+            echo_ops = ["X180 " + qbn] + echo_ops  # prepend ge pulse
+            if last_ge_pulse:
+                echo_ops += ["X180 " + qbn]  # append ge pulse
+
+        echo_ops = [deepcopy(operation_dict[op]) for op in echo_ops]
+        echo_ops[0]['ref_pulse'] = 'segment_start'
+        echo_ops[2 if for_ef else 1]["name"] = f"Echo_pi_{qbn}"
+        echo_ops[2 if for_ef else 1]["ref_point"] = 'start'
+        echo_ops[3 if for_ef else 2]["name"] = f"Echo_pihalf_{qbn}"
+        echo_ops[3 if for_ef else 2]["ref_point"] = 'start'
+
+        pulse_list += echo_ops
+    pulse_list += generate_mux_ro_pulse_list(qubit_names, operation_dict)
+
+    params_to_sweep = {}
+    for j, qbn in enumerate(qubit_names):
+        times = list(sweep_points[0].values())[j][0]
+        params_to_sweep.update({f'Echo_pi_{qbn}.pulse_delay': times/2})
+        params_to_sweep.update({f'Echo_pihalf_{qbn}.pulse_delay': times/2})
+        params_to_sweep.update({
+            f'Echo_pihalf_{qbn}.phase':
+                ((times-times[0])*artificial_detuning*360) % 360})
+    swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
+    swept_pulses_with_prep = \
+        [add_preparation_pulses(p, operation_dict, qubit_names, **prep_params)
+         for p in swept_pulses]
+    seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
+
+    # add calibration segments
+    seq.extend(cal_points.create_segments(operation_dict, **prep_params))
+
+    # reuse sequencer memory by repeating readout pattern
+    [seq.repeat_ro(f"RO {qbn}", operation_dict) for qbn in qubit_names]
+
+    log.debug(seq)
+    if upload:
+        ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements())

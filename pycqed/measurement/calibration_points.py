@@ -19,10 +19,12 @@ class CalibrationPoints:
         self.states = states
         default_map = dict(g=['I '], e=["X180 "], f=['X180 ', "X180_ef "])
         self.pulse_label_map = kwargs.get("pulse_label_map", default_map)
+        self.prep_params = None
 
     def create_segments(self, operation_dict, pulse_modifs=dict(),
                         **prep_params):
         segments = []
+        self.prep_params = prep_params
 
         for i, seg_states in enumerate(self.states):
             pulse_list = []
@@ -53,6 +55,7 @@ class CalibrationPoints:
                                                      operation_dict)
             seg = segment.Segment(f'calibration_{i}', pulse_list)
             segments.append(seg)
+
         return segments
 
     def get_states(self, qb_names=None):
@@ -72,7 +75,7 @@ class CalibrationPoints:
         return {qbn: [s[self.qb_names.index(qbn)] for s in self.states]
                 for qbn in qb_names}
 
-    def get_indices(self, qb_names=None):
+    def get_indices(self, qb_names=None, prep_params=None):
         """
         Get calibration indices
         Args:
@@ -82,6 +85,12 @@ class CalibrationPoints:
         Returns: dict where keys are qb_names and values dict of {state: ind}
 
         """
+        if prep_params is None:
+            prep_params = self.prep_params
+        if prep_params is None:
+            prep_params = {}
+        prep_type = prep_params.get('preparation_type', 'wait')
+
         qb_names = self._check_qb_names(qb_names)
         indices = dict()
         states = self.get_states(qb_names)
@@ -89,9 +98,20 @@ class CalibrationPoints:
         for qbn in qb_names:
             unique, idx, inv = np.unique(states[qbn], return_inverse=True,
                                         return_index=True)
-            indices[qbn] = {s: [-len(states[qbn]) + j
-                                for j in range(len(inv)) if i == inv[j]]
-                            for i, s in enumerate(unique)}
+            if prep_type == 'preselection':
+                indices[qbn] = {s: [-2*len(states[qbn]) + 2*j + 1
+                                    for j in range(len(inv)) if i == inv[j]]
+                                for i, s in enumerate(unique)}
+            elif 'active_reset' in prep_type:
+                reset_reps = prep_params['reset_reps']
+                indices[qbn] = {s: [-(reset_reps+1)*len(states[qbn]) +
+                                    reset_reps*(j + 1)+j for j in
+                                    range(len(inv)) if i == inv[j]]
+                                for i, s in enumerate(unique)}
+            else:
+                indices[qbn] = {s: [-len(states[qbn]) + j
+                                    for j in range(len(inv)) if i == inv[j]]
+                                for i, s in enumerate(unique)}
 
         log.info(f"Calibration Points Indices: {indices}")
         return indices
