@@ -312,9 +312,10 @@ def get_qb_thresholds_from_file(qb_names, file_path, th_scaling=1, h5mode='r+'):
     for qbn in qb_names:
         ro_channel = eval(instr_settings[qbn].attrs['acq_I_channel'])
         instr_uhf = eval(instr_settings[qbn].attrs['instr_uhf'])
-        thresholds[qbn] = th_scaling*eval(
-            instr_settings[instr_uhf].attrs[
-                f'qas_0_thresholds_{ro_channel}_level'])
+        thresholds[qbn] = eval(instr_settings[instr_uhf].attrs[
+                                   f'qas_0_thresholds_{ro_channel}_level'])
+        if thresholds[qbn] is not None:
+            thresholds[qbn] *= th_scaling
     data_file.close()
     return thresholds
 
