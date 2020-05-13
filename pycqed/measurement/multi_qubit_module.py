@@ -2352,12 +2352,13 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
     if basis_rot_par is None:
         basis_rot_par = f'{cz_pulse_name[:-8]}_{qbt.name}_basis_rotation'
 
+    dyn_phases = {}
     if reset_phases_before_measurement:
-        dyn_phases = {qb.name: 0 for qb in qubits_to_measure}
+        old_dyn_phases = {}
     else:
-        dyn_phases = deepcopy(qbc.get(basis_rot_par))
+        old_dyn_phases = deepcopy(qbc.get(basis_rot_par))
 
-    with temporary_value(eval('qbc.'+basis_rot_par), deepcopy(dyn_phases)):
+    with temporary_value(eval('qbc.'+basis_rot_par), old_dyn_phases):
         if not simultaneous:
             qubits_to_measure = [[qb] for qb in qubits_to_measure]
         else:
@@ -2451,14 +2452,17 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                     dyn_phases[qb.name] = \
                         MA.proc_data_dict['analysis_params_dict'][qb.name][
                             'dynamic_phase']['val']*180/np.pi
-    if update and reset_phases_before_measurement:
-        getattr(qbc, basis_rot_par)().update(dyn_phases)
-        not_updated = {k:v for k, v in getattr(qbc, basis_rot_par)().items()
-                       if k not in dyn_phases}
-        if len(not_updated) > 0:
-            log.warning(f'Not all basis_rotations stored in the pulse '
-                        f'settings have been measured. Keeping the '
-                        f'following old value(s): {not_updated}')
+    if update:
+        if reset_phases_before_measurement:
+            qbc.set(basis_rot_par, dyn_phases)
+        else:
+            getattr(qbc, basis_rot_par)().update(dyn_phases)
+            not_updated = {k:v for k, v in old_dyn_phases.items()
+                           if k not in dyn_phases}
+            if len(not_updated) > 0:
+                log.warning(f'Not all basis_rotations stored in the pulse '
+                            f'settings have been measured. Keeping the '
+                            f'following old value(s): {not_updated}')
     return dyn_phases
 
 
