@@ -604,7 +604,13 @@ class BaseDataAnalysis(object):
             key: key of the data to save. All processed data is saved by 
                  default.
         """
-
+        #default: get all keys from proc_data_dict
+        if key is None:
+            try:
+                key = list(self.proc_data_dict.keys())
+            except:
+                # in case proc_data_dict does not exist
+                pass
         if isinstance(key, (list, set)):
             for k in key:
                 self.save_processed_data(k)
