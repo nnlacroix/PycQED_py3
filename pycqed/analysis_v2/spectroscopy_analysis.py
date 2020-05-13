@@ -79,8 +79,11 @@ class Spectroscopy(ba.BaseDataAnalysis):
             'phase_range', None)
         proc_data_dict['plotsize'] = self.options_dict.get('plotsize', (8, 5))
 
-
-        if len(list(self.raw_data_dict)) == 1:
+        # FIXME: Nathan : I still don't think using raw_data_dict as a tuple
+        #  in case of multi timestamps is a good idea, unless it is also
+        #  a tuple of length 1 in the case of 1 timestamp. otherwise we
+        #  have to add checks like this one everywhere
+        if not isinstance(self.raw_data_dict, (tuple, list)):
             proc_data_dict['plot_frequency'] = np.squeeze(
                 self.raw_data_dict['freq'])
             proc_data_dict['plot_amp'] = np.squeeze(self.raw_data_dict['amp'])
@@ -138,6 +141,7 @@ class Spectroscopy(ba.BaseDataAnalysis):
                                                   'measured_data']['Magn']
                                                     for i in
                                                     range(len(self.raw_data_dict))]
+
 
     def prepare_plots(self):
         proc_data_dict = self.proc_data_dict
