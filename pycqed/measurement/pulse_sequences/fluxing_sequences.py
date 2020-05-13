@@ -727,8 +727,8 @@ def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
 
 
 def fluxpulse_scope_sequence(
-              delays, freqs, qb_name, operation_dict, cz_pulse_name,
-              cal_points=None, prep_params=dict(), upload=True):
+        delays, freqs, qb_name, operation_dict, cz_pulse_name,
+        ro_pulse_delay=100e-9, cal_points=None, prep_params=None, upload=True):
     '''
     Performs X180 pulse on top of a fluxpulse
 
@@ -738,6 +738,9 @@ def fluxpulse_scope_sequence(
        |        ---      | --------- fluxpulse ---------- |
                          <-  delay  ->
     '''
+    if prep_params is None:
+        prep_params = {}
+
     seq_name = 'Fluxpulse_scope_sequence'
     ge_pulse = deepcopy(operation_dict['X180 ' + qb_name])
     ge_pulse['name'] = 'FPS_Pi'
@@ -752,9 +755,8 @@ def fluxpulse_scope_sequence(
     ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
     ro_pulse['name'] = 'FPS_Ro'
     ro_pulse['ref_pulse'] = 'FPS_Pi'
-    ro_pulse['ref_point'] = 'middle'
-    ro_pulse['pulse_delay'] = flux_pulse['pulse_length'] - np.min(delays) + \
-                              flux_pulse.get('buffer_length_end', 0)
+    ro_pulse['ref_point'] = 'end'
+    ro_pulse['pulse_delay'] = ro_pulse_delay
 
     pulses = [ge_pulse, flux_pulse, ro_pulse]
     swept_pulses = sweep_pulse_params(
