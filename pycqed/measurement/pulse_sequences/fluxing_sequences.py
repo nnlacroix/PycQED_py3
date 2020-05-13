@@ -337,8 +337,8 @@ def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
 
 
 def fluxpulse_scope_sequence(
-              delays, freqs, qb_name, operation_dict, cz_pulse_name,
-              cal_points=None, prep_params=None, upload=True):
+        delays, freqs, qb_name, operation_dict, cz_pulse_name,
+        ro_pulse_delay=100e-9, cal_points=None, prep_params=None, upload=True):
     '''
     Performs X180 pulse on top of a fluxpulse
 
@@ -366,7 +366,7 @@ def fluxpulse_scope_sequence(
     ro_pulse['name'] = 'FPS_Ro'
     ro_pulse['ref_pulse'] = 'FPS_Pi'
     ro_pulse['ref_point'] = 'end'
-    ro_pulse['pulse_delay'] = 100e-9
+    ro_pulse['pulse_delay'] = ro_pulse_delay
 
     pulses = [ge_pulse, flux_pulse, ro_pulse]
     swept_pulses = sweep_pulse_params(pulses,
