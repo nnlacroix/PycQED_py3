@@ -148,7 +148,7 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter('RO', 'ro_nr_sigma', 'nr_sigma',
                                  initial_value=5, vals=vals.Numbers())
         self.add_pulse_parameter('RO', 'ro_phase_lock', 'phase_lock',
-                                 initial_value=True, vals=vals.Bool())                                 
+                                 initial_value=False, vals=vals.Bool())
         self.add_pulse_parameter('RO', 'ro_basis_rotation',
                                  'basis_rotation', initial_value={},
                                  docstring='Dynamic phase acquired by other '
@@ -1842,7 +1842,7 @@ class QuDev_transmon(Qubit):
                 I_channel=self.ge_I_channel(),
                 Q_channel=self.ge_Q_channel(),
                 mod_frequency=self.ge_mod_freq(),
-                phase_lock=True,
+                phase_lock=False,
             )
         sq.pulse_list_list_seq([[self.get_acq_pars(), drive_pulse]])
             
@@ -1939,7 +1939,7 @@ class QuDev_transmon(Qubit):
                             I_channel=self.ge_I_channel(),
                             Q_channel=self.ge_Q_channel(),
                             mod_frequency=self.ge_mod_freq(),
-                            phase_lock=True,
+                            phase_lock=False,
                             alpha=alphaparam(),
                             phi_skew=skewparam(),
                         )]])
@@ -2028,7 +2028,7 @@ class QuDev_transmon(Qubit):
                             I_channel=self.ge_I_channel(),
                             Q_channel=self.ge_Q_channel(),
                             mod_frequency=self.ge_mod_freq(),
-                            phase_lock=True,
+                            phase_lock=False,
                             alpha=alpha,
                             phi_skew=phi_skew,
                         )])
