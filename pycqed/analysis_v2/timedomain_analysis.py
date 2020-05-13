@@ -3835,8 +3835,19 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
         self.proc_data_dict['qscale_data'] = OrderedDict()
         for qbn in self.qb_names:
             self.proc_data_dict['qscale_data'][qbn] = OrderedDict()
-            sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
-                'msmt_sweep_points']
+            sweep_points = deepcopy(self.proc_data_dict['sweep_points_dict'][
+                                        qbn]['msmt_sweep_points'])
+            unique_sp = np.unique(sweep_points[:3])
+            if unique_sp.size > 1:
+                sweep_points = np.repeat(sweep_points, 3)
+            # replace in proc_data_dict; otherwise pltting in base class fails
+            self.proc_data_dict['sweep_points_dict'][qbn][
+                'msmt_sweep_points'] = sweep_points
+            self.proc_data_dict['sweep_points_dict'][qbn][
+                'sweep_points'] = np.concatenate([
+                sweep_points, self.proc_data_dict['sweep_points_dict'][qbn][
+                    'cal_points_sweep_points']])
+
             data = self.proc_data_dict['data_to_fit'][qbn]
             if self.num_cal_points != 0:
                 data = data[:-self.num_cal_points]
@@ -3857,8 +3868,8 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
         self.fit_dicts = OrderedDict()
         for qbn in self.qb_names:
             for msmt_label in ['_xx', '_xy', '_xmy']:
-                sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
-                    'msmt_sweep_points']
+                sweep_points = self.proc_data_dict['qscale_data'][qbn][
+                    'sweep_points' + msmt_label]
                 data = self.proc_data_dict['qscale_data'][qbn][
                     'data' + msmt_label]
 
@@ -3924,7 +3935,7 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                 'qscale_stderr'] = optimal_qscale_stderr
 
     def prepare_plots(self):
-        # super().prepare_plots()
+        super().prepare_plots()
 
         color_dict = {'_xx': '#365C91',
                       '_xy': '#683050',
@@ -3935,8 +3946,8 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
         for qbn in self.qb_names:
             base_plot_name = 'Qscale_' + qbn
             for msmt_label in ['_xx', '_xy', '_xmy']:
-                sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
-                'msmt_sweep_points']
+                sweep_points = self.proc_data_dict['qscale_data'][qbn][
+                    'sweep_points' + msmt_label]
                 data = self.proc_data_dict['qscale_data'][qbn][
                     'data' + msmt_label]
                 if msmt_label == '_xx':
