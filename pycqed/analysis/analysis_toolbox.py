@@ -257,9 +257,8 @@ def measurement_filename(directory=os.getcwd(), file_id=None, ext='hdf5'):
         return None
 
 
-def get_instr_setting_value_from_file(timestamp, instr_name, param_name,
+def get_instr_setting_value_from_file(file_path, instr_name, param_name,
                                       h5mode='r+'):
-    file_path = get_folder(timestamp)
     data_file = h5py.File(measurement_filename(file_path), h5mode)
     try:
         instr_settings = data_file['Instrument settings']
@@ -280,8 +279,7 @@ def get_instr_setting_value_from_file(timestamp, instr_name, param_name,
         raise e
 
 
-def get_qb_channel_map_from_hdf(qb_names, timestamp, value_names, h5mode='r+'):
-    file_path = get_folder(timestamp)
+def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r+'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
     try:
         instr_settings = data_file['Instrument settings']
@@ -318,8 +316,7 @@ def get_qb_channel_map_from_hdf(qb_names, timestamp, value_names, h5mode='r+'):
         raise e
 
 
-def get_qb_thresholds_from_file(qb_names, timestamp, th_scaling=1, h5mode='r+'):
-    file_path = get_folder(timestamp)
+def get_qb_thresholds_from_file(qb_names, file_path, th_scaling=1, h5mode='r+'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
     try:
         instr_settings = data_file['Instrument settings']
