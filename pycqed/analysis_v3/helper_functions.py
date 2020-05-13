@@ -34,23 +34,30 @@ def get_channel_names_from_timestamp(timestamp):
     folder = a_tools.get_folder(timestamp)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, 'r+')
-    channel_names = get_hdf_param_value(data_file['Experimental Data'],
-                                        'value_names')
-    data_file.close()
-    return channel_names
+    try:
+        channel_names = get_hdf_param_value(data_file['Experimental Data'],
+                                            'value_names')
+        data_file.close()
+        return channel_names
+    except Exception as e:
+        data_file.close()
+        raise e
 
 
 def get_sweep_points_from_timestamp(timestamp):
     folder = a_tools.get_folder(timestamp)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, 'r+')
-
-    group = data_file['Experimental Data'][
-        'Experimental Metadata']['sweep_points']
-    sweep_points = OrderedDict()
-    sweep_points = read_dict_from_hdf5(sweep_points, group)
-    data_file.close()
-    return sweep_points
+    try:
+        group = data_file['Experimental Data'][
+            'Experimental Metadata']['sweep_points']
+        sweep_points = OrderedDict()
+        sweep_points = read_dict_from_hdf5(sweep_points, group)
+        data_file.close()
+        return sweep_points
+    except Exception as e:
+        data_file.close()
+        raise e
 
 
 def get_params_from_hdf_file(data_dict, **params):
@@ -75,60 +82,61 @@ def get_params_from_hdf_file(data_dict, **params):
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, h5mode)
 
-    if 'data_files' in data_dict:
-        data_dict['data_files'] += [data_file]
-    else:
-        data_dict['data_files'] = [data_file]
-    if 'measurementstrings' in params_dict:
-        # assumed data_dict['measurementstrings'] is a list
-        if 'measurementstrings' in data_dict:
-            data_dict['measurementstrings'] += [os.path.split(folder)[1][7:]]
-        else:
-            data_dict['measurementstrings'] = [os.path.split(folder)[1][7:]]
-    if 'measured_data' in params_dict:
-        if 'measured_data' in data_dict:
-            data_dict['measured_data'] = np.concatenate(
-                (data_dict['measured_data'],
-                 np.array(data_file['Experimental Data']['Data']).T), axis=1)
-        else:
-            data_dict['measured_data'] = np.array(
-                data_file['Experimental Data']['Data']).T
-
-    for save_par, file_par in params_dict.items():
-        epd = data_dict
-        all_keys = save_par.split('.')
-        for i in range(len(all_keys)-1):
-            if all_keys[i] not in epd:
-                epd[all_keys[i]] = OrderedDict()
+    try:
+        if 'measurementstrings' in params_dict:
+            # assumed data_dict['measurementstrings'] is a list
+            if 'measurementstrings' in data_dict:
+                data_dict['measurementstrings'] += [os.path.split(folder)[1][7:]]
             else:
-                epd = epd[all_keys[i]]
+                data_dict['measurementstrings'] = [os.path.split(folder)[1][7:]]
+        if 'measured_data' in params_dict:
+            if 'measured_data' in data_dict:
+                data_dict['measured_data'] = np.concatenate(
+                    (data_dict['measured_data'],
+                     np.array(data_file['Experimental Data']['Data']).T), axis=1)
+            else:
+                data_dict['measured_data'] = np.array(
+                    data_file['Experimental Data']['Data']).T
 
-        if len(file_par.split('.')) == 1:
-            par_name = file_par.split('.')[0]
-            for group_name in data_file.keys():
-                if par_name in list(data_file[group_name].attrs):
-                    add_param(all_keys[-1],
-                              get_hdf_param_value(data_file[group_name],
-                                                  par_name),
-                              epd, append_key=append_key, update_key=update_key)
-        else:
-            group_name = '/'.join(file_par.split('.')[:-1])
-            par_name = file_par.split('.')[-1]
-            if group_name in data_file:
-                if par_name in list(data_file[group_name].attrs):
-                    add_param(all_keys[-1],
-                              get_hdf_param_value(data_file[group_name],
-                                                  par_name),
-                              epd, append_key=append_key, update_key=update_key)
-                elif par_name in list(data_file[group_name].keys()):
-                    add_param(all_keys[-1],
-                              read_dict_from_hdf5(
-                                  {}, data_file[group_name][par_name]),
-                              epd, append_key=append_key, update_key=update_key)
+        for save_par, file_par in params_dict.items():
+            epd = data_dict
+            all_keys = save_par.split('.')
+            for i in range(len(all_keys)-1):
+                if all_keys[i] not in epd:
+                    epd[all_keys[i]] = OrderedDict()
+                else:
+                    epd = epd[all_keys[i]]
 
-        if all_keys[-1] not in epd:
-            log.warning(f'Parameter {file_par} was not found.')
-            epd[all_keys[-1]] = 0
+            if len(file_par.split('.')) == 1:
+                par_name = file_par.split('.')[0]
+                for group_name in data_file.keys():
+                    if par_name in list(data_file[group_name].attrs):
+                        add_param(all_keys[-1],
+                                  get_hdf_param_value(data_file[group_name],
+                                                      par_name),
+                                  epd, append_key=append_key, update_key=update_key)
+            else:
+                group_name = '/'.join(file_par.split('.')[:-1])
+                par_name = file_par.split('.')[-1]
+                if group_name in data_file:
+                    if par_name in list(data_file[group_name].attrs):
+                        add_param(all_keys[-1],
+                                  get_hdf_param_value(data_file[group_name],
+                                                      par_name),
+                                  epd, append_key=append_key, update_key=update_key)
+                    elif par_name in list(data_file[group_name].keys()):
+                        add_param(all_keys[-1],
+                                  read_dict_from_hdf5(
+                                      {}, data_file[group_name][par_name]),
+                                  epd, append_key=append_key, update_key=update_key)
+
+            if all_keys[-1] not in epd:
+                log.warning(f'Parameter {file_par} was not found.')
+                epd[all_keys[-1]] = 0
+        data_file.close()
+    except Exception as e:
+        data_file.close()
+        raise e
 
     for par_name in data_dict:
         if par_name in numeric_params:
@@ -138,7 +146,7 @@ def get_params_from_hdf_file(data_dict, **params):
                 data_dict[par_name] = np.asarray(data_dict[par_name])
             else:
                 data_dict[par_name] = np.double(data_dict[par_name])
-    data_file.close()
+
     return data_dict
 
 
