@@ -3294,7 +3294,7 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
                                        n_per_state=n_cal_points_per_state)
     seq, sp = mqs.n_qubit_rabi_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
-        upload=upload, n=n, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
+        upload=False, n=n, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
         prep_params=prep_params)
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
         sequence=seq, upload=upload,
@@ -3402,7 +3402,7 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
                                        n_per_state=n_cal_points_per_state)
     seq, sp = mqs.n_qubit_ramsey_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
-        artificial_detuning=artificial_detuning, upload=upload, for_ef=for_ef,
+        artificial_detuning=artificial_detuning, upload=False, for_ef=for_ef,
         last_ge_pulse=last_ge_pulse, prep_params=prep_params)
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
         sequence=seq, upload=upload,
@@ -3518,7 +3518,7 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
                                        n_per_state=n_cal_points_per_state)
     seq, sp = mqs.n_qubit_qscale_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
-        upload=upload, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
+        upload=False, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
         prep_params=prep_params)
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
         sequence=seq, upload=upload,
@@ -3622,7 +3622,7 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
                                        n_per_state=n_cal_points_per_state)
     seq, sp = mqs.n_qubit_t1_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
-        upload=upload, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
+        upload=False, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
         prep_params=prep_params)
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
         sequence=seq, upload=upload,
@@ -3728,7 +3728,7 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
                                        n_per_state=n_cal_points_per_state)
     seq, sp = mqs.n_qubit_echo_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
-        artificial_detuning=artificial_detuning, upload=upload, for_ef=for_ef,
+        artificial_detuning=artificial_detuning, upload=False, for_ef=for_ef,
         last_ge_pulse=last_ge_pulse, prep_params=prep_params)
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
         sequence=seq, upload=upload,
