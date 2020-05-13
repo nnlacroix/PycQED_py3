@@ -3273,7 +3273,7 @@ class QuDev_transmon(Qubit):
                                  analyze=True, cal_points=True,
                                  upload=True, label=None,
                                  n_cal_points_per_state=2, cal_states='auto',
-                                 prep_params=None, exp_metadata=None):
+                                 prep_params=None, exp_metadata=None, **kw):
         '''
         flux pulse scope measurement used to determine the shape of flux pulses
         set up as a 2D measurement (delay and drive pulse frequecy are
@@ -3316,7 +3316,7 @@ class QuDev_transmon(Qubit):
                 delays=delays, freqs=freqs, qb_name=self.name,
                 operation_dict=self.get_operation_dict(),
                 cz_pulse_name=cz_pulse_name, cal_points=cp,
-                prep_params=prep_params, upload=False)
+                prep_params=prep_params, upload=False, **kw)
         MC.set_sweep_function(awg_swf.SegmentHardSweep(
             sequence=seq, upload=upload, parameter_name='Delay', unit='s'))
         MC.set_sweep_points(sweep_points)
