@@ -6,6 +6,8 @@ import time
 import h5py
 import datetime
 import numpy as np
+# used by compare_istrument_settings_timestamp():
+from numpy import array  # DO not remove;
 from copy import deepcopy
 from matplotlib.colors import LogNorm
 from matplotlib.colors import LinearSegmentedColormap as lscmap
@@ -255,63 +257,82 @@ def measurement_filename(directory=os.getcwd(), file_id=None, ext='hdf5'):
         return None
 
 
-def get_param_value_from_file(file_path, instr_name, param_name, h5mode='r+'):
+def get_instr_setting_value_from_file(file_path, instr_name, param_name,
+                                      h5mode='r+'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
-    instr_settings = data_file['Instrument settings']
-    if instr_name in list(instr_settings.keys()):
-        if param_name in list(instr_settings[instr_name].attrs):
-            param_val = eval(instr_settings[instr_name].attrs[
-                                       param_name])
+    try:
+        instr_settings = data_file['Instrument settings']
+        if instr_name in list(instr_settings.keys()):
+            if param_name in list(instr_settings[instr_name].attrs):
+                param_val = eval(instr_settings[instr_name].attrs[
+                                           param_name])
+            else:
+                raise KeyError(f'"{param_name}" does not exist for '
+                               f'instrument "{instr_name}"')
         else:
-            raise KeyError('"{}" does not exist for instrument "{}"'.format(
-                param_name, instr_name))
-    else:
-        raise KeyError('"{}" does not exist in "Instrument settings."'.format(
-            instr_name))
-
-    return param_val
+            raise KeyError(f'"{instr_name}" does not exist in '
+                           f'"Instrument settings."')
+        data_file.close()
+        return param_val
+    except Exception as e:
+        data_file.close()
+        raise e
 
 
 def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r+'):
-
     data_file = h5py.File(measurement_filename(file_path), h5mode)
-    instr_settings = data_file['Instrument settings']
-    channel_map = {}
+    try:
+        instr_settings = data_file['Instrument settings']
+        channel_map = {}
 
-    if 'raw' in value_names[0]:
-        ro_type = 'raw w'
-    elif 'digitized' in value_names[0]:
-        ro_type = 'digitized w'
-    elif 'lin_trans' in value_names[0]:
-        ro_type = 'lin_trans w'
-    else:
-        ro_type = 'w'
+        if 'raw' in value_names[0]:
+            ro_type = 'raw w'
+        elif 'digitized' in value_names[0]:
+            ro_type = 'digitized w'
+        elif 'lin_trans' in value_names[0]:
+            ro_type = 'lin_trans w'
+        else:
+            ro_type = 'w'
 
-    for qbn in qb_names:
-        uhf = eval(instr_settings[qbn].attrs['instr_uhf'])
-        qbchs = [str(eval(instr_settings[qbn].attrs['acq_I_channel']))]
-        ro_acq_weight_type = eval(instr_settings[qbn].attrs['acq_weights_type'])
-        if ro_acq_weight_type in ['SSB', 'DSB', 'optimal_qutrit']:
-            qbchs += [str(eval(instr_settings[qbn].attrs['acq_Q_channel']))]
-        channel_map[qbn] = [vn for vn in value_names for nr in qbchs
-                            if uhf+'_'+ro_type+nr in vn]
+        for qbn in qb_names:
+            uhf = eval(instr_settings[qbn].attrs['instr_uhf'])
+            qbchs = [str(eval(instr_settings[qbn].attrs['acq_I_channel']))]
+            ro_acq_weight_type = eval(instr_settings[qbn].attrs[
+                                          'acq_weights_type'])
+            if ro_acq_weight_type in ['SSB', 'DSB', 'optimal_qutrit']:
+                qbchs += [str(eval(instr_settings[qbn].attrs['acq_Q_channel']))]
+            channel_map[qbn] = [vn for vn in value_names for nr in qbchs
+                                if uhf+'_'+ro_type+nr in vn]
 
-    all_values_empty = np.all([len(v) == 0 for v in channel_map.values()])
-    if len(channel_map) == 0 or all_values_empty:
-        raise ValueError('Did not find any channels. qb_channel_map is empty.')
-    return channel_map
+        all_values_empty = np.all([len(v) == 0 for v in channel_map.values()])
+        if len(channel_map) == 0 or all_values_empty:
+            raise ValueError('Did not find any channels. '
+                             'qb_channel_map is empty.')
+        data_file.close()
+        return channel_map
+
+    except Exception as e:
+        data_file.close()
+        raise e
 
 
-def get_qb_thresholds_from_file(qb_names, file_path, h5mode='r+'):
+def get_qb_thresholds_from_file(qb_names, file_path, th_scaling=1, h5mode='r+'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
-    instr_settings = data_file['Instrument settings']
-    thresholds = {}
-    for qbn in qb_names:
-        ro_channel = eval(instr_settings[qbn].attrs['RO_acq_weight_function_I'])
-        thresholds[qbn] = 1.5*eval(
-            instr_settings['UHFQC'].attrs['qas_0_thresholds_{}_level'.format(
-                ro_channel)])
-    return thresholds
+    try:
+        instr_settings = data_file['Instrument settings']
+        thresholds = {}
+        for qbn in qb_names:
+            ro_channel = eval(instr_settings[qbn].attrs['acq_I_channel'])
+            instr_uhf = eval(instr_settings[qbn].attrs['instr_uhf'])
+            thresholds[qbn] = eval(instr_settings[instr_uhf].attrs[
+                                       f'qas_0_thresholds_{ro_channel}_level'])
+            if thresholds[qbn] is not None:
+                thresholds[qbn] *= th_scaling
+        data_file.close()
+        return thresholds
+    except Exception as e:
+        data_file.close()
+        raise e
 
 
 def get_plot_title_from_folder(folder):
@@ -334,10 +355,18 @@ def compare_instrument_settings_timestamp(timestamp_a, timestamp_b):
     h5mode = 'r+'
     h5filepath = measurement_filename(get_folder(timestamp_a))
     analysis_object_a = h5py.File(h5filepath, h5mode)
-    h5filepath = measurement_filename(get_folder(timestamp_b))
-    analysis_object_b = h5py.File(h5filepath, h5mode)
-    sets_a = analysis_object_a['Instrument settings']
-    sets_b = analysis_object_b['Instrument settings']
+    try:
+        h5filepath = measurement_filename(get_folder(timestamp_b))
+        analysis_object_b = h5py.File(h5filepath, h5mode)
+        try:
+            sets_a = analysis_object_a['Instrument settings']
+            sets_b = analysis_object_b['Instrument settings']
+        except Exception as e:
+            analysis_object_b.close()
+            raise e
+    except Exception as e:
+        analysis_object_a.close()
+        raise e
 
     for ins_key in list(sets_a.keys()):
         print()
@@ -371,6 +400,8 @@ def compare_instrument_settings_timestamp(timestamp_a, timestamp_b):
         except KeyError:
             print('Instrument "%s" not present in second settings file'
                   % ins_key)
+    analysis_object_a.close()
+    analysis_object_b.close()
 
 
 def compare_instrument_settings(analysis_object_a, analysis_object_b):

@@ -54,20 +54,26 @@ class Test_HDF5(unittest.TestCase):
 
         new_dict = {}
         opened_hdf5_file = h5py.File(filepath, 'r')
-        h5d.read_dict_from_hdf5(new_dict, opened_hdf5_file)
+        try:
+            h5d.read_dict_from_hdf5(new_dict, opened_hdf5_file)
 
-        self.assertEqual(snap.keys(), new_dict.keys())
-        self.assertEqual(snap['instruments'].keys(),
-                         new_dict['instruments'].keys())
-        mock_parab_pars = snap['instruments']['mock_parabola_2']['parameters']
+            self.assertEqual(snap.keys(), new_dict.keys())
+            self.assertEqual(snap['instruments'].keys(),
+                             new_dict['instruments'].keys())
+            mock_parab_pars = snap['instruments']['mock_parabola_2']['parameters']
 
-        self.assertEqual(mock_parab_pars['x']['value'],
-                         1)
-        self.assertEqual(mock_parab_pars['y']['value'],
-                         2.245)
-        np.testing.assert_array_equal(
-            mock_parab_pars['array_like']['value'],
-            np.linspace(0, 11, 23))
+            self.assertEqual(mock_parab_pars['x']['value'],
+                             1)
+            self.assertEqual(mock_parab_pars['y']['value'],
+                             2.245)
+            np.testing.assert_array_equal(
+                mock_parab_pars['array_like']['value'],
+                np.linspace(0, 11, 23))
+            opened_hdf5_file.close()
+        except Exception as e:
+            opened_hdf5_file.close()
+            raise e
+
 
     def test_writing_and_reading_dicts_to_hdf5(self):
         """
@@ -106,42 +112,47 @@ class Test_HDF5(unittest.TestCase):
 
         new_dict = {}
         opened_hdf5_file = h5py.File(filepath, 'r')
-        h5d.read_dict_from_hdf5(new_dict, opened_hdf5_file)
-        # objects are not identical but the string representation should be
-        self.assertEqual(test_dict.keys(), new_dict.keys())
-        self.assertEqual(test_dict['list_of_ints'], new_dict['list_of_ints'])
-        self.assertEqual(test_dict['list_of_floats'],
-                         new_dict['list_of_floats'])
-        self.assertEqual(test_dict['weird_dict'], new_dict['weird_dict'])
-        self.assertEqual(test_dict['some_bool'], new_dict['some_bool'])
+        try:
+            h5d.read_dict_from_hdf5(new_dict, opened_hdf5_file)
+            # objects are not identical but the string representation should be
+            self.assertEqual(test_dict.keys(), new_dict.keys())
+            self.assertEqual(test_dict['list_of_ints'], new_dict['list_of_ints'])
+            self.assertEqual(test_dict['list_of_floats'],
+                             new_dict['list_of_floats'])
+            self.assertEqual(test_dict['weird_dict'], new_dict['weird_dict'])
+            self.assertEqual(test_dict['some_bool'], new_dict['some_bool'])
 
-        self.assertEqual(test_dict['list_of_dicts'],
-                         new_dict['list_of_dicts'])
+            self.assertEqual(test_dict['list_of_dicts'],
+                             new_dict['list_of_dicts'])
 
-        self.assertEqual(test_dict['list_of_mixed_type'],
-                         new_dict['list_of_mixed_type'])
-        self.assertEqual(test_dict['list_of_mixed_type'][0],
-                         new_dict['list_of_mixed_type'][0])
-        self.assertEqual(test_dict['list_of_mixed_type'][2],
-                         new_dict['list_of_mixed_type'][2])
+            self.assertEqual(test_dict['list_of_mixed_type'],
+                             new_dict['list_of_mixed_type'])
+            self.assertEqual(test_dict['list_of_mixed_type'][0],
+                             new_dict['list_of_mixed_type'][0])
+            self.assertEqual(test_dict['list_of_mixed_type'][2],
+                             new_dict['list_of_mixed_type'][2])
 
-        self.assertEqual(test_dict['tuple_of_mixed_type'],
-                         new_dict['tuple_of_mixed_type'])
-        self.assertEqual(type(test_dict['tuple_of_mixed_type']),
-                         type(new_dict['tuple_of_mixed_type']))
-        self.assertEqual(test_dict['tuple_of_mixed_type'][0],
-                         new_dict['tuple_of_mixed_type'][0])
-        self.assertEqual(test_dict['tuple_of_mixed_type'][2],
-                         new_dict['tuple_of_mixed_type'][2])
+            self.assertEqual(test_dict['tuple_of_mixed_type'],
+                             new_dict['tuple_of_mixed_type'])
+            self.assertEqual(type(test_dict['tuple_of_mixed_type']),
+                             type(new_dict['tuple_of_mixed_type']))
+            self.assertEqual(test_dict['tuple_of_mixed_type'][0],
+                             new_dict['tuple_of_mixed_type'][0])
+            self.assertEqual(test_dict['tuple_of_mixed_type'][2],
+                             new_dict['tuple_of_mixed_type'][2])
 
-        self.assertEqual(test_dict['some_np_bool'],
-                         new_dict['some_np_bool'])
-        self.assertEqual(test_dict['some_int'], new_dict['some_int'])
-        self.assertEqual(test_dict['some_np_float'], new_dict['some_np_float'])
-        self.assertEqual(test_dict['a list of strings'],
-                         new_dict['a list of strings'])
-        self.assertEqual(test_dict['a list of strings'][0],
-                         new_dict['a list of strings'][0])
+            self.assertEqual(test_dict['some_np_bool'],
+                             new_dict['some_np_bool'])
+            self.assertEqual(test_dict['some_int'], new_dict['some_int'])
+            self.assertEqual(test_dict['some_np_float'], new_dict['some_np_float'])
+            self.assertEqual(test_dict['a list of strings'],
+                             new_dict['a list of strings'])
+            self.assertEqual(test_dict['a list of strings'][0],
+                             new_dict['a list of strings'][0])
+            opened_hdf5_file.close()
+        except Exception as e:
+            opened_hdf5_file.close()
+            raise e
 
     def test_loading_settings_onto_instrument(self):
         """

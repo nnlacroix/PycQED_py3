@@ -215,9 +215,6 @@ class BaseDataAnalysis(object):
             self.save_figures(close_figs=self.options_dict.get(
                 'close_figs', False))
 
-        if self.options_dict.get('close_file', True):
-            self.data_file.close()
-
     @staticmethod
     def get_hdf_param_value(group, param_name):
         '''
@@ -247,41 +244,45 @@ class BaseDataAnalysis(object):
             h5mode = self.options_dict.get('h5mode', 'r+')
             h5filepath = a_tools.measurement_filename(folder)
             data_file = h5py.File(h5filepath, h5mode)
-            self.data_file = data_file
+            try:
+                if 'timestamp' in raw_data_dict_ts:
+                    raw_data_dict_ts['timestamp'] = timestamp
+                if 'folder' in raw_data_dict_ts:
+                    raw_data_dict_ts['folder'] = folder
+                if 'measurementstring' in raw_data_dict_ts:
+                    raw_data_dict_ts['measurementstring'] = \
+                        os.path.split(folder)[1][7:]
+                if 'measured_data' in raw_data_dict_ts:
+                    raw_data_dict_ts['measured_data'] = \
+                        np.array(data_file['Experimental Data']['Data']).T
 
-            if 'timestamp' in raw_data_dict_ts:
-                raw_data_dict_ts['timestamp'] = timestamp
-            if 'folder' in raw_data_dict_ts:
-                raw_data_dict_ts['folder'] = folder
-            if 'measurementstring' in raw_data_dict_ts:
-                raw_data_dict_ts['measurementstring'] = \
-                    os.path.split(folder)[1][7:]
-            if 'measured_data' in raw_data_dict_ts:
-                raw_data_dict_ts['measured_data'] = \
-                    np.array(data_file['Experimental Data']['Data']).T
-
-            for save_par, file_par in self.params_dict.items():
-                if len(file_par.split('.')) == 1:
-                    par_name = file_par.split('.')[0]
-                    for group_name in data_file.keys():
-                        if par_name in list(data_file[group_name].attrs):
-                            raw_data_dict_ts[save_par] = \
-                                self.get_hdf_param_value(
-                                    data_file[group_name], par_name)
-                else:
-                    group_name = '/'.join(file_par.split('.')[:-1])
-                    par_name = file_par.split('.')[-1]
-                    if group_name in data_file:
-                        if par_name in list(data_file[group_name].attrs):
-                            raw_data_dict_ts[save_par] = \
-                                self.get_hdf_param_value(
-                                    data_file[group_name], par_name)
-                        elif par_name in list(data_file[group_name].keys()):
-                            raw_data_dict_ts[save_par] = read_dict_from_hdf5(
-                                {}, data_file[group_name][par_name])
-                if isinstance(raw_data_dict_ts[save_par], list) and \
-                        len(raw_data_dict_ts[save_par]) == 1:
-                    raw_data_dict_ts[save_par] = raw_data_dict_ts[save_par][0]
+                for save_par, file_par in self.params_dict.items():
+                    if len(file_par.split('.')) == 1:
+                        par_name = file_par.split('.')[0]
+                        for group_name in data_file.keys():
+                            if par_name in list(data_file[group_name].attrs):
+                                raw_data_dict_ts[save_par] = \
+                                    self.get_hdf_param_value(
+                                        data_file[group_name], par_name)
+                    else:
+                        group_name = '/'.join(file_par.split('.')[:-1])
+                        par_name = file_par.split('.')[-1]
+                        if group_name in data_file:
+                            if par_name in list(data_file[group_name].attrs):
+                                raw_data_dict_ts[save_par] = \
+                                    self.get_hdf_param_value(
+                                        data_file[group_name], par_name)
+                            elif par_name in list(data_file[group_name].keys()):
+                                raw_data_dict_ts[save_par] = \
+                                    read_dict_from_hdf5({}, data_file[
+                                        group_name][par_name])
+                    if isinstance(raw_data_dict_ts[save_par], list) and \
+                            len(raw_data_dict_ts[save_par]) == 1:
+                        raw_data_dict_ts[save_par] = \
+                            raw_data_dict_ts[save_par][0]
+            except Exception as e:
+                data_file.close()
+                raise e
             raw_data_dict.append(raw_data_dict_ts)
 
         if len(raw_data_dict) == 1:
@@ -578,23 +579,30 @@ class BaseDataAnalysis(object):
 
             with h5py.File(fn, 'a') as data_file:
                 try:
-                    analysis_group = data_file.create_group('Analysis')
-                except ValueError:
-                    # If the analysis group already exists.
-                    analysis_group = data_file['Analysis']
-
-                # Iterate over all the fit result dicts as not to overwrite old/other analysis
-                for fr_key, fit_res in self.fit_res.items():
                     try:
-                        fr_group = analysis_group.create_group(fr_key)
+                        analysis_group = data_file.create_group('Analysis')
                     except ValueError:
-                        # If the analysis sub group already exists (each fr_key should be unique)
-                        # Delete the old group and create a new group (overwrite).
-                        del analysis_group[fr_key]
-                        fr_group = analysis_group.create_group(fr_key)
+                        # If the analysis group already exists.
+                        analysis_group = data_file['Analysis']
 
-                    d = self._convert_dict_rec(copy.deepcopy(fit_res))
-                    write_dict_to_hdf5(d, entry_point=fr_group)
+                    # Iterate over all the fit result dicts as not to
+                    # overwrite old/other analysis
+                    for fr_key, fit_res in self.fit_res.items():
+                        try:
+                            fr_group = analysis_group.create_group(fr_key)
+                        except ValueError:
+                            # If the analysis sub group already exists
+                            # (each fr_key should be unique).
+                            # Delete the old group and create a new group
+                            # (overwrite).
+                            del analysis_group[fr_key]
+                            fr_group = analysis_group.create_group(fr_key)
+
+                        d = self._convert_dict_rec(copy.deepcopy(fit_res))
+                        write_dict_to_hdf5(d, entry_point=fr_group)
+                except Exception as e:
+                    data_file.clsoe()
+                    raise e
 
     def save_processed_data(self, key=None, overwrite=True):
         """
@@ -637,24 +645,28 @@ class BaseDataAnalysis(object):
 
             with h5py.File(fn, 'a') as data_file:
                 try:
-                    analysis_group = data_file.create_group('Analysis')
-                except ValueError:
-                    # If the analysis group already exists.
-                    analysis_group = data_file['Analysis']
+                    try:
+                        analysis_group = data_file.create_group('Analysis')
+                    except ValueError:
+                        # If the analysis group already exists.
+                        analysis_group = data_file['Analysis']
 
-                try:
-                    proc_data_group = \
-                        analysis_group.create_group('Processed data')
-                except ValueError:
-                    # If the processed data group already exists.
-                    proc_data_group = analysis_group['Processed data']
+                    try:
+                        proc_data_group = \
+                            analysis_group.create_group('Processed data')
+                    except ValueError:
+                        # If the processed data group already exists.
+                        proc_data_group = analysis_group['Processed data']
 
-                if key in proc_data_group.keys():
-                    del proc_data_group[key]
+                    if key in proc_data_group.keys():
+                        del proc_data_group[key]
 
-                d = {key: self.proc_data_dict[key]}
-                write_dict_to_hdf5(d, entry_point=proc_data_group, 
-                                   overwrite=overwrite)
+                    d = {key: self.proc_data_dict[key]}
+                    write_dict_to_hdf5(d, entry_point=proc_data_group,
+                                       overwrite=overwrite)
+                except Exception as e:
+                    data_file.close()
+                    raise e
 
     @staticmethod
     def _convert_dict_rec(obj):
