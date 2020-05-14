@@ -715,11 +715,10 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
             # value corrsponds to the peak voltage of a cosine with the
             # demodulation frequency.
             self.value_units = ['Vpeak']*len(self.channels)
-            self.scaling_factor = 1/(1.8e9*integration_length*nr_averages)
+            self.scaling_factor = 1/(1.8e9*integration_length)
         elif result_logging_mode == 'lin_trans':
             self.value_units = ['a.u.']*len(self.channels)
-            self.scaling_factor = 1/nr_averages
-
+            self.scaling_factor = 1
         elif result_logging_mode == 'digitized':
             self.value_units = ['frac']*len(self.channels)
             self.scaling_factor = 1#/0.00146484375
@@ -943,7 +942,7 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
                                ['(V^2)']*len(self.correlations)
             self.scaling_factor = 1/(1.8e9*integration_length)
         elif self.result_logging_mode == 'lin_trans':
-            self.value_units = ['a.u']*len(self.value_names) + \
+            self.value_units = ['a.u.']*len(self.value_names) + \
                                ['a.u.']*len(self.correlations)
             self.scaling_factor = 1
         elif self.result_logging_mode == 'digitized':
@@ -1073,10 +1072,9 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
             for n, ch in enumerate(self.used_channels):
                 if ch in self.correlation_channels:
                     data.append(3 * np.array(data_raw[n]) *
-                                (self.scaling_factor**2 / self.nr_averages))
+                                self.scaling_factor**2)
                 else:
-                    data.append(np.array(data_raw[n]) *
-                                (self.scaling_factor / self.nr_averages))
+                    data.append(np.array(data_raw[n]) * self.scaling_factor)
         return data
 
 
