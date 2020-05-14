@@ -24,7 +24,6 @@ from pycqed.measurement.calibration_points import CalibrationPoints
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
 from pycqed.measurement.waveform_control import pulsar as ps
 import pycqed.analysis.measurement_analysis as ma
-import pycqed.analysis.randomized_benchmarking_analysis as rbma
 from pycqed.analysis_v3 import pipeline_analysis as pla
 import pycqed.analysis_v2.readout_analysis as ra
 import pycqed.analysis_v2.timedomain_analysis as tda
@@ -427,7 +426,8 @@ def measure_multiplexed_readout(qubits, liveplot=False,
 
 
 def measure_active_reset(qubits, shots=5000,
-                         qutrit=False, upload=True, label=None):
+                         qutrit=False, upload=True, label=None,
+                         detector='int_log_det'):
     MC = qubits[0].instr_mc.get_instr()
     trig = qubits[0].instr_trigger.get_instr()
 
@@ -444,7 +444,7 @@ def measure_active_reset(qubits, shots=5000,
     sp = SweepPoints('reset_reps', swp, '', 'Nr. Reset Repetitions')
 
     df = get_multiplexed_readout_detector_functions(qubits,
-                                                    nr_shots=shots)['int_log_det']
+                                                    nr_shots=shots)[detector]
 
     for qb in qubits:
         qb.prepare(drive='timedomain')
