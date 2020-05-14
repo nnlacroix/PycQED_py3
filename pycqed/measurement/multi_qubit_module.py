@@ -24,13 +24,13 @@ from pycqed.measurement.calibration_points import CalibrationPoints
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
 from pycqed.measurement.waveform_control import pulsar as ps
 import pycqed.analysis.measurement_analysis as ma
-import pycqed.analysis.randomized_benchmarking_analysis as rbma
 from pycqed.analysis_v3 import pipeline_analysis as pla
 import pycqed.analysis_v2.readout_analysis as ra
 import pycqed.analysis_v2.timedomain_analysis as tda
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 import pycqed.measurement.waveform_control.sequence as sequence
 from pycqed.utilities.general import temporary_value
+from pycqed.analysis_v2 import tomography_qudev as tomo
 
 try:
     import \
@@ -426,7 +426,8 @@ def measure_multiplexed_readout(qubits, liveplot=False,
 
 
 def measure_active_reset(qubits, shots=5000,
-                         qutrit=False, upload=True, label=None):
+                         qutrit=False, upload=True, label=None,
+                         detector='int_log_det'):
     MC = qubits[0].instr_mc.get_instr()
     trig = qubits[0].instr_trigger.get_instr()
 
@@ -443,7 +444,7 @@ def measure_active_reset(qubits, shots=5000,
     sp = SweepPoints('reset_reps', swp, '', 'Nr. Reset Repetitions')
 
     df = get_multiplexed_readout_detector_functions(qubits,
-                                                    nr_shots=shots)['int_log_det']
+                                                    nr_shots=shots)[detector]
 
     for qb in qubits:
         qb.prepare(drive='timedomain')
@@ -553,8 +554,7 @@ def measure_parity_correction(qb0, qb1, qb2, feedback_delay, f_LO,
                               upload=True, MC=None, prep_sequence=None,
                               nr_dd_pulses=0, dd_scheme=None,
                               nr_shots=5000, nr_parity_measurements=1,
-                              tomography_basis=(
-                                      'I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
+                              tomography_basis=tomo.DEFAULT_BASIS_ROTS,
                               reset=True, preselection=False, ro_spacing=1e-6,
                               skip_n_initial_parity_checks=0, skip_elem='RO',
                               add_channels=None):
@@ -823,7 +823,7 @@ def measure_parity_single_round_phases(ancilla_qubit, data_qubits, CZ_map,
 
 
 def measure_tomography(qubits, prep_sequence, state_name,
-                       rots_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
+                       rots_basis=tomo.DEFAULT_BASIS_ROTS,
                        use_cal_points=True,
                        preselection=True,
                        rho_target=None,

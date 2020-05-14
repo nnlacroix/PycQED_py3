@@ -1920,6 +1920,8 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         covar_matrix: (optional) The covariance matrix of the measurement
                       operators as a 2d numpy array. Overrides the one found
                       from the calibration points.
+        use_covariance_matrix (bool): Flag to define whether to use the
+            covariance matrix
         basis_rots_str: A list of standard PycQED pulse names that were
                              applied to qubits before measurement
         basis_rots: As an alternative to single_qubit_pulses, the basis
@@ -2006,12 +2008,17 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             self.proc_data_dict['rho_raw'] = rho_raw
             self.proc_data_dict['rho'] = rho_raw
         else:
-            rho_ls = tomo.least_squares_tomography(all_mus, all_Fs, all_Omegas)
+            rho_ls = tomo.least_squares_tomography(
+                all_mus, all_Fs,
+                all_Omegas if self.get_param_value('use_covariance_matrix', False)
+                else None )
             self.proc_data_dict['rho_ls'] = rho_ls
             self.proc_data_dict['rho'] = rho_ls
             if self.options_dict.get('mle', False):
-                rho_mle = tomo.mle_tomography(all_mus, all_Fs, all_Omegas,
-                                              rho_guess=rho_ls)
+                rho_mle = tomo.mle_tomography(
+                    all_mus, all_Fs, None,
+                    all_Omegas if self.get_param_value('use_covariance_matrix', False) else None,
+                    rho_guess=rho_ls)
                 self.proc_data_dict['rho_mle'] = rho_mle
                 self.proc_data_dict['rho'] = rho_mle
 
@@ -4101,7 +4108,7 @@ class EchoAnalysis(MultiQubit_TimeDomain_Analysis):
                         self.echo_analysis.plot_dicts[plot_label]['fig_id'] = \
                             figure_name
 
-            old_T2e_val = a_tools.get_param_value_from_file(
+            old_T2e_val = a_tools.get_instr_setting_value_from_file(
                 file_path=self.echo_analysis.raw_data_dict['folder'],
                 instr_name=qbn, param_name='T2{}'.format(
                     '_ef' if 'f' in self.echo_analysis.data_to_fit[qbn]
@@ -4342,12 +4349,12 @@ class OverUnderRotationAnalysis(MultiQubit_TimeDomain_Analysis):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
         for qbn in self.qb_names:
             try:
-                old_amp180 = a_tools.get_param_value_from_file(
+                old_amp180 = a_tools.get_instr_setting_value_from_file(
                     file_path=self.raw_data_dict['folder'][0],
                     instr_name=qbn, param_name='amp180{}'.format(
                         '_ef' if 'f' in self.data_to_fit[qbn] else ''))
             except KeyError:
-                old_amp180 = a_tools.get_param_value_from_file(
+                old_amp180 = a_tools.get_instr_setting_value_from_file(
                     file_path=self.raw_data_dict['folder'][0],
                     instr_name=qbn, param_name='{}_amp180'.format(
                         'ef' if 'f' in self.data_to_fit[qbn] else 'ge'))
@@ -4389,12 +4396,12 @@ class OverUnderRotationAnalysis(MultiQubit_TimeDomain_Analysis):
                     'legend_pos': 'upper right'}
 
                 try:
-                    old_amp180 = a_tools.get_param_value_from_file(
+                    old_amp180 = a_tools.get_instr_setting_value_from_file(
                         file_path=self.raw_data_dict['folder'][0],
                         instr_name=qbn, param_name='amp180{}'.format(
                             '_ef' if 'f' in self.data_to_fit[qbn] else ''))
                 except KeyError:
-                    old_amp180 = a_tools.get_param_value_from_file(
+                    old_amp180 = a_tools.get_instr_setting_value_from_file(
                         file_path=self.raw_data_dict['folder'][0],
                         instr_name=qbn, param_name='{}_amp180'.format(
                             'ef' if 'f' in self.data_to_fit[qbn] else 'ge'))
