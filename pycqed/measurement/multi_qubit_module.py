@@ -2340,10 +2340,10 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                             **kw):
     """
     Function to calibrate the dynamic phases for a CZ gate.
-    :param qbc: (QuDev_transmon object) one of the gate qubits
-        (usually the fluxed qb, if not FLIP gate)
-    :param qbt: (QuDev_transmon object) the other gate qubit
-        (usually the non-fluxed qb, if not FLIP gate)
+    :param qbc: (QuDev_transmon object) one of the gate qubits,
+        usually the qubit that goes to the f level
+    :param qbt: (QuDev_transmon object) the other gate qubit,
+        usually the qubit that does not go to f level
     :param cz_pulse_name: (str) name of the CZ pulse in the operation dict
     :param hard_sweep_params: (dict) specifies the sweep information for
         the hard sweep. If None, will default to
