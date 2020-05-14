@@ -24,7 +24,6 @@ from pycqed.measurement.calibration_points import CalibrationPoints
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
 from pycqed.measurement.waveform_control import pulsar as ps
 import pycqed.analysis.measurement_analysis as ma
-import pycqed.analysis.randomized_benchmarking_analysis as rbma
 from pycqed.analysis_v3 import pipeline_analysis as pla
 import pycqed.analysis_v2.readout_analysis as ra
 import pycqed.analysis_v2.timedomain_analysis as tda
