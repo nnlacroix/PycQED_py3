@@ -398,7 +398,7 @@ def n_qubit_reset(qb_names, operation_dict, prep_params=dict(), upload=True,
 def parity_correction_seq(
         qb1n, qb2n, qb3n, operation_dict, CZ_pulses, feedback_delay=900e-9,
         prep_sequence=None, reset=True, nr_parity_measurements=1,
-        tomography_basis=tomo.DEFAULT_BASIS_ROTS
+        tomography_basis=tomo.DEFAULT_BASIS_ROTS,
         parity_op='ZZ', upload=True, verbose=False, return_seq=False, 
         preselection=False, ro_spacing=1e-6, dd_scheme=None, nr_dd_pulses=4,
         skip_n_initial_parity_checks=0, skip_elem='RO'):
