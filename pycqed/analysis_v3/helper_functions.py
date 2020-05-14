@@ -35,10 +35,14 @@ def get_value_names_from_timestamp(timestamp):
     folder = a_tools.get_folder(timestamp)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, 'r+')
-    channel_names = get_hdf_param_value(data_file['Experimental Data'],
-                                        'value_names')
-    data_file.close()
-    return channel_names
+    try:
+        channel_names = get_hdf_param_value(data_file['Experimental Data'],
+                                            'value_names')
+        data_file.close()
+        return channel_names
+    except Exception as e:
+        data_file.close()
+        raise e
 
 
 def get_param_from_metadata_group(param_name, timestamp=None, data_file=None,
@@ -68,7 +72,16 @@ def get_data_file_from_timestamp(timestamp):
     folder = a_tools.get_folder(timestamp)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, 'r+')
-    return data_file
+    try:
+        group = data_file['Experimental Data'][
+            'Experimental Metadata']['sweep_points']
+        sweep_points = OrderedDict()
+        sweep_points = read_dict_from_hdf5(sweep_points, group)
+        data_file.close()
+        return sweep_points
+    except Exception as e:
+        data_file.close()
+        raise e
 
 
 def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
@@ -116,25 +129,46 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, h5mode)
 
-    if 'data_files' in data_dict:
-        data_dict['data_files'] += [data_file]
-    else:
-        data_dict['data_files'] = [data_file]
-    if 'measurementstrings' in params_dict:
-        # assumed data_dict['measurementstrings'] is a list
-        if 'measurementstrings' in data_dict:
-            data_dict['measurementstrings'] += [os.path.split(folder)[1][7:]]
-        else:
-            data_dict['measurementstrings'] = [os.path.split(folder)[1][7:]]
-
-    for save_par, file_par in params_dict.items():
-        epd = data_dict
-        all_keys = save_par.split('.')
-        for i in range(len(all_keys)-1):
-            if all_keys[i] not in epd:
-                epd[all_keys[i]] = OrderedDict()
+    try:
+        if 'measurementstrings' in params_dict:
+            # assumed data_dict['measurementstrings'] is a list
+            if 'measurementstrings' in data_dict:
+                data_dict['measurementstrings'] += [os.path.split(folder)[1][7:]]
             else:
-                epd = epd[all_keys[i]]
+                data_dict['measurementstrings'] = [os.path.split(folder)[1][7:]]
+
+
+        for save_par, file_par in params_dict.items():
+            epd = data_dict
+            all_keys = save_par.split('.')
+            for i in range(len(all_keys)-1):
+                if all_keys[i] not in epd:
+                    epd[all_keys[i]] = OrderedDict()
+                else:
+                    epd = epd[all_keys[i]]
+
+            if len(file_par.split('.')) == 1:
+                par_name = file_par.split('.')[0]
+                for group_name in data_file.keys():
+                    if par_name in list(data_file[group_name].attrs):
+                        add_param(all_keys[-1],
+                                  get_hdf_param_value(data_file[group_name],
+                                                      par_name),
+                                  epd, append_key=append_key, update_key=update_key)
+            else:
+                group_name = '/'.join(file_par.split('.')[:-1])
+                par_name = file_par.split('.')[-1]
+                if group_name in data_file:
+                    if par_name in list(data_file[group_name].attrs):
+                        add_param(all_keys[-1],
+                                  get_hdf_param_value(data_file[group_name],
+                                                      par_name),
+                                  epd, append_key=append_key, update_key=update_key)
+                    elif par_name in list(data_file[group_name].keys()):
+                        add_param(all_keys[-1],
+                                  read_dict_from_hdf5(
+                                      {}, data_file[group_name][par_name]),
+                                  epd, append_key=append_key, update_key=update_key)
 
         if len(file_par.split('.')) == 1:
             par_name = file_par.split('.')[0]
@@ -161,10 +195,13 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                                   {}, data_file[group_name][par_name]),
                               epd, append_value=append_value,
                               update_value=update_value)
-
-        if all_keys[-1] not in epd:
-            log.warning(f'Parameter {file_par} was not found.')
-            epd[all_keys[-1]] = 0
+            if all_keys[-1] not in epd:
+                log.warning(f'Parameter {file_par} was not found.')
+                epd[all_keys[-1]] = 0
+        data_file.close()
+    except Exception as e:
+        data_file.close()
+        raise e
 
     for par_name in data_dict:
         if par_name in numeric_params:
@@ -174,7 +211,7 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                 data_dict[par_name] = np.asarray(data_dict[par_name])
             else:
                 data_dict[par_name] = np.float(data_dict[par_name])
-    data_file.close()
+
     return data_dict
 
 
@@ -517,7 +554,12 @@ def get_cal_sweep_points(sweep_points_array, cal_points, qb_name):
         if n_cal_pts == 0:
             return np.array([])
         else:
-            step = np.abs(sweep_points_array[-1] - sweep_points_array[-2])
+            try:
+                step = np.abs(sweep_points_array[-1] - sweep_points_array[-2])
+            except IndexError:
+                # This fallback is used to have a step value in the same order
+                # of magnitude as the value of the single sweep point
+                step = np.abs(sweep_points_array[0])
             return np.array([sweep_points_array[-1] + i * step for
                              i in range(1, n_cal_pts + 1)])
     else:
