@@ -432,232 +432,241 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     def cal_states_analysis(self):
         self.get_cal_data_points()
-        first_key = list(self.cal_states_dict_for_rotation)[0]
-        if len(self.cal_states_dict_for_rotation[first_key]) not in [2, 3]:
-            raise NotImplementedError('Calibration states rotation is '
-                                      'currently only implemented for 2 '
-                                      'or 3 cal states per qubit.')
+        self.proc_data_dict['projected_data_dict'] = OrderedDict(
+            {qbn: '' for qbn in self.qb_names})
+        for qbn in self.qb_names:
+            cal_states_dict = self.cal_states_dict_for_rotation[qbn]
+            if len(cal_states_dict) not in [2, 3]:
+                raise NotImplementedError('Calibration states rotation is '
+                                          'currently only implemented for 2 '
+                                          'or 3 cal states per qubit.')
 
-        if self.get_param_value('TwoD', default_value=False):
-            if len(self.cal_states_dict_for_rotation[first_key]) == 3:
-                self.proc_data_dict['projected_data_dict'] = \
-                    self.rotate_data_3_cal_states_TwoD(
-                        self.proc_data_dict['meas_results_per_qb'],
-                        self.channel_map, self.cal_states_dict_for_rotation)
+            if self.get_param_value('TwoD', default_value=False):
+                if len(cal_states_dict) == 3:
+                    self.proc_data_dict['projected_data_dict'].update(
+                        self.rotate_data_3_cal_states_TwoD(
+                            qbn, self.proc_data_dict['meas_results_per_qb'],
+                            self.channel_map,
+                            self.cal_states_dict_for_rotation))
+                else:
+                    self.proc_data_dict['projected_data_dict'].update(
+                        self.rotate_data_TwoD(
+                            qbn, self.proc_data_dict['meas_results_per_qb'],
+                            self.channel_map, self.cal_states_dict_for_rotation,
+                            self.data_to_fit))
             else:
-                self.proc_data_dict['projected_data_dict'] = \
-                    self.rotate_data_TwoD(
-                        self.proc_data_dict['meas_results_per_qb'],
-                        self.channel_map, self.cal_states_dict_for_rotation,
-                        self.data_to_fit)
-        else:
-            if len(self.cal_states_dict_for_rotation[first_key]) == 3:
-                self.proc_data_dict['projected_data_dict'] = \
-                    self.rotate_data_3_cal_states(
-                        self.proc_data_dict['meas_results_per_qb'],
-                        self.channel_map, self.cal_states_dict_for_rotation)
-            else:
-                self.proc_data_dict['projected_data_dict'] = \
-                    self.rotate_data(
-                        self.proc_data_dict['meas_results_per_qb'],
-                        self.channel_map, self.cal_states_dict_for_rotation,
-                        self.data_to_fit)
+                if len(cal_states_dict) == 3:
+                    self.proc_data_dict['projected_data_dict'].update(
+                        self.rotate_data_3_cal_states(
+                            qbn, self.proc_data_dict['meas_results_per_qb'],
+                            self.channel_map,
+                            self.cal_states_dict_for_rotation))
+                else:
+                    self.proc_data_dict['projected_data_dict'].update(
+                        self.rotate_data(
+                            qbn, self.proc_data_dict['meas_results_per_qb'],
+                            self.channel_map, self.cal_states_dict_for_rotation,
+                            self.data_to_fit))
 
     @staticmethod
-    def rotate_data_3_cal_states(meas_results_per_qb, channel_map,
+    def rotate_data_3_cal_states(qb_name, meas_results_per_qb, channel_map,
                                  cal_states_dict):
+        print('in 3state rotation')
         # FOR 3 CAL STATES
         rotated_data_dict = OrderedDict()
-        for qb_name, meas_res_dict in meas_results_per_qb.items():
-            rotated_data_dict[qb_name] = OrderedDict()
-            cal_pts_idxs = list(cal_states_dict[qb_name].values())
-            cal_points_data = np.zeros((len(cal_pts_idxs), 2))
-            if list(meas_res_dict) == channel_map[qb_name]:
-                raw_data = np.array([v for v in meas_res_dict.values()]).T
-                for i, cal_idx in enumerate(cal_pts_idxs):
-                    cal_points_data[i, :] = np.mean(raw_data[cal_idx, :],
-                                                    axis=0)
-                rotated_data = predict_proba_avg_ro(raw_data, cal_points_data)
-                for i, state in enumerate(list(cal_states_dict[qb_name])):
-                    rotated_data_dict[qb_name][f'p{state}'] = rotated_data[:, i]
-            else:
-                raise NotImplementedError('Calibration states rotation with 3 '
-                                          'cal states only implemented for '
-                                          '2 readout channels per qubit.')
+        meas_res_dict  =meas_results_per_qb[qb_name]
+        rotated_data_dict[qb_name] = OrderedDict()
+        cal_pts_idxs = list(cal_states_dict[qb_name].values())
+        cal_points_data = np.zeros((len(cal_pts_idxs), 2))
+        if list(meas_res_dict) == channel_map[qb_name]:
+            raw_data = np.array([v for v in meas_res_dict.values()]).T
+            for i, cal_idx in enumerate(cal_pts_idxs):
+                cal_points_data[i, :] = np.mean(raw_data[cal_idx, :],
+                                                axis=0)
+            rotated_data = predict_proba_avg_ro(raw_data, cal_points_data)
+            for i, state in enumerate(list(cal_states_dict[qb_name])):
+                rotated_data_dict[qb_name][f'p{state}'] = rotated_data[:, i]
+        else:
+            raise NotImplementedError('Calibration states rotation with 3 '
+                                      'cal states only implemented for '
+                                      '2 readout channels per qubit.')
         return rotated_data_dict
 
     @staticmethod
-    def rotate_data(meas_results_per_qb, channel_map,
+    def rotate_data(qb_name, meas_results_per_qb, channel_map,
                     cal_states_dict, data_to_fit):
+        print('in 2state rotation')
         # ONLY WORKS FOR 2 CAL STATES
+        meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict = OrderedDict()
-        for qb_name, meas_res_dict in meas_results_per_qb.items():
-            if len(cal_states_dict[qb_name]) == 0:
-                cal_zero_points = None
-                cal_one_points = None
+        if len(cal_states_dict[qb_name]) == 0:
+            cal_zero_points = None
+            cal_one_points = None
+        else:
+            cal_zero_points = list(cal_states_dict[qb_name].values())[0]
+            cal_one_points = list(cal_states_dict[qb_name].values())[1]
+        rotated_data_dict[qb_name] = OrderedDict()
+        if len(meas_res_dict) == 1:
+            # one RO channel per qubit
+            if cal_zero_points is None and cal_one_points is None:
+                data = meas_res_dict[list(meas_res_dict)[0]]
+                rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
+                    (data - np.min(data))/(np.max(data) - np.min(data))
             else:
-                cal_zero_points = list(cal_states_dict[qb_name].values())[0]
-                cal_one_points = list(cal_states_dict[qb_name].values())[1]
-            rotated_data_dict[qb_name] = OrderedDict()
-            if len(meas_res_dict) == 1:
-                # one RO channel per qubit
-                if cal_zero_points is None and cal_one_points is None:
-                    data = meas_res_dict[list(meas_res_dict)[0]]
-                    rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
-                        (data - np.min(data))/(np.max(data) - np.min(data))
-                else:
-                    rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
-                        a_tools.rotate_and_normalize_data_1ch(
-                            data=meas_res_dict[list(meas_res_dict)[0]],
-                            cal_zero_points=cal_zero_points,
-                            cal_one_points=cal_one_points)
-            elif list(meas_res_dict) == channel_map[qb_name]:
-                # two RO channels per qubit
-                rotated_data_dict[qb_name][data_to_fit[qb_name]], _, _ = \
-                    a_tools.rotate_and_normalize_data_IQ(
-                        data=np.array([v for v in meas_res_dict.values()]),
+                rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
+                    a_tools.rotate_and_normalize_data_1ch(
+                        data=meas_res_dict[list(meas_res_dict)[0]],
                         cal_zero_points=cal_zero_points,
                         cal_one_points=cal_one_points)
+        elif list(meas_res_dict) == channel_map[qb_name]:
+            # two RO channels per qubit
+            rotated_data_dict[qb_name][data_to_fit[qb_name]], _, _ = \
+                a_tools.rotate_and_normalize_data_IQ(
+                    data=np.array([v for v in meas_res_dict.values()]),
+                    cal_zero_points=cal_zero_points,
+                    cal_one_points=cal_one_points)
+        else:
+            # multiple readouts per qubit per channel
+            if isinstance(channel_map[qb_name], str):
+                qb_ro_ch0 = channel_map[qb_name]
             else:
-                # multiple readouts per qubit per channel
-                if isinstance(channel_map[qb_name], str):
-                    qb_ro_ch0 = channel_map[qb_name]
-                else:
-                    qb_ro_ch0 = channel_map[qb_name][0]
-                ro_suffixes = [s[len(qb_ro_ch0)+1::] for s in
-                               list(meas_res_dict) if qb_ro_ch0 in s]
-                for i, ro_suf in enumerate(ro_suffixes):
-                    if len(ro_suffixes) == len(meas_res_dict):
-                        # one RO ch per qubit
-                        rotated_data_dict[qb_name][ro_suf] = \
-                            a_tools.rotate_and_normalize_data_1ch(
-                                data=meas_res_dict[list(meas_res_dict)[i]],
-                                cal_zero_points=cal_zero_points,
-                                cal_one_points=cal_one_points)
-                    else:
-                        # two RO ch per qubit
-                        keys = [k for k in meas_res_dict if ro_suf in k]
-                        correct_keys = [k for k in keys
-                                        if k[len(qb_ro_ch0)+1::] == ro_suf]
-                        data_array = np.array([meas_res_dict[k]
-                                               for k in correct_keys])
-                        rotated_data_dict[qb_name][ro_suf], \
-                        _, _ = \
-                            a_tools.rotate_and_normalize_data_IQ(
-                                data=data_array,
-                                cal_zero_points=cal_zero_points,
-                                cal_one_points=cal_one_points)
-        return rotated_data_dict
-
-    @staticmethod
-    def rotate_data_3_cal_states_TwoD(meas_results_per_qb, channel_map,
-                                      cal_states_dict):
-        # FOR 3 CAL STATES
-        rotated_data_dict = OrderedDict()
-        for qb_name, meas_res_dict in meas_results_per_qb.items():
-            rotated_data_dict[qb_name] = OrderedDict()
-            cal_pts_idxs = list(cal_states_dict[qb_name].values())
-            cal_points_data = np.zeros((len(cal_pts_idxs), 2))
-            if list(meas_res_dict) == channel_map[qb_name]:
-                # two RO channels per qubit
-                raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
-                for i, state in enumerate(list(cal_states_dict[qb_name])):
-                    rotated_data_dict[qb_name][f'p{state}'] = np.zeros(
-                        raw_data_arr.shape)
-                for col in range(raw_data_arr.shape[1]):
-                    raw_data = np.concatenate([
-                        v[:, col].reshape(len(v[:, col]), 1) for
-                        v in meas_res_dict.values()], axis=1)
-                    for i, cal_idx in enumerate(cal_pts_idxs):
-                        cal_points_data[i, :] = np.mean(raw_data[cal_idx, :],
-                                                        axis=0)
-                    # rotated data is (raw_data_arr.shape[0], 3)
-                    rotated_data = predict_proba_avg_ro(
-                        raw_data, cal_points_data, proj_pt_on_triangle=False)
-
-                    for i, state in enumerate(list(cal_states_dict[qb_name])):
-                        rotated_data_dict[qb_name][f'p{state}'][:, col] = \
-                            rotated_data[:, i]
-            else:
-                raise NotImplementedError('Calibration states rotation with 3 '
-                                          'cal states only implemented for '
-                                          '2 readout channels per qubit.')
-        return rotated_data_dict
-
-    @staticmethod
-    def rotate_data_TwoD(meas_results_per_qb, channel_map,
-                         cal_states_dict, data_to_fit):
-        rotated_data_dict = OrderedDict()
-        for qb_name, meas_res_dict in meas_results_per_qb.items():
-            if len(cal_states_dict[qb_name]) == 0:
-                cal_zero_points = None
-                cal_one_points = None
-            else:
-                cal_zero_points = list(cal_states_dict[qb_name].values())[0]
-                cal_one_points = list(cal_states_dict[qb_name].values())[1]
-            rotated_data_dict[qb_name] = OrderedDict()
-            if len(meas_res_dict) == 1:
-                # one RO channel per qubit
-                raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
-                rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
-                    deepcopy(raw_data_arr.transpose())
-                for col in range(raw_data_arr.shape[1]):
-                    rotated_data_dict[qb_name][data_to_fit[qb_name]][col] = \
+                qb_ro_ch0 = channel_map[qb_name][0]
+            ro_suffixes = [s[len(qb_ro_ch0)+1::] for s in
+                           list(meas_res_dict) if qb_ro_ch0 in s]
+            for i, ro_suf in enumerate(ro_suffixes):
+                if len(ro_suffixes) == len(meas_res_dict):
+                    # one RO ch per qubit
+                    rotated_data_dict[qb_name][ro_suf] = \
                         a_tools.rotate_and_normalize_data_1ch(
-                            data=raw_data_arr[:, col],
+                            data=meas_res_dict[list(meas_res_dict)[i]],
                             cal_zero_points=cal_zero_points,
                             cal_one_points=cal_one_points)
-            elif list(meas_res_dict) == channel_map[qb_name]:
-                # two RO channels per qubit
-                raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
-                rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
-                    deepcopy(raw_data_arr.transpose())
-                for col in range(raw_data_arr.shape[1]):
-                    data_array = np.array(
-                        [v[:, col] for v in meas_res_dict.values()])
-                    rotated_data_dict[qb_name][
-                            data_to_fit[qb_name]][col], _, _ = \
+                else:
+                    # two RO ch per qubit
+                    keys = [k for k in meas_res_dict if ro_suf in k]
+                    correct_keys = [k for k in keys
+                                    if k[len(qb_ro_ch0)+1::] == ro_suf]
+                    data_array = np.array([meas_res_dict[k]
+                                           for k in correct_keys])
+                    rotated_data_dict[qb_name][ro_suf], \
+                    _, _ = \
                         a_tools.rotate_and_normalize_data_IQ(
                             data=data_array,
                             cal_zero_points=cal_zero_points,
                             cal_one_points=cal_one_points)
+        return rotated_data_dict
+
+    @staticmethod
+    def rotate_data_3_cal_states_TwoD(qb_name, meas_results_per_qb,
+                                      channel_map, cal_states_dict):
+        print('in 3state rotation 2D')
+        # FOR 3 CAL STATES
+        meas_res_dict = meas_results_per_qb[qb_name]
+        rotated_data_dict = OrderedDict()
+        rotated_data_dict[qb_name] = OrderedDict()
+        cal_pts_idxs = list(cal_states_dict[qb_name].values())
+        cal_points_data = np.zeros((len(cal_pts_idxs), 2))
+        if list(meas_res_dict) == channel_map[qb_name]:
+            # two RO channels per qubit
+            raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
+            for i, state in enumerate(list(cal_states_dict[qb_name])):
+                rotated_data_dict[qb_name][f'p{state}'] = np.zeros(
+                    raw_data_arr.shape)
+            for col in range(raw_data_arr.shape[1]):
+                raw_data = np.concatenate([
+                    v[:, col].reshape(len(v[:, col]), 1) for
+                    v in meas_res_dict.values()], axis=1)
+                for i, cal_idx in enumerate(cal_pts_idxs):
+                    cal_points_data[i, :] = np.mean(raw_data[cal_idx, :],
+                                                    axis=0)
+                # rotated data is (raw_data_arr.shape[0], 3)
+                rotated_data = predict_proba_avg_ro(
+                    raw_data, cal_points_data)
+
+                for i, state in enumerate(list(cal_states_dict[qb_name])):
+                    rotated_data_dict[qb_name][f'p{state}'][:, col] = \
+                        rotated_data[:, i]
+        else:
+            raise NotImplementedError('Calibration states rotation with 3 '
+                                      'cal states only implemented for '
+                                      '2 readout channels per qubit.')
+        return rotated_data_dict
+
+    @staticmethod
+    def rotate_data_TwoD(qb_name, meas_results_per_qb, channel_map,
+                         cal_states_dict, data_to_fit):
+        print('in 2state rotation 2D')
+        meas_res_dict = meas_results_per_qb[qb_name]
+        rotated_data_dict = OrderedDict()
+        if len(cal_states_dict[qb_name]) == 0:
+            cal_zero_points = None
+            cal_one_points = None
+        else:
+            cal_zero_points = list(cal_states_dict[qb_name].values())[0]
+            cal_one_points = list(cal_states_dict[qb_name].values())[1]
+        rotated_data_dict[qb_name] = OrderedDict()
+        if len(meas_res_dict) == 1:
+            # one RO channel per qubit
+            raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
+            rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
+                deepcopy(raw_data_arr.transpose())
+            for col in range(raw_data_arr.shape[1]):
+                rotated_data_dict[qb_name][data_to_fit[qb_name]][col] = \
+                    a_tools.rotate_and_normalize_data_1ch(
+                        data=raw_data_arr[:, col],
+                        cal_zero_points=cal_zero_points,
+                        cal_one_points=cal_one_points)
+        elif list(meas_res_dict) == channel_map[qb_name]:
+            # two RO channels per qubit
+            raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
+            rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
+                deepcopy(raw_data_arr.transpose())
+            for col in range(raw_data_arr.shape[1]):
+                data_array = np.array(
+                    [v[:, col] for v in meas_res_dict.values()])
+                rotated_data_dict[qb_name][
+                        data_to_fit[qb_name]][col], _, _ = \
+                    a_tools.rotate_and_normalize_data_IQ(
+                        data=data_array,
+                        cal_zero_points=cal_zero_points,
+                        cal_one_points=cal_one_points)
+        else:
+            # multiple readouts per qubit per channel
+            if isinstance(channel_map[qb_name], str):
+                qb_ro_ch0 = channel_map[qb_name]
             else:
-                # multiple readouts per qubit per channel
-                if isinstance(channel_map[qb_name], str):
-                    qb_ro_ch0 = channel_map[qb_name]
+                qb_ro_ch0 = channel_map[qb_name][0]
+
+            ro_suffixes = [s[len(qb_ro_ch0)+1::] for s in
+                           list(meas_res_dict) if qb_ro_ch0 in s]
+
+            for i, ro_suf in enumerate(ro_suffixes):
+                if len(ro_suffixes) == len(meas_res_dict):
+                    # one RO ch per qubit
+                    raw_data_arr = meas_res_dict[list(meas_res_dict)[i]]
+                    rotated_data_dict[qb_name][ro_suf] = \
+                        deepcopy(raw_data_arr.transpose())
+                    for col in range(raw_data_arr.shape[1]):
+                        rotated_data_dict[qb_name][
+                            ro_suf][col] = \
+                            a_tools.rotate_and_normalize_data_1ch(
+                                data=raw_data_arr[:, col],
+                                cal_zero_points=cal_zero_points,
+                                cal_one_points=cal_one_points)
                 else:
-                    qb_ro_ch0 = channel_map[qb_name][0]
-
-                ro_suffixes = [s[len(qb_ro_ch0)+1::] for s in
-                               list(meas_res_dict) if qb_ro_ch0 in s]
-
-                for i, ro_suf in enumerate(ro_suffixes):
-                    if len(ro_suffixes) == len(meas_res_dict):
-                        # one RO ch per qubit
-                        raw_data_arr = meas_res_dict[list(meas_res_dict)[i]]
-                        rotated_data_dict[qb_name][ro_suf] = \
-                            deepcopy(raw_data_arr.transpose())
-                        for col in range(raw_data_arr.shape[1]):
-                            rotated_data_dict[qb_name][
-                                ro_suf][col] = \
-                                a_tools.rotate_and_normalize_data_1ch(
-                                    data=raw_data_arr[:, col],
-                                    cal_zero_points=cal_zero_points,
-                                    cal_one_points=cal_one_points)
-                    else:
-                        # two RO ch per qubit
-                        raw_data_arr = meas_res_dict[list(meas_res_dict)[i]]
-                        rotated_data_dict[qb_name][ro_suf] = \
-                            deepcopy(raw_data_arr.transpose())
-                        for col in range(raw_data_arr.shape[1]):
-                            data_array = np.array(
-                                [v[:, col] for k, v in meas_res_dict.items()
-                                 if ro_suf in k])
-                            rotated_data_dict[qb_name][ro_suf][col], _, _ = \
-                                a_tools.rotate_and_normalize_data_IQ(
-                                    data=data_array,
-                                    cal_zero_points=cal_zero_points,
-                                    cal_one_points=cal_one_points)
+                    # two RO ch per qubit
+                    raw_data_arr = meas_res_dict[list(meas_res_dict)[i]]
+                    rotated_data_dict[qb_name][ro_suf] = \
+                        deepcopy(raw_data_arr.transpose())
+                    for col in range(raw_data_arr.shape[1]):
+                        data_array = np.array(
+                            [v[:, col] for k, v in meas_res_dict.items()
+                             if ro_suf in k])
+                        rotated_data_dict[qb_name][ro_suf][col], _, _ = \
+                            a_tools.rotate_and_normalize_data_IQ(
+                                data=data_array,
+                                cal_zero_points=cal_zero_points,
+                                cal_one_points=cal_one_points)
         return rotated_data_dict
 
     @staticmethod
