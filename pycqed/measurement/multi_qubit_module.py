@@ -2332,14 +2332,52 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
 
 
 def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
-                           qubits_to_measure=None, cal_points=True,
-                           analyze=True, upload=True, n_cal_points_per_state=1,
-                           cal_states='auto', prep_params=None,
-                           exp_metadata=None, classified=False, update=False,
+                           qubits_to_measure=None, simultaneous=False,
                            reset_phases_before_measurement=True,
-                           basis_rot_par=None, prepend_n_cz=0,
-                           extract_only=False, simultaneous=False, prepend_pulse_dicts=None, **kw):
+                           prepend_n_cz=0, prepend_pulse_dicts=None,
+                           cal_states='auto', n_cal_points_per_state=1,
+                           exp_metadata=None, classified=False, update=False,
+                           basis_rot_par=None, analyze=True, upload=True,
+                            **kw):
+    """
+    Function to calibrate the dynamic phases for a CZ gate.
+    :param qbc: (QuDev_transmon object) one of the gate qubits
+        (usually the fluxed qb, if not FLIP gate)
+    :param qbt: (QuDev_transmon object) the other gate qubit
+        (usually the non-fluxed qb, if not FLIP gate)
+    :param cz_pulse_name: (str) name of the CZ pulse in the operation dict
+    :param hard_sweep_params: (dict) specifies the sweep information for
+        the hard sweep. If None, will default to
+            hard_sweep_params['phase'] = {
+                'values': np.tile(np.linspace(0, 2 * np.pi, 6) * 180 / np.pi, 2),
+                'unit': 'deg'}
+    :param qubits_to_measure: (list) list of QuDev_transmon objects to
+        be measured
+    :param simultaneous: (bool) whether to measure to do the measurement
+        simultaneously on all qubits_to_measure
+    :param reset_phases_before_measurement: (bool) If True, resets the
+        basis_rotation parameter to {} before measurement(s). If False, keeps
+        the dict stored in this parameter and updates only the entries in
+        this dict that were measured (specified by qubits_to_measure).
+    :param prepend_n_cz: (int) number of CZ gates to prepend to each segment
+    :param prepend_pulse_dicts: (list) list of pulse dictionaries to prepend
+        to each segment
+    :param cal_states: (str or tuple of str) Depetermines which cal states are
+        measured. Can be 'auto' or tuple of strings specifying qubit states
+        (ex: ('g', 'e')).
+    :param n_cal_points_per_state: (int) how many cal points per cal state
+    :param exp_metadata: (dict) experimental metadata dictionary
+    :param classified: (bool) whether to use the UHFQC_classifier_detector
+    :param update: (bool) whether to update the basis_rotation parameter with
+        the measured dynamic phase(s)
+    :param basis_rot_par: (str) the name of the QuDev_transmon attribute
+        for the dynamic phases parameter of cz_pulse_name.
+    :param analyze: (bool) whether to do analysis
+    :param upload: (bool) whether to upload to AWGs
+    :param kw: keyword arguments
 
+    # FIXME (Steph, 14.05.2020): Why do we need both the "prepend_n_cz" and "prepend_pulse_dicts"?
+    """
     if qubits_to_measure is None:
         qubits_to_measure = [qbc, qbt]
     if hard_sweep_params is None:
@@ -2351,7 +2389,12 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                 'unit': 'deg'}
 
     if basis_rot_par is None:
-        basis_rot_par = f'{cz_pulse_name[:-8]}_{qbt.name}_basis_rotation'
+        try:
+            basis_rot_par = [k for k in qbc.__dict__['parameters'].keys() if
+                             f'{qbt.name}_ basis_rotation' in k][0]
+        except IndexError:
+            raise ValueError(f'The gate {cz_pulse_name} has no parameter '
+                             f'containing "basis_rotation."')
 
     dyn_phases = {}
     if reset_phases_before_measurement:
@@ -2367,38 +2410,35 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
 
         for qbs in qubits_to_measure:
             assert (qbc not in qbs or qbt not in qbs), \
-                "Dynamic phases of control and target qubit cannot be measured " + \
-                "simultaneously."
+                "Dynamic phases of control and target qubit cannot be " \
+                "measured simultaneously."
 
-            label = f'Dynamic_phase_measurement_CZ{qbt.name}{qbc.name}-' + ''.join([
-                qb.name for qb in qbs])
+            label = f'Dynamic_phase_measurement_CZ{qbt.name}{qbc.name}-' + \
+                    ''.join([qb.name for qb in qbs])
             for qb in qbs:
                 qb.prepare(drive='timedomain')
             MC = qbc.instr_mc.get_instr()
 
-            if cal_points:
-                cal_states = CalibrationPoints.guess_cal_states(cal_states)
-                cp = CalibrationPoints.multi_qubit(
-                    [qb.name for qb in qbs], cal_states,
-                    n_per_state=n_cal_points_per_state)
-            else:
-                cp = None
+            cal_states = CalibrationPoints.guess_cal_states(cal_states)
+            cp = CalibrationPoints.multi_qubit(
+                [qb.name for qb in qbs], cal_states,
+                n_per_state=n_cal_points_per_state)
 
-            prep_params = get_multi_qubit_prep_params([qb.preparation_params() for
-                                                       qb in qbs])
+            prep_params = get_multi_qubit_prep_params(
+                [qb.preparation_params() for qb in qbs])
 
             # separate flux pulse sweep points from phases sweep points
-            hard_sweep_dict_flux = deepcopy({k.replace("upCZ_", ""): v for k, v in
-                                             hard_sweep_params.items() if
-                                             k.startswith('upCZ_')})
+            hard_sweep_dict_flux = deepcopy(
+                {k.replace("upCZ_", ""): v for k, v in hard_sweep_params.items()
+                 if k.startswith('upCZ_')})
             hard_sweep_dict_ramsey = deepcopy({k: v for k, v in
                                                hard_sweep_params.items() if not
                                                k.startswith('upCZ_')})
             if prepend_pulse_dicts is None:
                 prepend_pulse_dicts = []
 
-            operation_dict = get_operation_dict(qbs + [qbc, qbt] +
-                                                [pp['qb'] for pp in prepend_pulse_dicts])
+            operation_dict = get_operation_dict(
+                qbs + [qbc, qbt] + [pp['qb'] for pp in prepend_pulse_dicts])
 
             seq, hard_sweep_points = \
                 fsqs.dynamic_phase_seq(
@@ -2427,28 +2467,31 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
 
             if exp_metadata is None:
                 exp_metadata = {}
-            exp_metadata.update({'use_cal_points': cal_points,
-                                 'preparation_params': prep_params,
+            exp_metadata.update({'preparation_params': prep_params,
                                  'cal_points': repr(cp),
-                                 'rotate': cal_points,
+                                 'rotate': False if classified else
+                                    len(cp.states) != 0,
                                  'data_to_fit': {qb.name: 'pe' for qb in qbs},
                                  'cal_states_rotations':
                                      {qb.name: {'g': 0, 'e': 1} for qb in qbs},
                                  'hard_sweep_params': hard_sweep_dict_ramsey,
                                  'hard_sweep_dict_flux': hard_sweep_dict_flux,
                                  'prepend_n_cz': prepend_n_cz,
-                                 'prepend_pulse_dicts': str(prepend_pulse_dicts)})
+                                 'prepend_pulse_dicts':
+                                     str(prepend_pulse_dicts)})
             MC.run(label, exp_metadata=exp_metadata)
 
             if analyze:
                 flux_pulse_amp = None
                 if 'amplitude' in qbc.get_operation_dict()[cz_pulse_name]:
-                    flux_pulse_amp = qbc.get_operation_dict()[cz_pulse_name]['amplitude']
-                MA = tda.CZDynamicPhaseAnalysis(qb_names=[qb.name for qb in qbs], options_dict={
-                    'flux_pulse_length': qbc.get_operation_dict()[cz_pulse_name][
-                        'pulse_length'],
-                    'flux_pulse_amp': flux_pulse_amp, 'save_figs': ~extract_only},
-                                                extract_only=extract_only)
+                    flux_pulse_amp = qbc.get_operation_dict()[cz_pulse_name][
+                        'amplitude']
+                MA = tda.CZDynamicPhaseAnalysis(
+                    qb_names=[qb.name for qb in qbs],
+                    options_dict={'flux_pulse_length':
+                                      qbc.get_operation_dict()[cz_pulse_name][
+                                          'pulse_length'],
+                                  'flux_pulse_amp': flux_pulse_amp})
                 for qb in qbs:
                     dyn_phases[qb.name] = \
                         MA.proc_data_dict['analysis_params_dict'][qb.name][
@@ -2458,7 +2501,7 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, hard_sweep_params=None,
             qbc.set(basis_rot_par, dyn_phases)
         else:
             getattr(qbc, basis_rot_par)().update(dyn_phases)
-            not_updated = {k:v for k, v in old_dyn_phases.items()
+            not_updated = {k: v for k, v in old_dyn_phases.items()
                            if k not in dyn_phases}
             if len(not_updated) > 0:
                 log.warning(f'Not all basis_rotations stored in the pulse '
