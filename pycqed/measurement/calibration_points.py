@@ -81,6 +81,7 @@ class CalibrationPoints:
         Args:
             qb_names: qubit name or list of qubit names to retrieve
                 the indices of. Defaults to all.
+            prep_params: QuDev_transmon preparation_params attribute
 
         Returns: dict where keys are qb_names and values dict of {state: ind}
 
