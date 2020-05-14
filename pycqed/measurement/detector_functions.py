@@ -1072,10 +1072,9 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
             for n, ch in enumerate(self.used_channels):
                 if ch in self.correlation_channels:
                     data.append(3 * np.array(data_raw[n]) *
-                                (self.scaling_factor**2 / self.nr_averages))
+                                self.scaling_factor**2)
                 else:
-                    data.append(np.array(data_raw[n]) *
-                                (self.scaling_factor / self.nr_averages))
+                    data.append(np.array(data_raw[n]) * self.scaling_factor)
         return data
 
 
