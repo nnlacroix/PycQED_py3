@@ -398,7 +398,12 @@ def get_cal_sweep_points(sweep_points_array, cal_points, qb_name):
         if n_cal_pts == 0:
             return np.array([])
         else:
-            step = np.abs(sweep_points_array[-1] - sweep_points_array[-2])
+            try:
+                step = np.abs(sweep_points_array[-1] - sweep_points_array[-2])
+            except IndexError:
+                # This fallback is used to have a step value in the same order
+                # of magnitude as the value of the single sweep point
+                step = np.abs(sweep_points_array[0])
             return np.array([sweep_points_array[-1] + i * step for
                              i in range(1, n_cal_pts + 1)])
     else:
