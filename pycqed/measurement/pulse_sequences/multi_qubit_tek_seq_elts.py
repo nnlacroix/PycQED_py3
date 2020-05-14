@@ -382,8 +382,7 @@ def n_qubit_reset(qb_names, operation_dict, prep_params=dict(), upload=True,
     # reuse sequencer memory by repeating readout pattern
     # 1. get all readout pulse names (if they are on different uhf,
     # they will be applied to different channels)
-    ro_pulse_names = [p["pulse_name"] for p in
-                      generate_mux_ro_pulse_list(qb_names, operation_dict)]
+    ro_pulse_names = [f"RO {qbn}" for qbn in qb_names]
     # 2. repeat readout for each ro_pulse.
     [seq.repeat_ro(pn, operation_dict) for pn in ro_pulse_names]
 
