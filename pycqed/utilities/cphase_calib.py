@@ -1,10 +1,6 @@
 import numpy as np
-from numpy import array
 import lmfit
 import matplotlib.pyplot as plt
-import pycqed.analysis.measurement_analysis as ma
-from pycqed.analysis import analysis_toolbox as a_tools
-from scipy.interpolate import interp1d
 import sys
 from copy import deepcopy
 
@@ -126,20 +122,6 @@ def find_t_max_voltage(t, pe, init_guess_max=None, n=0, tol=0.1,
 
 def moving_average(x, w=2):
     return np.convolve(x, np.ones(w), 'valid') / w
-
-
-## cphase functions ##
-def ascending_phase_order(cphases_calib):
-    cphases_calib[cphases_calib < 0] += 2 * np.pi
-    cphases_calib[cphases_calib > 2 * np.pi] -= 2 * np.pi
-    pi_phase_idx = np.argmin(np.abs(cphases_calib - np.pi))
-    for ind in range(len(cphases_calib)):
-        if ind < pi_phase_idx and cphases_calib[ind] > cphases_calib[pi_phase_idx]:
-            cphases_calib[ind] -= 2 * np.pi
-        elif ind > pi_phase_idx and cphases_calib[ind] < cphases_calib[
-            pi_phase_idx]:
-            cphases_calib[ind] += 2 * np.pi
-    return cphases_calib
 
 
 ## dynamic phase functions ##
@@ -274,92 +256,6 @@ def get_amplitudes_to_measure(qbc, qbt, amplitude_range, cz_pulse_name,
                                                    max_spacing=kw.get('max_ampl_spacing', 0.0008))
     return ampl_to_measure
 
-#################### reloading parameter functions and build arb phase dict###
-def get_calib_dict(name=None):
-    import os
-    l = []
-    for file in os.listdir("."):
-        if file.startswith("carb_calib_ts_dict"):
-            print(os.path.join(file))
-            l.append(file)
-    if name is None and len(l)> 0:
-        name = l[-1]
-    print(f'Loading {name}')
-    return np.load(name, allow_pickle=True)[0]
-def save_calib_dict(calib_dict, name=None):
-    import datetime
-    if name is None:
-        name = "carb_calib_ts_dict_{:%Y%m%d_%H%M%S}.npy".format(datetime.datetime.now())
-    np.save(name, [calib_dict])
-
-def load_dyn_phase(timestamp, qb_names, plot=True):
-    f = a_tools.get_folder(timestamp=timestamp)
-    amplitudes = np.load(f + "\\amplitudes.npy")
-    dph_all = {}
-    if isinstance(qb_names, str):
-        qb_names = [qb_names]
-    for qbn in qb_names:
-        dph = np.load(f + f"\\dynamic_phases_{qbn}.npy")
-        if plot:
-            plt.scatter(amplitudes, np.unwrap(dph / 180 * np.pi) * 180 / np.pi,
-                     label=f"{qbn} measured", marker=".")
-            plt.xlabel("Amplitude")
-            plt.ylabel("Dynamic phase (deg.)")
-        dyn_phase_func_str = f"lambda ampl_test: interp1d({repr(amplitudes)}, " \
-                            f"{repr(np.unwrap(dph / 180 * np.pi) * 180 /np.pi)}, kind='cubic', fill_value='extrapolate' )(ampl_test)"
-        dph_all[qbn] = dyn_phase_func_str
-    return dph_all
-
-
-def load_cphase(timestamp, offset=None, remove=None):
-    a = ma.MeasurementAnalysis(timestamp=timestamp, auto=False)
-    a.get_naming_and_values()
-    ampl_calib = a.exp_metadata['soft_sweep_params']['amplitude']['values']
-    cphases_calib = np.array(
-        a.data_file['Analysis']["Processed data"]['analysis_params_dict'][
-            "cphase"]['val'])
-
-    # remove bad points
-    mask = np.ones_like(ampl_calib, dtype=bool)
-    if remove is not None:
-        mask[remove] = [False] * len(remove)
-        ampl_calib = ampl_calib[mask]
-        cphases_calib = cphases_calib[mask]
-
-    # clean discontinuities
-    cphases_calib[cphases_calib < 0] = cphases_calib[cphases_calib < 0] + 2 * np.pi
-    cphases_calib[cphases_calib > 2 * np.pi] = cphases_calib[
-                                                   cphases_calib > 2 * np.pi] - 2 * np.pi
-
-    # take first point as lowest point
-    cphases_calib[cphases_calib < cphases_calib[0]] = \
-        cphases_calib[cphases_calib  < cphases_calib[0]] + 2 * np.pi
-    pi_phase_idx = np.argmin(np.abs(cphases_calib - np.pi))
-    for ind in range(len(cphases_calib)):
-        if ind < pi_phase_idx and cphases_calib[ind] > cphases_calib[pi_phase_idx]:
-            cphases_calib[ind] -= 2 * np.pi
-        elif ind > pi_phase_idx and cphases_calib[ind] < cphases_calib[
-            pi_phase_idx]:
-            cphases_calib[ind] += 2 * np.pi
-    if offset is None:
-        offset = cphases_calib[0]
-    return ampl_calib, cphases_calib, offset
-
-def create_ampl_to_phase_func(ampl_calib, cphases_calib, offset):
-    arb_phase_amp_func = lambda target_phase: np.interp((target_phase - offset) % (2 * np.pi), cphases_calib - offset, ampl_calib)
-    arb_phase_amp_func_str = f"lambda target_phase: np.interp((target_phase - {offset}) % (2*np.pi), {repr( cphases_calib - offset)}, {repr(ampl_calib)}, period=2*np.pi)"
-    return arb_phase_amp_func_str
-
-def load_amplitude_func(timestamp, offset=None, remove=None):
-    a, ph, off = load_cphase(timestamp, offset=offset, remove=remove)
-    return create_ampl_to_phase_func(a, ph, off)
-
-def create_arb_phase_func(amplitude_function, dyn_phase_functions):
-    arb_phase_func_str = f"lambda target_phase: (({amplitude_function})(target_phase)," + "{"
-    for qbn, func in dyn_phase_functions.items():
-        arb_phase_func_str += f"'{qbn}': ({func})(({amplitude_function})(target_phase)),"
-    arb_phase_func_str += "})"
-    return arb_phase_func_str
 
 #############################################################################
 #                   CZ related
