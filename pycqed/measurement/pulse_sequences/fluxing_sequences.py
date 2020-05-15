@@ -133,7 +133,7 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict_ramsey, operation_dict,
                       cz_pulse_name,
                       hard_sweep_dict_flux=None,
                       cal_points=None, prepend_n_cz=0,
-                      upload=False, prep_params=dict(), prepend_pulse_dicts=None):
+                      upload=False, prep_params=None, prepend_pulse_dicts=None):
     '''
     Performs a Ramsey with interleaved Flux pulse
     Sequence
@@ -174,6 +174,8 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict_ramsey, operation_dict,
         hard_sweep_dict_flux = {param_to_set: [flux_pulse[param_to_set]]}
     ro_pulses = generate_mux_ro_pulse_list(qb_names, operation_dict)
 
+    if prep_params is None:
+        prep_params = {}
     if prepend_pulse_dicts is None:
         prepend_pulse_dicts = {}
     pulse_list = []
@@ -557,12 +559,14 @@ def cz_bleed_through_phase_seq(phases, qb_name, CZ_pulse_name, CZ_separation,
 def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
                 operation_dict, cz_pulse_name, num_cz_gates=1,
                 max_flux_length=None, cal_points=None, upload=True,
-                prep_params=dict(), prepend_pulse_dicts=None):
+                prep_params=None, prepend_pulse_dicts=None):
 
     assert num_cz_gates % 2 != 0
 
     seq_name = 'Cphase_sequence'
 
+    if prep_params is None:
+        prep_params = {}
     if prepend_pulse_dicts is None:
         prepend_pulse_dicts = {}
     prepend_pulses = []

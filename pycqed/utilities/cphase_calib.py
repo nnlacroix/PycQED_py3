@@ -377,4 +377,3 @@ def update_cz_amplitude(qbc, qbt, phases, amplitudes, target_phase=np.pi,
     print('BEST {} '.format('amplitude'), new_ampl)
     if update:
         qbc.set('upCZ_{}_amplitude'.format(qbt.name), new_ampl)
-
