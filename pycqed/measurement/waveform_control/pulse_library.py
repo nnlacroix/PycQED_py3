@@ -215,17 +215,18 @@ class BufferedCZPulse(pulse.Pulse):
 
     @staticmethod
     def calc_cphase_params(phi, cphase_calib_dict):
-        if 'zero_angle_threshold' in cphase_calib_dict:
-            if abs(phi) < cphase_calib_dict['zero_angle_threshold']:
-                return (0, {})
+        th = cphase_calib_dict.get('zero_angle_threshold', 0)
         assert 'phase_amplitude_array' in cphase_calib_dict, \
             "phase_amplitude_array not provided"
         paa = cphase_calib_dict['phase_amplitude_array']
-        offset = cphase_calib_dict.get('offset', paa[0][0])
+        # the following asarray makes the function robust to work for phi
+        # being float, list, or array
+        offset = np.asarray(cphase_calib_dict.get('offset', paa[0][0]))
         amplitude = np.interp((phi - offset) % (2 * np.pi),
-                                   paa[0] - offset, paa[1], period=2 * np.pi)
+                              paa[0] - offset, paa[1], period=2 * np.pi) \
+                    * (1 - np.less(np.abs(np.mod(phi, 2 * np.pi)), th))
 
-        if 'amplitude_dynphase_dict' not in  cphase_calib_dict:
+        if 'amplitude_dynphase_dict' not in cphase_calib_dict:
             log.warning('amplitude_dynphase_dict not provided. '
                         'Using basis_rotation from pulse settings.')
             basis_rotation = None
@@ -236,7 +237,8 @@ class BufferedCZPulse(pulse.Pulse):
                 basis_rotation[qbn] = sp.interpolate.interp1d(ada[0],
                         (np.unwrap(ada[1] / 180 * np.pi) * 180 / np.pi),
                         kind=kind, fill_value='extrapolate'
-                    )(amplitude)
+                    )(amplitude) \
+                    * (1 - np.less(np.abs(np.mod(phi, 2 * np.pi)), th))
         return (amplitude, basis_rotation)
 
     @staticmethod

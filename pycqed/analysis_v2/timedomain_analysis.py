@@ -4560,15 +4560,8 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
         cphases = phases[0::2] - phases[1::2]
         # arrange phases in ascending order: used
         # to analyze arbitrary phase gates
-        if self.get_param_value("sort_phases_ascending_order", False):
-            cphases[cphases < 0] += 2 * np.pi
-            cphases[cphases > 2 * np.pi] -= 2 * np.pi
-            pi_phase_idx = np.argmin(np.abs(cphases - np.pi))
-            for ind in range(len(cphases)):
-                if ind < pi_phase_idx and cphases[ind] > cphases[pi_phase_idx]:
-                    cphases[ind] -= 2 * np.pi
-                elif ind > pi_phase_idx and cphases[ind] < cphases[pi_phase_idx]:
-                    cphases[ind] += 2 * np.pi
+        if self.get_param_value("use_unwrap_heuristic", False):
+            cphases = self.cphase_unwrap_heuristic(cphases)
         else:
             cphases[cphases < 0] += 2 * np.pi
         cphases_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
@@ -4623,6 +4616,25 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                 'leakage'] = {'val': leakage, 'stderr': leakage_errs}
 
         self.save_processed_data(key='analysis_params_dict')
+
+    @staticmethod
+    def cphase_unwrap_heuristic(cphases):
+        try:
+            cphases = cphases % (2 * np.pi)
+            pi_phase_idx = np.argmin(np.abs(cphases - np.pi))
+            sgn = np.sign(cphases[pi_phase_idx + 1] - cphases[pi_phase_idx])
+            for ind in range(len(cphases)):
+                if ind < pi_phase_idx and sgn * cphases[ind] > sgn \
+                        * cphases[pi_phase_idx]:
+                    cphases[ind] -= sgn * 2 * np.pi
+                elif ind > pi_phase_idx and sgn * cphases[ind] < \
+                        sgn * cphases[pi_phase_idx]:
+                    cphases[ind] += sgn * 2 * np.pi
+            if sgn == -1:
+                cphases -= 2 * np.pi
+        except:
+            log.warning('CPhase unwrap heuristic failed.')
+        return cphases
 
     def plot_traces(self, prob_label, data_2d, qbn):
         plotsize = self.get_default_plot_params(set=False)[

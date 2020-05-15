@@ -29,8 +29,8 @@ from pycqed.analysis_v3 import helper_functions as hlp_mod
 import pycqed.measurement.waveform_control.sequence as sequence
 from pycqed.utilities import cphase_calib
 from pycqed.utilities.general import temporary_value
-import sys
 from pycqed.analysis_v2 import tomography_qudev as tomo
+import sys
 
 try:
     import \
@@ -2252,8 +2252,14 @@ def calibrate_arbitrary_phase(qbc, qbt, cz_pulse_name, measure_conditional_phase
             measure_cphase(qbc=qbc, qbt=qbt, cz_pulse_name=cz_pulse_name,
                            soft_sweep_params=soft_sweep_params_cphase,
                            label=label, analyze=True, classified=classified_ro,
-                           sort_phases_ascending_order=True, **kw)
-        results['phase_amplitude_array'] = [cphases, soft_sweep_params_cphase['amplitude']['values']]
+                           use_unwrap_heuristic=True, **kw)
+        # The sign convention of the cphase measurement does not match the
+        # common sign convention of a controlled arbitrary phase gate
+        # e.g., the CPHASE gate in qutip
+        # e.g., https://www.quantum-inspire.com/kbase/cr-gate/
+        # This is corrected by using -cphases in the next line
+        results['phase_amplitude_array'] = [-cphases,
+                                            soft_sweep_params_cphase['amplitude']['values']]
         if update:
             cphase_calib_dict['phase_amplitude_array'] =  results['phase_amplitude_array']
 
@@ -2345,12 +2351,15 @@ def test_arbitrary_phase(qbc, qbt, target_phases, cz_pulse_name, measure_dynamic
     soft_sweep_params = kw.get('soft_sweep_params', dict(cphase=dict(values=amplitudes, unit='V')))
     exp_metadata = kw.get('exp_metadata', {})
     exp_metadata.update(dict(target_phases=target_phases,
-                             sort_phases_ascending_order=True))
+                             use_unwrap_heuristic=True))
     if measure_conditional_phase:
         cphases, population_losses, leakage, flux_pulse_tdma = \
             measure_cphase(qbc=qbc, qbt=qbt, soft_sweep_params=soft_sweep_params,
                            cz_pulse_name=cz_pulse_name, exp_metadata=exp_metadata,
                            label=label, analyze=True, classified=classified_ro,  **kw)
+        # Sign flip to match the convention for controlled arbitrary phase
+        # gate, see comment in calibrate_arbitrary_phase()
+        cphases = -cphases
         if analyze:
             # get folder to save figures.
             # FIXME: temporary while no proper analysis class is made
