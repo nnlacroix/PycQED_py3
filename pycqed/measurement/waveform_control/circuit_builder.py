@@ -89,6 +89,13 @@ class CircuitBuilder:
         return p
 
     def swap_qubit_indices(self, i, j=None):
+        """
+        Swaps logical qubit indices by swapping the entries in self.qubits.
+        :param i: (int or iterable): index of the first qubit to be swapped or
+            indices of the two qubits to be swapped (as two ints given in the
+            first two elements of the iterable)
+        :param j: index of the second qubit (if it is not set via param i)
+        """
         if j is None:
             i, j = i[0], i[1]
         self.qubits[i], self.qubits[j] = self.qubits[j], self.qubits[i]
@@ -324,7 +331,7 @@ class CircuitBuilder:
             pulse_modifs = {1: {"ref_point": "start"}}
             This will modify the pulse "Y90 qb2" and reference it to the start
             of the first one.
-        :return:
+        :return: The created block
         """
         if fill_values is None:
             fill_values = {}
@@ -338,17 +345,57 @@ class CircuitBuilder:
         [pulses[i].update(pm) for i, pm in pulse_modifs.items()]
         return Block(block_name, pulses)
 
-    def seq_from_ops(self, operations, fill_values=None,  pulse_modifs=None,
-                     init_state='0', seq_name='Sequence', ro_kwargs=None):
+    def seg_from_ops(self, operations, fill_values=None, pulse_modifs=None,
+                     init_state='0', seg_name='Segment1', ro_kwargs=None):
+        """
+        Returns a segment with the given operations using the function
+        block_from_ops().
+        :param operations: list of operations (str), which can be preformatted
+            and later filled with values in the dictionary fill_values
+        :param fill_values: optional fill values for operations (dict),
+            see documentation of block_from_ops().
+        :param pulse_modifs: Modification of pulses parameters (dict),
+            see documentation of block_from_ops().
+        :param init_state: initialization state (string or list),
+            see documentation of initialize().
+        :param seg_name: Name (str) of the segment (default: "Segment1")
+        :param ro_kwargs: Keyword arguments (dict) for the function
+            mux_readout().
+        :return: The created segment
+        """
         if ro_kwargs is None:
             ro_kwargs = {}
-        seq = Sequence(seq_name)
         pulses = self.initialize(init_state=init_state).build()
         pulses += self.block_from_ops("Block1", operations,
                                       fill_values=fill_values,
                                       pulse_modifs=pulse_modifs).build()
         pulses += self.mux_readout(**ro_kwargs).build()
-        seq.add(Segment('Segment1', pulses))
+        return Segment(seg_name, pulses)
+
+    def seq_from_ops(self, operations, fill_values=None,  pulse_modifs=None,
+                     init_state='0', seq_name='Sequence', ro_kwargs=None):
+        """
+        Returns a sequence with the given operations using the function
+        block_from_ops().
+        :param operations: list of operations (str), which can be preformatted
+            and later filled with values in the dictionary fill_values
+        :param fill_values: optional fill values for operations (dict),
+            see documentation of block_from_ops().
+        :param pulse_modifs: Modification of pulses parameters (dict),
+            see documentation of block_from_ops().
+        :param init_state: initialization state (string or list),
+            see documentation of initialize().
+        :param seq_name: Name (str) of the sequence (default: "Sequence")
+        :param ro_kwargs: Keyword arguments (dict) for the function
+            mux_readout().
+        :return: The created sequence
+        """
+        seq = Sequence(seq_name)
+        seq.add(self.seg_from_ops(operations=operations,
+                                  fill_values=fill_values,
+                                  pulse_modifs=pulse_modifs,
+                                  init_state=init_state,
+                                  ro_kwargs=ro_kwargs))
         return seq
 
     def simultaneous_blocks(self, block_name, blocks):
