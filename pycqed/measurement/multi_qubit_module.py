@@ -154,6 +154,29 @@ def get_operation_dict(qubits):
     return operation_dict
 
 
+def get_multiplexed_readout_detector_function(qubits, det_type, **kw):
+    # only used by classifier detector
+    det_get_values_kws = {'classified': kw.pop('classified', False),
+                          'correlated': kw.pop('correlated', False),
+                          'thresholded': kw.pop('thresholded', True),
+                          'averaged': kw.pop('averaged', True)}
+    nr_averages = max(qb.acq_averages() for qb in qubits)
+    nr_shots = max(qb.acq_shots() for qb in qubits)
+    correlations = kw.pop('correlations', None)
+    if correlations is None and 'corr' in det_type:
+        if kw.pop('self_correlated', False):
+            correlations = list(itertools.combinations_with_replacement(
+                [qb.acq_I_channel() for qb in qubits], r=2))
+        else:
+            correlations = list(itertools.combinations(
+                [qb.acq_I_channel() for qb in qubits], r=2))
+
+    return get_multiplexed_readout_detector_functions(
+        qubits, nr_averages=nr_averages, nr_shots=nr_shots,
+        correlations=correlations,
+        det_get_values_kws=det_get_values_kws, **kw)[det_type]
+
+
 def get_multiplexed_readout_detector_functions(qubits, nr_averages=2**10,
                                                nr_shots=4095,
                                                used_channels=None,
@@ -322,7 +345,7 @@ def get_meas_obj_value_names_map(mobjs, multi_uhf_det_func):
             for qb in mobjs}
 
     meas_obj_value_names_map.update({
-        name: [name] for name in
+        name + '_object': [name] for name in
         [vn for vn in multi_uhf_det_func.value_names if vn not in
          hlp_mod.flatten_list(list(meas_obj_value_names_map.values()))]})
 
@@ -3290,3 +3313,557 @@ def measure_ro_dynamic_phases(pulsed_qubit, measured_qubits,
         pulsed_qubit.name, ''.join([qb.name for qb in qubits])),
         exp_metadata=exp_metadata)
     tda.MultiQubit_TimeDomain_Analysis(qb_names=[qb.name for qb in measured_qubits])
+
+
+def get_multi_qubit_msmt_suffix(qubits):
+    qubit_names = [qb.name for qb in qubits]
+    if len(qubit_names) == 1:
+        msmt_suffix = qubits[0].msmt_suffix
+    elif len(qubit_names) > 5:
+        msmt_suffix = '_{}qubits'.format(len(qubit_names))
+    else:
+        msmt_suffix = '_qbs{}'.format(''.join([i[-1] for i in qubit_names]))
+    return msmt_suffix
+
+## Multi-qubit time-domain measurements ##
+
+def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
+                         n_cal_points_per_state=1, cal_states='auto',
+                         n=1, for_ef=False, last_ge_pulse=False,
+                         upload=True, update=False, analyze=True, label=None,
+                         exp_metadata=None, det_type='int_avg_det', **kw):
+    """
+    Performs an n-qubit Rabi measurement.
+    :param qubits: list of QuDev_transmon objects
+    :param sweep_points: SweepPoints object. If None, creates SweepPoints
+        from amps (assumes all qubits use the same sweep points)
+    :param amps: array of amplitudes to sweep
+    :param prep_params: qubits preparation parameters
+    :param n_cal_points_per_state: number of cal_points per cal_state
+    :param cal_states: which cal states to measure. Can be 'auto', or any
+        combination of 'g', 'e', 'f', 'ge', 'ef', 'gf', 'gef'.
+    :param n: number of rabi pulses per sweep point
+    :param for_ef: whether to do rabi between ef
+    :param last_ge_pulse: whether to use a ge pulse at the end of each segment
+           for a rabi between ef transition
+    :param upload: whether to upload to AWGs
+    :param update: whether to update the qubits ge_amp180 (or ef_amp180)
+        parameters
+    :param analyze: whether to analyze data
+    :param label: measurement label
+    :param exp_metadata: experiment metadata
+    :param det_type: detector function type. None, or one of 'int_log_det',
+        'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
+        'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
+    :param kw: keyword arguments. Are used in
+        get_multiplexed_readout_detector_function
+    """
+    qubit_names = [qb.name for qb in qubits]
+    if sweep_points is None:
+        if amps is None:
+            raise ValueError('Both "amps" and "sweep_points" cannot be None.')
+        else:
+            sweep_points = SweepPoints()
+            for qbn in qubit_names:
+                sweep_points.add_sweep_parameter(
+                    param_name=f'amps_{qbn}', values=amps,
+                    unit='V', label='Pulse Amplitude')
+
+    if prep_params is None:
+        prep_params = get_multi_qubit_prep_params(
+            [qb.preparation_params() for qb in qubits])
+
+    if label is None:
+        label = 'Rabi_ef' if for_ef else 'Rabi'
+        if n != 1:
+            label += f'-n{n}'
+        if 'classif' in det_type:
+            label += '_classified'
+        if 'active' in prep_params['preparation_type']:
+            label += '_reset'
+        label += get_multi_qubit_msmt_suffix(qubits)
+
+    for qb in qubits:
+        MC = qb.instr_mc.get_instr()
+        qb.prepare(drive='timedomain')
+
+    cal_states = CalibrationPoints.guess_cal_states(cal_states,
+                                                    for_ef=for_ef)
+    cp = CalibrationPoints.multi_qubit(qubit_names, cal_states,
+                                       n_per_state=n_cal_points_per_state)
+    seq, sp = mqs.n_qubit_rabi_seq(
+        qubit_names, get_operation_dict(qubits), sweep_points, cp,
+        upload=False, n=n, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
+        prep_params=prep_params)
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(
+        sequence=seq, upload=upload,
+        parameter_name=list(sweep_points[0].values())[0][2],
+        unit=list(sweep_points[0].values())[0][1]))
+    MC.set_sweep_points(sp)
+
+    det_func = get_multiplexed_readout_detector_function(
+        qubits, det_type=det_type, **kw)
+    MC.set_detector_function(det_func)
+
+    if exp_metadata is None:
+        exp_metadata = {}
+    exp_metadata.update({'preparation_params': prep_params,
+                         'cal_points': repr(cp),
+                         'sweep_points': sweep_points,
+                         'meas_obj_sweep_points_map':
+                             sweep_points.get_sweep_points_map(qubit_names),
+                         'meas_obj_value_names_map':
+                             get_meas_obj_value_names_map(qubits, det_func),
+                         'rotate': len(cp.states) != 0 and
+                                   'classif' not in det_type,
+                         'last_ge_pulses': [last_ge_pulse],
+                         'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
+                                         in qubit_names}})
+    MC.run(label, exp_metadata=exp_metadata)
+
+    # Analyze this measurement
+    if analyze:
+        rabi_ana = tda.RabiAnalysis(qb_names=qubit_names)
+        if update:
+            for qb in qubits:
+                amp180 = rabi_ana.proc_data_dict['analysis_params_dict'][
+                    qb.name]['piPulse']
+                if not for_ef:
+                    qb.ge_amp180(amp180)
+                    qb.ge_amp90_scale(0.5)
+                else:
+                    qb.ef_amp180(amp180)
+                    qb.ef_amp90_scale(0.5)
+
+
+def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
+                           artificial_detuning=0, prep_params=None,
+                           n_cal_points_per_state=1, cal_states='auto',
+                           for_ef=False, last_ge_pulse=False,
+                           upload=True, update=False, analyze=True, label=None,
+                           exp_metadata=None, det_type='int_avg_det', **kw):
+    """
+    Performs an n-qubit Ramsey measurement.
+    :param qubits: list of QuDev_transmon objects
+    :param sweep_points: SweepPoints object. If None, creates SweepPoints
+        from delays (assumes all qubits use the same sweep points)
+    :param delays: array of ramsey delays to sweep
+    :param artificial_detuning: detuning of second pi-half pulse.
+    :param prep_params: qubits preparation parameters
+    :param n_cal_points_per_state: number of cal_points per cal_state
+    :param cal_states: which cal states to measure. Can be 'auto', or any
+        combination of 'g', 'e', 'f', 'ge', 'ef', 'gf', 'gef'.
+    :param for_ef: whether to do ramsey between ef
+    :param last_ge_pulse: whether to use a ge pulse at the end of each segment
+           for a ramsey between ef transition
+    :param upload: whether to upload to AWGs
+    :param update: whether to update the qubits ge_amp180 (or ef_amp180)
+        parameters
+    :param analyze: whether to analyze data
+    :param label: measurement label
+    :param exp_metadata: experiment metadata
+    :param det_type: detector function type. None, or one of 'int_log_det',
+        'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
+        'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
+    :param kw: keyword arguments. Are used in
+        get_multiplexed_readout_detector_function
+    """
+    qubit_names = [qb.name for qb in qubits]
+    if sweep_points is None:
+        if delays is None:
+            raise ValueError('Both "delays" and "sweep_points" cannot be None.')
+        else:
+            sweep_points = SweepPoints()
+            for qbn in qubit_names:
+                sweep_points.add_sweep_parameter(
+                    param_name=f'delays_{qbn}', values=delays,
+                    unit='s', label=r'Second $\pi$-half pulse delay')
+
+    if prep_params is None:
+        prep_params = get_multi_qubit_prep_params(
+            [qb.preparation_params() for qb in qubits])
+
+    if label is None:
+        label = 'Ramsey_ef' if for_ef else 'Ramsey'
+        if 'classif' in det_type:
+            label += '_classified'
+        if 'active' in prep_params['preparation_type']:
+            label += '_reset'
+        label += get_multi_qubit_msmt_suffix(qubits)
+
+    for qb in qubits:
+        MC = qb.instr_mc.get_instr()
+        qb.prepare(drive='timedomain')
+
+    cal_states = CalibrationPoints.guess_cal_states(cal_states,
+                                                    for_ef=for_ef)
+    cp = CalibrationPoints.multi_qubit(qubit_names, cal_states,
+                                       n_per_state=n_cal_points_per_state)
+    seq, sp = mqs.n_qubit_ramsey_seq(
+        qubit_names, get_operation_dict(qubits), sweep_points, cp,
+        artificial_detuning=artificial_detuning, upload=False, for_ef=for_ef,
+        last_ge_pulse=last_ge_pulse, prep_params=prep_params)
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(
+        sequence=seq, upload=upload,
+        parameter_name=list(sweep_points[0].values())[0][2],
+        unit=list(sweep_points[0].values())[0][1]))
+    MC.set_sweep_points(sp)
+
+    fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
+    det_func = get_multiplexed_readout_detector_function(
+        qubits, det_type=det_type, **kw)
+    MC.set_detector_function(det_func)
+
+    if exp_metadata is None:
+        exp_metadata = {}
+    exp_metadata.update({'preparation_params': prep_params,
+                         'cal_points': repr(cp),
+                         'sweep_points': sweep_points,
+                         'artificial_detuning': artificial_detuning,
+                         'meas_obj_sweep_points_map':
+                             sweep_points.get_sweep_points_map(qubit_names),
+                         'meas_obj_value_names_map':
+                             get_meas_obj_value_names_map(qubits, det_func),
+                         'rotate': len(cp.states) != 0 and
+                                   'classif' not in det_type,
+                         'last_ge_pulses': [last_ge_pulse],
+                         'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
+                                         in qubit_names}})
+    MC.run(label, exp_metadata=exp_metadata)
+
+    # Analyze this measurement
+    if analyze:
+        ramsey_ana = tda.RamseyAnalysis(
+            qb_names=qubit_names, options_dict=dict(
+                fit_gaussian_decay=fit_gaussian_decay))
+        if update:
+            for qb in qubits:
+                new_qubit_freq = ramsey_ana.proc_data_dict[
+                    'analysis_params_dict'][qb.name]['exp_decay_' + qb.name][
+                    'new_qb_freq']
+                T2_star = ramsey_ana.proc_data_dict[
+                    'analysis_params_dict'][qb.name]['exp_decay_' + qb.name][
+                    'T2_star']
+                if update:
+                    if for_ef:
+                        qb.ef_freq(new_qubit_freq)
+                        qb.T2_star_ef(T2_star)
+                    else:
+                        qb.ge_freq(new_qubit_freq)
+                        qb.T2_star(T2_star)
+
+
+def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
+                           prep_params=None, for_ef=False, last_ge_pulse=False,
+                           n_cal_points_per_state=1, cal_states='auto',
+                           upload=True, update=False, analyze=True, label=None,
+                           exp_metadata=None, det_type='int_avg_det', **kw):
+    """
+    Performs an n-qubit Rabi measurement.
+    :param qubits: list of QuDev_transmon objects
+    :param sweep_points: SweepPoints object. If None, creates SweepPoints
+        from qscales (assumes all qubits use the same sweep points)
+    :param qscales: array of qscales to sweep
+    :param prep_params: qubits preparation parameters
+    :param n_cal_points_per_state: number of cal_points per cal_state
+    :param cal_states: which cal states to measure. Can be 'auto', or any
+        combination of 'g', 'e', 'f', 'ge', 'ef', 'gf', 'gef'.
+    :param for_ef: whether to calibrate DRAG parameter for ef transition
+    :param last_ge_pulse: whether to use a ge pulse at the end of each segment
+           for a calibration of the ef transition
+    :param upload: whether to upload to AWGs
+    :param update: whether to update the qubits ge_amp180 (or ef_amp180)
+        parameters
+    :param analyze: whether to analyze data
+    :param label: measurement label
+    :param exp_metadata: experiment metadata
+    :param det_type: detector function type. None, or one of 'int_log_det',
+        'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
+        'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
+    :param kw: keyword arguments. Are used in
+        get_multiplexed_readout_detector_function
+    """
+    qubit_names = [qb.name for qb in qubits]
+    if sweep_points is None:
+        if qscales is None:
+            raise ValueError('Both "qscales" and "sweep_points" '
+                             'cannot be None.')
+        else:
+            sweep_points = SweepPoints()
+            for qbn in qubit_names:
+                sweep_points.add_sweep_parameter(
+                    param_name=f'qscales_{qbn}', values=qscales,
+                    unit='', label='DRAG q-scale')
+
+    if prep_params is None:
+        prep_params = get_multi_qubit_prep_params(
+            [qb.preparation_params() for qb in qubits])
+
+    if label is None:
+        label = 'Qscale_ef' if for_ef else 'Qscale'
+        if 'classif' in det_type:
+            label += '_classified'
+        if 'active' in prep_params['preparation_type']:
+            label += '_reset'
+        label += get_multi_qubit_msmt_suffix(qubits)
+
+    for qb in qubits:
+        MC = qb.instr_mc.get_instr()
+        qb.prepare(drive='timedomain')
+
+    cal_states = CalibrationPoints.guess_cal_states(cal_states,
+                                                    for_ef=for_ef)
+    cp = CalibrationPoints.multi_qubit(qubit_names, cal_states,
+                                       n_per_state=n_cal_points_per_state)
+    seq, sp = mqs.n_qubit_qscale_seq(
+        qubit_names, get_operation_dict(qubits), sweep_points, cp,
+        upload=False, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
+        prep_params=prep_params)
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(
+        sequence=seq, upload=upload,
+        parameter_name=list(sweep_points[0].values())[0][2],
+        unit=list(sweep_points[0].values())[0][1]))
+    MC.set_sweep_points(sp)
+
+    det_func = get_multiplexed_readout_detector_function(
+        qubits, det_type=det_type, **kw)
+    MC.set_detector_function(det_func)
+
+    if exp_metadata is None:
+        exp_metadata = {}
+    exp_metadata.update({'preparation_params': prep_params,
+                         'cal_points': repr(cp),
+                         'sweep_points': sweep_points,
+                         'meas_obj_sweep_points_map':
+                             sweep_points.get_sweep_points_map(qubit_names),
+                         'meas_obj_value_names_map':
+                             get_meas_obj_value_names_map(qubits, det_func),
+                         'rotate': len(cp.states) != 0 and
+                                   'classif' not in det_type,
+                         'last_ge_pulses': [last_ge_pulse],
+                         'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
+                                         in qubit_names}})
+    MC.run(label, exp_metadata=exp_metadata)
+
+    # Analyze this measurement
+    if analyze:
+        qscale_ana = tda.QScaleAnalysis(qb_names=qubit_names)
+        if update:
+            for qb in qubits:
+                qscale = qscale_ana.proc_data_dict['analysis_params_dict'][
+                    qb.name]['qscale']
+                if for_ef:
+                    qb.ef_motzoi(qscale)
+                else:
+                    qb.ge_motzoi(qscale)
+
+
+def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
+                       prep_params=None, for_ef=False, last_ge_pulse=False,
+                       n_cal_points_per_state=1, cal_states='auto',
+                       upload=True, update=False, analyze=True, label=None,
+                       exp_metadata=None, det_type='int_avg_det', **kw):
+    """
+    Performs an n-qubit Rabi measurement.
+    :param qubits: list of QuDev_transmon objects
+    :param sweep_points: SweepPoints object. If None, creates SweepPoints
+        from delays (assumes all qubits use the same sweep points)
+    :param delays: array of delays to sweep
+    :param prep_params: qubits preparation parameters
+    :param n_cal_points_per_state: number of cal_points per cal_state
+    :param cal_states: which cal states to measure. Can be 'auto', or any
+        combination of 'g', 'e', 'f', 'ge', 'ef', 'gf', 'gef'.
+    :param for_ef: whether to measure T1 for ef transition
+    :param last_ge_pulse: whether to use a ge pulse at the end of each segment
+           for a measurement of T1 for the ef transition
+    :param upload: whether to upload to AWGs
+    :param update: whether to update the qubits ge_amp180 (or ef_amp180)
+        parameters
+    :param analyze: whether to analyze data
+    :param label: measurement label
+    :param exp_metadata: experiment metadata
+    :param det_type: detector function type. None, or one of 'int_log_det',
+        'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
+        'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
+    :param kw: keyword arguments. Are used in
+        get_multiplexed_readout_detector_function
+    """
+    qubit_names = [qb.name for qb in qubits]
+    if sweep_points is None:
+        if delays is None:
+            raise ValueError('Both "delays" and "sweep_points" cannot be None.')
+        else:
+            sweep_points = SweepPoints()
+            for qbn in qubit_names:
+                sweep_points.add_sweep_parameter(
+                    param_name=f'delays_{qbn}', values=delays,
+                    unit='s', label='Pulse Delay')
+
+    if prep_params is None:
+        prep_params = get_multi_qubit_prep_params(
+            [qb.preparation_params() for qb in qubits])
+
+    if label is None:
+        label = 'T1_ef' if for_ef else 'T1'
+        if 'classif' in det_type:
+            label += '_classified'
+        if 'active' in prep_params['preparation_type']:
+            label += '_reset'
+        label += get_multi_qubit_msmt_suffix(qubits)
+
+    for qb in qubits:
+        MC = qb.instr_mc.get_instr()
+        qb.prepare(drive='timedomain')
+
+    cal_states = CalibrationPoints.guess_cal_states(cal_states,
+                                                    for_ef=for_ef)
+    cp = CalibrationPoints.multi_qubit(qubit_names, cal_states,
+                                       n_per_state=n_cal_points_per_state)
+    seq, sp = mqs.n_qubit_t1_seq(
+        qubit_names, get_operation_dict(qubits), sweep_points, cp,
+        upload=False, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
+        prep_params=prep_params)
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(
+        sequence=seq, upload=upload,
+        parameter_name=list(sweep_points[0].values())[0][2],
+        unit=list(sweep_points[0].values())[0][1]))
+    MC.set_sweep_points(sp)
+
+    det_func = get_multiplexed_readout_detector_function(
+        qubits, det_type=det_type, **kw)
+    MC.set_detector_function(det_func)
+
+    if exp_metadata is None:
+        exp_metadata = {}
+    exp_metadata.update({'preparation_params': prep_params,
+                         'cal_points': repr(cp),
+                         'sweep_points': sweep_points,
+                         'meas_obj_sweep_points_map':
+                             sweep_points.get_sweep_points_map(qubit_names),
+                         'meas_obj_value_names_map':
+                             get_meas_obj_value_names_map(qubits, det_func),
+                         'rotate': len(cp.states) != 0 and
+                                   'classif' not in det_type,
+                         'last_ge_pulses': [last_ge_pulse],
+                         'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
+                                         in qubit_names}})
+    MC.run(label, exp_metadata=exp_metadata)
+
+    # Analyze this measurement
+    if analyze:
+        t1_ana = tda.T1Analysis(qb_names=qubit_names)
+        if update:
+            for qb in qubits:
+                T1 = t1_ana.proc_data_dict['analysis_params_dict'][
+                    qb.name]['T1']
+                if for_ef:
+                    qb.T1_ef(T1)
+                else:
+                    qb.T1(T1)
+
+
+def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
+                         artificial_detuning=0, prep_params=None,
+                         n_cal_points_per_state=1, cal_states='auto',
+                         for_ef=False, last_ge_pulse=False,
+                         upload=True, update=False, analyze=True, label=None,
+                         exp_metadata=None, det_type='int_avg_det', **kw):
+    """
+    Performs an n-qubit Ramsey measurement.
+    :param qubits: list of QuDev_transmon objects
+    :param sweep_points: SweepPoints object
+    :param delays: array of echo delays to sweep. If None, creates SweepPoints
+        from delays (assumes all qubits use the same sweep points)
+    :param artificial_detuning: detuning of second pi-half pulse.
+    :param prep_params: qubits preparation parameters
+    :param n_cal_points_per_state: number of cal_points per cal_state
+    :param cal_states: which cal states to measure. Can be 'auto', or any
+        combination of 'g', 'e', 'f', 'ge', 'ef', 'gf', 'gef'.
+    :param for_ef: whether to do echo between ef
+    :param last_ge_pulse: whether to use a ge pulse at the end of each segment
+           for an echo between ef transition
+    :param upload: whether to upload to AWGs
+    :param update: whether to update the qubits ge_amp180 (or ef_amp180)
+        parameters
+    :param analyze: whether to analyze data
+    :param label: measurement label
+    :param exp_metadata: experiment metadata
+    :param det_type: detector function type. None, or one of 'int_log_det',
+        'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
+        'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
+    :param kw: keyword arguments. Are used in
+        get_multiplexed_readout_detector_function
+    """
+    qubit_names = [qb.name for qb in qubits]
+    if sweep_points is None:
+        if delays is None:
+            raise ValueError('Both "delays" and "sweep_points" cannot be None.')
+        else:
+            sweep_points = SweepPoints()
+            for qbn in qubit_names:
+                sweep_points.add_sweep_parameter(
+                    param_name=f'delays_{qbn}', values=delays,
+                    unit='s', label=r'Echo delay')
+
+    if prep_params is None:
+        prep_params = get_multi_qubit_prep_params(
+            [qb.preparation_params() for qb in qubits])
+
+    if label is None:
+        label = 'Echo_ef' if for_ef else 'Echo'
+        if 'classif' in det_type:
+            label += '_classified'
+        if 'active' in prep_params['preparation_type']:
+            label += '_reset'
+        label += get_multi_qubit_msmt_suffix(qubits)
+
+    for qb in qubits:
+        MC = qb.instr_mc.get_instr()
+        qb.prepare(drive='timedomain')
+
+    cal_states = CalibrationPoints.guess_cal_states(cal_states,
+                                                    for_ef=for_ef)
+    cp = CalibrationPoints.multi_qubit(qubit_names, cal_states,
+                                       n_per_state=n_cal_points_per_state)
+    seq, sp = mqs.n_qubit_echo_seq(
+        qubit_names, get_operation_dict(qubits), sweep_points, cp,
+        artificial_detuning=artificial_detuning, upload=False, for_ef=for_ef,
+        last_ge_pulse=last_ge_pulse, prep_params=prep_params)
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(
+        sequence=seq, upload=upload,
+        parameter_name=list(sweep_points[0].values())[0][2],
+        unit=list(sweep_points[0].values())[0][1]))
+    MC.set_sweep_points(sp)
+
+    fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
+    det_func = get_multiplexed_readout_detector_function(
+        qubits, det_type=det_type, **kw)
+    MC.set_detector_function(det_func)
+
+    if exp_metadata is None:
+        exp_metadata = {}
+    exp_metadata.update({'preparation_params': prep_params,
+                         'cal_points': repr(cp),
+                         'sweep_points': sweep_points,
+                         'meas_obj_sweep_points_map':
+                             sweep_points.get_sweep_points_map(qubit_names),
+                         'meas_obj_value_names_map':
+                             get_meas_obj_value_names_map(qubits, det_func),
+                         'rotate': len(cp.states) != 0 and
+                                   'classif' not in det_type,
+                         'last_ge_pulses': [last_ge_pulse],
+                         'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
+                                         in qubit_names}})
+    MC.run(label, exp_metadata=exp_metadata)
+
+    # Analyze this measurement
+    if analyze:
+        echo_ana = tda.EchoAnalysis(
+            qb_names=qubit_names,
+            options_dict={'artificial_detuning': artificial_detuning,
+                          'fit_gaussian_decay': fit_gaussian_decay})
+        if update:
+            for qb in qubits:
+                T2_echo = echo_ana.proc_data_dict[
+                    'analysis_params_dict'][qb.name]['T2_echo']
+                qb.T2(T2_echo)
