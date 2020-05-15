@@ -1158,9 +1158,12 @@ class Segment:
 class UnresolvedPulse:
     """
     pulse_pars: dictionary containing pulse parameters
-    ref_pulse: 'segment_start', 'previous_pulse', pulse.name
+    ref_pulse: 'segment_start', 'previous_pulse', pulse.name, or a list of
+        multiple pulse.name.
     ref_point: 'start', 'end', 'middle', reference point of the reference pulse
     ref_point_new: 'start', 'end', 'middle', reference point of the new pulse
+    ref_function: 'max', 'min', 'mean', specifies how timing is chosen if
+        multiple pulse names are listed in ref_pulse (default: 'max')
     """
 
     def __init__(self, pulse_pars):
