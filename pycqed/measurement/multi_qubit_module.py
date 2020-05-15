@@ -2787,7 +2787,13 @@ def calibrate_arbitrary_phase(qbc, qbt, cz_pulse_name, measure_conditional_phase
                            soft_sweep_params=soft_sweep_params_cphase,
                            label=label, analyze=True, classified=classified_ro,
                            use_unwrap_heuristic=True, **kw)
-        results['phase_amplitude_array'] = [cphases, soft_sweep_params_cphase['amplitude']['values']]
+        # The sign convention of the cphase measurement does not match the
+        # common sign convention of a controlled arbitrary phase gate
+        # e.g., the CPHASE gate in qutip
+        # e.g., https://www.quantum-inspire.com/kbase/cr-gate/
+        # This is corrected by using -cphases in the next line
+        results['phase_amplitude_array'] = [-cphases,
+                                            soft_sweep_params_cphase['amplitude']['values']]
         if update:
             cphase_calib_dict['phase_amplitude_array'] =  results['phase_amplitude_array']
 
@@ -2885,6 +2891,9 @@ def test_arbitrary_phase(qbc, qbt, target_phases, cz_pulse_name, measure_dynamic
             measure_cphase(qbc=qbc, qbt=qbt, soft_sweep_params=soft_sweep_params,
                            cz_pulse_name=cz_pulse_name, exp_metadata=exp_metadata,
                            label=label, analyze=True, classified=classified_ro,  **kw)
+        # Sign flip to match the convention for controlled arbitrary phase
+        # gate, see comment in calibrate_arbitrary_phase()
+        cphases = -cphases
         if analyze:
             # get folder to save figures.
             # FIXME: temporary while no proper analysis class is made
