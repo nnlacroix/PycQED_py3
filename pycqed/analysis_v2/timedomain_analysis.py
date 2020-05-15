@@ -4127,7 +4127,7 @@ class EchoAnalysis(MultiQubit_TimeDomain_Analysis):
                         self.echo_analysis.plot_dicts[plot_label]['fig_id'] = \
                             figure_name
 
-            old_T2e_val = a_tools.get_param_value_from_file(
+            old_T2e_val = a_tools.get_instr_setting_value_from_file(
                 file_path=self.echo_analysis.raw_data_dict['folder'],
                 instr_name=qbn, param_name='T2{}'.format(
                     '_ef' if 'f' in self.echo_analysis.data_to_fit[qbn]
@@ -4368,12 +4368,12 @@ class OverUnderRotationAnalysis(MultiQubit_TimeDomain_Analysis):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
         for qbn in self.qb_names:
             try:
-                old_amp180 = a_tools.get_param_value_from_file(
+                old_amp180 = a_tools.get_instr_setting_value_from_file(
                     file_path=self.raw_data_dict['folder'][0],
                     instr_name=qbn, param_name='amp180{}'.format(
                         '_ef' if 'f' in self.data_to_fit[qbn] else ''))
             except KeyError:
-                old_amp180 = a_tools.get_param_value_from_file(
+                old_amp180 = a_tools.get_instr_setting_value_from_file(
                     file_path=self.raw_data_dict['folder'][0],
                     instr_name=qbn, param_name='{}_amp180'.format(
                         'ef' if 'f' in self.data_to_fit[qbn] else 'ge'))
@@ -4415,12 +4415,12 @@ class OverUnderRotationAnalysis(MultiQubit_TimeDomain_Analysis):
                     'legend_pos': 'upper right'}
 
                 try:
-                    old_amp180 = a_tools.get_param_value_from_file(
+                    old_amp180 = a_tools.get_instr_setting_value_from_file(
                         file_path=self.raw_data_dict['folder'][0],
                         instr_name=qbn, param_name='amp180{}'.format(
                             '_ef' if 'f' in self.data_to_fit[qbn] else ''))
                 except KeyError:
-                    old_amp180 = a_tools.get_param_value_from_file(
+                    old_amp180 = a_tools.get_instr_setting_value_from_file(
                         file_path=self.raw_data_dict['folder'][0],
                         instr_name=qbn, param_name='{}_amp180'.format(
                             'ef' if 'f' in self.data_to_fit[qbn] else 'ge'))

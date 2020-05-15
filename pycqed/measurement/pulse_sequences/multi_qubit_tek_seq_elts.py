@@ -14,6 +14,7 @@ from pycqed.measurement.gate_set_tomography.gate_set_tomography import \
     create_experiment_list_pyGSTi_qudev as get_exp_list
 from pycqed.measurement.waveform_control import pulsar as ps
 import pycqed.measurement.waveform_control.segment as segment
+from pycqed.analysis_v2 import tomography_qudev as tomo
 
 station = None
 kernel_dir = 'kernels/'
@@ -396,7 +397,7 @@ def n_qubit_reset(qb_names, operation_dict, prep_params=dict(), upload=True,
 def parity_correction_seq(
         qb1n, qb2n, qb3n, operation_dict, CZ_pulses, feedback_delay=900e-9,
         prep_sequence=None, reset=True, nr_parity_measurements=1,
-        tomography_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
+        tomography_basis=tomo.DEFAULT_BASIS_ROTS,
         parity_op='ZZ', upload=True, verbose=False, return_seq=False, 
         preselection=False, ro_spacing=1e-6, dd_scheme=None, nr_dd_pulses=4,
         skip_n_initial_parity_checks=0, skip_elem='RO'):
@@ -726,7 +727,7 @@ def parity_correction_seq(
 def parity_correction_no_reset_seq(
         q0n, q1n, q2n, operation_dict, CZ_pulses, feedback_delay=900e-9,
         prep_sequence=None, ro_spacing=1e-6, dd_scheme=None, nr_dd_pulses=0,
-        tomography_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
+        tomography_basis=tomo.DEFAULT_BASIS_ROTS,
         upload=True, verbose=False, return_seq=False, preselection=False):
     """
 
@@ -957,7 +958,7 @@ def parity_single_round__phases_seq(ancilla_qubit_name, data_qubit_names, CZ_map
 def n_qubit_tomo_seq(
         qubit_names, operation_dict, prep_sequence=None,
         prep_name=None,
-        rots_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
+        rots_basis=tomo.DEFAULT_BASIS_ROTS,
         upload=True, return_seq=False,
         preselection=False, ro_spacing=1e-6):
     """

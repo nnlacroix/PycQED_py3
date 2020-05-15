@@ -189,10 +189,9 @@ class CalibrationPoints:
         try:
             step = np.abs(sweep_points[-1] - sweep_points[-2])
         except IndexError:
-            log.warning(f"Less than 2 sweep point detected in: {sweep_points}"
-                        "Could not find appropriate step to extend sweep "
-                        "points. Taking default step of 1")
-            step = 1
+            # This fallback is used to have a step value in the same order
+            # of magnitude as the value of the single sweep point
+            step = np.abs(sweep_points[0])
         plot_sweep_points = \
             np.concatenate([sweep_points, [sweep_points[-1] + i * step
                                            for i in range(1, n_cal_pts + 1)]])
