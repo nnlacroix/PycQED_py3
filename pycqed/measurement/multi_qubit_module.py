@@ -2787,7 +2787,7 @@ def calibrate_arbitrary_phase(qbc, qbt, cz_pulse_name, measure_conditional_phase
             measure_cphase(qbc=qbc, qbt=qbt, cz_pulse_name=cz_pulse_name,
                            soft_sweep_params=soft_sweep_params_cphase,
                            label=label, analyze=True, classified=classified_ro,
-                           sort_phases_ascending_order=True, **kw)
+                           use_unwrap_heuristic=True, **kw)
         results['phase_amplitude_array'] = [cphases, soft_sweep_params_cphase['amplitude']['values']]
         if update:
             cphase_calib_dict['phase_amplitude_array'] =  results['phase_amplitude_array']
@@ -2880,7 +2880,7 @@ def test_arbitrary_phase(qbc, qbt, target_phases, cz_pulse_name, measure_dynamic
     soft_sweep_params = kw.get('soft_sweep_params', dict(cphase=dict(values=target_phases, unit='rad')))
     exp_metadata = kw.get('exp_metadata', {})
     exp_metadata.update(dict(target_phases=target_phases,
-                             sort_phases_ascending_order=True))
+                             use_unwrap_heuristic=True))
     if measure_conditional_phase:
         cphases, population_losses, leakage, flux_pulse_tdma = \
             measure_cphase(qbc=qbc, qbt=qbt, soft_sweep_params=soft_sweep_params,
