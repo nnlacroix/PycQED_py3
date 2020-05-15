@@ -5102,7 +5102,7 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
         # arrange phases in ascending order: used
         # to analyze arbitrary phase gates
         if self.get_param_value("use_unwrap_heuristic", False):
-            cphases = self.cphase_unwrap_heristic(cphases)
+            cphases = self.cphase_unwrap_heuristic(cphases)
         else:
             cphases[cphases < 0] += 2 * np.pi
         cphases_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
@@ -5155,7 +5155,7 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
         self.save_processed_data(key='analysis_params_dict')
 
     @staticmethod
-    def cphase_unwrap_heristic(cphases):
+    def cphase_unwrap_heuristic(cphases):
         try:
             cphases = cphases % (2 * np.pi)
             pi_phase_idx = np.argmin(np.abs(cphases - np.pi))
