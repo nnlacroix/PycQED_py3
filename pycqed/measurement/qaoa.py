@@ -791,7 +791,7 @@ class QAOAHelper(CircuitBuilder):
                     if doswap:
                         angle+= np.pi # correct phase since a fermionic swap gate is used instead of a swap gate
                     angle = angle % (2*np.pi)
-                    c_arb_pulse['cphase'] = angle
+                    c_arb_pulse['cphase'] = -angle
 
                     # overwrite angles for angle % 2 pi  == 0
                     if abs(angle) < zero_angle_threshold:
