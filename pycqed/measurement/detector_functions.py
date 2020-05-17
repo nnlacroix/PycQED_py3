@@ -721,7 +721,7 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
             self.scaling_factor = 1
         elif result_logging_mode == 'digitized':
             self.value_units = ['frac']*len(self.channels)
-            self.scaling_factor = 1.
+            self.scaling_factor = 1#/0.00146484375
 
         self.value_names, self.value_units = self._add_value_name_suffex(
             value_names=self.value_names, value_units=self.value_units,
@@ -920,7 +920,7 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
         self.result_logging_mode = result_logging_mode
         self.correlations = correlations
         self.thresholding = self.result_logging_mode == 'digitized'
-        res_logging_indices = {'digitized': 5, 'raw': 4}
+        res_logging_indices = {'lin_trans': 0, 'digitized': 1, 'raw': 2}
         self.result_logging_mode_idx = res_logging_indices[
             self.result_logging_mode]
 
@@ -1025,9 +1025,11 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
             # Duplicate source channel to the correlation channel and select
             # second channel as channel to correlate with.
             copy_int_weights_real = \
-                self.UHFQC.get('qas_0_integration_weights_{}_real'.format(corr[0])).astype(np.float64)
+                self.UHFQC.get('qas_0_integration_weights_{}_real'.format(corr[0]))[
+                    0]['vector']
             copy_int_weights_imag = \
-                self.UHFQC.get('qas_0_integration_weights_{}_imag'.format(corr[0])).astype(np.float64)
+                self.UHFQC.get('qas_0_integration_weights_{}_imag'.format(corr[0]))[
+                    0]['vector']
 
             copy_rot_matrix = self.UHFQC.get('qas_0_rotations_{}'.format(corr[0]))
 
@@ -1044,7 +1046,7 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
 
             # Enable correlation mode one the correlation output channel and
             # set the source to the second source channel
-            self.UHFQC.set('qas_0_correlations_{}_enable'.format(correlation_channel), 1)
+            self.UHFQC.set('qas_0_correlations_{}_mode'.format(correlation_channel), 1)
             self.UHFQC.set('qas_0_correlations_{}_source'.format(correlation_channel),
                            corr[1])
 
@@ -1256,6 +1258,7 @@ class UHFQC_classifier_detector(UHFQC_Base):
             result_logging_mode)
         self.state_labels = ['pg', 'pe', 'pf']
         self.channels = channels
+        self.correlated = get_values_function_kwargs.get('correlated', True)
 
         # Currently doesn't work with single readout channel;
         # assumes 2 channels per data point
@@ -1270,6 +1273,9 @@ class UHFQC_classifier_detector(UHFQC_Base):
                 self.value_names[idx] = '{}_{} w{}'.format(UHFQC.name,
                     state, ch_pair)
                 idx += 1
+
+        # if self.correlated:
+        #     self.value_names += ['correlation']
 
         if result_logging_mode == 'raw':
             self.value_units = ['']*len(self.value_names)
@@ -1360,7 +1366,7 @@ class UHFQC_classifier_detector(UHFQC_Base):
     def classify_shots(self, data, classifier_params_list,
                        state_prob_mtx_list=None, averaged=False,
                        thresholded=True):
-        print(classifier_params_list)
+
         if classifier_params_list is None:
             raise ValueError('Please specify the classifier parameters list.')
 

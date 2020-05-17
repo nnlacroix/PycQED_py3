@@ -374,7 +374,7 @@ class QuDev_transmon(Qubit):
                                        self.name: {0: 'g', 1: 'e'}})
 
         self.add_parameter('preparation_params', parameter_class=ManualParameter,
-                           initial_value=DEFAULT_PREP_PARAMS, vals=vals.Dict())
+                            initial_value=DEFAULT_PREP_PARAMS, vals=vals.Dict())
 
     def get_idn(self):
         return {'driver': str(self.__class__), 'name': self.name}
@@ -2030,15 +2030,14 @@ class QuDev_transmon(Qubit):
                 ssqtro = \
                     Singleshot_Readout_Analysis_Qutrit(label=labels,
                                                           options_dict=options)
+                state_prob_mtx = ssqtro.proc_data_dict[
+                    'analysis_params']['state_prob_mtx_masked']
                 classifier_params = ssqtro.proc_data_dict[
                     'analysis_params'].get('classifier_params', None)
                 if update:
-                    state_prob_mtx = ssqtro.proc_data_dict[
-                        'analysis_params']['state_prob_mtx']#_masked'] # Quick Fix JH 04/13/20
                     self.acq_classifier_params(classifier_params)
                     self.acq_state_prob_mtx(state_prob_mtx)
-                    return state_prob_mtx, classifier_params
-                return None, classifier_params
+                return state_prob_mtx, classifier_params
             else:
                 rotate = self.acq_weights_type() in {'SSB', 'DSB'}
                 preselection = prep_params['preparation_type'] == 'preselection'
@@ -3744,18 +3743,13 @@ def add_CZ_pulse(qbc, qbt):
                                 vals=vals.Enum('BufferedSquarePulse',
                                                'BufferedCZPulse',
                                                'NZBufferedCZPulse',
-                                               'BufferedCZPulseEffectiveTime',
-                                               'BufferedHalfwayPulse'))
+                                               'BufferedCZPulseEffectiveTime'))
         qbc.add_pulse_parameter(op_name, ps_name + '_channel', 'channel',
-                                initial_value='', vals=vals.Strings())
-        qbc.add_pulse_parameter(op_name, ps_name + '_channel2', 'channel2',
                                 initial_value='', vals=vals.Strings())
         qbc.add_pulse_parameter(op_name, ps_name + '_aux_channels_dict',
                                 'aux_channels_dict',
                                 initial_value={}, vals=vals.Dict())
         qbc.add_pulse_parameter(op_name, ps_name + '_amplitude', 'amplitude',
-                                initial_value=0, vals=vals.Numbers())
-        qbc.add_pulse_parameter(op_name, ps_name + '_amplitude2', 'amplitude2',
                                 initial_value=0, vals=vals.Numbers())
         qbc.add_pulse_parameter(op_name, ps_name + '_frequency', 'frequency',
                                 initial_value=0, vals=vals.Numbers())
@@ -3765,8 +3759,6 @@ def add_CZ_pulse(qbc, qbt):
                                 'pulse_length',
                                 initial_value=0, vals=vals.Numbers(0))
         qbc.add_pulse_parameter(op_name, ps_name + '_alpha', 'alpha',
-                                initial_value=1, vals=vals.Numbers())
-        qbc.add_pulse_parameter(op_name, ps_name + '_alpha2', 'alpha2',
                                 initial_value=1, vals=vals.Numbers())
         qbc.add_pulse_parameter(op_name, ps_name + '_buffer_length_start',
                                 'buffer_length_start', initial_value=10e-9,
@@ -3779,9 +3771,6 @@ def add_CZ_pulse(qbc, qbt):
                                 vals=vals.Numbers(0))
         qbc.add_pulse_parameter(op_name, ps_name + '_pulse_delay',
                                 'pulse_delay',
-                                initial_value=0, vals=vals.Numbers())
-        qbc.add_pulse_parameter(op_name, ps_name + '_channel_relative_delay',
-                                'channel_relative_delay',
                                 initial_value=0, vals=vals.Numbers())
         qbc.add_pulse_parameter(op_name, ps_name + '_basis_rotation',
                                 'basis_rotation', initial_value={},
