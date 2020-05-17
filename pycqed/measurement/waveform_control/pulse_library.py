@@ -466,31 +466,6 @@ class BufferedNZHalfwayPulse(pulse.Pulse):
 
         self.codeword = kw.pop('codeword', 'no_codeword')
 
-    #FIXME
-    # def __call__(self, **kw):
-    #     self.amp1 = kw.pop('amp1', self.amp1)
-    #     self.amp2 = kw.pop('amp2', self.amp2)
-    #     self.alpha = kw.pop('alpha', self.alpha)
-    #     self.pulse_length = kw.pop('pulse_length', self.pulse_length)
-    #     self.length1 = self.alpha*self.pulse_length/(self.alpha + 1)
-    #     self.delay = kw.pop('delay', self.delay)
-    #     buffer_length_start = kw.pop('buffer_length_start',
-    #                                        self.buffer_length_start)
-    #     buffer_length_end = kw.pop('buffer_length_end',
-    #                                      self.buffer_length_end2)
-
-    #     self.buffer_length_end1 = self.buffer_length_end2 + self.delay
-    #     self.buffer_length_start2 = self.buffer_length_start1 + self.delay + \
-    #                                 self.buffer_length_start1
-    #     self.extra_buffer_aux_pulse = kw.pop('extra_buffer_aux_pulse',
-    #                                          self.extra_buffer_aux_pulse)
-    #     self.gaussian_filter_sigma = kw.pop('gaussian_filter_sigma',
-    #                                         self.gaussian_filter_sigma)
-    #     self.length = self.pulse_length + self.buffer_length_start1 + \
-    #                   self.buffer_length_end1
-    #     self.channels = kw.pop('channels', self.channels)
-    #     return self
-
     def chan_wf(self, chan, tvals):
 
         amp1 = self.amps[chan]
@@ -538,6 +513,30 @@ class BufferedNZHalfwayPulse(pulse.Pulse):
         hashlist += [amp, pulse_length, buffer_start, buffer_end]
         hashlist += [self.gaussian_filter_sigma, self.alphas[channel]]
         return hashlist
+
+    @staticmethod
+    def pulse_params():
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'BufferedNZHalfwayPulse',
+            'channel': None,
+            'channel2': None,
+            'amplitude': 0,
+            'amplitude2': 0,
+            'alpha': 1,
+            'pulse_length': 0,
+            'buffer_length_start': 30e-9,
+            'buffer_length_end': 30e-9,
+            'flux_buffer_length': 0,
+            'flux_buffer_length2': 0,
+            'pulse_delay': 0,
+            'channel_relative_delay': 0,
+            'gaussian_filter_sigma': 1e-9,
+            'basis_rotation': {},
+        }
+        return params
 
 
 class BufferedHalfwayPulse(pulse.Pulse):
@@ -626,6 +625,27 @@ class BufferedHalfwayPulse(pulse.Pulse):
         hashlist += [amp, pulse_length, buffer_start, buffer_end]
         hashlist += [self.gaussian_filter_sigma]
         return hashlist
+
+    @staticmethod
+    def pulse_params():
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'BufferedHalfwayPulse',
+            'channel': None,
+            'channel2': None,
+            'amplitude': 0,
+            'amplitude2': 0,
+            'pulse_length': 0,
+            'buffer_length_start': 30e-9,
+            'buffer_length_end': 30e-9,
+            'pulse_delay': 0,
+            'channel_relative_delay': 0,
+            'gaussian_filter_sigma': 1e-9,
+            'basis_rotation': {},
+        }
+        return params
 
 
 class NZMartinisGellarPulse(pulse.Pulse):

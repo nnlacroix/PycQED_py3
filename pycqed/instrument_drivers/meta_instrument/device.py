@@ -1,35 +1,32 @@
-# general imports
-import logging
-from pycqed.utilities import general as gen
-
-import pycqed.measurement.pulse_sequences.fluxing_sequences as fsqs
-import numpy as np
-import matplotlib.pyplot as plt
-from copy import deepcopy
-import scipy.optimize as opti
+# General imports
 import itertools
+import logging
+from copy import deepcopy
 
-# PycQED imports
-from pycqed.instrument_drivers.meta_instrument.qubit_objects import QuDev_transmon as QuDev_transmon
+import numpy as np
+import pycqed.analysis.fitting_models as fms
+import pycqed.analysis_v2.timedomain_analysis as tda
+import pycqed.measurement.awg_sweep_functions as awg_swf
+import pycqed.measurement.awg_sweep_functions_multi_qubit as awg_swf2
+import pycqed.measurement.multi_qubit_module as mqm
+import pycqed.measurement.pulse_sequences.fluxing_sequences as fsqs
+import pycqed.measurement.pulse_sequences.multi_qubit_tek_seq_elts as mqs
+import pycqed.measurement.waveform_control.sequence as sequence
+import pycqed.instrument_drivers.meta_instrument.qubit_objects.QuDev_transmon as qdt
+import pycqed.measurement.waveform_control.pulse as bpl
+import scipy.optimize as opti
+from pycqed.analysis import measurement_analysis as ma
+from pycqed.analysis_v3 import pipeline_analysis as pla
+from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
+from pycqed.measurement import sweep_functions as swf
+from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.sweep_points import SweepPoints
+from pycqed.measurement.waveform_control import pulsar as ps
+from pycqed.utilities import general as gen
 from qcodes.instrument.base import Instrument
 from qcodes.instrument.parameter import (
     ManualParameter, InstrumentRefParameter)
 from qcodes.utils import validators as vals
-from pycqed.measurement.calibration_points import CalibrationPoints
-from pycqed.analysis import measurement_analysis as ma
-from pycqed.measurement import sweep_functions as swf
-import pycqed.measurement.awg_sweep_functions as awg_swf
-import pycqed.analysis_v2.timedomain_analysis as tda
-import pycqed.measurement.multi_qubit_module as mqm
-import pycqed.measurement.pulse_sequences.multi_qubit_tek_seq_elts as mqs
-import pycqed.analysis.fitting_models as fms
-from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
-from pycqed.analysis_v3 import pipeline_analysis as pla
-import pycqed.measurement.waveform_control.sequence as sequence
-from pycqed.measurement.waveform_control import pulsar as ps
-import pycqed.measurement.awg_sweep_functions_multi_qubit as awg_swf2
-
 
 log = logging.getLogger(__name__)
 
@@ -41,8 +38,17 @@ class Device(Instrument):
         qb_names = [qb.name for qb in qubits]
         connectivity_graph = [[qb1.name, qb2.name] for [qb1, qb2] in connections]
 
-        self._operations = {}
+        for qb_name in qb_names:
+            setattr(self, qb_name, self.find_instrument(qb_name))
 
+        self._operations = {}  # dictionary containing dictionaries of operations with parameters
+
+        self.add_parameter('qubits',
+                           vals=vals.Lists(),
+                           initial_value=qb_names,
+                           parameter_class=ManualParameter)
+
+        # Instrument reference parameters
         self.add_parameter('instr_mc',
                            parameter_class=InstrumentRefParameter)
         self.add_parameter('instr_pulsar',
@@ -51,15 +57,6 @@ class Device(Instrument):
                            parameter_class=InstrumentRefParameter)
         self.add_parameter('instr_trigger',
                            parameter_class=InstrumentRefParameter)
-
-        self.add_parameter('qubits',
-                           vals=vals.Lists(),
-                           initial_value=qb_names,
-                           parameter_class=ManualParameter)
-        for qb_name in self.qubits():
-            self.add_parameter(f'{qb_name}',
-                               parameter_class=InstrumentRefParameter,
-                               initial_value=f'{qb_name}')
 
         self.add_parameter('connectivity_graph',
                            vals=vals.Lists(),
@@ -81,6 +78,7 @@ class Device(Instrument):
         self.add_parameter('two_qb_gates',
                            vals=vals.Lists(),
                            initial_value=[],
+                           docstring='stores all two qubit gate names',
                            parameter_class=ManualParameter)
 
         # Pulse preparation parameters
@@ -93,19 +91,71 @@ class Device(Instrument):
     # General Class Methods
 
     def add_operation(self, operation_name):
+        """
+        Adds the name of an operation to the operations dictionary.
+
+        Args:
+            operation_name (str): name of the operation
+        """
+
         self._operations[operation_name] = {}
 
+    def add_pulse_parameter(self, operation_name, parameter_name, argument_name,
+                            initial_value=None, **kw):
+        """
+        Adds a pulse parameter to an operation. Makes sure that parameters are not duplicated.
+        Adds the pulse parameter to the device instrument.
+
+        Args:
+            operation_name (tuple): name of operation in format (gate_name, qb1, qb2)
+            parameter_name (str): name of parameter
+            argument_name (str): name of the argument that is added to the operations dict
+            initial_value: initial value of parameter
+        """
+        if parameter_name in self.parameters:
+            raise KeyError(
+                'Duplicate parameter name {}'.format(parameter_name))
+
+        if operation_name in self.operations().keys():
+            self._operations[operation_name][argument_name] = parameter_name
+        else:
+            raise KeyError('Unknown operation {}, add '.format(operation_name) +
+                           'first using add operation')
+
+        self.add_parameter(parameter_name,
+                           initial_value=initial_value,
+                           parameter_class=ManualParameter, **kw)
+
     def _get_operations(self):
+        """
+        Private method that is used as getter function for operations parameter
+        """
         return self._operations
 
     def get_operation_dict(self, operation_dict=None):
+        """
+        Returns the operations dictionary of the device and qubits, combined with the input
+        operation_dict.
+
+        Args:
+            operation_dict (dict): input dictionary the operations should be added to
+
+        Returns:
+            operation_dict (dict): dictionary containing both qubit and device operations
+
+        """
         if operation_dict is None:
             operation_dict = dict()
 
         # add 2qb operations
         two_qb_operation_dict = {}
         for op_tag, op in self.operations().items():
+            # op_tag is the tuple (gate_name, qb1, qb2) and op the dictionary of the
+            # operation
+
             # Add both qubit combinations to operations dict
+            # Still return a string instead of tuple as keys to be consisten
+            # with QudevTransmon class
             for op_name in [op_tag[0] + ' ' + op_tag[1] + ' ' + op_tag[2],
                             op_tag[0] + ' ' + op_tag[2] + ' ' + op_tag[1]]:
                 two_qb_operation_dict[op_name] = {}
@@ -122,62 +172,66 @@ class Device(Instrument):
         return operation_dict
 
     def get_qb(self, qb_name):
+        """
+        Wrapper: Returns the qubit instance with name qb_name
+
+        Args:
+            qb_name (str): name of the qubit
+        Returns:
+            qubit instrument with name qubit_name
+
+        """
         return self.find_instrument(qb_name)
 
-    def get_pulse_par(self, pulse_name, qb1, qb2, param):
-        qb1_name = qb1.name
-        qb2_name = qb2.name
-        try:
-            return self.__dict__['parameters'] \
-                [f'{pulse_name}_{qb1_name}_{qb2_name}_{param}']
-        except KeyError:
-            try:
-                return self.__dict__['parameters'] \
-                    [f'{pulse_name}_{qb2_name}_{qb1_name}_{param}']
-            except KeyError:
-                raise ValueError(f'Parameter {param} for the gate '
-                                 f'{pulse_name} {qb1_name} {qb2_name} '
-                                 f'does not exist!')
+    def get_pulse_par(self, gate_name, qb1, qb2, param):
+        """
+        Returns the value of a two qubit gate parameter.
 
-    def set_pulse_par(self, pulse_name, qb1, qb2, param, value):
-        qb1_name = qb1.name
-        qb2_name = qb2.name
+        Args:
+            gate_name (str): Name of the gate
+            qb1 (str, QudevTransmon): Name of one qubit
+            qb2 (str, QudevTransmon): Name of other qubit
+            param (str): name of parameter
+        Returns:
+            the value of the parameter
+        """
 
-        try:
-            self.__dict__['parameters'] \
-                [f'{pulse_name}_{qb1_name}_{qb2_name}_{param}'] = value
-        except KeyError:
-            try:
-                self.__dict__['parameters'] \
-                    [f'{pulse_name}_{qb2_name}_{qb1_name}_{param}'] = value
-            except KeyError:
-                raise ValueError(f'Parameter {param} for the gate '
-                                 f'{pulse_name} {qb1_name} {qb2_name} '
-                                 f'does not exist!')
-
-    def add_pulse_parameter(self,
-                            operation_name,
-                            parameter_name,
-                            argument_name,
-                            initial_value=None,
-                            **kw):
-        if parameter_name in self.parameters:
-            raise KeyError(
-                'Duplicate parameter name {}'.format(parameter_name))
-
-        if operation_name in self.operations().keys():
-            self._operations[operation_name][argument_name] = parameter_name
+        if isinstance(qb1, qdt.QuDev_transmon):
+            qb1_name = qb1.name
         else:
-            raise KeyError('Unknown operation {}, add '.format(operation_name) +
-                           'first using add operation')
+            qb1_name = qb1
 
-        self.add_parameter(parameter_name,
-                           initial_value=initial_value,
-                           parameter_class=ManualParameter, **kw)
+        if isinstance(qb2, qdt.QuDev_transmon):
+            qb2_name = qb2.name
+        else:
+            qb2_name = qb2
 
-        return
+        try:
+            self.get(f'{gate_name}_{qb1_name}_{qb2_name}_{param}', value)
+        except KeyError:
+            try:
+                self.get(f'{gate_name}_{qb2_name}_{qb1_name}_{param}', value)
+            except KeyError:
+                raise ValueError(f'Parameter {param} for the gate '
+                                 f'{gate_name} {qb1_name} {qb2_name} '
+                                 f'does not exist!')
 
     def get_prep_params(self, qb_list):
+        """
+        Returns the preparation paramters for all qubits in qb_list.
+
+        Args:
+            qb_list (list): list of qubit names or objects
+
+        Returns:
+            dictionary of preparation parameters
+        """
+
+        for i, qb in enumerate(qb_list):
+            if isinstance(qb, str):
+                qb_list[i] = self.get_qb(qb)
+
+        # threshold_map has to be updated for all qubits
         thresh_map = {}
         for prep_params in [qb.preparation_params() for qb in qb_list]:
             if 'threshold_mapping' in prep_params:
@@ -188,90 +242,94 @@ class Device(Instrument):
 
         return prep_params
 
-    # Two Qubit Gates
+    def set_pulse_par(self, gate_name, qb1, qb2, param, value):
+        """
+        Sets a value to a two qubit gate parameter.
 
-    def add_halfway_pulse(self, gate_name):
+        Args:
+            gate_name (str): Name of the gate
+            qb1 (str, QudevTransmon): Name of one qubit
+            qb2 (str, QudevTransmon): Name of other qubit
+            param (str): name of parameter
+            value: value of parameter
+        """
 
+        if isinstance(qb1, qdt.QuDev_transmon):
+            qb1_name = qb1.name
+        else:
+            qb1_name = qb1
+
+        if isinstance(qb2, qdt.QuDev_transmon):
+            qb2_name = qb2.name
+        else:
+            qb2_name = qb2
+
+        try:
+            self.set(f'{gate_name}_{qb1_name}_{qb2_name}_{param}', value)
+        except KeyError:
+            try:
+                self.set(f'{gate_name}_{qb2_name}_{qb1_name}_{param}', value)
+            except KeyError:
+                raise ValueError(f'Parameter {param} for the gate '
+                                 f'{gate_name} {qb1_name} {qb2_name} '
+                                 f'does not exist!')
+
+    def add_2qb_gate(self, gate_name, pulse_type='BufferedNZHalfwayPulse'):
+        """
+        Method to add a two qubit gate with name gate_name with parameters for
+        all connected qubits. The parameters including their default values are taken
+        for the Class pulse_type in pulse_library.py.
+
+        Args:
+            gate_name (str): Name of gate
+            pulse_type (str): Two qubit gate class from pulse_library.py
+        """
+
+        # add gate to list of two qubit gates
         self.set('two_qb_gates', self.get('two_qb_gates') + [gate_name])
 
+        # for all connected qubits add the operation with name gate_name
         for [qb1, qb2] in self.connectivity_graph():
-            # op_name = f'{gate_name} {qb1} {qb2}'
             op_name = (gate_name, qb1, qb2)
             par_name = f'{gate_name}_{qb1}_{qb2}'
             self.add_operation(op_name)
 
-            self.add_pulse_parameter(op_name, par_name + '_pulse_type', 'pulse_type',
-                                     initial_value='BufferedHalfwayPulse',
-                                     vals=vals.Enum('BufferedHalfwayPulse',
-                                                    'BufferedNZHalfwayPulse'))
+            # find pulse module
+            pulse_func = None
+            for module in bpl.pulse_libraries:
+                try:
+                    pulse_func = getattr(module, pulse_type)
+                except AttributeError:
+                    pass
+            if pulse_func is None:
+                raise KeyError('pulse_type {} not recognized'.format(pulse_type))
 
-            qb1_obj = self.get_qb(qb1)
-            qb2_obj = self.get_qb(qb2)
-            if qb1_obj.flux_pulse_channel() == '' or \
-                    qb2_obj.flux_pulse_channel() == '':
-                raise ValueError(f'No flux pulse channel defined for'
-                                 f' {qb1} or {qb2}!')
-            self.add_pulse_parameter(op_name, par_name + '_channel', 'channel',
-                                     initial_value=qb1_obj.flux_pulse_channel(),
-                                     vals=vals.Strings())
-            self.add_pulse_parameter(op_name, par_name + '_channel2', 'channel2',
-                                     initial_value=qb2_obj.flux_pulse_channel(),
-                                     vals=vals.Strings())
-            self.add_pulse_parameter(op_name, par_name + '_aux_channels_dict',
-                                     'aux_channels_dict',
-                                     initial_value={}, vals=vals.Dict())
-            self.add_pulse_parameter(op_name, par_name + '_amplitude', 'amplitude',
-                                     initial_value=0, vals=vals.Numbers())
-            self.add_pulse_parameter(op_name, par_name + '_amplitude2', 'amplitude2',
-                                     initial_value=0, vals=vals.Numbers())
-            self.add_pulse_parameter(op_name, par_name + '_pulse_length',
-                                     'pulse_length',
-                                     initial_value=0, vals=vals.Numbers(0))
-            self.add_pulse_parameter(op_name, par_name + '_alpha', 'alpha',
-                                     initial_value=1, vals=vals.Numbers())
-            self.add_pulse_parameter(op_name, par_name + '_alpha2', 'alpha2',
-                                     initial_value=1, vals=vals.Numbers())
-            self.add_pulse_parameter(op_name, par_name + '_buffer_length_start',
-                                     'buffer_length_start', initial_value=30e-9,
-                                     vals=vals.Numbers(0))
-            self.add_pulse_parameter(op_name, par_name + '_buffer_length_end',
-                                     'buffer_length_end', initial_value=30e-9,
-                                     vals=vals.Numbers(0))
-            self.add_pulse_parameter(op_name, par_name + '_flux_buffer_length',
-                                     'flux_buffer_length', initial_value=0,
-                                     vals=vals.Numbers(0))
-            self.add_pulse_parameter(op_name, par_name + '_flux_buffer_length2',
-                                     'flux_buffer_length2', initial_value=0,
-                                     vals=vals.Numbers(0))
-            self.add_pulse_parameter(op_name, par_name + '_extra_buffer_aux_pulse',
-                                     'extra_buffer_aux_pulse', initial_value=5e-9,
-                                     vals=vals.Numbers(0))
-            self.add_pulse_parameter(op_name, par_name + '_pulse_delay',
-                                     'pulse_delay',
-                                     initial_value=0, vals=vals.Numbers())
-            self.add_pulse_parameter(op_name, par_name + '_channel_relative_delay',
-                                     'channel_relative_delay',
-                                     initial_value=0, vals=vals.Numbers())
-            self.add_pulse_parameter(op_name, par_name + '_gaussian_filter_sigma',
-                                     'gaussian_filter_sigma', initial_value=1e-9,
-                                     vals=vals.Numbers(0))
-            self.add_pulse_parameter(op_name, par_name + '_basis_rotation',
-                                    'basis_rotation', initial_value={},
-                                    vals=vals.Dict())
+            # get default pulse params for the pulse type
+            params = pulse_func.pulse_params()
 
-    def add_nz_cz_pulse(self, gate_name, symmetric=True):
-        raise NotImplementedError('NZ CZ pulse has not been implemented!')
+            for param, init_val in params.items():
+                self.add_pulse_parameter(op_name, par_name + '_' + param, param,
+                                         initial_value=init_val)
 
-    # Device Algorithms
+            # Update flux pulse channels
+            for qb, c in zip([qb1, qb2], ['channel', 'channel2']):
+                if c in params:
+                    channel = self.get_qb(qb).flux_pulse_channel()
+                    if channel == '':
+                        raise ValueError(f'No flux pulse channel defined for {qb}!')
+                    else:
+                        self.set_pulse_par(gate_name, qb1, qb2, c, channel)
 
-    def measure_J_coupling(self, qbm, qbs , freqs, cz_pulse_name=None,
+    # Device Algorithms #
+
+    def measure_J_coupling(self, qbm, qbs, freqs, cz_pulse_name,
                            label=None, cal_points=False, prep_params=None,
                            cal_states='auto', n_cal_points_per_state=1,
                            freq_s=None, f_offset=0, exp_metadata=None,
                            upload=True, analyze=True):
 
         """
-        Measure the J coupling between the qubits qbm and qbm at the interaction
+        Measure the J coupling between the qubits qbm and qbs at the interaction
         frequency freq.
 
         :param qbm:
@@ -284,8 +342,10 @@ class Device(Instrument):
         :return:
         """
 
-        if cz_pulse_name is None:
-            raise ValueError('Provide a cz_pulse_name!')
+        if isinstance(qbm, str):
+            qbm = self.get_qb(qbm)
+        if isinstance(qbs, str):
+            qbs = self.get_qb(qbs)
 
         if label is None:
             label = f'J_coupling_{qbm.name}{qbs.name}'
@@ -315,7 +375,7 @@ class Device(Instrument):
         fit_paras = qbm.fit_ge_freq_from_flux_pulse_amp()
 
         amplitudes = fms.Qubit_freq_to_dac(freqs,
-                                       **fit_paras)
+                                           **fit_paras)
 
         amplitudes = np.array(amplitudes)
 
@@ -324,11 +384,11 @@ class Device(Instrument):
         elif np.any((amplitudes < -abs(fit_paras['V_per_phi0']) / 2)):
             amplitudes += fit_paras['V_per_phi0']
 
-        for [qb1, qb2] in [[qbm, qbs],[qbs,qbm]]:
-            operation_dict[cz_pulse_name+f' {qb1.name} {qb2.name}']\
+        for [qb1, qb2] in [[qbm, qbs], [qbs, qbm]]:
+            operation_dict[cz_pulse_name + f' {qb1.name} {qb2.name}'] \
                 ['amplitude2'] = amp_s
 
-        freqs+= f_offset
+        freqs += f_offset
 
         cz_pulse_name += f' {qbm.name} {qbs.name}'
 
@@ -443,11 +503,11 @@ class Device(Instrument):
 
         if thresholded:
             df = mqm.get_multiplexed_readout_detector_functions(qubits,
-                                                            nr_shots=shots)[
+                                                                nr_shots=shots)[
                 'dig_log_det']
         else:
             df = mqm.get_multiplexed_readout_detector_functions(qubits,
-                                                            nr_shots=shots)[
+                                                                nr_shots=shots)[
                 'int_log_det']
 
         # make a channel map
@@ -689,14 +749,14 @@ class Device(Instrument):
         qbc_name = qbc.name
         qbt_name = qbt.name
 
-        if [qbc_name, qbt_name] not in self.connectivity_graph() and [qbt_name, qbc_name] not in self.connectivity_graph():
+        if [qbc_name, qbt_name] not in self.connectivity_graph() and [qbt_name,
+                                                                      qbc_name] not in self.connectivity_graph():
             raise ValueError('Qubits are not connected!')
 
         if cz_pulse_name is None:
             cz_pulse_name = f'FP {qbc.name}'
         else:
             cz_pulse_name += f' {qbc.name} {qbt.name}'
-
 
         MC = self.instr_mc.get_instr()
 
@@ -821,7 +881,6 @@ class Device(Instrument):
                                reset_phases_before_measurement=True,
                                prepend_n_cz=0):
 
-
         if qubits_to_measure is None:
             qubits_to_measure = [qbc, qbt]
 
@@ -839,7 +898,7 @@ class Device(Instrument):
         qbt_name = qbt.name
 
         if [qbc_name, qbt_name] not in self.connectivity_graph() and [qbt_name,
-            qbc_name] not in self.connectivity_graph():
+                                                                      qbc_name] not in self.connectivity_graph():
             raise ValueError('Qubits are not connected!')
 
         if prep_params is None:
@@ -891,8 +950,8 @@ class Device(Instrument):
                                                             qbc, qbt,
                                                             'pulse_length')(),
                     'flux_pulse_amp': self.get_pulse_par(cz_pulse_name,
-                                                            qbc, qbt,
-                                                            'amplitude')(),})
+                                                         qbc, qbt,
+                                                         'amplitude')(), })
                 dyn_phases[qb.name] = \
                     MA.proc_data_dict['analysis_params_dict'][qb.name][
                         'dynamic_phase']['val'] * 180 / np.pi
