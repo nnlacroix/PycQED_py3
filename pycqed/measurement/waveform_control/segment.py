@@ -969,11 +969,9 @@ class Segment:
                 fig = axes[0,0].get_figure()
                 ax = axes
             else:
-            fig, ax = plt.subplots(
-                nrows=n_instruments,
-                sharex=True,
-                squeeze=False,
-                figsize=(16, n_instruments * 3))
+                fig, ax = plt.subplots(nrows=n_instruments, sharex=True,
+                                       squeeze=False,
+                                       figsize=(16, n_instruments * 3))
             if prop_cycle is not None:
                 for a in ax[:,0]:
                     a.set_prop_cycle(**prop_cycle)
@@ -988,11 +986,10 @@ class Segment:
                                 self.tvals([f"{instr}_{ch}"], elem_name[1])[
                                     f"{instr}_{ch}"] - delays.get(instr, 0)
                                 if channel_map is None:
-                                    # plot per deviceax[i, 0].plot(
-                                    tvals * 1e6,
-                                    wf,
-                                    label=f"{elem_name[1]}_{k}_{ch}",
-                                    **plot_kwargs)
+                                    # plot per device
+                                    ax[i, 0].plot(tvals * 1e6, wf,
+                                                  label=f"{elem_name[1]}_{k}_{ch}",
+                                                  **plot_kwargs)
                                 else:
                                     # plot on each qubit subplot which includes
                                     # this channel in the channel map

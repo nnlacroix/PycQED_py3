@@ -400,7 +400,7 @@ class NZBufferedCZPulse(pulse.Pulse):
         hashlist += [self.gaussian_filter_sigma, self.alpha]
         return hashlist
 
-class BufferedNZHalfwayPulse(Pulse):
+class BufferedNZHalfwayPulse(pulse.Pulse):
     def __init__(self, channel, channel2, element_name, aux_channels_dict=None,
                  name='Buffered Halfway Pulse', **kw):
         super().__init__(name, element_name)
@@ -540,7 +540,7 @@ class BufferedNZHalfwayPulse(Pulse):
         return hashlist
 
 
-class BufferedHalfwayPulse(Pulse):
+class BufferedHalfwayPulse(pulse.Pulse):
     def __init__(self, channel, channel2, element_name, aux_channels_dict=None,
                  name='Buffered Halfway Pulse', **kw):
         super().__init__(name, element_name)
