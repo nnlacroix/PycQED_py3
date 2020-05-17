@@ -23,17 +23,26 @@ log = logging.getLogger(__name__)
 digs = string.digits + string.ascii_letters
 
 
-def get_git_revision_hash():
+def get_git_info():
+    """
+    Returns the SHA1 ID (hash) of the current git HEAD plus a diff against the HEAD
+    The hash is shortened to the first 10 digits.
+
+    :return: hash string, diff string
+    """
+
+    diff = "Could not extract diff"
+    githash = '00000'
     try:
         # Refers to the global qc_config
         PycQEDdir = pq.__path__[0]
-        hash = subprocess.check_output(['git', 'rev-parse',
-                                        '--short=10', 'HEAD'], cwd=PycQEDdir)
-    except:
-        logging.warning('Failed to get Git revision hash, using 00000 instead')
-        hash = '00000'
-
-    return hash
+        githash = subprocess.check_output(['git', 'rev-parse',
+                                           '--short=10', 'HEAD'], cwd=PycQEDdir)
+        diff = subprocess.run(['git', '-C', PycQEDdir, "diff"],
+                              stdout=subprocess.PIPE).stdout.decode('utf-8')
+    except Exception:
+        pass
+    return githash, diff
 
 
 def str_to_bool(s):
@@ -134,84 +143,6 @@ def to_hex_string(byteval):
     '''
     return "b'" + ''.join('\\x{:02x}'.format(x) for x in byteval) + "'"
 
-
-def load_settings_onto_instrument(instrument, load_from_instr=None,
-                                  folder=None, label=None,
-                                  timestamp=None, **kw):
-    '''
-    Loads settings from an hdf5 file onto the instrument handed to the
-    function.
-    By default uses the last hdf5 file in the datadirectory.
-    By giving a label or timestamp another file can be chosen as the
-    settings file.
-    '''
-
-    older_than = None
-    instrument_name = instrument.name
-    success = False
-    count = 0
-    while success is False and count < 10:
-        try:
-            if folder is None:
-                folder = a_tools.get_folder(timestamp=timestamp,
-                                            older_than=older_than, **kw)
-            else:
-                folder = folder
-            filepath = a_tools.measurement_filename(folder)
-            f = h5py.File(filepath, 'r')
-            sets_group = f['Instrument settings']
-            if load_from_instr is None:
-                ins_group = sets_group[instrument_name]
-            else:
-                ins_group = sets_group[load_from_instr]
-            log.info('Loaded Settings Successfully')
-            success = True
-        except:
-            older_than = os.path.split(folder)[0][-8:] \
-                + '_' + os.path.split(folder)[1][:6]
-            folder = None
-            success = False
-        count += 1
-
-    if not success:
-        log.warning('Could not open settings for instrument "%s"' % (
-            instrument_name))
-        return False
-
-    for parameter, value in ins_group.attrs.items():
-        if value != 'None':  # None is saved as string in hdf5
-            if type(value) == str:
-                if value == 'False':
-                    try:
-                        instrument.set(parameter, False)
-                    except:
-                        log.error('Could not set parameter: "%s" to "%s" for '
-                              'instrument "%s"' % (
-                            parameter, value, instrument_name))
-                elif value == 'True':
-                    try:
-                        instrument.set(parameter, True)
-                    except:
-                        log.error('Could not set parameter: "%s" to "%s" for '
-                              'instrument "%s"' % (
-                            parameter, value, instrument_name))
-                else:
-                    try:
-                        instrument.set(parameter, float(value))
-                    except Exception:
-                        try:
-                            instrument.set(parameter, value)
-                        except:
-                            try:
-                                instrument.set(parameter, int(value))
-                            except:
-                                log.error('Could not set parameter: "%s" to "%s" '
-                                      'for instrument "%s"' % (
-                                    parameter, value, instrument_name))
-            else:
-                instrument.set(parameter, value)
-    f.close()
-    return True
 
 def load_settings(instrument,
                   label: str='', folder: str=None,
@@ -333,6 +264,10 @@ def load_settings(instrument,
         except Exception as e:
             logging.warning(e)
             success = False
+            try:
+                f.close()
+            except:
+                pass
             if timestamp is None and not folder_specified:
                 print('Trying next folder.')
                 older_than = os.path.split(folder)[0][-8:] \
@@ -406,6 +341,10 @@ def load_settings_onto_instrument_v2(instrument, load_from_instr: str=None,
     if not success:
         logging.warning('Could not open settings for instrument "%s"' % (
             instrument_name))
+        try:
+            f.close()
+        except:
+            pass
         return False
 
     for parname, par in ins_group['parameters'].items():

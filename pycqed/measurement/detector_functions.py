@@ -1,21 +1,16 @@
-'''
+"""
 Module containing a collection of detector functions used by the
 Measurement Control.
-'''
+"""
 import numpy as np
 from copy import deepcopy
-import logging
 import time
 from string import ascii_uppercase
 from pycqed.analysis import analysis_toolbox as a_tools
-from pycqed.analysis.fit_toolbox import functions as fn
-from pycqed.measurement.waveform_control import pulse
-from pycqed.measurement.waveform_control import element
-from pycqed.measurement.waveform_control import sequence
 from qcodes.instrument.parameter import _BaseParameter
-import pycqed.measurement.pulse_sequences.calibration_elements as cal_elts
 import logging
 log = logging.getLogger(__name__)
+
 
 class Detector_Function(object):
 
@@ -723,8 +718,7 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
             self.scaling_factor = 1/(1.8e9*integration_length)
         elif result_logging_mode == 'lin_trans':
             self.value_units = ['a.u.']*len(self.channels)
-            self.scaling_factor = 1.
-
+            self.scaling_factor = 1
         elif result_logging_mode == 'digitized':
             self.value_units = ['frac']*len(self.channels)
             self.scaling_factor = 1.
@@ -947,6 +941,10 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
             self.value_units = ['V']*len(self.value_names) + \
                                ['(V^2)']*len(self.correlations)
             self.scaling_factor = 1/(1.8e9*integration_length)
+        elif self.result_logging_mode == 'lin_trans':
+            self.value_units = ['a.u.']*len(self.value_names) + \
+                               ['a.u.']*len(self.correlations)
+            self.scaling_factor = 1
         elif self.result_logging_mode == 'digitized':
             self.value_units = ['frac']*len(self.value_names) + \
                                ['normalized']*len(self.correlations)
@@ -1071,11 +1069,10 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
             data = []
             for n, ch in enumerate(self.used_channels):
                 if ch in self.correlation_channels:
-                    data.append(1.5*np.array(data_raw[n]) *
-                                (self.scaling_factor**2))
+                    data.append(3 * np.array(data_raw[n]) *
+                                self.scaling_factor**2)
                 else:
-                    data.append(np.array(data_raw[n]) *
-                                (self.scaling_factor))
+                    data.append(np.array(data_raw[n]) * self.scaling_factor)
         return data
 
 

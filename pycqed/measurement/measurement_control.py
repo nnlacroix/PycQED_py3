@@ -1194,6 +1194,9 @@ class MeasurementControl(Instrument):
         set_grp.attrs['mode'] = self.mode
         set_grp.attrs['measurement_name'] = self.measurement_name
         set_grp.attrs['live_plot_enabled'] = self.live_plot_enabled()
+        sha1_id, diff = self.get_git_info()
+        set_grp.attrs['git_sha1_id'] = sha1_id
+        set_grp.attrs['git_diff'] = diff
 
     @classmethod
     def save_exp_metadata(self, metadata: dict, data_object):
@@ -1408,9 +1411,9 @@ class MeasurementControl(Instrument):
     # Parameter get/set functions  #
     ################################
 
-    def get_git_hash(self):
-        self.git_hash = general.get_git_revision_hash()
-        return self.git_hash
+    def get_git_info(self):
+        self.git_info = general.get_git_info()
+        return self.git_info
 
     def get_measurement_begintime(self):
         self.begintime = time.time()

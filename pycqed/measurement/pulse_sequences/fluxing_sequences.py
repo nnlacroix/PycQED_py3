@@ -1,22 +1,11 @@
 import numpy as np
 from copy import deepcopy
-try:
-    from math import gcd
-except:  # Moved to math in python 3.5, this is to be 3.4 compatible
-    from fractions import gcd
-from pycqed.measurement.waveform_control import pulse
 from pycqed.measurement.waveform_control import sequence
 from pycqed.measurement.waveform_control import pulsar as ps
-from pycqed.measurement.pulse_sequences.standard_elements import multi_pulse_elt
 from pycqed.measurement.pulse_sequences.single_qubit_tek_seq_elts import \
     sweep_pulse_params, add_preparation_pulses, pulse_list_list_seq
 from pycqed.measurement.pulse_sequences.multi_qubit_tek_seq_elts import \
     generate_mux_ro_pulse_list
-
-from importlib import reload
-reload(pulse)
-from pycqed.measurement.waveform_control import pulse_library
-reload(pulse_library)
 
 import logging
 log = logging.getLogger(__name__)
@@ -98,6 +87,9 @@ def Ramsey_with_flux_pulse_meas_seq(thetas,
         else:
             seq_name: string
     '''
+    raise NotImplementedError(
+        'Ramsey_with_flux_pulse_meas_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
 
     qb_name = qb.name
     operation_dict = qb.get_operation_dict()
@@ -331,7 +323,7 @@ def chevron_seqs(qbc_name,
     flux_pulse['name'] = 'chevron_flux'
     flux_pulse['element_name'] = 'chevron_flux_el'
 
-    ro_pulses = generate_mux_ro_pulse_list([qbc_name, qbt_name],
+    ro_pulses = generate_mux_ro_pulse_list([qbr_name],
                                            operation_dict)
     if 'pulse_length' in hard_sweep_dict:
         max_flux_length = max(hard_sweep_dict['pulse_length']['values'])
@@ -368,6 +360,13 @@ def chevron_seqs(qbc_name,
                 cal_points.create_segments(operation_dict, **prep_params))
         sequences.append(seq)
 
+    # reuse sequencer memory by repeating readout pattern
+    # 1. get all readout pulse names (if they are on different uhf,
+    # they will be applied to different channels)
+    ro_pulse_names = [f"RO {qbn}" for qbn in [qbr_name]]
+    # 2. repeat readout for each ro_pulse.
+    for seq in sequences:
+        [seq.repeat_ro(pn, operation_dict) for pn in ro_pulse_names]
     if upload:
         ps.Pulsar.get_instance().program_awgs(sequences[0])
 
@@ -379,8 +378,8 @@ def fluxpulse_scope_sequence(delays,
                              qb_name,
                              operation_dict,
                              cz_pulse_name,
-                             cal_points=None,
-                             prep_params=dict(),
+                            ro_pulse_delay=100e-9, cal_points=None,
+                             prep_params=None,
                              upload=True):
     '''
     Performs X180 pulse on top of a fluxpulse
@@ -391,6 +390,9 @@ def fluxpulse_scope_sequence(delays,
        |        ---      | --------- fluxpulse ---------- |
                          <-  delay  ->
     '''
+    if prep_params is None:
+        prep_params = {}
+
     seq_name = 'Fluxpulse_scope_sequence'
     ge_pulse = deepcopy(operation_dict['X180 ' + qb_name])
     ge_pulse['name'] = 'FPS_Pi'
@@ -405,9 +407,8 @@ def fluxpulse_scope_sequence(delays,
     ro_pulse = deepcopy(operation_dict['RO ' + qb_name])
     ro_pulse['name'] = 'FPS_Ro'
     ro_pulse['ref_pulse'] = 'FPS_Pi'
-    ro_pulse['ref_point'] = 'middle'
-    ro_pulse['pulse_delay'] = flux_pulse['pulse_length'] - np.min(delays) + \
-                              flux_pulse.get('buffer_length_end', 0)
+    ro_pulse['ref_point'] = 'end'
+    ro_pulse['pulse_delay'] = ro_pulse_delay
 
     pulses = [ge_pulse, flux_pulse, ro_pulse]
     swept_pulses = sweep_pulse_params(
@@ -667,6 +668,10 @@ def cz_bleed_through_phase_seq(phases,
         else:
             seq_name: string
     '''
+    raise NotImplementedError(
+        'cz_bleed_through_phase_seq has not been '
+        'converted to the latest waveform generation code and can not be used.')
+
     # if maximum_CZ_separation is None:
     #     maximum_CZ_separation = CZ_separation
 
