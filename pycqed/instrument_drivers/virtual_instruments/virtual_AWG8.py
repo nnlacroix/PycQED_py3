@@ -7,7 +7,10 @@ from qcodes.instrument.parameter import ManualParameter
 from qcodes.utils import validators as vals
 
 import ctypes
-from ctypes.wintypes import MAX_PATH
+try:
+    from ctypes.wintypes import MAX_PATH
+except ValueError:
+    logging.log(1, 'MAX_PATH in ctypes.wintypes not properly imported for non Windows systems!')
 
 
 class VirtualAWG8(Instrument):
