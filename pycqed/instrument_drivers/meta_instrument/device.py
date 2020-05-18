@@ -1,3 +1,33 @@
+"""
+The Device class is intended to be used for two main tasks:
+    * store two-qubit gate parameters
+    * run multi-qubit standard experiments
+
+The structure is chosen to resemble the one of the QuDev_transmon class. As such, the two-qubit gate parameters
+are stored as instrument parameters of the device, as is the case for single-qubit gates for the QuDev_transmon
+class.
+
+* add_2qb_gate *
+New two-qubit gates can be added using the add_2qb_gate(gate_name, pulse_type) method. It takes the gate name and the
+pulse type intended to be used for the gate as input. It scans the pulse_library.py file for the provided pulse type.
+Using the new pulse_params() method of the pulse, the relevant two qubit gate parameters can be added for each connected
+qubit.
+
+* get_operation_dict *
+As for the QuDev_transmon class the Device class has the ability to return a dictionary of all device operations
+(single- and two-qubit) in the form of a dictionary, using the get_operation_dict method.
+
+* multi-qubit experiments *
+Since the structure of the Device class strongly resembles QuDev_transmon class, any multi-qubit experiments from the
+multi_qubit_module.py are readily ported to the device object. The list of currently ported routines includes:
+    * measure_dynamic_phases()
+    * measure_chevron()
+    * measure_cphase()
+    * measure_J_coupling()
+    * measure_two_qubit_randomized_benchmarking()
+    * measure_tomography()
+"""
+
 # General imports
 import itertools
 import logging
@@ -288,21 +318,21 @@ class Device(Instrument):
         # add gate to list of two qubit gates
         self.set('two_qb_gates', self.get('two_qb_gates') + [gate_name])
 
+        # find pulse module
+        pulse_func = None
+        for module in bpl.pulse_libraries:
+            try:
+                pulse_func = getattr(module, pulse_type)
+            except AttributeError:
+                pass
+        if pulse_func is None:
+            raise KeyError('pulse_type {} not recognized'.format(pulse_type))
+
         # for all connected qubits add the operation with name gate_name
         for [qb1, qb2] in self.connectivity_graph():
             op_name = (gate_name, qb1, qb2)
             par_name = f'{gate_name}_{qb1}_{qb2}'
             self.add_operation(op_name)
-
-            # find pulse module
-            pulse_func = None
-            for module in bpl.pulse_libraries:
-                try:
-                    pulse_func = getattr(module, pulse_type)
-                except AttributeError:
-                    pass
-            if pulse_func is None:
-                raise KeyError('pulse_type {} not recognized'.format(pulse_type))
 
             # get default pulse params for the pulse type
             params = pulse_func.pulse_params()
@@ -959,103 +989,3 @@ class Device(Instrument):
             self.get_pulse_par(cz_pulse_name,
                                qbc, qbt, 'basis_rotation')(dyn_phases)
         return dyn_phases
-
-    def calibrate_device(self, qubits=None, from_ts=None, benchmark=True,
-                         repark=True, for_ef=True):
-
-        if repark:
-            def freq_func(V, V0, f0, fv):
-                return f0 - fv * (V - V0) ** 2
-
-        if from_ts is None:
-            timestamp = self.last_calib()
-
-        if qubits is None:
-            qubits = [self.get_qb(qb_name) for qb_name in self.qubits()]
-
-        for qubit in qubits:
-            gen.load_settings(qubit, timestamp=timestamp)
-            # FIXME: also reload flux parameters
-
-        cp = self.calibration_parameters()
-
-        for qubit in qubits:
-            qubit.preparation_params(dict(preparation_type='wait'))
-
-            if benchmark:
-                # If benchmark is True the values for T1 and T2 are
-                # compared before and after calibration
-
-                qubit.find_T1(np.linspace(0, cp['T1_time'], cp['data_points']),
-                              update=True, upload=True)
-                qubit.find_T2_echo(
-                    np.linspace(0, cp['long_ram_freq'], cp['data_points']),
-                    artificial_detuning=cp['long_ram_det'], update=True, upload=True)
-
-            # Find new amp180 (rough)
-            qubit.find_amplitudes(np.linspace(0, cp['rabi_amp'], cp['data_points']),
-                                  upload=True, update=True)
-
-            # Find new qubit frequency
-            qubit.find_frequency_T2_ramsey(np.linspace(0, cp['short_ram_freq'], cp['data_points']),
-                                           artificial_detunings=cp['short_ram_det'],
-                                           update=True, upload=True)
-
-            if repark:
-                fluxline = self.fluxline_dict()[qubit.name]
-                voltages = fluxline() + np.linspace(
-                    -cp['flux_sweep'], cp['flux_sweep'], cp['flux_sweep_points'])
-                freqs = []
-                for i, volt in enumerate(voltages):
-                    fluxline(volt)
-                    qubit.find_frequency_T2_ramsey(
-                        np.linspace(0, cp['short_ram_freq'], cp['data_points']),
-                        artificial_detunings=cp['short_ram_det'],
-                        update=True, upload=(i == 0))
-                    freqs.append(qubit.ge_freq())
-
-                freq_fit, _ = opti.curve_fit(freq_func, voltages, np.array(freqs) / 1e9)
-                self.instr_dc_source.get_instr().set_smooth(
-                    {self.fluxline_map()[qubit.name]: freq_fit[0]})
-
-            # Find new qubit frequency
-            qubit.find_frequency_T2_ramsey(np.linspace(0, cp['short_ram_freq'], cp['data_points']),
-                                           artificial_detunings=cp['short_ram_det'],
-                                           update=True, upload=True)
-
-            # Find new amp180 (exact)
-            n = cp['rabi_n']
-            amp180 = qubit.ge_amp180()
-            amps = np.linspace((n - 1) * amp180 / n,
-                               min((n + 1) * amp180 / n, cp['rabi_amp']),
-                               cp['data_points'])
-            qubit.find_amplitudes(amps, upload=True, n=n, update=True)
-
-            # Qscale
-            qubit.find_qscale(qscales=np.linspace(-cp['qscale'], cp['qscale'],
-                                                  cp['data_points']),
-                              update=True, upload=True)
-
-            if for_ef:
-                qubit.find_amplitudes(
-                    np.linspace(0, cp['rabi_amp'], 21), upload=True, update=True,
-                    for_ef=True)
-                qubit.find_frequency_T2_ramsey(
-                    np.linspace(0, cp['ef_ram_freq'], cp['data_points']),
-                    artificial_detunings=cp['ef_ram_det'],
-                    update=True, upload=True)
-                qubit.find_amplitudes(
-                    np.linspace(0, cp['rabi_amp'], 21), upload=True, update=True,
-                    for_ef=True)
-
-            qubit.find_T1(np.linspace(0, cp['T1_time'], cp['data_points']),
-                          update=True, upload=True)
-            qubit.find_T2_echo(
-                np.linspace(0, cp['long_ram_freq'], cp['data_points']),
-                artificial_detuning=cp['long_ram_det'], update=True, upload=True)
-
-            if benchmark:
-                pass
-                # FIXME: enable benchmarking improvement of T1 and T2
-
-            return
