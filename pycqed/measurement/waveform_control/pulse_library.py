@@ -400,9 +400,9 @@ class NZBufferedCZPulse(pulse.Pulse):
         hashlist += [self.gaussian_filter_sigma, self.alpha]
         return hashlist
 
-class BufferedNZHalfwayPulse(pulse.Pulse):
+class BufferedNZFLIPPulse(pulse.Pulse):
     def __init__(self, channel, channel2, element_name, aux_channels_dict=None,
-                 name='Buffered Halfway Pulse', **kw):
+                 name='Buffered FLIP Pulse', **kw):
         super().__init__(name, element_name)
 
         self.channel = channel
@@ -520,7 +520,7 @@ class BufferedNZHalfwayPulse(pulse.Pulse):
         Returns a dictionary of pulse parameters and initial values.
         """
         params = {
-            'pulse_type': 'BufferedNZHalfwayPulse',
+            'pulse_type': 'BufferedNZFLIPPulse',
             'channel': None,
             'channel2': None,
             'amplitude': 0,
@@ -539,9 +539,9 @@ class BufferedNZHalfwayPulse(pulse.Pulse):
         return params
 
 
-class BufferedHalfwayPulse(pulse.Pulse):
+class BufferedFLIPPulse(pulse.Pulse):
     def __init__(self, channel, channel2, element_name, aux_channels_dict=None,
-                 name='Buffered Halfway Pulse', **kw):
+                 name='Buffered FLIP Pulse', **kw):
         super().__init__(name, element_name)
 
         self.channel = channel
@@ -632,7 +632,7 @@ class BufferedHalfwayPulse(pulse.Pulse):
         Returns a dictionary of pulse parameters and initial values.
         """
         params = {
-            'pulse_type': 'BufferedHalfwayPulse',
+            'pulse_type': 'BufferedFLIPPulse',
             'channel': None,
             'channel2': None,
             'amplitude': 0,

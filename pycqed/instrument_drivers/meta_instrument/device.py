@@ -304,7 +304,7 @@ class Device(Instrument):
                                  f'{gate_name} {qb1_name} {qb2_name} '
                                  f'does not exist!')
 
-    def add_2qb_gate(self, gate_name, pulse_type='BufferedNZHalfwayPulse'):
+    def add_2qb_gate(self, gate_name, pulse_type='BufferedNZFLIPPulse'):
         """
         Method to add a two qubit gate with name gate_name with parameters for
         all connected qubits. The parameters including their default values are taken
