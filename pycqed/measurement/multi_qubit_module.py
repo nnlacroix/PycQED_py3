@@ -155,10 +155,25 @@ def get_operation_dict(qubits):
     return operation_dict
 
 
-def get_multiplexed_readout_detector_function(qubits, det_type, **kw):
-    # only used by classifier detector
-    det_get_values_kws = {'classified': kw.pop('classified', False),
-                          'correlated': kw.pop('correlated', False),
+def get_n_qubit_detector_function(qubits, det_type, **kw):
+    """
+    Wrapper around get_multiplexed_readout_detector_functions.
+    :param qubits: list of QuDev_transmon instrances
+    :param det_type: string indicating the detector function type
+    :param kw: keyword arguments
+        classified (bool; default: False): used by the UHFQC_classifier_detector
+            whether to do qutrit classification
+        thresholded (bool; default: False): used by the
+            UHFQC_classifier_detector; whether to threshold the data
+            (i.e. assignment to only one qutrit state)
+        averaged (bool; default: True): used by the UHFQC_classifier_detector
+            whether to average the shots
+    :return: detector function class instance output by
+        get_multiplexed_readout_detector_functions
+    """
+
+    det_get_values_kws = {'classified': kw.pop(
+                            'classified', det_type == 'int_avg_classif_det'),
                           'thresholded': kw.pop('thresholded', True),
                           'averaged': kw.pop('averaged', True)}
     nr_averages = max(qb.acq_averages() for qb in qubits)
@@ -507,7 +522,8 @@ def measure_arbitrary_sequence(qubits, sequence=None, sequence_function=None,
         drive (string): drive method. Defaults to timedomain
         label (string): measurement label. Defaults to sequence.name.
         detector_function (string): detector function string. eg.
-            'int_avg_detector'. Built using multi_uhf get_multiplexed_readout_detector_functions
+            'int_avg_detector'. Built using multi_uhf
+            get_multiplexed_readout_detector_functions
         df_kwargs (dict): detector function kwargs
         sweep_function (callable): sweep function. Defaults to segment hard sweep.
         sweep_points (list or array): list of sweep points. Required only if
@@ -3217,13 +3233,19 @@ def measure_ro_dynamic_phases(pulsed_qubit, measured_qubits,
 
 
 def get_multi_qubit_msmt_suffix(qubits):
+    """
+    Function to get measurement label suffix from the measured qubit names.
+    :param qubits: list of QuDev_transmon instances.
+    :return: string with the measurement label suffix
+    """
     qubit_names = [qb.name for qb in qubits]
     if len(qubit_names) == 1:
         msmt_suffix = qubits[0].msmt_suffix
     elif len(qubit_names) > 5:
         msmt_suffix = '_{}qubits'.format(len(qubit_names))
     else:
-        msmt_suffix = '_qbs{}'.format(''.join([i[-1] for i in qubit_names]))
+        msmt_suffix = '_qbs{}'.format(''.join([i.strip('qb') for
+                                               i in qubit_names]))
     return msmt_suffix
 
 ## Multi-qubit time-domain measurements ##
@@ -3256,8 +3278,7 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
     :param det_type: detector function type. None, or one of 'int_log_det',
         'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
         'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
-    :param kw: keyword arguments. Are used in
-        get_multiplexed_readout_detector_function
+    :param kw: keyword arguments. Are used in get_n_qubit_detector_function
     """
     qubit_names = [qb.name for qb in qubits]
     if sweep_points is None:
@@ -3302,8 +3323,7 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
-    det_func = get_multiplexed_readout_detector_function(
-        qubits, det_type=det_type, **kw)
+    det_func = get_n_qubit_detector_function(qubits, det_type=det_type, **kw)
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
@@ -3366,8 +3386,7 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
     :param det_type: detector function type. None, or one of 'int_log_det',
         'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
         'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
-    :param kw: keyword arguments. Are used in
-        get_multiplexed_readout_detector_function
+    :param kw: keyword arguments. Are used in get_n_qubit_detector_function
     """
     qubit_names = [qb.name for qb in qubits]
     if sweep_points is None:
@@ -3411,8 +3430,7 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
     MC.set_sweep_points(sp)
 
     fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
-    det_func = get_multiplexed_readout_detector_function(
-        qubits, det_type=det_type, **kw)
+    det_func = get_n_qubit_detector_function(qubits, det_type=det_type, **kw)
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
@@ -3481,8 +3499,7 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
     :param det_type: detector function type. None, or one of 'int_log_det',
         'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
         'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
-    :param kw: keyword arguments. Are used in
-        get_multiplexed_readout_detector_function
+    :param kw: keyword arguments. Are used in get_n_qubit_detector_function
     """
     qubit_names = [qb.name for qb in qubits]
     if sweep_points is None:
@@ -3526,8 +3543,7 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
-    det_func = get_multiplexed_readout_detector_function(
-        qubits, det_type=det_type, **kw)
+    det_func = get_n_qubit_detector_function(qubits, det_type=det_type, **kw)
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
@@ -3586,8 +3602,7 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
     :param det_type: detector function type. None, or one of 'int_log_det',
         'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
         'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
-    :param kw: keyword arguments. Are used in
-        get_multiplexed_readout_detector_function
+    :param kw: keyword arguments. Are used in get_n_qubit_detector_function
     """
     qubit_names = [qb.name for qb in qubits]
     if sweep_points is None:
@@ -3630,8 +3645,7 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
-    det_func = get_multiplexed_readout_detector_function(
-        qubits, det_type=det_type, **kw)
+    det_func = get_n_qubit_detector_function(qubits, det_type=det_type, **kw)
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
@@ -3692,8 +3706,7 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
     :param det_type: detector function type. None, or one of 'int_log_det',
         'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
         'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
-    :param kw: keyword arguments. Are used in
-        get_multiplexed_readout_detector_function
+    :param kw: keyword arguments. Are used in get_n_qubit_detector_function
     """
     qubit_names = [qb.name for qb in qubits]
     if sweep_points is None:
@@ -3737,8 +3750,7 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
     MC.set_sweep_points(sp)
 
     fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
-    det_func = get_multiplexed_readout_detector_function(
-        qubits, det_type=det_type, **kw)
+    det_func = get_n_qubit_detector_function(qubits, det_type=det_type, **kw)
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:

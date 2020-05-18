@@ -3847,7 +3847,7 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
             unique_sp = np.unique(sweep_points[:3])
             if unique_sp.size > 1:
                 sweep_points = np.repeat(sweep_points, 3)
-            # replace in proc_data_dict; otherwise pltting in base class fails
+            # replace in proc_data_dict; otherwise plotting in base class fails
             self.proc_data_dict['sweep_points_dict'][qbn][
                 'msmt_sweep_points'] = sweep_points
             self.proc_data_dict['sweep_points_dict'][qbn][
@@ -3969,6 +3969,8 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                 except KeyError:
                     xlabel = self.raw_data_dict['sweep_parameter_names']
                     xunit = self.raw_data_dict['sweep_parameter_units']
+                if np.ndim(xlabel) > 0:
+                    xlabel = xlabel[0]
                 if np.ndim(xunit) > 0:
                     xunit = xunit[0]
                 self.plot_dicts[plot_name] = {
