@@ -541,7 +541,7 @@ def T2_freq_sweep_seq(amplitudes,
     return seq, np.arange(seq.n_acq_elements())
 
 
-def decay_freq_seq(amplitudes,
+def T1_freq_sweep_seq(amplitudes,
                    qb_name,
                    operation_dict,
                    cz_pulse_name,
@@ -562,7 +562,7 @@ def decay_freq_seq(amplitudes,
     amplitudes = np.repeat(amplitudes, len(flux_lengths))
     flux_lengths = np.tile(flux_lengths, len_amp)
 
-    seq_name = 'Decay_freq_sequence'
+    seq_name = 'T1_freq_sweep_sequence'
     ge_pulse = deepcopy(operation_dict['X180 ' + qb_name])
     ge_pulse['name'] = 'DF_Pi'
     ge_pulse['element_name'] = 'DF_Pi_el'

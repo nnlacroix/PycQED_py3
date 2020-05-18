@@ -3550,7 +3550,7 @@ class QuDev_transmon(Qubit):
             cp = None
 
         seq, sweep_points = \
-            fsqs.decay_freq_seq(
+            fsqs.T1_freq_sweep_seq(
                 amplitudes=amplitudes, qb_name=self.name,
                 operation_dict=self.get_operation_dict(), flux_lengths=flux_lengths,
                 cz_pulse_name=cz_pulse_name, upload=False, cal_points=cp,
