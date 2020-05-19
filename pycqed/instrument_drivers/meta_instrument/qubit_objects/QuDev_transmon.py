@@ -583,6 +583,8 @@ class QuDev_transmon(Qubit):
             mods = [self.ro_mod_freq() + d for d in delta_freqs]
             operation_dict['RO ' + self.name]['mod_frequency'] = mods
 
+        for code, op in operation_dict.items():
+            op['op_code'] = code
         return operation_dict
 
     def swf_ro_freq_lo(self):
