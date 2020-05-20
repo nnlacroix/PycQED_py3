@@ -144,9 +144,11 @@ class Sequence:
         :param segment_plot_kwargs:
         :return:
         """
+        plots = []
         if segments is None:
             segments = self.segments.values()
         else:
             segments = [self.segments[s] for s in segments]
         for s in segments:
-            s.plot(**segment_plot_kwargs)
+            plots.append(s.plot(**segment_plot_kwargs))
+        return plots
