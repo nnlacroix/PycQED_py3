@@ -3844,6 +3844,10 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
             self.proc_data_dict['qscale_data'][qbn] = OrderedDict()
             sweep_points = deepcopy(self.proc_data_dict['sweep_points_dict'][
                                         qbn]['msmt_sweep_points'])
+            # check if the sweep points are repeated 3 times as they have to be
+            # for the qscale analysis:
+            # take the first 3 entries and check if they are all the same
+            # or different
             unique_sp = np.unique(sweep_points[:3])
             if unique_sp.size > 1:
                 sweep_points = np.repeat(sweep_points, 3)

@@ -3316,7 +3316,8 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
-                             sweep_points.get_sweep_points_map(qubit_names),
+                             sweep_points.get_meas_obj_sweep_points_map(
+                                 qubit_names),
                          'meas_obj_value_names_map':
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
@@ -3426,7 +3427,8 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
                          'sweep_points': sweep_points,
                          'artificial_detuning': artificial_detuning,
                          'meas_obj_sweep_points_map':
-                             sweep_points.get_sweep_points_map(qubit_names),
+                             sweep_points.get_meas_obj_sweep_points_map(
+                                 qubit_names),
                          'meas_obj_value_names_map':
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
@@ -3540,7 +3542,8 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
-                             sweep_points.get_sweep_points_map(qubit_names),
+                             sweep_points.get_meas_obj_sweep_points_map(
+                                 qubit_names),
                          'meas_obj_value_names_map':
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
@@ -3644,7 +3647,8 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
-                             sweep_points.get_sweep_points_map(qubit_names),
+                             sweep_points.get_meas_obj_sweep_points_map(
+                                 qubit_names),
                          'meas_obj_value_names_map':
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
@@ -3751,7 +3755,8 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
-                             sweep_points.get_sweep_points_map(qubit_names),
+                             sweep_points.get_meas_obj_sweep_points_map(
+                                 qubit_names),
                          'meas_obj_value_names_map':
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
