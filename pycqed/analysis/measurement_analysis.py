@@ -6628,7 +6628,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                 self.freqs = self.exp_metadata['sweep_points_dict_2D'][self.qb_name]
                 cp = self.exp_metadata.get('cal_points', None)
                 if cp is not None:
-                    cp = eval(cp)
+                    cp = CalibrationPoints.from_string(cp)
                     self.delays = cp.extend_sweep_points(self.delays, self.qb_name)
             except KeyError:
                 error_occured = True

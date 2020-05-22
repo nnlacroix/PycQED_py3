@@ -170,6 +170,23 @@ class CalibrationPoints:
 
         return CalibrationPoints(qb_names, labels)
 
+    @staticmethod
+    def from_string(cal_points_string):
+        """
+        Recreates a CalibrationPoints object from a string representation.
+        Avoids having "eval" statements throughout the codebase.
+        Args:
+            cal_points_string: string representation of the CalibrationPoints
+
+        Returns: CalibrationPoint object
+        Examples:
+            >>> cp = CalibrationPoints(['qb1'], ['g', 'e'])
+            >>> cp_repr = repr(cp) # create string representation
+            >>> # do other things including saving cp_str somewhere
+            >>> cp = CalibrationPoints.from_string(cp_repr)
+        """
+        return eval(cal_points_string)
+
     def extend_sweep_points(self, sweep_points, qb_name):
         """
         Extends the sweep point array for plotting calibration points after

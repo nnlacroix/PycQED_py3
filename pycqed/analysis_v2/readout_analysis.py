@@ -2069,7 +2069,7 @@ def convert_channel_names_to_index(cal_points, nr_segments, value_names,
     
     cal_points_list = []
     try:
-        cp = eval(cal_points)
+        cp = CalibrationPoints.from_string(cal_points)
         if len(np.unique(cp.states, axis=1)) < len(cp.states):
             raise NotImplementedError(
                 "Implementation right now assumes unique calibration point "
