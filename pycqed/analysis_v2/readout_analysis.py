@@ -1490,38 +1490,6 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
 
         res_e = {}
         res_g = {}
-        #
-        #
-        # n_shots = next(iter(shots_of_qubits.values())).shape[0]
-        #
-        # table = np.zeros((n_readouts, len(observables)))
-        #
-        #
-        # for qubit, results in shots_of_qubits.items():
-        #     res_e[qubit] = np.array(results).reshape((n_readouts, -1),
-        #                                              order='F')
-        #     # This makes copy, but allows faster AND later
-        #     res_g[qubit] = np.logical_not(
-        #         np.array(results)).reshape((n_readouts, -1), order='F')
-        #
-        # for readout_n in range(n_readouts):
-        #     # first result all ground
-        #     for state_n, states_of_qubits in enumerate(observables):
-        #         mask = np.ones((n_shots//n_readouts), dtype=np.bool)
-        #         # slow qubit is the first in channel_map list
-        #         for qubit, state in states_of_qubits.items():
-        #             if isinstance(qubit, tuple):
-        #                 seg = (readout_n+qubit[1]) % n_readouts
-        #                 qubit = qubit[0]
-        #             else:
-        #                 seg = readout_n
-        #             if state:
-        #                 mask = np.logical_and(mask, res_e[qubit][seg])
-        #             else:
-        #                 mask = np.logical_and(mask, res_g[qubit][seg])
-        #         table[readout_n, state_n] = np.count_nonzero(mask)
-        # return table*n_readouts/n_shots
-        # print(shots_of_qubits)
         n_shots = next(iter(shots_of_qubits.values())).shape[0]
 
         if filter is not None:
@@ -1707,8 +1675,6 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
         observabele_idxs = [i for i in range(len(self.observables))
                             if i != preselection_obs_idx]
 
-        # calculate the mean for each reference state and each observable
-        detector = self.get_param_value("detector", "")
         # value_names
         try:
             cal_points_list = convert_channel_names_to_index(
@@ -2063,6 +2029,8 @@ def convert_channel_names_to_index(cal_points, nr_segments, value_names,
                      indices to positive indices.
         value_names: a list of channel names that is used to determine the
                      index of the channels
+        n_reset_reps: number of reset repetitions in case active reset is used.
+            Ensures the correct indices are taken in that case
     Returns:
         cal_points_list in the converted format
     """
