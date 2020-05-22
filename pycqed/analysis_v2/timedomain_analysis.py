@@ -316,15 +316,14 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     def process_data(self):
         super().process_data()
         self.data_filter = self.get_param_value('data_filter')
+        prep_params = self.get_param_value('preparation_params',
+                                           default_value=dict())
         self.data_with_reset = False
         if self.data_filter is None:
-            if 'preparation_params' in self.metadata:
-                if 'active' in self.metadata['preparation_params'].get(
-                        'preparation_type', 'wait'):
-                    reset_reps = self.metadata['preparation_params'].get(
-                        'reset_reps', 1)
-                    data_filter = lambda x: x[reset_reps::reset_reps+1]
-                    self.data_with_reset = True
+            if 'active' in prep_params.get('preparation_type', 'wait'):
+                reset_reps = prep_params.get('reset_reps', 1)
+                self.data_filter = lambda x: x[reset_reps::reset_reps+1]
+                self.data_with_reset = True
         if self.data_filter is None:
             self.data_filter = lambda x: x
 
@@ -340,7 +339,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         try:
             self.cp = eval(cal_points)
             # for now assuming the same for all qubits.
-            self.cal_states_dict = self.cp.get_indices()[self.qb_names[0]]
+            self.cal_states_dict = self.cp.get_indices(
+                self.qb_names, prep_params)[self.qb_names[0]]
+            print(self.cal_states_dict)
             if rotate:
                 cal_states_rots = self.cp.get_rotations(last_ge_pulses,
                         self.qb_names[0])[self.qb_names[0]] if rotate else None
