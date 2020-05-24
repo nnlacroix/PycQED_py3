@@ -137,4 +137,4 @@ class Pulse:
         """
         Returns a dictionary of pulse parameters and initial values.
         """
-        raise NotADirectoryError('pulse_params() not implemented for your pulse')
+        raise NotImplementedError('pulse_params() not implemented for your pulse')
