@@ -304,13 +304,18 @@ def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
     ro_pulses = generate_mux_ro_pulse_list([qbr_name],
                                            operation_dict)
     if 'pulse_length' in hard_sweep_dict:
+        # add buffers to this delay (only used for FLIP Pulse
+        nr_flux_buffer = 4 if flux_pulse['pulse_type'] == 'BufferedNZFLIPPulse' \
+            else 2  # for NZ pulse we have four buffers
         max_flux_length = max(hard_sweep_dict['pulse_length']['values'])
         ro_pulses[0]['ref_pulse'] = 'chevron_pi_qbc'
         ro_pulses[0]['pulse_delay'] = num_cz_gates * \
             (max_flux_length + flux_pulse.get('buffer_length_start', 0) + \
             flux_pulse.get('buffer_length_end', 0) + \
-            2*flux_pulse.get('flux_buffer_length', 0) + \
-            2*flux_pulse.get('flux_buffer_length2', 0))
+            # applies to FLIP gate only. An additional buffer, that can be used to make sure the FPs have rising edges
+            # at different times.
+            nr_flux_buffer*flux_pulse.get('flux_buffer_length', 0) + \
+            nr_flux_buffer*flux_pulse.get('flux_buffer_length2', 0))
 
     ssl = len(list(soft_sweep_dict.values())[0]['values'])
     sequences = []
