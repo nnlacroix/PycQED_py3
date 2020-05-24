@@ -770,6 +770,8 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
     delay = num_cz_gates*(max_flux_length +
         flux_pulse.get('buffer_length_start', 0) +
         flux_pulse.get('buffer_length_end', 0) +
+        # applies to FLIP gate only. An additional buffer, that can be used to make sure the FPs have rising edges at
+        # different times.
         nr_flux_buffer*flux_pulse.get('flux_buffer_length', 0) +
         nr_flux_buffer*flux_pulse.get('flux_buffer_length2', 0))
     # # ensure the delay is commensurate with 16/2.4e9
