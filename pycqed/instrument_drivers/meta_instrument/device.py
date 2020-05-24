@@ -63,6 +63,15 @@ log = logging.getLogger(__name__)
 
 class Device(Instrument):
     def __init__(self, name, qubits, connections, **kw):
+        """
+        Instantiates device instrument and adds its parameters.
+
+        Args:
+            name (str): name of the device
+            qubits (list of QudevTransmon): qubits of the device
+            connections: list of elements of the form [qb1, qb2] with qb1 and qb2 QudevTransmon objects. qb1 and qb2
+                         should be physically connected on the device.
+        """
         super().__init__(name, **kw)
 
         qb_names = [qb.name for qb in qubits]
