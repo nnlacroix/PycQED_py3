@@ -649,7 +649,7 @@ def cz_bleed_through_phase_seq(phases, qb_name, CZ_pulse_name, CZ_separation,
     RO_pars = deepcopy(operation_dict['RO ' + qb_name])
     CZ_pulse1 = deepcopy(operation_dict[CZ_pulse_name])
     CZ_pulse_len = CZ_pulse1['pulse_length']
-    drag_pulse_len = deepcopy(X90_1['sigma']* 90_1['nr_sigma'])
+    drag_pulse_len = deepcopy(X90_1['sigma']* X90_1['nr_sigma'])
     spacerpulse = {'pulse_type': 'SquarePulse',
                    'channel': X90_1['I_channel'],
                    'amplitude': 0.0,
