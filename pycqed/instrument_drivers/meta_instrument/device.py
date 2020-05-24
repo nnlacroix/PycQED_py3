@@ -304,6 +304,31 @@ class Device(Instrument):
                                  f'{gate_name} {qb1_name} {qb2_name} '
                                  f'does not exist!')
 
+    def check_connection(self, qubit_a, qubit_b, connectivity_graph=None, raise_exception=True):
+        """
+        Checks whether two qubits are connected.
+
+        Args:
+            qubit_a (str, QudevTransmon): Name of one qubit
+            qubit_b (str, QudevTransmon): Name of other qubit
+            connectivity_graph: custom connectivity graph. If None device graph will be used.
+            raise_exception (Bool): flag whether an error should be raised if qubits are not connected.
+        """
+
+        if connectivity_graph is None:
+            connectivity_graph = self.connectivity_graph()
+        # convert qubit object to name if necessary
+        if not isinstance(qubit_a, str):
+            qubit_a = qubit_a.name
+        if not isinstance(qubit_b, str):
+            qubit_b = qubit_b.name
+        if [qubit_a, qubit_b] not in self.connectivity_graph() and [qubit_b, qubit_a] not in self.connectivity_graph():
+            if raise_exception:
+                raise ValueError(f'Qubits {[qubit_a, qubit_b]}  are not connected!')
+            else:
+                log.warning('Qubits are not connected!')
+                # TODO: implement what we want in case of swap (e.g. determine shortest path of swaps)
+
     def add_2qb_gate(self, gate_name, pulse_type='BufferedNZFLIPPulse'):
         """
         Method to add a two qubit gate with name gate_name with parameters for
@@ -371,6 +396,9 @@ class Device(Instrument):
         :param prep_params:
         :return:
         """
+
+        # check whether qubits are connected
+        self.check_connection(qbm, qbs)
 
         if isinstance(qbm, str):
             qbm = self.get_qb(qbm)
@@ -595,6 +623,9 @@ class Device(Instrument):
             label=None, prep_params=None, upload=True, analyze_RB=True,
             classified=False, correlated=False, thresholded=False, averaged=True):
 
+        # check whether qubits are connected
+        self.check_connection(qb1, qb2)
+
         qb1n = qb1.name
         qb2n = qb2.name
         qubits = [qb1, qb2]
@@ -706,6 +737,9 @@ class Device(Instrument):
         elif qbr != qbc and qbr != qbt:
             raise ValueError('Only target or control qubit can be read out!')
 
+        # check whether qubits are connected
+        self.check_connection(qbc, qbt)
+
         if len(list(soft_sweep_params)) > 1:
             log.warning('There is more than one soft sweep parameter.')
         if label is None:
@@ -779,9 +813,8 @@ class Device(Instrument):
         qbc_name = qbc.name
         qbt_name = qbt.name
 
-        if [qbc_name, qbt_name] not in self.connectivity_graph() and [qbt_name,
-                                                                      qbc_name] not in self.connectivity_graph():
-            raise ValueError('Qubits are not connected!')
+        # check whether qubits are connected
+        self.check_connection(qbc, qbt)
 
         if cz_pulse_name is None:
             cz_pulse_name = f'FP {qbc.name}'
@@ -927,9 +960,8 @@ class Device(Instrument):
         qbc_name = qbc.name
         qbt_name = qbt.name
 
-        if [qbc_name, qbt_name] not in self.connectivity_graph() and [qbt_name,
-                                                                      qbc_name] not in self.connectivity_graph():
-            raise ValueError('Qubits are not connected!')
+        # check whether qubits are connected
+        self.check_connection(qbc, qbt)
 
         if prep_params is None:
             prep_params = self.get_prep_params([qbc, qbt])
