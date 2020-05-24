@@ -237,10 +237,10 @@ class Device(Instrument):
             qb2_name = qb2
 
         try:
-            self.get(f'{gate_name}_{qb1_name}_{qb2_name}_{param}', value)
+            self.get(f'{gate_name}_{qb1_name}_{qb2_name}_{param}')
         except KeyError:
             try:
-                self.get(f'{gate_name}_{qb2_name}_{qb1_name}_{param}', value)
+                self.get(f'{gate_name}_{qb2_name}_{qb1_name}_{param}')
             except KeyError:
                 raise ValueError(f'Parameter {param} for the gate '
                                  f'{gate_name} {qb1_name} {qb2_name} '
