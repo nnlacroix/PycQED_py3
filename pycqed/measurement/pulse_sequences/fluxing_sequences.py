@@ -764,9 +764,9 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
             max_flux_length = flux_pulse['pulse_length']
             print(f'max_pulse_length = {max_flux_length*1e9:.2f} ns, '
                   f'from pulse dict.')
-    # add buffers to this delay
-    nr_flux_buffer = 4 if flux_pulse['pulse_type']=='BufferedNZHalfwayPulse' \
-        else 2 #for NZ pulse we have four buffers
+    # add buffers to this delay (only used for FLIP Pulse
+    nr_flux_buffer = 4 if flux_pulse['pulse_type']=='BufferedNZFLIPPulse' \
+        else 2  # for NZ pulse we have four buffers
     delay = num_cz_gates*(max_flux_length +
         flux_pulse.get('buffer_length_start', 0) +
         flux_pulse.get('buffer_length_end', 0) +
