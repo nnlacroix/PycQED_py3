@@ -730,7 +730,7 @@ class Device(Instrument):
 
         sequences, hard_sweep_points, soft_sweep_points = \
             fsqs.chevron_seqs(
-                qbc_name=qbc.name, qbt_name=qbt.name,
+                qbc_name=qbc.name, qbt_name=qbt.name, qbr_name=qbr.name,
                 hard_sweep_dict=hard_sweep_params,
                 soft_sweep_dict=soft_sweep_params,
                 operation_dict=operation_dict,

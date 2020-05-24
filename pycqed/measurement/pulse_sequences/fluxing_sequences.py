@@ -272,7 +272,7 @@ def Ramsey_time_with_flux_seq(qb_name, hard_sweep_dict, operation_dict,
     return seq, np.arange(seq.n_acq_elements())
 
 
-def chevron_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
+def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
                  operation_dict, cz_pulse_name, num_cz_gates=1, prep_params=dict(),
                  cal_points=None, upload=True):
     '''
