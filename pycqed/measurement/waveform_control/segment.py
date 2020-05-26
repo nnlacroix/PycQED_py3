@@ -167,9 +167,8 @@ class Segment:
                         if p.pulse_obj.name in [vp[2].pulse_obj.name for vp
                                                 in visited_pulses]:
                             continue
-                        if any([ref_pulse not in [ref_pulse_name for ref_pulse_name
-                                                  in ref_pulses_dict_all.keys()]
-                                for ref_pulse in p.ref_pulse]):
+                        if not all([ref_pulse in ref_pulses_dict_all for
+                                    ref_pulse in p.ref_pulse]):
                             continue
 
                         t0_list = []
@@ -191,7 +190,7 @@ class Segment:
                         else:
                             raise ValueError('Passed invalid value for ' +
                                 'ref_function. Allowed values are: max, min, mean.' +
-                                ' Default value: min')
+                                ' Default value: max')
                     else:
                         t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
                             p.ref_point_new * p.pulse_obj.length + \
