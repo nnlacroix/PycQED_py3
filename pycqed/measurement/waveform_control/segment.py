@@ -179,7 +179,7 @@ class Segment:
                         for (ref_pulse, delay, ref_point) in zip(p.ref_pulse, delay_list, ref_point_list):
                             t0_list.append(ref_pulses_dict_all[ref_pulse].pulse_obj.algorithm_time() + delay -
                                            p.ref_point_new * p.pulse_obj.length +
-                                           ref_point * pulse.pulse_obj.length)
+                                           ref_point * ref_pulses_dict_all[ref_pulse].pulse_obj.length)
 
                         if p.ref_function == 'max':
                             t0 = max(t0_list)
