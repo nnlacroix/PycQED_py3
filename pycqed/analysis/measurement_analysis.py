@@ -6637,15 +6637,17 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
             self.freqs = self.sweep_points_2D
 
         #PCA on each time slice
-        data_rotated = np.zeros(np.shape(self.data)[1])
-        for i_delay in range(len(self.delays)):
-            data_slice = \
-                a_tools.rotate_and_normalize_data_no_cal_points(
-                    self.data[2:, i_delay::len(self.delays)])
-            if data_slice[np.argmax(abs(data_slice - np.mean(data_slice)))] - np.mean(data_slice) < 0:
-                data_slice = -data_slice
-            data_rotated[i_delay::len(self.delays)] = data_slice
+        # data_rotated = np.zeros(np.shape(self.data)[1])
+        # for i_delay in range(len(self.delays)):
+        #     data_slice = \
+        #         a_tools.rotate_and_normalize_data_no_cal_points(
+        #             self.data[2:, i_delay::len(self.delays)])
+        #     if data_slice[np.argmax(abs(data_slice - np.mean(data_slice)))] - np.mean(data_slice) < 0:
+        #         data_slice = -data_slice
+        #     data_rotated[i_delay::len(self.delays)] = data_slice
 
+        data_rotated = a_tools.rotate_and_normalize_data_no_cal_points(
+            self.data[2:, :])
         data_rotated = data_rotated.reshape(len(self.freqs), len(self.delays))
 
         self.data_rotated = data_rotated
