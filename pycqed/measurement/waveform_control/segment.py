@@ -140,7 +140,7 @@ class Segment:
         self.elements = odict()
 
         visited_pulses = []
-        ref_points = []
+        ref_pulses_dict = {}
         i = 0
 
         pulses = self.gen_refpoint_dict()
@@ -148,7 +148,7 @@ class Segment:
         # add pulses that refer to segment start
         for pulse in pulses['segment_start']:
             if pulse.pulse_obj.name in pulses:
-                ref_points.append((pulse.pulse_obj.name, pulse))
+                ref_pulses_dict.update({pulse.pulse_obj.name: pulse})
             t0 = pulse.delay - pulse.ref_point_new * pulse.pulse_obj.length
             pulse.pulse_obj.algorithm_time(t0)
             visited_pulses.append((t0, i, pulse))
@@ -157,32 +157,65 @@ class Segment:
         if len(visited_pulses) == 0:
             raise ValueError('No pulse references to the segment start!')
 
+        ref_pulses_dict_all = deepcopy(ref_pulses_dict)
         # add remaining pulses
-        while len(ref_points) > 0:
-            new_ref_points = []
-            for (name, pulse) in ref_points:
+        while len(ref_pulses_dict) > 0:
+            ref_pulses_dict_new = {}
+            for name, pulse in ref_pulses_dict.items():
                 for p in pulses[name]:
+                    if isinstance(p.ref_pulse, list):
+                        if p.pulse_obj.name in [vp[2].pulse_obj.name for vp
+                                                in visited_pulses]:
+                            continue
+                        if not all([ref_pulse in ref_pulses_dict_all for
+                                    ref_pulse in p.ref_pulse]):
+                            continue
+
+                        t0_list = []
+                        delay_list = [p.delay] * len(p.ref_pulse) if not isinstance(p.delay, list) else p.delay
+                        ref_point_list = [p.ref_point] * len(p.ref_pulse) if not isinstance(p.ref_point, list) \
+                            else p.ref_point
+
+                        for (ref_pulse, delay, ref_point) in zip(p.ref_pulse, delay_list, ref_point_list):
+                            t0_list.append(ref_pulses_dict_all[ref_pulse].pulse_obj.algorithm_time() + delay -
+                                           p.ref_point_new * p.pulse_obj.length +
+                                           ref_point * pulse.pulse_obj.length)
+
+                        if p.ref_function == 'max':
+                            t0 = max(t0_list)
+                        elif p.ref_function == 'min':
+                            t0 = min(t0_list)
+                        elif p.ref_function == 'mean':
+                            t0 = np.mean(t0_list)
+                        else:
+                            raise ValueError('Passed invalid value for ' +
+                                'ref_function. Allowed values are: max, min, mean.' +
+                                ' Default value: max')
+                    else:
+                        t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
+                            p.ref_point_new * p.pulse_obj.length + \
+                            p.ref_point * pulse.pulse_obj.length
+
+                    p.pulse_obj.algorithm_time(t0)
 
                     # add p.name to reference list if it is used as a key
                     # in pulses
                     if p.pulse_obj.name in pulses:
-                        new_ref_points.append((p.pulse_obj.name, p))
-
-                    t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
-                        p.ref_point_new * p.pulse_obj.length + \
-                        p.ref_point * pulse.pulse_obj.length
-                    p.pulse_obj.algorithm_time(t0)
+                        ref_pulses_dict_new.update({p.pulse_obj.name: p})
 
                     visited_pulses.append((t0, i, p))
                     i += 1
 
-            ref_points = new_ref_points
+            ref_pulses_dict = ref_pulses_dict_new
+            ref_pulses_dict_all.update(ref_pulses_dict_new)
+
         if len(visited_pulses) != len(self.unresolved_pulses):
-            log.error(len(visited_pulses), len(self.unresolved_pulses))
+            log.error(f"{len(visited_pulses), len(self.unresolved_pulses)}")
             for unpulse in visited_pulses:
                 if unpulse not in self.unresolved_pulses:
                     log.error(unpulse)
-            raise Exception('Not all pulses have been resolved!')
+            raise Exception(f'Not all pulses have been resolved: '
+                            f'{self.unresolved_pulses}')
 
         # adds the resolved pulses to the elements OrderedDictionary
         for (t0, i, p) in sorted(visited_pulses):
@@ -340,10 +373,14 @@ class Segment:
 
         pulses = {}
         for pulse in self.unresolved_pulses:
-            if pulse.ref_pulse not in pulses:
-                pulses[pulse.ref_pulse] = [pulse]
-            elif pulse.ref_pulse in pulses:
-                pulses[pulse.ref_pulse].append(pulse)
+            ref_pulse_list = pulse.ref_pulse
+            if not isinstance(ref_pulse_list, list):
+                ref_pulse_list = [ref_pulse_list]
+            for p in ref_pulse_list:
+                if p not in pulses:
+                    pulses[p] = [pulse]
+                else:
+                    pulses[p].append(pulse)
 
         return pulses
 
@@ -1114,9 +1151,12 @@ class Segment:
 class UnresolvedPulse:
     """
     pulse_pars: dictionary containing pulse parameters
-    ref_pulse: 'segment_start', 'previous_pulse', pulse.name
+    ref_pulse: 'segment_start', 'previous_pulse', pulse.name, or a list of
+        multiple pulse.name.
     ref_point: 'start', 'end', 'middle', reference point of the reference pulse
     ref_point_new: 'start', 'end', 'middle', reference point of the new pulse
+    ref_function: 'max', 'min', 'mean', specifies how timing is chosen if
+        multiple pulse names are listed in ref_pulse (default: 'max')
     """
 
     def __init__(self, pulse_pars):
@@ -1141,6 +1181,7 @@ class UnresolvedPulse:
             raise ValueError('Passed invalid value for ref_point_new. Allowed '
                 'values are: start, end, middle. Default value: start')
 
+        self.ref_function = pulse_pars.get('ref_function', 'max')
         self.delay = pulse_pars.get('pulse_delay', 0)
         self.original_phase = pulse_pars.get('phase', 0)
         self.basis = pulse_pars.get('basis', None)
