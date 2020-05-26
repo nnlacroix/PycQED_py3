@@ -76,14 +76,14 @@ class SSB_DRAG_pulse(pulse.Pulse):
 
     @property
     def length(self):
-        return self.sigma*self.nr_sigma
+        return self.sigma * self.nr_sigma
 
     def chan_wf(self, channel, tvals):
         half = self.nr_sigma * self.sigma / 2
         tc = self.algorithm_time() + half
 
-        gauss_env = np.exp(-0.5 * (tvals - tc)**2 / self.sigma**2)
-        gauss_env -= np.exp(-0.5 * half**2 / self.sigma**2)
+        gauss_env = np.exp(-0.5 * (tvals - tc) ** 2 / self.sigma ** 2)
+        gauss_env -= np.exp(-0.5 * half ** 2 / self.sigma ** 2)
         gauss_env *= self.amplitude * (tvals - tc >= -half) * (
                 tvals - tc < half)
         deriv_gauss_env = -self.motzoi * (tvals - tc) * gauss_env / self.sigma
@@ -111,6 +111,130 @@ class SSB_DRAG_pulse(pulse.Pulse):
                 self.algorithm_time() + self.nr_sigma * self.sigma / 2)
         hashlist += [self.alpha, self.phi_skew, phase]
         return hashlist
+
+
+class GaussianFilteredPiecewiseConstPulse(pulse.Pulse):
+    """
+    The base class for different Gaussian-filtered piecewise constant pulses.
+
+    To avoid clipping of the Gaussian-filtered rising and falling edges, the
+    pulse should start and end with zero-amplitude buffer segments.
+
+    Args:
+        name (str): The name of the pulse, used for referencing to other pulses
+            in a sequence. Typically generated automatically by the `Segment`
+            class.
+        element_name (str): Name of the element the pulse should be played in.
+        channels (list of str): Channel names this pulse is played on
+        lengths (list of list of float): For each channel, a list of the
+            lengths of the pulse segments. Must satisfy
+            `len(lengths) == len(channels)`.
+        amplitudes (list of list of float): The amplitudes of all pulse
+            segments. The shape must match that of `lengths`.
+        gaussian_filter_sigma (float): The width of the gaussian filter sigma
+            of the pulse.
+        codeword (int or 'no_codeword'): The codeword that the pulse belongs in.
+            Defaults to 'no_codeword'.
+    """
+
+    def __init__(self, name, element_name, channels, lengths, amplitudes,
+                 gaussian_filter_sigma, codeword='no_codeword', **kw):
+        self.name = name
+        self.element_name = element_name
+        self.codeword = codeword
+        self.channels = channels
+        self._t0 = None
+
+        self.lengths = lengths
+        self.amplitudes = amplitudes
+        self.gaussian_filter_sigma = gaussian_filter_sigma
+
+        assert len(lengths) == len(channels)
+        assert len(amplitudes) == len(channels)
+        for l, a in zip(lengths, amplitudes):
+            assert len(l) == len(a)
+
+    @property
+    def length(self):
+        max_len = 0
+        for channel_lengths in self.lengths:
+            max_len = max(max_len, np.sum(channel_lengths))
+        return max_len
+
+    def _check_dimensions(self):
+        assert len(self.lengths) == len(self.channels)
+        assert len(self.amplitudes) == len(self.channels)
+        for chan_lens, chan_amps in zip(self.lengths, self.amplitudes):
+            assert len(chan_lens) == len(chan_amps)
+
+    def chan_wf(self, channel, t):
+        t0 = self.algorithm_time()
+        idx = self.channels.index(channel)
+        wave = np.zeros_like(t)
+        timescale = 1 / (np.sqrt(2) * self.gaussian_filter_sigma)
+        for seg_len, seg_amp in zip(self.lengths[idx], self.amplitudes[idx]):
+            t1 = t0 + seg_len
+            if self.gaussian_filter_sigma > 0:
+                wave += 0.5 * seg_amp * (sp.special.erf((t - t0) * timescale) -
+                                         sp.special.erf((t - t1) * timescale))
+            else:
+                wave += seg_amp * (t >= t0) * (t < t1)
+            t0 = t1
+        return wave
+
+    def hashables(self, tstart, channel):
+        if channel not in self.channels:
+            return []
+        hashlist = [type(self), self.algorithm_time() - tstart]
+        idx = self.channels.index(channel)
+        chan_lens = self.lengths[idx]
+        chan_amps = self.amplitudes[idx]
+        hashlist += [len(chan_lens)]
+        hashlist += list(chan_lens.copy())
+        hashlist += list(chan_amps.copy())
+        hashlist += [self.gaussian_filter_sigma]
+        return hashlist
+
+
+class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
+    """
+    A zero-area pulse shape that allows to control the accumulated phase when
+    transitioning from the first pulse half to the second pulse half, by having
+    an additional, low-amplitude segment between the two main pulse-halves.
+
+    The zero area is achieved by adjusting the amplitudes for the intermediate
+    pulses.
+
+
+    """
+
+    def __init__(self, name, element_name, channels, main_lens, main_amps,
+                 trans_lens, trans_amps, gaussian_filter_sigma, amp_offsets,
+                 buffer_start=0, buffer_end=0, codeword='no_codeword', **kw):
+        if not isinstance(main_lens, list):
+            main_lens = len(channels)*[main_lens]
+        if not isinstance(main_amps, list):
+            main_amps = len(channels)*[main_amps]
+        if not isinstance(trans_lens, list):
+            trans_lens = len(channels) * [trans_lens]
+        if not isinstance(trans_amps, list):
+            trans_amps = len(channels) * [trans_amps]
+        if not isinstance(amp_offsets, list):
+            amp_offsets = len(channels) * [amp_offsets]
+
+        lengths = []
+        amplitudes = []
+        for ml, ma, tl, ta, ao in zip(main_lens, main_amps, trans_lens,
+                                      trans_amps, amp_offsets):
+            amplitudes.append([0, ma+ao, ta, -ta, -ma+ao, 0])
+            # ensure that the amplitude offset can be compensated for by
+            # adjusting the lengths of the middle part
+            assert abs(ml * ao) < abs(tl * ta)
+            lengths.append([buffer_start, ml/2, (tl - ml*ao/ta)/2,
+                            (tl + ml*ao/ta)/2, ml/2, buffer_end])
+
+        super().__init__(name, element_name, channels, lengths, amplitudes,
+                         gaussian_filter_sigma, codeword)
 
 
 class BufferedSquarePulse(pulse.Pulse):
