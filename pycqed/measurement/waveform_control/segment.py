@@ -1153,6 +1153,17 @@ class Segment:
         output += f'\n% {num_single_qb} single-qubit gates, {num_two_qb} two-qubit gates, {num_virtual} virtual gates'
         return output
 
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        new_seg = cls.__new__(cls)
+        memo[id(self)] = new_seg
+        for k, v in self.__dict__.items():
+            if k == "pulsar": # the reference to pulsar cannot be deepcopied
+                setattr(new_seg, k, v)
+            else:
+                setattr(new_seg, k, deepcopy(v, memo))
+        return new_seg
+
 
 class UnresolvedPulse:
     """
