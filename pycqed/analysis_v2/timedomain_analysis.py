@@ -316,15 +316,14 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     def process_data(self):
         super().process_data()
         self.data_filter = self.get_param_value('data_filter')
+        prep_params = self.get_param_value('preparation_params',
+                                           default_value=dict())
         self.data_with_reset = False
         if self.data_filter is None:
-            if 'preparation_params' in self.metadata:
-                if 'active' in self.metadata['preparation_params'].get(
-                        'preparation_type', 'wait'):
-                    reset_reps = self.metadata['preparation_params'].get(
-                        'reset_reps', 1)
-                    data_filter = lambda x: x[reset_reps::reset_reps+1]
-                    self.data_with_reset = True
+            if 'active' in prep_params.get('preparation_type', 'wait'):
+                reset_reps = prep_params.get('reset_reps', 1)
+                self.data_filter = lambda x: x[reset_reps::reset_reps+1]
+                self.data_with_reset = True
         if self.data_filter is None:
             self.data_filter = lambda x: x
 
@@ -340,7 +339,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         try:
             self.cp = eval(cal_points)
             # for now assuming the same for all qubits.
-            self.cal_states_dict = self.cp.get_indices()[self.qb_names[0]]
+            self.cal_states_dict = self.cp.get_indices(
+                self.qb_names, prep_params)[self.qb_names[0]]
+            print(self.cal_states_dict)
             if rotate:
                 cal_states_rots = self.cp.get_rotations(last_ge_pulses,
                         self.qb_names[0])[self.qb_names[0]] if rotate else None
@@ -3863,10 +3864,14 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
             self.proc_data_dict['qscale_data'][qbn] = OrderedDict()
             sweep_points = deepcopy(self.proc_data_dict['sweep_points_dict'][
                                         qbn]['msmt_sweep_points'])
+            # check if the sweep points are repeated 3 times as they have to be
+            # for the qscale analysis:
+            # take the first 3 entries and check if they are all the same
+            # or different
             unique_sp = np.unique(sweep_points[:3])
             if unique_sp.size > 1:
                 sweep_points = np.repeat(sweep_points, 3)
-            # replace in proc_data_dict; otherwise pltting in base class fails
+            # replace in proc_data_dict; otherwise plotting in base class fails
             self.proc_data_dict['sweep_points_dict'][qbn][
                 'msmt_sweep_points'] = sweep_points
             self.proc_data_dict['sweep_points_dict'][qbn][
@@ -3988,6 +3993,8 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                 except KeyError:
                     xlabel = self.raw_data_dict['sweep_parameter_names']
                     xunit = self.raw_data_dict['sweep_parameter_units']
+                if np.ndim(xlabel) > 0:
+                    xlabel = xlabel[0]
                 if np.ndim(xunit) > 0:
                     xunit = xunit[0]
                 self.plot_dicts[plot_name] = {

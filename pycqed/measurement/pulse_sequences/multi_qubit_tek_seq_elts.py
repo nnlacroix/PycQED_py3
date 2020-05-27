@@ -2338,20 +2338,13 @@ def n_qubit_qscale_seq(qubit_names, operation_dict, sweep_points, cal_points,
         params_to_sweep = {
             f'Qscale_*_{qbn}.motzoi': list(sweep_points[0].values())[j][0]
             for j, qbn in enumerate(qubit_names)}
-        # print(params_to_sweep)
-        # print(len(pulse_list))
         swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
-        # print('len(swept_pulses) ', len(swept_pulses))
-        # from pprint import pprint
-        # pprint(swept_pulses)
         swept_pulses_with_prep = \
             [add_preparation_pulses(p, operation_dict, qubit_names,
                                     **prep_params)
              for p in swept_pulses]
         final_pulses.append(swept_pulses_with_prep)
 
-    # print()
-    # print(len(final_pulses))
     # intertwine pulses in same order as base_ops
     # 1. get one list of list from the 3 lists of list
     f_p = np.array(final_pulses)
@@ -2362,9 +2355,6 @@ def n_qubit_qscale_seq(qubit_names, operation_dict, sweep_points, cal_points,
     len_swp_pts = len(list(sweep_points[0].values())[0][0])
     final_pulses = np.squeeze(np.reshape(reordered_pulses,
                                          (3*len_swp_pts, -1))).tolist()
-    # print(len(final_pulses))
-    # for fp in final_pulses:
-    #     pprint(fp)
 
     seq = pulse_list_list_seq(final_pulses, seq_name, upload=False)
 

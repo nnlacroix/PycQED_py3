@@ -1277,7 +1277,7 @@ class QuDev_transmon(Qubit):
                              'cal_points': repr(cp),
                              'sweep_points': sp,
                              'meas_obj_sweep_points_map':
-                                 sp.get_sweep_points_map([self.name]),
+                                 sp.get_meas_obj_sweep_points_map([self.name]),
                              'meas_obj_value_names_map':
                                  meas_obj_value_names_map,
                              'processing_pipe': pp})

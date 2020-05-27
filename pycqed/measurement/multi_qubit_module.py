@@ -154,36 +154,34 @@ def get_operation_dict(qubits):
     return operation_dict
 
 
-def get_multiplexed_readout_detector_function(qubits, det_type, **kw):
-    # only used by classifier detector
-    det_get_values_kws = {'classified': kw.pop('classified', False),
-                          'correlated': kw.pop('correlated', False),
-                          'thresholded': kw.pop('thresholded', True),
-                          'averaged': kw.pop('averaged', True)}
-    nr_averages = max(qb.acq_averages() for qb in qubits)
-    nr_shots = max(qb.acq_shots() for qb in qubits)
-    correlations = kw.pop('correlations', None)
-    if correlations is None and 'corr' in det_type:
-        if kw.pop('self_correlated', False):
-            correlations = list(itertools.combinations_with_replacement(
-                [qb.acq_I_channel() for qb in qubits], r=2))
-        else:
-            correlations = list(itertools.combinations(
-                [qb.acq_I_channel() for qb in qubits], r=2))
-
-    return get_multiplexed_readout_detector_functions(
-        qubits, nr_averages=nr_averages, nr_shots=nr_shots,
-        correlations=correlations,
-        det_get_values_kws=det_get_values_kws, **kw)[det_type]
+def get_correlation_channels(qubits, self_correlated, **kw):
+    """
+    Creates the correlations input parameter for the UHFQC_correlation_detector.
+    :param qubits: list of QuDev_transmon instrances
+    :param self_correlated: whether to do also measure self correlations
+    :return: list of tuples with the channels to correlate; only looks at the
+        acq_I_channel of each qubit!
+    """
+    if self_correlated:
+        return list(itertools.combinations_with_replacement(
+            [qb.acq_I_channel() for qb in qubits], r=2))
+    else:
+        return list(itertools.combinations(
+            [qb.acq_I_channel() for qb in qubits], r=2))
 
 
-def get_multiplexed_readout_detector_functions(qubits, nr_averages=2**10,
-                                               nr_shots=4095,
+def get_multiplexed_readout_detector_functions(qubits, nr_averages=None,
+                                               nr_shots=None,
                                                used_channels=None,
                                                correlations=None,
                                                add_channels=None,
                                                det_get_values_kws=None,
                                                **kw):
+    if nr_averages is None:
+        nr_averages = max(qb.acq_averages() for qb in qubits)
+    if nr_shots is None:
+        nr_shots = max(qb.acq_shots() for qb in qubits)
+
     uhfs = set()
     uhf_instances = {}
     max_int_len = {}
@@ -506,7 +504,8 @@ def measure_arbitrary_sequence(qubits, sequence=None, sequence_function=None,
         drive (string): drive method. Defaults to timedomain
         label (string): measurement label. Defaults to sequence.name.
         detector_function (string): detector function string. eg.
-            'int_avg_detector'. Built using multi_uhf get_multiplexed_readout_detector_functions
+            'int_avg_detector'. Built using multi_uhf
+            get_multiplexed_readout_detector_functions
         df_kwargs (dict): detector function kwargs
         sweep_function (callable): sweep function. Defaults to segment hard sweep.
         sweep_points (list or array): list of sweep points. Required only if
@@ -3316,13 +3315,18 @@ def measure_ro_dynamic_phases(pulsed_qubit, measured_qubits,
 
 
 def get_multi_qubit_msmt_suffix(qubits):
+    """
+    Function to get measurement label suffix from the measured qubit names.
+    :param qubits: list of QuDev_transmon instances.
+    :return: string with the measurement label suffix
+    """
     qubit_names = [qb.name for qb in qubits]
     if len(qubit_names) == 1:
         msmt_suffix = qubits[0].msmt_suffix
     elif len(qubit_names) > 5:
         msmt_suffix = '_{}qubits'.format(len(qubit_names))
     else:
-        msmt_suffix = '_qbs{}'.format(''.join([i[-1] for i in qubit_names]))
+        msmt_suffix = '_{}'.format(''.join([qbn for qbn in qubit_names]))
     return msmt_suffix
 
 ## Multi-qubit time-domain measurements ##
@@ -3356,7 +3360,7 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
         'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
         'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
     :param kw: keyword arguments. Are used in
-        get_multiplexed_readout_detector_function
+        get_multiplexed_readout_detector_functions
     """
     qubit_names = [qb.name for qb in qubits]
     if sweep_points is None:
@@ -3401,8 +3405,8 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
-    det_func = get_multiplexed_readout_detector_function(
-        qubits, det_type=det_type, **kw)
+    det_func = get_multiplexed_readout_detector_functions(
+        qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
@@ -3411,7 +3415,8 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
-                             sweep_points.get_sweep_points_map(qubit_names),
+                             sweep_points.get_meas_obj_sweep_points_map(
+                                 qubit_names),
                          'meas_obj_value_names_map':
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
@@ -3466,7 +3471,7 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
         'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
         'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
     :param kw: keyword arguments. Are used in
-        get_multiplexed_readout_detector_function
+        get_multiplexed_readout_detector_functions
     """
     qubit_names = [qb.name for qb in qubits]
     if sweep_points is None:
@@ -3510,8 +3515,8 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
     MC.set_sweep_points(sp)
 
     fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
-    det_func = get_multiplexed_readout_detector_function(
-        qubits, det_type=det_type, **kw)
+    det_func = get_multiplexed_readout_detector_functions(
+        qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
@@ -3521,7 +3526,8 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
                          'sweep_points': sweep_points,
                          'artificial_detuning': artificial_detuning,
                          'meas_obj_sweep_points_map':
-                             sweep_points.get_sweep_points_map(qubit_names),
+                             sweep_points.get_meas_obj_sweep_points_map(
+                                 qubit_names),
                          'meas_obj_value_names_map':
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
@@ -3581,7 +3587,7 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
         'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
         'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
     :param kw: keyword arguments. Are used in
-        get_multiplexed_readout_detector_function
+        get_multiplexed_readout_detector_functions
     """
     qubit_names = [qb.name for qb in qubits]
     if sweep_points is None:
@@ -3625,8 +3631,8 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
-    det_func = get_multiplexed_readout_detector_function(
-        qubits, det_type=det_type, **kw)
+    det_func = get_multiplexed_readout_detector_functions(
+        qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
@@ -3635,7 +3641,8 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
-                             sweep_points.get_sweep_points_map(qubit_names),
+                             sweep_points.get_meas_obj_sweep_points_map(
+                                 qubit_names),
                          'meas_obj_value_names_map':
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
@@ -3686,7 +3693,7 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
         'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
         'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
     :param kw: keyword arguments. Are used in
-        get_multiplexed_readout_detector_function
+        get_multiplexed_readout_detector_functions
     """
     qubit_names = [qb.name for qb in qubits]
     if sweep_points is None:
@@ -3729,8 +3736,8 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
-    det_func = get_multiplexed_readout_detector_function(
-        qubits, det_type=det_type, **kw)
+    det_func = get_multiplexed_readout_detector_functions(
+        qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
@@ -3739,7 +3746,8 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
-                             sweep_points.get_sweep_points_map(qubit_names),
+                             sweep_points.get_meas_obj_sweep_points_map(
+                                 qubit_names),
                          'meas_obj_value_names_map':
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
@@ -3792,7 +3800,7 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
         'dig_log_det', 'int_avg_det', 'dig_avg_det', 'inp_avg_det',
         'int_avg_classif_det', 'int_corr_det', 'dig_corr_det'.
     :param kw: keyword arguments. Are used in
-        get_multiplexed_readout_detector_function
+        get_multiplexed_readout_detector_functions
     """
     qubit_names = [qb.name for qb in qubits]
     if sweep_points is None:
@@ -3836,8 +3844,8 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
     MC.set_sweep_points(sp)
 
     fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
-    det_func = get_multiplexed_readout_detector_function(
-        qubits, det_type=det_type, **kw)
+    det_func = get_multiplexed_readout_detector_functions(
+        qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
@@ -3846,7 +3854,8 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
-                             sweep_points.get_sweep_points_map(qubit_names),
+                             sweep_points.get_meas_obj_sweep_points_map(
+                                 qubit_names),
                          'meas_obj_value_names_map':
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
