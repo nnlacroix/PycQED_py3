@@ -1371,12 +1371,13 @@ class UHFQC_classifier_detector(UHFQC_Base):
 
         nr_states = len(self.state_labels)
         classified_data = np.zeros(
-            (nr_states * len(self.channel_str_pairs),
+            (nr_states*len(self.channel_str_pairs),
              self.nr_sweep_points if averaged else
-             self.nr_sweep_points * self.nr_shots))
+             self.nr_sweep_points*self.nr_shots))
 
-        clf_data_all = np.zeros((self.nr_sweep_points * self.nr_shots,
-                                 nr_states * len(self.channel_str_pairs)))
+        clf_data_all = np.zeros((self.nr_sweep_points*self.nr_shots,
+                                nr_states*len(self.channel_str_pairs)))
+
         for i in range(len(self.channel_str_pairs)):
             clf_data = a_tools.predict_gm_proba_from_clf(
                 data[2*i: 2*i+2, :].T, classifier_params_list[i])
