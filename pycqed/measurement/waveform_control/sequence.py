@@ -247,6 +247,63 @@ class Sequence:
 
         return merged_seqs
 
+    @staticmethod
+    def compress_2D_sweep(sequences, segment_limit=None, merge_repeat_patterns=True):
+        """
+        Compresses a list of sequences to a lower number of sequences (if possible),
+        each of which containing the same amount of segments (assumes fixed number
+        of readout per segment) while respecting the segment_limit (memory limit).
+        Note that all sequences MUST have the same number of segments.
+        Wraps the Sequence.merge() by computing an effective segment limit that
+        minimizes the total number of sequences (to reduce upload time overhead)
+        while keeping the (new) number of segments per sequence constant
+        (it currently is a limitation of 2D sweeps that  all sequences must have same
+        number of readouts)
+        Args:
+            sequences (list): list of sequences to compress, which all have the same
+                number of segments
+            segment_limit (int): maximal number of segments that can be in a sequence
+            merge_repeat_patterns (bool): see docstring of Sequence.merge.
+
+        Returns: list of compressed sequences, new hardsweep points indices,
+            new soft sweeppoints indices
+
+        """
+        assert len(np.unique([s.n_segments() for s in sequences])) == 1, \
+            "To allow compression, all sequences must have the same number of segments"
+        from pycqed.utilities.math import factors
+        n_soft_sp = len(sequences)
+        n_seg = sequences[0].n_segments()
+        if segment_limit is None:
+            segment_limit = np.inf
+
+        # compute possible compression factors
+        compression_fact = np.sort(factors(n_soft_sp))[::-1]
+
+        for factor in compression_fact:
+            if factor * n_seg > segment_limit:
+                # too many segments in sequence, check for smaller factors
+                continue
+            elif factor == 1:
+                # no compression possible
+                log.warning(f'No compression possible: \n'
+                      f'segments per sequence: \t\t{n_seg} \n'
+                      f'limit of segments per sequence:\t{segment_limit}\n'
+                      f'number of sequences: \t\t{n_soft_sp}\n'
+                      f'To enable a compression, change the '
+                      f'limit of segments to {compression_fact[-2] * n_seg} '
+                      f'or the number of sequences  to x such that x has a '
+                      f'factor f larger than 1 for which f * '
+                      f'{n_seg} < {segment_limit}, e.g. x = '
+                      f'{np.floor(segment_limit / n_seg)} (full compression)')
+            break
+        seg_lim_eff = factor * n_seg
+        compressed_sequences = Sequence.merge(sequences, seg_lim_eff,
+                                              merge_repeat_patterns)
+        hard_sp_ind = np.arange(compressed_sequences[0].n_acq_elements())
+        soft_sp_ind = np.arange(len(compressed_sequences))
+        return compressed_sequences, hard_sp_ind, soft_sp_ind
+
     def __repr__(self):
         string_repr = f"####### {self.name} #######\n"
         for seg_name, seg in self.segments.items():
