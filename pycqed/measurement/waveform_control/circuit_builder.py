@@ -50,9 +50,9 @@ class CircuitBuilder:
     def get_pulse(self, op, parse_z_gate=False):
         """
         Gets a pulse from the operation dictionary, and possibly parses
-        arbitrary angle from Z gate operation.
+        logical indexing as well as arbitrary angle from Z gate operation.
         Examples:
-             >>> get_pulse(['Z100 qb1'], parse_z_gate=True)
+             >>> get_pulse('Z100 qb1', parse_z_gate=True)
              will perform a 100 degree Z rotation
         Args:
             op: operation
