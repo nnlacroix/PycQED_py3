@@ -132,8 +132,8 @@ class Pulse:
         raise NotImplementedError('chan_wf() not implemented for {}'
                                   .format(str(type(self))[1:-1]))
 
-    @staticmethod
-    def pulse_params():
+    @classmethod
+    def pulse_params(cls):
         """
         Returns a dictionary of pulse parameters and initial values.
         """

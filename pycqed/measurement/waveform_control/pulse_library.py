@@ -63,6 +63,27 @@ class SSB_DRAG_pulse(pulse.Pulse):
         self.alpha = alpha
         self.phi_skew = phi_skew
 
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'SSB_DRAG_pulse',
+            'I_channel': None,
+            'Q_channel': None,
+            'amplitude': 0,
+            'sigma': 10e-9,
+            'nr_sigma': 5,
+            'motzoi': 1,
+            'mod_frequency': 100e6,
+            'phase': 0,
+            'alpha': 0,
+            'phi_skew': 0,
+            'basis_rotation': {},
+        }
+        return params
+
     @property
     def channels(self):
         return [c for c in [self.I_channel, self.Q_channel] if c is not None]
@@ -130,6 +151,24 @@ class BufferedSquarePulse(pulse.Pulse):
                       self.buffer_length_end
         self.codeword = kw.pop('codeword', 'no_codeword')
 
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'BufferedSquarePulse',
+            'channel': None,
+            'channels': None,
+            'amplitude': 0,
+            'pulse_length': 0,
+            'buffer_length_start': 0,
+            'buffer_length_end': 0,
+            'gaussian_filter_sigma': 0,
+            'basis_rotation': {},
+        }
+        return params
+
     def chan_wf(self, chan, tvals):
         if self.gaussian_filter_sigma == 0:
             wave = np.ones_like(tvals) * self.amplitude
@@ -183,6 +222,27 @@ class BufferedCZPulse(pulse.Pulse):
         self.length = self.pulse_length + self.buffer_length_start + \
                       self.buffer_length_end
         self.codeword = kw.pop('codeword', 'no_codeword')
+
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'BufferedCZPulse',
+            'channel': None,
+            'aux_channels_dict': {},
+            'amplitude': 0,
+            'frequency': 0,
+            'phase': 0,
+            'pulse_length': 0,
+            'buffer_length_start': 0,
+            'buffer_length_end': 0,
+            'extra_buffer_aux_pulse': 5e-9,
+            'gaussian_filter_sigma': 0,
+            'basis_rotation': {},
+        }
+        return params
 
     def chan_wf(self, chan, tvals):
         amp = self.amplitude
@@ -266,6 +326,28 @@ class BufferedCZPulseEffectiveTime(pulse.Pulse):
                       self.buffer_length_end
         self.codeword = kw.pop('codeword', 'no_codeword')
 
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'BufferedCZPulseEffectiveTime',
+            'channel': None,
+            'aux_channels_dict': None,
+            'amplitude': 0,
+            'frequency': 0,
+            'phase': 0,
+            'chevron_func': None,
+            'pulse_length': 0,
+            'buffer_length_start': 0,
+            'buffer_length_end': 0,
+            'extra_buffer_aux_pulse': 5e-9,
+            'gaussian_filter_sigma': 0,
+            'basis_rotation': {},
+        }
+        return params
+
     def chan_wf(self, chan, tvals):
         amp = self.amplitude
         buffer_start = self.buffer_length_start
@@ -344,6 +426,28 @@ class NZBufferedCZPulse(pulse.Pulse):
         self.codeword = kw.pop('codeword', 'no_codeword')
 
         self.codeword = kw.pop('codeword', 'no_codeword')
+
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'NZBufferedCZPulse',
+            'channel': None,
+            'aux_channels_dict': None,
+            'amplitude': 0,
+            'alpha': 1,
+            'frequency': 0,
+            'phase': 0,
+            'pulse_length': 0,
+            'buffer_length_start': 0,
+            'buffer_length_end': 0,
+            'extra_buffer_aux_pulse': 5e-9,
+            'gaussian_filter_sigma': 0,
+            'basis_rotation': {},
+        }
+        return params
 
     def chan_wf(self, chan, tvals):
         amp1 = self.amplitude
@@ -466,6 +570,30 @@ class BufferedNZFLIPPulse(pulse.Pulse):
 
         self.codeword = kw.pop('codeword', 'no_codeword')
 
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'BufferedNZFLIPPulse',
+            'channel': None,
+            'channel2': None,
+            'amplitude': 0,
+            'amplitude2': 0,
+            'alpha': 1,
+            'pulse_length': 0,
+            'buffer_length_start': 30e-9,
+            'buffer_length_end': 30e-9,
+            'flux_buffer_length': 0,
+            'flux_buffer_length2': 0,
+            'pulse_delay': 0,
+            'channel_relative_delay': 0,
+            'gaussian_filter_sigma': 1e-9,
+            'basis_rotation': {},
+        }
+        return params
+
     def chan_wf(self, chan, tvals):
 
         amp1 = self.amps[chan]
@@ -513,30 +641,6 @@ class BufferedNZFLIPPulse(pulse.Pulse):
         hashlist += [amp, pulse_length, buffer_start, buffer_end]
         hashlist += [self.gaussian_filter_sigma, self.alphas[channel]]
         return hashlist
-
-    @staticmethod
-    def pulse_params():
-        """
-        Returns a dictionary of pulse parameters and initial values.
-        """
-        params = {
-            'pulse_type': 'BufferedNZFLIPPulse',
-            'channel': None,
-            'channel2': None,
-            'amplitude': 0,
-            'amplitude2': 0,
-            'alpha': 1,
-            'pulse_length': 0,
-            'buffer_length_start': 30e-9,
-            'buffer_length_end': 30e-9,
-            'flux_buffer_length': 0,
-            'flux_buffer_length2': 0,
-            'pulse_delay': 0,
-            'channel_relative_delay': 0,
-            'gaussian_filter_sigma': 1e-9,
-            'basis_rotation': {},
-        }
-        return params
 
 
 class BufferedFLIPPulse(pulse.Pulse):
@@ -592,6 +696,27 @@ class BufferedFLIPPulse(pulse.Pulse):
 
         self.codeword = kw.pop('codeword', 'no_codeword')
 
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'BufferedFLIPPulse',
+            'channel': None,
+            'channel2': None,
+            'amplitude': 0,
+            'amplitude2': 0,
+            'pulse_length': 0,
+            'buffer_length_start': 30e-9,
+            'buffer_length_end': 30e-9,
+            'pulse_delay': 0,
+            'channel_relative_delay': 0,
+            'gaussian_filter_sigma': 1e-9,
+            'basis_rotation': {},
+        }
+        return params
+
     def chan_wf(self, chan, tvals):
 
         amp = self.amps[chan]
@@ -626,27 +751,6 @@ class BufferedFLIPPulse(pulse.Pulse):
         hashlist += [self.gaussian_filter_sigma]
         return hashlist
 
-    @staticmethod
-    def pulse_params():
-        """
-        Returns a dictionary of pulse parameters and initial values.
-        """
-        params = {
-            'pulse_type': 'BufferedFLIPPulse',
-            'channel': None,
-            'channel2': None,
-            'amplitude': 0,
-            'amplitude2': 0,
-            'pulse_length': 0,
-            'buffer_length_start': 30e-9,
-            'buffer_length_end': 30e-9,
-            'pulse_delay': 0,
-            'channel_relative_delay': 0,
-            'gaussian_filter_sigma': 1e-9,
-            'basis_rotation': {},
-        }
-        return params
-
 
 class NZMartinisGellarPulse(pulse.Pulse):
     def __init__(self, channel, element_name, wave_generation_func,
@@ -679,6 +783,33 @@ class NZMartinisGellarPulse(pulse.Pulse):
         self.dv_dphi = kw.pop('dv_dphi', 0)
         self.lambda_2 = kw.pop('lambda_2', 0)
         self.codeword = kw.pop('codeword', 'no_codeword')
+
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'NZMartinisGellarPulse',
+            'channel': None,
+            'aux_channels_dict': None,
+            'theta_f': np.pi / 2,
+            'alpha': 1,
+            'pulse_length': 0,
+            'buffer_length_start': 0,
+            'buffer_length_end': 0,
+            'extra_buffer_aux_pulse': 0e-9,
+            'wave_generation_func': None,
+            'qbc_freq': 0,
+            'qbt_freq': 0,
+            'anharmonicity': 0,
+            'J': 0,
+            'loop_asym': 0,
+            'dv_dphi': 0,
+            'lambda_2': 0,
+            'basis_rotation': {},
+        }
+        return params
 
     def chan_wf(self, chan, tvals):
 
@@ -738,6 +869,27 @@ class GaussFilteredCosIQPulse(pulse.Pulse):
         self.length = self.pulse_length + \
                       self.gaussian_filter_sigma * self.nr_sigma
         self.codeword = kw.pop('codeword', 'no_codeword')
+
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'GaussFilteredCosIQPulse',
+            'I_channel': None,
+            'Q_channel': None,
+            'amplitude': 0,
+            'pulse_length': 0,
+            'mod_frequency': 0,
+            'phase': 0,
+            'nr_sigma': 5,
+            'alpha': 0,
+            'phi_skew': 0,
+            'gaussian_filter_sigma': 0,
+            'basis_rotation': {},
+        }
+        return params
 
     def chan_wf(self, chan, tvals, **kw):
         if self.gaussian_filter_sigma == 0:
@@ -822,6 +974,27 @@ class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
                 raise ValueError(f"Received {len(p)} {pname}  but expected "
                                  f"{len(self.mod_frequency)} (number of frequencies)")
 
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'GaussFilteredCosIQPulseMultiChromatic',
+            'I_channel': None,
+            'Q_channel': None,
+            'amplitude': 0,
+            'pulse_length': 0,
+            'mod_frequency': 0,
+            'phase': 0,
+            'nr_sigma': 5,
+            'alpha': 0,
+            'phi_skew': 0,
+            'gaussian_filter_sigma': 0,
+            'basis_rotation': {},
+        }
+        return params
+
     def chan_wf(self, chan, tvals, **kw):
         I_mods, Q_mods = np.zeros_like(tvals), np.zeros_like(tvals)
         for a, ph, f, phi, alpha in zip(self.amplitude, self.phase,
@@ -902,6 +1075,21 @@ class SquarePulse(pulse.Pulse):
         self.length = kw.pop('length', 0)
         self.codeword = kw.pop('codeword', 'no_codeword')
 
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'SquarePulse',
+            'channel': None,
+            'channels': None,
+            'amplitude': 0,
+            'length': 0,
+            'basis_rotation': {},
+        }
+        return params
+
     def chan_wf(self, chan, tvals):
         return np.ones(len(tvals)) * self.amplitude
 
@@ -925,6 +1113,22 @@ class CosPulse(pulse.Pulse):
         self.length = kw.pop('length', 0.)
         self.phase = kw.pop('phase', 0.)
         self.codeword = kw.pop('codeword', 'no_codeword')
+
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        """
+        params = {
+            'pulse_type': 'CosPulse',
+            'channel': None,
+            'amplitude': 0,
+            'length': 0,
+            'frequency': 0,
+            'phase': 0,
+            'basis_rotation': {},
+        }
+        return params
 
     def chan_wf(self, chan, tvals):
         return self.amplitude * np.cos(2 * np.pi *
