@@ -788,18 +788,11 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
     final_rotations[0]['ref_pulse'] = 'cphase_init_pi_qbc'
     final_rotations[0]['pulse_delay'] = delay
 
-    # make sure RO happens after last ge
-    ge_pulse_len = np.array(
-        [final_rotations[i]['sigma']*final_rotations[i]['nr_sigma']
-         for i in range(2)])
-
-    longer_pulse = ge_pulse_len.argmax()
-
-
     ro_pulses = generate_mux_ro_pulse_list([qbc_name, qbt_name],
                                             operation_dict)
 
-    ro_pulses[0]['ref_pulse'] = final_rotations[longer_pulse]['name']
+    # make sure RO happens after last ge
+    ro_pulses[0]['ref_pulse'] = [p['name'] for p in final_rotations]
 
     hsl = len(list(hard_sweep_dict.values())[0]['values'])
     params = {'cphase_init_pi_qbc.amplitude': np.concatenate(
