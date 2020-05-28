@@ -62,20 +62,21 @@ log = logging.getLogger(__name__)
 
 
 class Device(Instrument):
-    def __init__(self, name, qubits, connections, **kw):
+    def __init__(self, name, qubits, connectivity_graph, **kw):
         """
         Instantiates device instrument and adds its parameters.
 
         Args:
             name (str): name of the device
-            qubits (list of QudevTransmon): qubits of the device
-            connections: list of elements of the form [qb1, qb2] with qb1 and qb2 QudevTransmon objects. qb1 and qb2
-                         should be physically connected on the device.
+            qubits (list of QudevTransmon or names of QudevTransmon objects): qubits of the device
+            connections: list of elements of the form [qb1, qb2] with qb1 and qb2 QudevTransmon objects or names
+                         thereof. qb1 and qb2 should be physically connected on the device.
         """
         super().__init__(name, **kw)
 
-        qb_names = [qb.name for qb in qubits]
-        connectivity_graph = [[qb1.name, qb2.name] for [qb1, qb2] in connections]
+        qb_names = [qb if isinstance(qb, str) else qb.name for qb in qubits]
+        connectivity_graph = [[qb1 if isinstance(qb1, str) else qb1.name,
+                               qb2 if isinstance(qb2, str) else qb2.name] for [qb1, qb2] in connectivity_graph]
 
         for qb_name in qb_names:
             setattr(self, qb_name, self.find_instrument(qb_name))
@@ -101,7 +102,7 @@ class Device(Instrument):
                            vals=vals.Lists(),
                            label="Qubit Connectivity Graph",
                            docstring="Stores the connections between the qubits "
-                                     "in form of a list of lists [qbi, qbj]",
+                                     "in form of a list of lists [qbi_name, qbj_name]",
                            parameter_class=ManualParameter,
                            initial_value=connectivity_graph
                            )
