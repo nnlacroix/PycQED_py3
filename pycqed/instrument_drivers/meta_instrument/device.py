@@ -737,11 +737,10 @@ class Device(Instrument):
             pla.PipelineDataAnalysis()
 
     def measure_chevron(self, qbc, qbt, hard_sweep_params, soft_sweep_params,
-                        cz_pulse_name=None, upload=True, label=None, qbr=None,
+                        cz_pulse_name, upload=True, label=None, qbr=None,
                         classified=False, n_cal_points_per_state=2,
                         num_cz_gates=1, cal_states='auto', prep_params=None,
                         exp_metadata=None, analyze=True, return_seq=False):
-
         if qbr is None:
             qbr = qbt
         elif qbr != qbc and qbr != qbt:
@@ -757,11 +756,6 @@ class Device(Instrument):
         MC = self.find_instrument('MC')
         for qb in [qbc, qbt]:
             qb.prepare(drive='timedomain')
-
-        if cz_pulse_name is None:
-            cz_pulse_name = f'FP {qbc.name}'
-        else:
-            cz_pulse_name += f' {qbc.name} {qbt.name}'
 
         cal_states = CalibrationPoints.guess_cal_states(cal_states)
         cp = CalibrationPoints.single_qubit(qbr.name, cal_states,
