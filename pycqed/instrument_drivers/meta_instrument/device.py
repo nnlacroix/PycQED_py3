@@ -809,21 +809,27 @@ class Device(Instrument):
             tda.MultiQubit_TimeDomain_Analysis(qb_names=[qbr.name],
                                                options_dict={'TwoD': True})
 
-    def measure_cphase(self, qbc, qbt, soft_sweep_params, cz_pulse_name=None, prep_params=None,
+    def measure_cphase(self, qbc, qbt, soft_sweep_params, cz_pulse_name, prep_params=None,
                        label=None, cal_states='auto', n_cal_points_per_state=1,
                        num_cz_gates=1, hard_sweep_params=None, exp_metadata=None,
-                       analyze=True, upload=True, for_ef=True, **kw):
+                       analyze=True, upload=True, for_ef=True, max_flux_length=None, **kw):
+        '''
+        method to measure the leakage and the phase acquired during a flux pulse
+        conditioned on the state of the control qubit (self).
+        In this measurement, the phase from two Ramsey type measurements
+        on qb_target is measured, once with the control qubit in the excited state
+        and once in the ground state. The conditional phase is calculated as the
+        difference.
 
+        Args:
+            qbc (QuDev_transmon): control qubit / fluxed qubit
+            qbt (QuDev_transmon): target qubit / non-fluxed qubit
+        '''
         qbc_name = qbc.name
         qbt_name = qbt.name
 
         # check whether qubits are connected
         self.check_connection(qbc, qbt)
-
-        if cz_pulse_name is None:
-            cz_pulse_name = f'FP {qbc.name}'
-        else:
-            cz_pulse_name += f' {qbc.name} {qbt.name}'
 
         MC = self.instr_mc.get_instr()
 
@@ -831,7 +837,6 @@ class Device(Instrument):
         plot_all_probs = kw.get('plot_all_probs', True)
         classified = kw.get('classified', False)
         predictive_label = kw.pop('predictive_label', False)
-
         if prep_params is None:
             prep_params = self.get_prep_params([qbc, qbt])
 
@@ -862,6 +867,8 @@ class Device(Instrument):
         cp = CalibrationPoints.multi_qubit([qbc.name, qbt.name], cal_states,
                                            n_per_state=n_cal_points_per_state)
 
+        if max_flux_length is not None:
+            log.debug(f'max_flux_length = {max_flux_length * 1e9:.2f} ns, set by user')
         operation_dict = self.get_operation_dict()
         sequences, hard_sweep_points, soft_sweep_points = \
             fsqs.cphase_seqs(
@@ -871,6 +878,7 @@ class Device(Instrument):
                 cz_pulse_name=cz_pulse_name,
                 operation_dict=operation_dict,
                 cal_points=cp, upload=False, prep_params=prep_params,
+                max_flux_length=max_flux_length,
                 num_cz_gates=num_cz_gates)
 
         hard_sweep_func = awg_swf.SegmentHardSweep(
@@ -889,7 +897,7 @@ class Device(Instrument):
 
         det_get_values_kws = {'classified': classified,
                               'correlated': False,
-                              'thresholded': False,
+                              'thresholded': True,
                               'averaged': True}
         det_name = 'int_avg{}_det'.format('_classif' if classified else '')
         det_func = mqm.get_multiplexed_readout_detector_functions(
@@ -908,8 +916,7 @@ class Device(Instrument):
                              'cal_states_rotations':
                                  {qbc.name: {'g': 0, 'f': 1},
                                   qbt.name: {'g': 0, 'e': 1}} if
-                                 (len(cal_states) != 0 and not classified
-                                  and for_ef) else None,
+                                 (len(cal_states) != 0 and not classified) else None,
                              'data_to_fit': {qbc.name: 'pf', qbt.name: 'pe'},
                              'hard_sweep_params': hard_sweep_params,
                              'soft_sweep_params': soft_sweep_params})
