@@ -1,7 +1,7 @@
 import numpy as np
 from copy import deepcopy
 
-#from pycqed.measurement.waveform_control.block import Block
+from pycqed.measurement.waveform_control.block import Block
 
 try:
     from math import gcd
