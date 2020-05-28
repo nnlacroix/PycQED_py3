@@ -112,7 +112,7 @@ class Device(Instrument):
                            parameter_class=ManualParameter)
 
         self.add_parameter('operations',
-                           docstring='a list of all operations available on the qubit',
+                           docstring='a list of operations on the device, without single QB operations.',
                            get_cmd=self._get_operations)
         self.add_parameter('two_qb_gates',
                            vals=vals.Lists(),
