@@ -957,17 +957,20 @@ class Device(Instrument):
 
         if qubits_to_measure is None:
             qubits_to_measure = [qbc, qbt]
-
-        if reset_phases_before_measurement:
-            dyn_phases = {qb.name: 0 for qb in qubits_to_measure}
-            self.get_pulse_par(cz_pulse_name,
-                               qbc, qbt, 'basis_rotation')(dyn_phases)
-
         if hard_sweep_params is None:
             hard_sweep_params = {
                 'phase': {
                     'values': np.tile(np.linspace(0, 2 * np.pi, 6) * 180 / np.pi, 2),
                     'unit': 'deg'}}
+
+        if reset_phases_before_measurement:
+            dyn_phases = {qb.name: 0 for qb in qubits_to_measure}
+            self.get_pulse_par(cz_pulse_name,
+                               qbc, qbt, 'basis_rotation')(dyn_phases)
+        else:
+            dyn_phases = self.get_pulse_par(cz_pulse_name,
+                                            qbc, qbt, 'basis_rotation')()
+
         qbc_name = qbc.name
         qbt_name = qbt.name
 
