@@ -209,7 +209,7 @@ class BufferedCZPulse(pulse.Pulse):
         t_rel = tvals - tvals[0]
         wave *= np.cos(
             2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
-        return wave - wave[0]
+        return wave
 
     def hashables(self, tstart, channel):
         if channel not in self.channels:
