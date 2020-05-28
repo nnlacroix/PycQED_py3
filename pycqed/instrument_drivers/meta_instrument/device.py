@@ -631,8 +631,7 @@ class Device(Instrument):
             clifford_decomposition_name='HZ', interleaved_gate=None,
             n_cal_points_per_state=2, cal_states=tuple(),
             label=None, prep_params=None, upload=True, analyze_RB=True,
-            classified=False, correlated=False, thresholded=False, averaged=True):
-
+            classified=True, correlated=False, thresholded=True, averaged=True):
         # check whether qubits are connected
         self.check_connection(qb1, qb2)
 
@@ -663,14 +662,12 @@ class Device(Instrument):
                                            n_per_state=n_cal_points_per_state)
 
         operation_dict = self.get_operation_dict()
-
         sequences, hard_sweep_points, soft_sweep_points = \
             mqs.two_qubit_randomized_benchmarking_seqs(
                 qb1n=qb1n, qb2n=qb2n, operation_dict=operation_dict,
                 cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
                 max_clifford_idx=24 ** 2 if character_rb else 11520,
-                cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}',
-                net_clifford=net_clifford,
+                cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}', net_clifford=net_clifford,
                 clifford_decomposition_name=clifford_decomposition_name,
                 interleaved_gate=interleaved_gate, upload=False,
                 cal_points=cp, prep_params=prep_params)
@@ -707,8 +704,7 @@ class Device(Instrument):
                                'Number of applied Cliffords, $m$')
 
         # create analysis pipeline object
-        meas_obj_value_names_map = mqm.get_meas_obj_value_names_map(qubits,
-                                                                    det_func)
+        meas_obj_value_names_map = mqm.get_meas_obj_value_names_map(qubits, det_func)
         mobj_names = list(meas_obj_value_names_map)
         pp = ProcessingPipeline(meas_obj_value_names_map)
         for i, mobjn in enumerate(mobj_names):
@@ -727,8 +723,7 @@ class Device(Instrument):
                         'cal_points': repr(cp),
                         'sweep_points': sp,
                         'meas_obj_sweep_points_map':
-                            {qbn: ['nr_seeds', 'cliffords'] for
-                             qbn in mobj_names},
+                            {qbn: ['nr_seeds', 'cliffords'] for qbn in mobj_names},
                         'meas_obj_value_names_map': meas_obj_value_names_map,
                         'processing_pipe': pp}
         MC.run_2D(name=label, exp_metadata=exp_metadata)
