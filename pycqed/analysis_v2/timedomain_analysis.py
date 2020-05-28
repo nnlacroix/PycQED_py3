@@ -330,9 +330,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         # create projected_data_dict
         self.data_to_fit = self.get_param_value('data_to_fit')
         if self.cal_states_rotations is not None \
-            and not self.get_param_value('global_PCA', False):
+            and not self.get_param_value('global_PCA', default_value=False):
             self.cal_states_analysis()
-        elif self.get_param_value('global_PCA', False):
+        elif self.get_param_value('global_PCA', default_value=False):
             self.cal_states_dict_for_rotation = {qb: [] for qb in self.qb_names}
             if self.get_param_value('TwoD', default_value=False):
                 self.proc_data_dict['projected_data_dict'] = \
