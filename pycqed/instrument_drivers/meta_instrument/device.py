@@ -57,6 +57,7 @@ from qcodes.instrument.base import Instrument
 from qcodes.instrument.parameter import (
     ManualParameter, InstrumentRefParameter)
 from qcodes.utils import validators as vals
+from pycqed.analysis_v2 import tomography_qudev as tomo
 
 log = logging.getLogger(__name__)
 
@@ -496,18 +497,18 @@ class Device(Instrument):
             ma.MeasurementAnalysis(TwoD=True)
 
     def measure_tomography(self, qubits, prep_sequence, state_name,
-                           rots_basis=('I', 'X180', 'Y90', 'mY90', 'X90', 'mX90'),
+                           rots_basis=tomo.DEFAULT_BASIS_ROTS,
                            use_cal_points=True,
                            preselection=True,
                            rho_target=None,
-                           shots=None,
+                           shots=4096,
                            ro_spacing=1e-6,
                            ro_slack=10e-9,
                            thresholded=False,
                            liveplot=True,
                            nreps=1, run=True,
-                           upload=True,
-                           operation_dict=None):
+                           operation_dict=None,
+                           upload=True):
         exp_metadata = {}
 
         MC = self.instr_mc.get_instr()
@@ -519,7 +520,6 @@ class Device(Instrument):
             operation_dict = self.get_operation_dict()
 
         qubit_names = [qb.name for qb in qubits]
-
         if preselection:
             label = '{}_tomography_ssro_preselection_{}'.format(state_name, '-'.join(
                 [qb.name for qb in qubits]))
@@ -527,69 +527,51 @@ class Device(Instrument):
             label = '{}_tomography_ssro_{}'.format(state_name, '-'.join(
                 [qb.name for qb in qubits]))
 
-        seq_tomo, seg_list_tomo = mqs.n_qubit_tomo_seq(qubit_names,
-                                                       operation_dict,
-                                                       prep_sequence=prep_sequence,
-                                                       rots_basis=rots_basis,
-                                                       return_seq=True,
-                                                       upload=False,
-                                                       preselection=preselection,
-                                                       ro_spacing=ro_spacing)
+        seq_tomo, seg_list_tomo = mqs.n_qubit_tomo_seq(
+            qubit_names, operation_dict, prep_sequence=prep_sequence,
+            rots_basis=rots_basis, return_seq=True, upload=False,
+            preselection=preselection, ro_spacing=ro_spacing)
         seg_list = seg_list_tomo
 
         if use_cal_points:
-            seq_cal, seg_list_cal = mqs.n_qubit_ref_all_seq(qubit_names,
-                                                            operation_dict,
-                                                            return_seq=True,
-                                                            upload=False,
-                                                            preselection=preselection,
-                                                            ro_spacing=ro_spacing)
-            # seq += seq_cal
+            seq_cal, seg_list_cal = mqs.n_qubit_ref_all_seq(
+                qubit_names, operation_dict, return_seq=True, upload=False,
+                preselection=preselection, ro_spacing=ro_spacing)
             seg_list += seg_list_cal
+
         seq = sequence.Sequence(label)
         for seg in seg_list:
             seq.add(seg)
 
-            # reuse sequencer memory by repeating readout pattern
+        # reuse sequencer memory by repeating readout pattern
         for qbn in qubit_names:
             seq.repeat_ro(f"RO {qbn}", operation_dict)
 
-        n_segments = seq.n_acq_elements()  # len(seg_list)
-        print(n_segments)
-        # if preselection:
-        #     n_segments *= 2
-
-        # from this point on number of segments is fixed
+        n_segments = seq.n_acq_elements()
         sf = awg_swf2.n_qubit_seq_sweep(seq_len=n_segments)
-
-        # shots *= n_segments
         if shots > 1048576:
             shots = 1048576 - 1048576 % n_segments
-        # if shots is None:
-        #     shots = 4094 - 4094 % n_segments
-        # # shots = 600000
-
         if thresholded:
-            df = mqm.get_multiplexed_readout_detector_functions(qubits,
-                                                                nr_shots=shots)[
-                'dig_log_det']
+            df = mqm.get_multiplexed_readout_detector_functions(
+                qubits, nr_shots=shots)['dig_log_det']
         else:
-            df = mqm.get_multiplexed_readout_detector_functions(qubits,
-                                                                nr_shots=shots)[
-                'int_log_det']
+            df = mqm.get_multiplexed_readout_detector_functions(
+                qubits, nr_shots=shots)['int_log_det']
 
-        # make a channel map
-        # fixme - channels and qubits are not always in the same order
-        channel_map = {}
-        for qb, channel_name in zip(qubits, df.value_names):
-            channel_map[qb.name] = channel_name
+        # get channel map
+        channel_map = mqm.get_meas_obj_value_names_map(qubits, df)
+        # the above function returns channels in a list, but the state tomo analysis
+        # expects a single string as values, not list
+        for qb in qubits:
+            if len(channel_map[qb.name]) == 1:
+                channel_map[qb.name] = channel_map[qb.name][0]
 
         # todo Calibration point description code should be a reusable function
+        #   but where?
         if use_cal_points:
             # calibration definition for all combinations
             cal_defs = []
             for i, name in enumerate(itertools.product("ge", repeat=len(qubits))):
-                name = ''.join(name)  # tuple to string
                 cal_defs.append({})
                 for qb in qubits:
                     if preselection:
@@ -616,13 +598,11 @@ class Device(Instrument):
         MC.soft_avg(1)
         MC.set_sweep_function(sf)
         MC.set_sweep_points(np.arange(n_segments))
-        # MC.set_sweep_function_2D(swf.None_Sweep())
-        # MC.set_sweep_points_2D(np.arange(nreps))
+        MC.set_sweep_function_2D(swf.None_Sweep())
+        MC.set_sweep_points_2D(np.arange(nreps))
         MC.set_detector_function(df)
         if run:
-            MC.run(label, exp_metadata=exp_metadata)
-
-        return
+            MC.run_2D(label, exp_metadata=exp_metadata)
 
     def measure_two_qubit_randomized_benchmarking(
             self, qb1, qb2, cliffords,
