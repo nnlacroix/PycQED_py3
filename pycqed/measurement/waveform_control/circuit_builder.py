@@ -427,3 +427,19 @@ class CircuitBuilder:
                               "ref_function": 'max'
                               }])
         return simultaneous
+
+    def sequential_blocks(self, block_name, blocks):
+        """
+        Creates a block with name :block_name: that consists of the serial
+        execution of the given :blocks:.
+
+        Args:
+            block_name (string): name of the block that is created
+            blocks (iterable): iterable where each element is a block that has
+            to be executed one after another.
+        """
+
+        sequential = Block(block_name, [])
+        for block in blocks:
+            sequential.extend(block.build())
+        return sequential
