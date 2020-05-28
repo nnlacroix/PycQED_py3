@@ -313,7 +313,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     self.proc_data_dict['sweep_points_dict'][qbn][
                         'sweep_points'], qbn)} for qbn in self.qb_names}
             self.proc_data_dict['sweep_points_dict'] = sweep_points_w_calpts
-        except (TypeError, AttributeError) as e:
+        except (TypeError) as e:
             log.error(e)
             log.warning("Failed retrieving cal point objects or states. "
                         "Please update measurement to provide cal point object "
