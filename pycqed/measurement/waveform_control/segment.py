@@ -258,7 +258,7 @@ class Segment:
         #   that has to be compensated the sum of all pulse areas on that
         #   channel + the name of the last element
         # * and find the end time of the last pulse of the segment
-        for element in self.elements:
+        for element in self.element_start_end.keys():
             # finds the channels of AWGs with that element
             awg_channels = set()
             for awg in self.element_start_end[element]:
