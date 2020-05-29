@@ -24,6 +24,7 @@ class Block:
 
     def build(self, ref_point="end", ref_point_new="start",
               ref_pulse='previous_pulse', block_delay=0, name=None,
+              sweep_dicts_list=None, sweep_index_list=None,
                **kwargs):
         """
         Adds the block shell recursively through the pulse list.
@@ -37,6 +38,16 @@ class Block:
         :param block_delay: delay before the start of the block
         :param name: a custom name used to prefix the pulses. If None,
             the block name plus a counter is used.
+        :param sweep_dicts_list: To build a block that corresponds to a
+            point of an N-dimensional sweep, this param is a list of N
+            sweep_dicts following the usual pycqed conventions (TODO: where
+            to find those?)
+            or a SweepPoints object with N dimenstions. Only used if also a
+            sweep_index_list is provided.
+        :param sweep_index_list: A list of N indices for an N-dimensional
+            sweep. Determines for which sweep points from sweep_dicts_list
+            the block should be build. Only used if also a sweep_dicts_list
+            is provided.
 
         :return:
         """
@@ -55,7 +66,10 @@ class Block:
         block_end = {"name": f"end",
                      "pulse_type": "VirtualPulse"}
         block_end.update(kwargs.get("block_end", {}))
-        pulses_built = deepcopy(self.pulses)
+        if sweep_dicts_list is not None and sweep_index_list is not None:
+            pulses_built = self.pulses_sweepcopy(sweep_dicts_list, sweep_index_list)
+        else:
+            pulses_built = deepcopy(self.pulses)
 
         # check if block_start/end  specified by user
         block_start_specified = False
@@ -171,3 +185,75 @@ class Block:
         for i, p in enumerate(self.pulses):
             string_repr += f"{i}: " + repr(p) + "\n"
         return string_repr
+
+    def pulses_sweepcopy(self, sweep_dicts_list, index_list):
+        """
+        Returns a deepcopy of the pulse list where SweepValue() objects
+        in the sweep_values attributes of all pulses are resolved
+        based on the provided sweep_dicts_list and index_list.
+        :param sweep_dicts_list: see description of build()
+        :param sweep_index_list: see description of build()
+
+        :return:
+        """
+        if isinstance(index_list, int):
+            index_list = [index_list]
+        if isinstance(sweep_dicts_list, dict):
+            sweep_dicts_list = [sweep_dicts_list]
+        pulses = deepcopy(self.pulses)
+        for p in pulses:
+            for s in p.get('sweep_values', []):
+                for sweep_dict, ind in zip(sweep_dicts_list, index_list):
+                    if s.param in sweep_dict:
+                        p[s.attr] = s.resolve(sweep_dict, ind,
+                                              p.get(s.attr, None))
+        return pulses
+
+
+class SweepValue:
+    """
+    A SweepValue can be added to the sweep_values of a pulse in order to
+    specify how pulse attributes have to be updated based on sweep parameters
+    when building a block for a particular sweep point.
+
+    :param attr: (str) the name of the attribute of the pulse
+    :param param: (optional str) the name of the sweep parameter (defaults
+        to attr)
+    :param func: a function applied to the value of the sweep parameter.
+         If the function accepts a second argument, a default value of the
+         pulse attribute will be passed to the function. This allows to specify
+         a function that adapts pulse attributes relative to their original
+         value.
+
+    """
+    def __init__(self, attr, param=None, func=None):
+        self.attr = attr
+        self.param = attr if param is None else param
+        self.func = func
+        self.resolved = False
+
+    def resolve(self, sweep_dict, ind, default_val):
+        """
+        Returns the resolved value of a pulse attribute for a chosen sweep
+        point.
+
+        :param sweep_dict: an entry of the sweep_dicts_list described in
+            build() .
+        :param ind: The index of the desired sweep point in sweep_dict.
+        :param default_val: A default value of the pulse attribute,
+            see the description of func in the class docstring.
+
+        :return:
+        """
+        self.resolved = True
+        if 'values' in sweep_dict[self.param]:  # convention in sweep_dicts
+            v = sweep_dict[self.param]['values'][ind]
+        else:  # convention in SweepPoints class
+            v = sweep_dict[self.param][ind][0]
+        if self.func is None:
+            return v
+        elif self.func.__code__.co_argcount == 1:
+            return self.func(v)
+        else:
+            return self.func(v, default_val)
+
