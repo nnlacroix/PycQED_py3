@@ -2255,7 +2255,11 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
             cal_points=cp, upload=False, prep_params=prep_params,
             max_flux_length=max_flux_length,
             num_cz_gates=num_cz_gates)
-
+    # compress 2D sweep
+    if kw.get('compress_2D_sweep', False):
+        sequences, hard_sweep_points, soft_sweep_points, cf = \
+            sequences[0].compress_2D_sweep(sequences,
+                                           kw.get("compression_seg_lim", 300))
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
         parameter_name=list(hard_sweep_params)[0],
@@ -2293,6 +2297,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                               qbt.name: {'g': 0, 'e': 1}} if
                              (len(cal_states) != 0 and not classified) else None,
                          'data_to_fit': {qbc.name: 'pf', qbt.name: 'pe'},
+                         'compression_factor': cf,
                          'hard_sweep_params': hard_sweep_params,
                          'soft_sweep_params': soft_sweep_params})
     MC.run_2D(label, exp_metadata=exp_metadata)
