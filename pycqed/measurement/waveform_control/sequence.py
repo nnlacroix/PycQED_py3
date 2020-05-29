@@ -266,7 +266,7 @@ class Sequence:
             merge_repeat_patterns (bool): see docstring of Sequence.merge.
 
         Returns: list of compressed sequences, new hardsweep points indices,
-            new soft sweeppoints indices
+            new soft sweeppoints indices, and the compression factor
 
         """
         assert len(np.unique([s.n_segments() for s in sequences])) == 1, \
@@ -302,7 +302,7 @@ class Sequence:
                                               merge_repeat_patterns)
         hard_sp_ind = np.arange(compressed_sequences[0].n_acq_elements())
         soft_sp_ind = np.arange(len(compressed_sequences))
-        return compressed_sequences, hard_sp_ind, soft_sp_ind
+        return compressed_sequences, hard_sp_ind, soft_sp_ind, factor
 
     def __repr__(self):
         string_repr = f"####### {self.name} #######\n"
