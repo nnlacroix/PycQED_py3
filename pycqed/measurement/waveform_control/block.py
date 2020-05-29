@@ -35,6 +35,8 @@ class Block:
         :param ref_pulse: to which pulse in the list is this block referenced to.
             Defaults to "previous_pulse" in list.
         :param block_delay: delay before the start of the block
+        :param name: a custom name used to prefix the pulses. If None,
+            the block name plus a counter is used.
 
         :return:
         """
