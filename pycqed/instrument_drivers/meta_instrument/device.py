@@ -76,18 +76,23 @@ class Device(Instrument):
         super().__init__(name, **kw)
 
         qb_names = [qb if isinstance(qb, str) else qb.name for qb in qubits]
+        qubits = [qb if not isinstance(qb, str) else self.find_instrument(qb) for qb in qubits]
         connectivity_graph = [[qb1 if isinstance(qb1, str) else qb1.name,
                                qb2 if isinstance(qb2, str) else qb2.name] for [qb1, qb2] in connectivity_graph]
 
-        for qb_name in qb_names:
-            setattr(self, qb_name, self.find_instrument(qb_name))
-
-        self._operations = {}  # dictionary containing dictionaries of operations with parameters
+        for qb in qubits:
+            setattr(self, qb.name, qb)
 
         self.add_parameter('qubits',
                            vals=vals.Lists(),
+                           initial_value=qubits,
+                           parameter_class=ManualParameter)
+        self.add_parameter('qb_names',
+                           vals=vals.Lists(),
                            initial_value=qb_names,
                            parameter_class=ManualParameter)
+
+        self._operations = {}  # dictionary containing dictionaries of operations with parameters
 
         # Instrument reference parameters
         self.add_parameter('instr_mc',
@@ -208,7 +213,7 @@ class Device(Instrument):
 
         # add sqb operations
         for qb in self.qubits():
-            operation_dict.update(self.get_qb(qb).get_operation_dict())
+            operation_dict.update(qb.get_operation_dict())
 
         return operation_dict
 
@@ -513,6 +518,8 @@ class Device(Instrument):
 
         MC = self.instr_mc.get_instr()
 
+        qubits = [self.get_qb(qb) if isinstance(qb, str) else qb for qb in qubits]
+
         for qb in qubits:
             qb.prepare(drive='timedomain')
 
@@ -615,6 +622,11 @@ class Device(Instrument):
         # check whether qubits are connected
         self.check_connection(qb1, qb2)
 
+        if isinstance(qb1, str):
+            qb1 = self.get_qb(qb1)
+        if isinstance(qb2, str):
+            qb2 = self.get_qb(qb2)
+
         qb1n = qb1.name
         qb2n = qb2.name
         qubits = [qb1, qb2]
@@ -716,6 +728,12 @@ class Device(Instrument):
                         classified=False, n_cal_points_per_state=2,
                         num_cz_gates=1, cal_states='auto', prep_params=None,
                         exp_metadata=None, analyze=True, return_seq=False):
+
+        if isinstance(qbc, str):
+            qbc = self.get_qb(qbc)
+        if isinstance(qbt, str):
+            qbt = self.get_qb(qbt)
+
         if qbr is None:
             qbr = qbt
         elif qbr != qbc and qbr != qbt:
@@ -797,11 +815,14 @@ class Device(Instrument):
         difference.
 
         Args:
-            qbc (QuDev_transmon): control qubit / fluxed qubit
-            qbt (QuDev_transmon): target qubit / non-fluxed qubit
+            qbc (QuDev_transmon, str): control qubit
+            qbt (QuDev_transmon, str): target qubit
         '''
-        qbc_name = qbc.name
-        qbt_name = qbt.name
+
+        if isinstance(qbc, str):
+            qbc = self.get_qb(qbc)
+        if isinstance(qbt, str):
+            qbt = self.get_qb(qbt)
 
         # check whether qubits are connected
         self.check_connection(qbc, qbt)
@@ -850,7 +871,7 @@ class Device(Instrument):
                 hard_sweep_dict=hard_sweep_params,
                 soft_sweep_dict=soft_sweep_params,
                 qbc_name=qbc.name, qbt_name=qbt.name,
-                cz_pulse_name=cz_pulse_name,
+                cz_pulse_name=cz_pulse_name + f' {qbc.name} {qbt.name}',
                 operation_dict=operation_dict,
                 cal_points=cp, upload=False, prep_params=prep_params,
                 max_flux_length=max_flux_length,
@@ -930,6 +951,11 @@ class Device(Instrument):
                                reset_phases_before_measurement=True,
                                prepend_n_cz=0):
 
+        if isinstance(qbc, str):
+            qbc = self.get_qb(qbc)
+        if isinstance(qbt, str):
+            qbt = self.get_qb(qbt)
+
         if qubits_to_measure is None:
             qubits_to_measure = [qbc, qbt]
         if hard_sweep_params is None:
@@ -945,9 +971,6 @@ class Device(Instrument):
         else:
             dyn_phases = self.get_pulse_par(cz_pulse_name,
                                             qbc, qbt, 'basis_rotation')()
-
-        qbc_name = qbc.name
-        qbt_name = qbt.name
 
         # check whether qubits are connected
         self.check_connection(qbc, qbt)
