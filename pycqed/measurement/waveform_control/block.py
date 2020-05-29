@@ -43,7 +43,9 @@ class Block:
             sweep_dicts following the usual pycqed conventions (TODO: where
             to find those?)
             or a SweepPoints object with N dimenstions. Only used if also a
-            sweep_index_list is provided.
+            sweep_index_list is provided. To have an effect, the block has
+            to contain pulses with ParametricValues that refer to the
+            parameters in the sweep_dicts.
         :param sweep_index_list: A list of N indices for an N-dimensional
             sweep. Determines for which sweep points from sweep_dicts_list
             the block should be build. Only used if also a sweep_dicts_list
@@ -188,9 +190,9 @@ class Block:
 
     def pulses_sweepcopy(self, sweep_dicts_list, index_list):
         """
-        Returns a deepcopy of the pulse list where SweepValue() objects
-        in the sweep_values attributes of all pulses are resolved
-        based on the provided sweep_dicts_list and index_list.
+        Returns a deepcopy of the pulse list where ParametricValue() objects
+        in all pulses are resolved based on the provided sweep_dicts_list
+        and index_list.
         :param sweep_dicts_list: see description of build()
         :param sweep_index_list: see description of build()
 
@@ -202,37 +204,29 @@ class Block:
             sweep_dicts_list = [sweep_dicts_list]
         pulses = deepcopy(self.pulses)
         for p in pulses:
-            for s in p.get('sweep_values', []):
-                for sweep_dict, ind in zip(sweep_dicts_list, index_list):
-                    if s.param in sweep_dict:
-                        p[s.attr] = s.resolve(sweep_dict, ind,
-                                              p.get(s.attr, None))
+            for attr, s in p.items():
+                if isinstance(s, ParametricValue):
+                    for sweep_dict, ind in zip(sweep_dicts_list, index_list):
+                        if s.param in sweep_dict:
+                            p[attr] = s.resolve(sweep_dict, ind)
         return pulses
 
 
-class SweepValue:
+class ParametricValue:
     """
-    A SweepValue can be added to the sweep_values of a pulse in order to
-    specify how pulse attributes have to be updated based on sweep parameters
-    when building a block for a particular sweep point.
+    A ParametricValue can be used as a placeholder for a pulse attribute that
+    will be chosen based on a parameter provided later (e.g.,
+    by Block.pulses_sweepcopy).
 
-    :param attr: (str) the name of the attribute of the pulse
-    :param param: (optional str) the name of the sweep parameter (defaults
-        to attr)
-    :param func: a function applied to the value of the sweep parameter.
-         If the function accepts a second argument, a default value of the
-         pulse attribute will be passed to the function. This allows to specify
-         a function that adapts pulse attributes relative to their original
-         value.
+    :param param: a string specifying the name of the parameter.
+    :param func: (optional) a function applied to the value of the parameter.
 
     """
-    def __init__(self, attr, param=None, func=None):
-        self.attr = attr
-        self.param = attr if param is None else param
+    def __init__(self, param, func=None):
+        self.param = param
         self.func = func
-        self.resolved = False
 
-    def resolve(self, sweep_dict, ind, default_val):
+    def resolve(self, sweep_dict, ind):
         """
         Returns the resolved value of a pulse attribute for a chosen sweep
         point.
@@ -240,20 +234,14 @@ class SweepValue:
         :param sweep_dict: an entry of the sweep_dicts_list described in
             build() .
         :param ind: The index of the desired sweep point in sweep_dict.
-        :param default_val: A default value of the pulse attribute,
-            see the description of func in the class docstring.
 
         :return:
         """
-        self.resolved = True
         if 'values' in sweep_dict[self.param]:  # convention in sweep_dicts
             v = sweep_dict[self.param]['values'][ind]
         else:  # convention in SweepPoints class
             v = sweep_dict[self.param][ind][0]
         if self.func is None:
             return v
-        elif self.func.__code__.co_argcount == 1:
-            return self.func(v)
         else:
-            return self.func(v, default_val)
-
+            return self.func(v)
