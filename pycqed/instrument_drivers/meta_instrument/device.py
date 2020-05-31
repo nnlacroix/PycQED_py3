@@ -312,7 +312,7 @@ class Device(Instrument):
             qubit_a = qubit_a.name
         if not isinstance(qubit_b, str):
             qubit_b = qubit_b.name
-        if [qubit_a, qubit_b] not in self.connectivity_graph() and [qubit_b, qubit_a] not in self.connectivity_graph():
+        if [qubit_a, qubit_b] not in connectivity_graph and [qubit_b, qubit_a] not in connectivity_graph:
             if raise_exception:
                 raise ValueError(f'Qubits {[qubit_a, qubit_b]}  are not connected!')
             else:
