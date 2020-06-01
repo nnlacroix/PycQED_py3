@@ -2522,13 +2522,12 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                 'values': np.tile(np.linspace(0, 2 * np.pi, 6) * 180 / np.pi, 2),
                 'unit': 'deg'}}
 
+    basis_rot_par = dev.get_pulse_par(cz_pulse_name, qbc, qbt, 'basis_rotation')
     if reset_phases_before_measurement:
         dyn_phases = {qb.name: 0 for qb in qubits_to_measure}
-        dev.get_pulse_par(cz_pulse_name,
-                           qbc, qbt, 'basis_rotation')(dyn_phases)
+        basis_rot_par(dyn_phases)
     else:
-        dyn_phases = dev.get_pulse_par(cz_pulse_name,
-                                        qbc, qbt, 'basis_rotation')()
+        dyn_phases = basis_rot_par()
 
     # check whether qubits are connected
     dev.check_connection(qbc, qbt)
@@ -2588,8 +2587,7 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                 MA.proc_data_dict['analysis_params_dict'][qb.name][
                     'dynamic_phase']['val'] * 180 / np.pi
     if update and reset_phases_before_measurement:
-        dev.get_pulse_par(cz_pulse_name,
-                           qbc, qbt, 'basis_rotation')(dyn_phases)
+        basis_rot_par(dyn_phases)
     return dyn_phases
 
 
