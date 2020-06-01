@@ -32,189 +32,96 @@ def rus_sequence (qbs, thetas, operation_dict,
 
     if init_state[2] == '1':
         raise ValueError(f'Ancilla has to be in |0> state')
-
-    # Create Sequence
-    seq_name = f'QuantumNeuron_RUS_{qb_in_name}_{qb_out_name}_{ancilla_name}'
-    seq = sequence.Sequence(seq_name)
-
-    prep_params = {} if prep_params is None else prep_params
-
-    builder = RUSHelper(qb_names, deepcopy(operation_dict))
-
-    # Tomography Pulses
-    tomo_basis = tomography_options.get("basis_rots", tomo.DEFAULT_BASIS_ROTS)
-    tomo_qbs = tomography_options.get("tomo_qbs", [qb_out_name])
-    tomography_segments = (None,)
-    if tomography:
-        tomography_segments = \
-            get_tomography_pulses(*tomo_qbs, basis_pulses=tomo_basis)
-
-    # Define Sequence Elements
-    c_ry_theta_p = [deepcopy(operation_dict['X90 ' + ancilla_name]),
-                    deepcopy(operation_dict['upCZ ' + ancilla_name + ' ' + qb_in_name]),
-                    deepcopy(operation_dict['mX90 ' + ancilla_name])]
-    c_ry_theta_p[0]['name'] = 'ancilla_X90_1'
-    c_ry_theta_p[0]['ref_pulse'] = 'Initialization_all-|-start'
-    c_ry_theta_p[1]['name'] = 'ancilla_C_Rz_theta_p_1'
-    c_ry_theta_p[1]['pulse_type'] = 'BufferedCZPulse'
-    c_ry_theta_p[2]['name'] = 'ancilla_mX90_1'
-
-    cy = [deepcopy(operation_dict['X90 ' + qb_out_name]),
-#          deepcopy(operation_dict['mZ90 ' + ancilla_name]), #TODO: WHY?
-          deepcopy(operation_dict['upCZ ' + qb_out_name + ' ' + ancilla_name]),
-          deepcopy(operation_dict['mX90 ' + qb_out_name])]
-    cy[0]['name'] = 'output_X90_1'
-    cy[0]['ref_pulse'] = 'ancilla_C_Rz_theta_p_1'
-#    cy[2]['name'] = 'ancilla_mZ90_1'
-    cy[1]['name'] = 'output_CZ_1'
-    cy[2]['name'] = 'output_mX90_1'
-
-    c_ry_theta_m = [deepcopy(operation_dict['X90 ' + ancilla_name]),
-                    deepcopy(operation_dict['upCZ ' + ancilla_name + ' ' + qb_in_name]),
-                    deepcopy(operation_dict['mX90 ' + ancilla_name])]
-    c_ry_theta_m[0]['name'] = 'ancilla_X90_2'
-    c_ry_theta_m[0]['ref_pulse'] = 'output_CZ_1'
-    c_ry_theta_m[1]['name'] = 'ancilla_C_Rz_theta_m_1'
-    c_ry_theta_m[1]['pulse_type'] = 'BufferedCZPulse'
-    c_ry_theta_m[2]['name'] = 'ancilla_mX90_2'
-
-    if np.ndim(thetas) < 1:
-        thetas = [thetas]
-
-    for ind_array, theta in enumerate(thetas):
-        for i, ts in enumerate(tomography_segments):
-            seg_name = f'segment_{i}_{ind_array}' if ts is None else  \
-                f'segment_{i}_{ind_array}_tomo_{i}'
-            seg = segment.Segment(seg_name)
-
-            # calculate & update flux pulse for C-ARB
-            theta_p = 2*np.pi - (2*theta % (2 * np.pi))
-            theta_m = +(2*theta % (2 * np.pi))
-
-            if theta < theta_threshold:
-                c_ry_theta_p[1]['amplitude'] = 0
-                c_ry_theta_p[1]['force_adapt_pulse_length'] = None
-                c_ry_theta_m[1]['amplitude'] = 0
-                c_ry_theta_m[1]['force_adapt_pulse_length'] = None
-            else:
-                c_ry_theta_p[1]['cphase'] = theta_p
-                c_ry_theta_p[1]['force_adapt_pulse_length'] = 'absolute'
-                c_ry_theta_m[1]['cphase'] = theta_m
-                c_ry_theta_m[1]['force_adapt_pulse_length'] = 'absolute'
-
-
-            # initialize qubits
-            seg.extend(builder.initialize(init_state, prep_params=prep_params).build())
-
-            # compile RUS Sequence
-            seg.extend(c_ry_theta_p)
-            seg.extend(cy)
-            seg.extend(c_ry_theta_m)
-
-            # add tomography pulses if required
-            if ts is not None:
-                seg.extend(builder.block_from_ops(f"tomography_{i}", ts).build())
-
-            # readout qubits
-            seg.extend(builder.mux_readout().build())
-
-            seq.add(seg)
-
-    # add calibration points
-    if cal_points is not None:
-        seq.extend(cal_points.create_segments(operation_dict, **prep_params))
-
-    if upload:
-        ps.Pulsar.get_instance().program_awgs(seq)
-
-    return seq, np.arange(seq.n_acq_elements())
-
-
-def rus_sequence_new (qbs, thetas, operation_dict,
-                  init_state="000", theta_threshold = 0.05,
-                  tomography=False, tomography_options={},
-                  cal_points=None, prep_params=None, upload=True):
-
-    # Get Qubits & Ancilla
-    qb_in_name = qbs[0].name
-    qb_out_name = qbs[1].name
-    ancilla_name = qbs[2].name
-    qb_names = [qb_in_name, qb_out_name, ancilla_name]
-
-    if init_state[2] == '1':
-        raise ValueError(f'Ancilla has to be in |0> state')
-
-    # Create Sequence
-    seq_name = f'QuantumNeuron_RUS_{qb_in_name}_{qb_out_name}_{ancilla_name}'
-    seq = sequence.Sequence(seq_name)
-
-    prep_params = {} if prep_params is None else prep_params
-
-    builder = RUSHelper(qb_names, deepcopy(operation_dict))
-
-    # Tomography Pulses
-    tomo_basis = tomography_options.get("basis_rots", tomo.DEFAULT_BASIS_ROTS)
-    tomo_qbs = tomography_options.get("tomo_qbs", [qb_out_name])
-    tomography_segments = (None,)
-    if tomography:
-        tomography_segments = \
-            get_tomography_pulses(*tomo_qbs, basis_pulses=tomo_basis)
-
-    # Define Sequence Elements
-    c_ry_theta_p = [deepcopy(operation_dict['X90 ' + ancilla_name]),
-                    deepcopy(operation_dict['upCZ ' + ancilla_name + ' ' + qb_in_name]),
-                    deepcopy(operation_dict['mX90 ' + ancilla_name])]
-    c_ry_theta_p[0]['name'] = 'ancilla_X90_1'
-    c_ry_theta_p[0]['ref_pulse'] = 'Initialization_all-|-start'
-    c_ry_theta_p[1]['name'] = 'ancilla_C_Rz_theta_p_1'
-    c_ry_theta_p[1]['pulse_type'] = 'BufferedCZPulse'
-    c_ry_theta_p[2]['name'] = 'ancilla_mX90_1'
-
-    cy = [deepcopy(operation_dict['X90 ' + qb_out_name]),
-#          deepcopy(operation_dict['mZ90 ' + ancilla_name]), #TODO: WHY?
-          deepcopy(operation_dict['upCZ ' + qb_out_name + ' ' + ancilla_name]),
-          deepcopy(operation_dict['mX90 ' + qb_out_name])]
-    cy[0]['name'] = 'output_X90_1'
-    cy[0]['ref_pulse'] = 'ancilla_C_Rz_theta_p_1'
-#    cy[2]['name'] = 'ancilla_mZ90_1'
-    cy[1]['name'] = 'output_CZ_1'
-    cy[2]['name'] = 'output_mX90_1'
-
-    c_ry_theta_m = [deepcopy(operation_dict['X90 ' + ancilla_name]),
-                    deepcopy(operation_dict['upCZ ' + ancilla_name + ' ' + qb_in_name]),
-                    deepcopy(operation_dict['mX90 ' + ancilla_name])]
-    c_ry_theta_m[0]['name'] = 'ancilla_X90_2'
-    c_ry_theta_m[0]['ref_pulse'] = 'output_CZ_1'
-    c_ry_theta_m[1]['name'] = 'ancilla_C_Rz_theta_m_1'
-    c_ry_theta_m[1]['pulse_type'] = 'BufferedCZPulse'
-    c_ry_theta_m[2]['name'] = 'ancilla_mX90_2'
-
     if np.ndim(thetas) != 2 or thetas.shape[0] != 2:
         raise ValueError("Now theta must be a (2,num_thetas)-dimensional array")
 
+    # Create Sequence
+    seq_name = f'QuantumNeuron_RUS_{qb_in_name}_{qb_out_name}_{ancilla_name}'
+    seq = sequence.Sequence(seq_name)
+
+    prep_params = {} if prep_params is None else prep_params
+
+    builder = RUSHelper(qb_names, deepcopy(operation_dict))
+
+    # Tomography Pulses
+    tomo_basis = tomography_options.get("basis_rots", tomo.DEFAULT_BASIS_ROTS)
+    tomo_qbs = tomography_options.get("tomo_qbs", [qb_out_name])
+    tomography_segments = (None,)
+    if tomography:
+        tomography_segments = \
+            get_tomography_pulses(*tomo_qbs, basis_pulses=tomo_basis)
+
+    # Define Sequence Elements
+    c_ry_theta_p = [deepcopy(operation_dict['X90 ' + ancilla_name]),
+                    deepcopy(operation_dict['upCZ ' + ancilla_name + ' ' + qb_in_name]),
+                    deepcopy(operation_dict['Z180 ' + qb_in_name]),
+                    deepcopy(operation_dict['Z180 ' + ancilla_name]),
+                    deepcopy(operation_dict['mX90 ' + ancilla_name])]
+    c_ry_theta_p[0]['name'] = 'ancilla_X90_p'
+    c_ry_theta_p[0]['ref_pulse'] = 'Initialization_all-|-start'
+    c_ry_theta_p[1]['name'] = 'ancilla_C_Rz_theta_1_p'
+    c_ry_theta_p[1]['pulse_type'] = 'BufferedCZPulse'
+    c_ry_theta_p[2]['name'] = 'input_Rz_half_theta_1_m'
+    c_ry_theta_p[3]['name'] = 'ancilla_Rz_theta_0_p'
+    c_ry_theta_p[4]['name'] = 'ancilla_mX90_p'
+
+    cy = [deepcopy(operation_dict['X90 ' + qb_out_name]),
+          deepcopy(operation_dict['upCZ ' + qb_out_name + ' ' + ancilla_name]),
+          deepcopy(operation_dict['mZ90 ' + ancilla_name]),
+          deepcopy(operation_dict['mX90 ' + qb_out_name])]
+    cy[0]['name'] = 'output_X90'
+    cy[0]['ref_pulse'] = 'ancilla_C_Rz_theta_1_p'
+    cy[1]['name'] = 'output_CZ_180'
+    cy[2]['name'] = 'ancilla_Rz_m90'
+    cy[3]['name'] = 'output_mX90'
+
+    c_ry_theta_m = [deepcopy(operation_dict['X90 ' + ancilla_name]),
+                    deepcopy(operation_dict['Z180 ' + ancilla_name]),
+                    deepcopy(operation_dict['upCZ ' + ancilla_name + ' ' + qb_in_name]),
+                    deepcopy(operation_dict['Z180 ' + qb_in_name]),
+                    deepcopy(operation_dict['mX90 ' + ancilla_name])]
+    c_ry_theta_m[0]['name'] = 'ancilla_X90_m'
+    c_ry_theta_m[0]['ref_pulse'] = 'output_CZ_180'
+    c_ry_theta_m[1]['name'] = 'ancilla_Rz_theta_0_m'
+    c_ry_theta_m[2]['name'] = 'ancilla_C_Rz_theta_1_m'
+    c_ry_theta_m[2]['pulse_type'] = 'BufferedCZPulse'
+    c_ry_theta_m[3]['name'] = 'input_Rz_half_theta_1_p'
+    c_ry_theta_m[4]['name'] = 'ancilla_mX90_m'
+
     for ind_array, theta in enumerate(thetas.T): #taking slices of thetas for each run
+
+        # calculate & update flux pulse for C-ARB
+        theta_0_p = (2 * theta[0]) % (2 * np.pi)
+        theta_0_m = (2 * np.pi - 2 * theta[0]) % (2 * np.pi)
+        theta_1_p = (2 * np.pi - 2 * (theta[1] - theta[0])) % (2 * np.pi)
+        theta_1_m = (2 * (theta[1] - theta[0])) % (2 * np.pi)
+        #print("\n", theta)
+        #print(theta_0_p, theta_0_m, theta_1_p, theta_1_m)
+
+        if theta_1_m < theta_threshold or theta_1_p < theta_threshold:
+            c_ry_theta_p[1].pop('cphase', None)
+            c_ry_theta_m[2].pop('cphase', None)
+            c_ry_theta_p[1]['amplitude'] = 0
+            c_ry_theta_p[1]['force_adapt_pulse_length'] = None
+            c_ry_theta_m[2]['amplitude'] = 0
+            c_ry_theta_m[2]['force_adapt_pulse_length'] = None
+            #print("thresh")
+        else:
+            c_ry_theta_p[1]['cphase'] = theta_1_p
+            c_ry_theta_p[1]['force_adapt_pulse_length'] = 'absolute'
+            c_ry_theta_m[2]['cphase'] = theta_1_m
+            c_ry_theta_m[2]['force_adapt_pulse_length'] = 'absolute'
+            #print("ok")
+
+        c_ry_theta_p[2]['basis_rotation'] = {qb_in_name: float(theta_1_m/2 * 180 / np.pi)} #correct phase on control qb
+        c_ry_theta_m[3]['basis_rotation'] = {qb_in_name: float(theta_1_p/2 * 180 / np.pi)} #during CZ gates
+        c_ry_theta_p[3]['basis_rotation'] = {ancilla_name: float(theta_0_p * 180 / np.pi)} #balanced angles in 0 state
+        c_ry_theta_m[1]['basis_rotation'] = {ancilla_name: float(theta_0_m * 180 / np.pi)}
+
         for i, ts in enumerate(tomography_segments):
             seg_name = f'segment_{i}_{ind_array}' if ts is None else  \
                 f'segment_{i}_{ind_array}_tomo_{i}'
             seg = segment.Segment(seg_name)
-
-            # calculate & update flux pulse for C-ARB
-            theta_0_p = 2*np.pi - (2*theta[0] % (2 * np.pi))
-            theta_0_m = +(2*theta[0] % (2 * np.pi))
-            theta_1_p = 2*np.pi - (2*(theta[1]-theta[0]) % (2 * np.pi))
-            theta_1_m = +(2*(theta[1]-theta[0]) % (2 * np.pi))
-
-            if theta_1_p < theta_threshold:
-                c_ry_theta_p[1]['amplitude'] = 0
-                c_ry_theta_p[1]['force_adapt_pulse_length'] = None
-                c_ry_theta_m[1]['amplitude'] = 0
-                c_ry_theta_m[1]['force_adapt_pulse_length'] = None
-            else:
-                c_ry_theta_p[1]['cphase'] = theta_1_p
-                c_ry_theta_p[1]['force_adapt_pulse_length'] = 'absolute'
-                c_ry_theta_m[1]['cphase'] = theta_1_m
-                c_ry_theta_m[1]['force_adapt_pulse_length'] = 'absolute'
-
 
             # initialize qubits
             seg.extend(builder.initialize(init_state, prep_params=prep_params).build())

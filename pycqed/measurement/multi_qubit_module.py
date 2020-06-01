@@ -906,7 +906,7 @@ def measure_rus (qubits,  thetas = [[0],[np.pi/2]],
     if tomography_options is None:
         tomography_options = {}
 
-    boperation_dict = deepcopy(get_operation_dict(qubits))
+    operation_dict = deepcopy(get_operation_dict(qubits))
     MC = qubits[0].instr_mc.get_instr()
 
     # prepare qubits
@@ -925,6 +925,7 @@ def measure_rus (qubits,  thetas = [[0],[np.pi/2]],
                      cal_points=cp,  upload=upload)
 
     #print(seq)
+    seq.plot()
 
     # set detector and sweep functions
     det_get_values_kws = {'classified': True,
@@ -2559,7 +2560,6 @@ def measure_chevron(qbc, qbt, qbr, hard_sweep_params, soft_sweep_params,
             operation_dict=get_operation_dict([qbc, qbt, qbr]),
             cz_pulse_name=cz_pulse_name,
             cal_points=cp, upload=False, prep_params=prep_params)
-
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
         parameter_name=list(hard_sweep_params)[0],
