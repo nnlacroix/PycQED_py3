@@ -2218,21 +2218,24 @@ def measure_cphase_nn(qbc, qbt, qbr, lengths, amps, alphas=None,
         return
 
 
-def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name, prep_params=None,
-                   label=None, cal_states='auto', n_cal_points_per_state=1,
-                   num_cz_gates=1, hard_sweep_params=None, exp_metadata=None,
-                   analyze=True, upload=True, for_ef=True, max_flux_length=None, **kw):
+def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
+                   hard_sweep_params=None, max_flux_length=None,
+                   num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
+                   prep_params=None, exp_metadata=None, label=None,
+                   analyze=True, upload=True, for_ef=True, **kw):
     '''
     method to measure the leakage and the phase acquired during a flux pulse
-    conditioned on the state of the control qubit (dev).
+    conditioned on the state of the control qubit (qbc).
     In this measurement, the phase from two Ramsey type measurements
     on qb_target is measured, once with the control qubit in the excited state
     and once in the ground state. The conditional phase is calculated as the
     difference.
 
     Args:
+        dev (Device)
         qbc (QuDev_transmon, str): control qubit
         qbt (QuDev_transmon, str): target qubit
+        FIXME: add further args
     '''
 
     if isinstance(qbc, str):
