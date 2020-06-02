@@ -230,9 +230,18 @@ class BaseDataAnalysis(object):
             s = [s.decode('utf-8') for s in s]
         return s
 
-    def get_param_value(self, param_name, default_value=None):
-        return self.options_dict.get(param_name, self.metadata.get(
-            param_name, default_value))
+    def get_param_value(self, param_name, default_value=None, metadata_index=0):
+        # no stored metadata
+        if not hasattr(self, "metadata") or self.metadata is None:
+            return self.options_dict.get(param_name, default_value)
+        # multi timestamp with different metadata
+        elif isinstance(self.metadata, (list, tuple)) and len(self.metadata) != 0:
+            return self.options_dict.get(param_name,
+                self.metadata[metadata_index].get(param_name, default_value))
+        # base case
+        else:
+            return self.options_dict.get(param_name, self.metadata.get(
+                param_name, default_value))
 
     def get_data_from_timestamp_list(self):
         raw_data_dict = []
@@ -321,11 +330,9 @@ class BaseDataAnalysis(object):
         if 'measured_data' in raw_data_dict and \
                 'value_names' in raw_data_dict:
             measured_data = raw_data_dict.pop('measured_data')
-            print(measured_data)
             raw_data_dict['measured_data'] = OrderedDict()
 
             value_names = raw_data_dict['value_names']
-            print(value_names)
             if not isinstance(value_names, list):
                 value_names = [value_names]
 
@@ -402,7 +409,9 @@ class BaseDataAnalysis(object):
 
             for i, rd_dict in enumerate(self.raw_data_dict):
                 temp_dict_list.append(
-                    self.add_measured_data(rd_dict))
+                    self.add_measured_data(
+                        rd_dict,
+                        self.get_param_value('compression_factor', 1, i)))
                 if len(rd_dict['exp_metadata']) == 0:
                     rd_dict['exp_metadata'] = {}
             self.raw_data_dict = tuple(temp_dict_list)

@@ -265,7 +265,8 @@ class Sequence:
             segment_limit (int): maximal number of segments that can be in a sequence
             merge_repeat_patterns (bool): see docstring of Sequence.merge.
 
-        Returns: list of compressed sequences, new hardsweep points indices,
+        Returns: list of sequences for the compressed 2D sweep,
+            new hardsweep points indices,
             new soft sweeppoints indices, and the compression factor
 
         """
@@ -298,11 +299,11 @@ class Sequence:
                       f'{np.floor(segment_limit / n_seg)} (full compression)')
             break
         seg_lim_eff = factor * n_seg
-        compressed_sequences = Sequence.merge(sequences, seg_lim_eff,
+        compressed_2D_sweep = Sequence.merge(sequences, seg_lim_eff,
                                               merge_repeat_patterns)
-        hard_sp_ind = np.arange(compressed_sequences[0].n_acq_elements())
-        soft_sp_ind = np.arange(len(compressed_sequences))
-        return compressed_sequences, hard_sp_ind, soft_sp_ind, factor
+        hard_sp_ind = np.arange(compressed_2D_sweep[0].n_acq_elements())
+        soft_sp_ind = np.arange(len(compressed_2D_sweep))
+        return compressed_2D_sweep, hard_sp_ind, soft_sp_ind, factor
 
     def __repr__(self):
         string_repr = f"####### {self.name} #######\n"
