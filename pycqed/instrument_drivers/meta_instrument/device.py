@@ -205,7 +205,7 @@ class Device(Instrument):
 
     def get_pulse_par(self, gate_name, qb1, qb2, param):
         """
-        Returns the value of a two qubit gate parameter.
+        Returns the object of a two qubit gate parameter.
 
         Args:
             gate_name (str): Name of the gate
@@ -213,7 +213,7 @@ class Device(Instrument):
             qb2 (str, QudevTransmon): Name of other qubit
             param (str): name of parameter
         Returns:
-            the value of the parameter
+            Parameter object
         """
 
         if isinstance(qb1, qdt.QuDev_transmon):
@@ -227,11 +227,11 @@ class Device(Instrument):
             qb2_name = qb2
 
         try:
-            self.get(f'{gate_name}_{qb1_name}_{qb2_name}_{param}')
-        except KeyError:
+            return getattr(self, f'{gate_name}_{qb1_name}_{qb2_name}_{param}')
+        except AttributeError:
             try:
-                self.get(f'{gate_name}_{qb2_name}_{qb1_name}_{param}')
-            except KeyError:
+                return getattr(self, f'{gate_name}_{qb2_name}_{qb1_name}_{param}')
+            except AttributeError:
                 raise ValueError(f'Parameter {param} for the gate '
                                  f'{gate_name} {qb1_name} {qb2_name} '
                                  f'does not exist!')
