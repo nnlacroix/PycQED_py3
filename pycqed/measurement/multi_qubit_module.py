@@ -2303,7 +2303,8 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
     MC.set_sweep_function(hard_sweep_func)
     MC.set_sweep_points(hard_sweep_points)
 
-    channels_to_upload = [operation_dict[cz_pulse_name]['channel']]
+    channels_to_upload = [operation_dict[cz_pulse_name +
+                                         f' {qbc.name} {qbt.name}']['channel']]
     MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
         hard_sweep_func, sequences,
         list(soft_sweep_params)[0], list(soft_sweep_params.values())[0]['unit'],
