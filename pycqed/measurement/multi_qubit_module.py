@@ -2205,6 +2205,9 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
     Args:
         qbc (QuDev_transmon): control qubit / fluxed qubit
         qbt (QuDev_transmon): target qubit / non-fluxed qubit
+        compression_seg_lim (int): Default: None. If speficied, it activates the
+            compression of a 2D sweep (see Sequence.compress_2D_sweep) with the given
+            limit on the maximal number of segments per sequence.
     '''
     plot_all_traces = kw.get('plot_all_traces', True)
     plot_all_probs = kw.get('plot_all_probs', True)
@@ -2256,10 +2259,10 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
             max_flux_length=max_flux_length,
             num_cz_gates=num_cz_gates)
     # compress 2D sweep
-    if kw.get('compress_2D_sweep', False):
+    if kw.get('compression_seg_lim', None) is not None:
         sequences, hard_sweep_points, soft_sweep_points, cf = \
             sequences[0].compress_2D_sweep(sequences,
-                                           kw.get("compression_seg_lim", 300))
+                                           kw.get("compression_seg_lim"))
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
         parameter_name=list(hard_sweep_params)[0],
