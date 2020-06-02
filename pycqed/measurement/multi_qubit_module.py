@@ -2263,6 +2263,8 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
         sequences, hard_sweep_points, soft_sweep_points, cf = \
             sequences[0].compress_2D_sweep(sequences,
                                            kw.get("compression_seg_lim"))
+    else:
+        cf = 1
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
         parameter_name=list(hard_sweep_params)[0],
