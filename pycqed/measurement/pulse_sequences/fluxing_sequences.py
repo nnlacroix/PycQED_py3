@@ -165,7 +165,6 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
         p['element_name'] = 'pi_half_start'
 
     flux_pulse = deepcopy(operation_dict[cz_pulse_name])
-    flux_pulse['element_name'] = 'flux_el'
 
     ge_half_end = [deepcopy(operation_dict['X90 ' + qb_name]) for qb_name in
                    qb_names]
@@ -788,7 +787,6 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
 
     flux_pulse = deepcopy(operation_dict[cz_pulse_name])
     flux_pulse['name'] = 'cphase_flux'
-    flux_pulse['element_name'] = 'cphase_flux_el'
 
     final_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
                        deepcopy(operation_dict['X90s ' + qbt_name])]
