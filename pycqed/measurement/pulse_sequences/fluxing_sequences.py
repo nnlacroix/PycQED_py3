@@ -129,7 +129,7 @@ def Ramsey_with_flux_pulse_meas_seq(thetas, qb, X90_separation, verbose=False,
 
 
 def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
-                      cz_pulse_name, cal_points=None, prepend_n_cz=0,
+                      cz_pulse_name, cal_points=None,
                       upload=False, prep_params=None,
                       prepend_pulse_dicts=None):
     '''
@@ -149,7 +149,6 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
         in qb_names
     :param cz_pulse_name: (str) name of the CZ pulse in the operation dict
     :param cal_points: (CalibrationPoints object)
-    :param prepend_n_cz: (int) number of CZ gates to prepend to each segment
     :param upload: (bool) whether to upload to AWGs
     :param prep_params: (dict) preparation parameters
     :param prepend_pulse_dicts: (list) list of pulse dictionaries to prepend
@@ -188,11 +187,6 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
         prepend_pulse['element_name'] = pp.get('element_name', 'flux_el')
         pulse_list += [prepend_pulse]
 
-    for i in range(prepend_n_cz):
-        prepend_pulse = deepcopy(flux_pulse)
-        prepend_pulse['name'] = f'prepend_cz_{i}'
-        pulse_list += [prepend_pulse]
-
     pulse_list += Block("ge_half_start pulses", ge_half_start).build()
 
     flux_pulse['name'] = 'flux'
@@ -223,12 +217,6 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
         params.update({f'pi_half_end_{qb_name}.{k}': v['values']
                        for k, v in hard_sweep_dict.items()})
     swept_pulses = sweep_pulse_params(pulse_list, params)
-    for k, p in enumerate(swept_pulses):
-        for prepended_cz_idx in range(prepend_n_cz):
-            fp = p[prepended_cz_idx]
-            fp['element_name'] = 'flux_el_{}'.format(k)
-        fp = p[prepend_n_cz + 1]
-        fp['element_name'] = 'flux_el_{}'.format(k)
     swept_pulses_with_prep = \
         [add_preparation_pulses(p, operation_dict, qb_names, **prep_params)
          for p in swept_pulses]

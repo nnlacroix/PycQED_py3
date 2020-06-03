@@ -2380,7 +2380,6 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                            cal_states='auto', prep_params=None,
                            exp_metadata=None, classified=False, update=False,
                            reset_phases_before_measurement=True,
-                           prepend_n_cz=0,
                            extract_only=False, simultaneous=False,
                            prepend_pulse_dicts=None, **kw):
     if isinstance(qbc, str):
@@ -2418,7 +2417,6 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
         basis_rotation parameter to {} before measurement(s). If False, keeps
         the dict stored in this parameter and updates only the entries in
         this dict that were measured (specified by qubits_to_measure).
-    :param prepend_n_cz: (int) number of CZ gates to prepend to each segment
     :param simultaneous: (bool) whether to measure to do the measurement
         simultaneously on all qubits_to_measure
     :param extract_only: (bool) whether to only extract the data without 
@@ -2427,7 +2425,6 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
         to each segment
     :param kw: keyword arguments
 
-    # FIXME (Steph, 14.05.2020): Why do we need both the "prepend_n_cz" and "prepend_pulse_dicts"?
     """
     if qubits_to_measure is None:
         qubits_to_measure = [qbc, qbt]
@@ -2483,7 +2480,6 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                     operation_dict=dev.get_operation_dict(),
                     cz_pulse_name=cz_pulse_name + f' {qbc.name} {qbt.name}',
                     cal_points=cp,
-                    prepend_n_cz=prepend_n_cz,
                     upload=False, prep_params=current_prep_params,
                     prepend_pulse_dicts=prepend_pulse_dicts)
 
@@ -2511,7 +2507,6 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                                  'cal_states_rotations':
                                      {qb.name: {'g': 0, 'e': 1} for qb in qbs},
                                  'hard_sweep_params': hard_sweep_params,
-                                 'prepend_n_cz': prepend_n_cz,
                                  'prepend_pulse_dicts':
                                      str(prepend_pulse_dicts)})
             MC.run(label, exp_metadata=exp_metadata)
