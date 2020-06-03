@@ -2375,7 +2375,7 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
 
 
 def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
-                           qubits_to_measure=None, cal_points=True,
+                           qubits_to_measure=None,
                            analyze=True, upload=True, n_cal_points_per_state=1,
                            cal_states='auto', prep_params=None,
                            exp_metadata=None, classified=False, update=False,
@@ -2423,13 +2423,10 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                 qb.prepare(drive='timedomain')
             MC = qbc.instr_mc.get_instr()
 
-            if cal_points:
-                cal_states = CalibrationPoints.guess_cal_states(cal_states)
-                cp = CalibrationPoints.multi_qubit(
-                    [qb.name for qb in qbs], cal_states,
-                    n_per_state=n_cal_points_per_state)
-            else:
-                cp = None
+            cal_states = CalibrationPoints.guess_cal_states(cal_states)
+            cp = CalibrationPoints.multi_qubit(
+                [qb.name for qb in qbs], cal_states,
+                n_per_state=n_cal_points_per_state)
 
             if prep_params is not None:
                 current_prep_params = prep_params
@@ -2465,10 +2462,10 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
 
             if exp_metadata is None:
                 exp_metadata = {}
-            exp_metadata.update({'use_cal_points': cal_points,
-                                 'preparation_params': prep_params,
+            exp_metadata.update({'preparation_params': prep_params,
                                  'cal_points': repr(cp),
-                                 'rotate': cal_points,
+                                 'rotate': False if classified else
+                                    len(cp.states) != 0,
                                  'data_to_fit': {qb.name: 'pe' for qb in qbs},
                                  'cal_states_rotations':
                                      {qb.name: {'g': 0, 'e': 1} for qb in qbs},
