@@ -82,6 +82,10 @@ class MeasurementControl(Instrument):
                            vals=vals.Bool(),
                            parameter_class=ManualParameter,
                            initial_value=True)
+        self.add_parameter('skip_measurement',
+                           vals=vals.Bool(),
+                           parameter_class=ManualParameter,
+                           initial_value=False)
 
         self.add_parameter(
             'cfg_clipping_mode', vals=vals.Bool(),
@@ -166,6 +170,9 @@ class MeasurementControl(Instrument):
         # needs to be defined here because of the with statement below
         return_dict = {}
         self.last_sweep_pts = None  # used to prevent resetting same value
+
+        if self.skip_measurement():
+            return return_dict
 
         with h5d.Data(name=self.get_measurement_name(),
                       datadir=self.datadir()) as self.data_object:
