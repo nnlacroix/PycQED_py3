@@ -277,21 +277,27 @@ class ParametricValue:
         self.param = param
         self.func = func
 
-    def resolve(self, sweep_dict, ind):
+    def resolve(self, sweep_dict, ind=None):
         """
         Returns the resolved value of a pulse attribute for a chosen sweep
         point.
 
         :param sweep_dict: an entry of the sweep_dicts_list described in
-            build() .
+            build(). Alternatively, a dict of the form {param_n: val_n},
+            in which case ind is ignored.
         :param ind: The index of the desired sweep point in sweep_dict.
+            None is only allowed in the case where ind is ignored (see
+            above).
 
         :return:
         """
-        if 'values' in sweep_dict[self.param]:  # convention in sweep_dicts
-            v = sweep_dict[self.param]['values'][ind]
-        else:  # convention in SweepPoints class
-            v = sweep_dict[self.param][ind][0]
+        d = sweep_dict[self.param]
+        if not hasattr(d, '__iter__'):
+            v = d
+        elif 'values' in sweep_dict[self.param]:  # convention in sweep_dicts
+            v = d['values'][ind]
+        else: # convention in SweepPoints class
+            v = d[ind][0]
         if self.func is None:
             return v
         else:
