@@ -2493,6 +2493,12 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                             'dynamic_phase']['val'] * 180 / np.pi
     if update and reset_phases_before_measurement:
         basis_rot_par().update(dyn_phases)
+        not_updated = {k:v for k, v in basis_rot_par().items()
+                       if k not in dyn_phases}
+        if len(not_updated) > 0:
+            log.warning(f'Not all basis_rotations stored in the pulse '
+                        f'settings have been measured. Keeping the '
+                        f'following old value(s): {not_updated}')
     return dyn_phases
 
 
