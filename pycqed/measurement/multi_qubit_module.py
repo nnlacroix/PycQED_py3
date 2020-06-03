@@ -2101,7 +2101,9 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
         qbt (QuDev_transmon, str): target qubit
         FIXME: add further args
         prepend_pulse_dicts: (list) list of pulse dictionaries to prepend
-        to each segment (FIXME: explain structure)
+            to each segment. Each dictionary must contain a key 'op_code'
+            to specify a pulse from the operation dictionary. The other keys
+            are interpreted as pulse parameters.
         compression_seg_lim (int): Default: None. If speficied, it activates the
             compression of a 2D sweep (see Sequence.compress_2D_sweep) with the given
             limit on the maximal number of segments per sequence.
@@ -2157,8 +2159,6 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
     if max_flux_length is not None:
         log.debug(f'max_flux_length = {max_flux_length * 1e9:.2f} ns, set by user')
     operation_dict = dev.get_operation_dict()
-    if prepend_pulse_dicts is None:
-        prepend_pulse_dicts = []
 
     sequences, hard_sweep_points, soft_sweep_points = \
         fsqs.cphase_seqs(
@@ -2422,7 +2422,9 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
     :param extract_only: (bool) whether to only extract the data without 
         plotting it
     :param prepend_pulse_dicts: (list) list of pulse dictionaries to prepend
-        to each segment
+        to each segment. Each dictionary must contain a key 'op_code'
+        to specify a pulse from the operation dictionary. The other keys
+        are interpreted as pulse parameters.
     :param kw: keyword arguments
 
     """
@@ -2471,8 +2473,6 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
             else:
                 current_prep_params = dev.get_prep_params(qbs)
 
-            if prepend_pulse_dicts is None:
-                prepend_pulse_dicts = []
             seq, hard_sweep_points = \
                 fsqs.dynamic_phase_seq(
                     qb_names=[qb.name for qb in qbs],

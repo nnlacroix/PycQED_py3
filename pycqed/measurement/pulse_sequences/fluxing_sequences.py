@@ -182,9 +182,9 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
         prepend_pulse_dicts = {}
     pulse_list = []
     for i, pp in enumerate(prepend_pulse_dicts):
-        prepend_pulse = deepcopy(operation_dict[pp['pulse_name']])
+        prepend_pulse = deepcopy(operation_dict[pp['op_code']])
         prepend_pulse['name'] = f'prepend_{i}'
-        prepend_pulse['element_name'] = pp.get('element_name', 'flux_el')
+        prepend_pulse.update(pp)
         pulse_list += [prepend_pulse]
 
     pulse_list += Block("ge_half_start pulses", ge_half_start).build()
@@ -772,9 +772,9 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
         prepend_pulse_dicts = {}
     prepend_pulses = []
     for i, pp in enumerate(prepend_pulse_dicts):
-        prepend_pulse = deepcopy(operation_dict[pp['pulse_name']])
+        prepend_pulse = deepcopy(operation_dict[pp['op_code']])
         prepend_pulse['name'] = f'prepend_{i}'
-        prepend_pulse['element_name'] = pp.get('element_name', 'cphase_flux_el')
+        prepend_pulse.update(pp)
         prepend_pulses += [prepend_pulse]
 
     initial_rotations = [deepcopy(operation_dict['X180 ' + qbc_name]),
