@@ -21,6 +21,7 @@ class CalibrationPoints:
         self.pulse_label_map = kwargs.get("pulse_label_map", default_map)
 
     def create_segments(self, operation_dict, pulse_modifs=dict(),
+                        segment_prefix='calibration_',
                         **prep_params):
         segments = []
 
@@ -51,7 +52,7 @@ class CalibrationPoints:
 
             pulse_list += generate_mux_ro_pulse_list(self.qb_names,
                                                      operation_dict)
-            seg = segment.Segment(f'calibration_{i}', pulse_list)
+            seg = segment.Segment(segment_prefix + f'{i}', pulse_list)
             segments.append(seg)
         return segments
 
@@ -169,6 +170,23 @@ class CalibrationPoints:
                      for state in states for _ in range(n_per_state)]
 
         return CalibrationPoints(qb_names, labels)
+
+    @staticmethod
+    def from_string(cal_points_string):
+        """
+        Recreates a CalibrationPoints object from a string representation.
+        Avoids having "eval" statements throughout the codebase.
+        Args:
+            cal_points_string: string representation of the CalibrationPoints
+
+        Returns: CalibrationPoint object
+        Examples:
+            >>> cp = CalibrationPoints(['qb1'], ['g', 'e'])
+            >>> cp_repr = repr(cp) # create string representation
+            >>> # do other things including saving cp_str somewhere
+            >>> cp = CalibrationPoints.from_string(cp_repr)
+        """
+        return eval(cal_points_string)
 
     def extend_sweep_points(self, sweep_points, qb_name):
         """
