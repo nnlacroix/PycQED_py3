@@ -341,12 +341,7 @@ class CircuitBuilder:
         pulses = [self.get_pulse(op.format(**fill_values), True)
                   for op in operations]
 
-        # modify pulses
-        [pulses[i].update(pm) for i, pm in pulse_modifs.items() if
-         isinstance(i, int)]
-        if 'all' in pulse_modifs:
-            [p.update(pulse_modifs['all']) for p in pulses]
-        return Block(block_name, pulses)
+        return Block(block_name, pulses, pulse_modifs)
 
     def seg_from_ops(self, operations, fill_values=None, pulse_modifs=None,
                      init_state='0', seg_name='Segment1', ro_kwargs=None):
