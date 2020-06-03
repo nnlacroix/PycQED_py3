@@ -138,7 +138,22 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
                    |fluxpulse|
         |X90|  -------------------     |X90|  ---  |RO|
                                      sweep phase
-    Optional: prepend n Flux pulses before starting ramsey
+
+    :param qb_names: (list) list of qubit names
+    :param hard_sweep_dict: (dict) specifies the sweep information for
+        the hard sweep. If None, will default to
+            hard_sweep_params['phase'] = {
+                'values': np.tile(np.linspace(0, 2 * np.pi, 6) * 180 / np.pi, 2),
+                'unit': 'deg'}
+    :param operation_dict: (list) list of pulse dictionaries for all qubits
+        in qb_names
+    :param cz_pulse_name: (str) name of the CZ pulse in the operation dict
+    :param cal_points: (CalibrationPoints object)
+    :param prepend_n_cz: (int) number of CZ gates to prepend to each segment
+    :param upload: (bool) whether to upload to AWGs
+    :param prep_params: (dict) preparation parameters
+    :param prepend_pulse_dicts: (list) list of pulse dictionaries to prepend
+        to each segment
     '''
 
     seq_name = 'Dynamic_phase_seq'

@@ -2388,6 +2388,45 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
     if isinstance(qbt, str):
         qbt = dev.get_qb(qbt)
 
+    """
+    Function to calibrate the dynamic phases for a CZ gate.
+    :param dev: (Device object)
+    :param qbc: (str, QuDev_transmon object) one of the gate qubits
+    :param qbt: (str, QuDev_transmon object) the other gate qubit
+    :param cz_pulse_name: (str) name of the CZ pulse in the operation dict
+    :param hard_sweep_params: (dict) specifies the sweep information for
+        the hard sweep. If None, will default to
+            hard_sweep_params['phase'] = {
+                'values': np.tile(np.linspace(0, 2 * np.pi, 6) * 180 / np.pi, 2),
+                'unit': 'deg'}
+    :param qubits_to_measure: (list) list of QuDev_transmon objects to
+        be measured
+    :param analyze: (bool) whether to do analysis
+    :param upload: (bool) whether to upload to AWGs
+    :param n_cal_points_per_state: (int) how many cal points per cal state
+    :param cal_states: (str or tuple of str) Depetermines which cal states are
+        measured. Can be 'auto' or tuple of strings specifying qubit states
+        (ex: ('g', 'e')).
+    :prep_params: (dict) preparation parameters
+    :param exp_metadata: (dict) experimental metadata dictionary
+    :param classified: (bool) whether to use the UHFQC_classifier_detector
+    :param update: (bool) whether to update the basis_rotation parameter with
+        the measured dynamic phase(s)
+    :param reset_phases_before_measurement: (bool) If True, resets the
+        basis_rotation parameter to {} before measurement(s). If False, keeps
+        the dict stored in this parameter and updates only the entries in
+        this dict that were measured (specified by qubits_to_measure).
+    :param prepend_n_cz: (int) number of CZ gates to prepend to each segment
+    :param simultaneous: (bool) whether to measure to do the measurement
+        simultaneously on all qubits_to_measure
+    :param extract_only: (bool) whether to only extract the data without 
+        plotting it
+    :param prepend_pulse_dicts: (list) list of pulse dictionaries to prepend
+        to each segment
+    :param kw: keyword arguments
+
+    # FIXME (Steph, 14.05.2020): Why do we need both the "prepend_n_cz" and "prepend_pulse_dicts"?
+    """
     if qubits_to_measure is None:
         qubits_to_measure = [qbc, qbt]
     if hard_sweep_params is None:
@@ -2414,8 +2453,8 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
 
         for qbs in qubits_to_measure:
             assert (qbc not in qbs or qbt not in qbs), \
-                "Dynamic phases of control and target qubit cannot be measured " + \
-                "simultaneously."
+                "Dynamic phases of control and target qubit cannot be " \
+                "measured simultaneously."
 
             label = f'Dynamic_phase_measurement_CZ{qbt.name}{qbc.name}-' + \
                     ''.join([qb.name for qb in qbs])
@@ -2471,7 +2510,8 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                                      {qb.name: {'g': 0, 'e': 1} for qb in qbs},
                                  'hard_sweep_params': hard_sweep_params,
                                  'prepend_n_cz': prepend_n_cz,
-                                 'prepend_pulse_dicts': str(prepend_pulse_dicts)})
+                                 'prepend_pulse_dicts':
+                                     str(prepend_pulse_dicts)})
             MC.run(label, exp_metadata=exp_metadata)
 
             if analyze:
@@ -2495,7 +2535,7 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
             basis_rot_par(dyn_phases)
         else:
             basis_rot_par().update(dyn_phases)
-            not_updated = {k:v for k, v in old_dyn_phases.items()
+            not_updated = {k: v for k, v in old_dyn_phases.items()
                            if k not in dyn_phases}
             if len(not_updated) > 0:
                 log.warning(f'Not all basis_rotations stored in the pulse '
