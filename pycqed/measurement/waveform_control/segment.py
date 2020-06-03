@@ -140,7 +140,7 @@ class Segment:
         self.elements = odict()
 
         visited_pulses = []
-        ref_points = []
+        ref_pulses_dict = {}
         i = 0
 
         pulses = self.gen_refpoint_dict()
@@ -148,7 +148,7 @@ class Segment:
         # add pulses that refer to segment start
         for pulse in pulses['segment_start']:
             if pulse.pulse_obj.name in pulses:
-                ref_points.append((pulse.pulse_obj.name, pulse))
+                ref_pulses_dict.update({pulse.pulse_obj.name: pulse})
             t0 = pulse.delay - pulse.ref_point_new * pulse.pulse_obj.length
             pulse.pulse_obj.algorithm_time(t0)
             visited_pulses.append((t0, i, pulse))
@@ -157,32 +157,65 @@ class Segment:
         if len(visited_pulses) == 0:
             raise ValueError('No pulse references to the segment start!')
 
+        ref_pulses_dict_all = deepcopy(ref_pulses_dict)
         # add remaining pulses
-        while len(ref_points) > 0:
-            new_ref_points = []
-            for (name, pulse) in ref_points:
+        while len(ref_pulses_dict) > 0:
+            ref_pulses_dict_new = {}
+            for name, pulse in ref_pulses_dict.items():
                 for p in pulses[name]:
+                    if isinstance(p.ref_pulse, list):
+                        if p.pulse_obj.name in [vp[2].pulse_obj.name for vp
+                                                in visited_pulses]:
+                            continue
+                        if not all([ref_pulse in ref_pulses_dict_all for
+                                    ref_pulse in p.ref_pulse]):
+                            continue
+
+                        t0_list = []
+                        delay_list = [p.delay] * len(p.ref_pulse) if not isinstance(p.delay, list) else p.delay
+                        ref_point_list = [p.ref_point] * len(p.ref_pulse) if not isinstance(p.ref_point, list) \
+                            else p.ref_point
+
+                        for (ref_pulse, delay, ref_point) in zip(p.ref_pulse, delay_list, ref_point_list):
+                            t0_list.append(ref_pulses_dict_all[ref_pulse].pulse_obj.algorithm_time() + delay -
+                                           p.ref_point_new * p.pulse_obj.length +
+                                           ref_point * ref_pulses_dict_all[ref_pulse].pulse_obj.length)
+
+                        if p.ref_function == 'max':
+                            t0 = max(t0_list)
+                        elif p.ref_function == 'min':
+                            t0 = min(t0_list)
+                        elif p.ref_function == 'mean':
+                            t0 = np.mean(t0_list)
+                        else:
+                            raise ValueError('Passed invalid value for ' +
+                                'ref_function. Allowed values are: max, min, mean.' +
+                                ' Default value: max')
+                    else:
+                        t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
+                            p.ref_point_new * p.pulse_obj.length + \
+                            p.ref_point * pulse.pulse_obj.length
+
+                    p.pulse_obj.algorithm_time(t0)
 
                     # add p.name to reference list if it is used as a key
                     # in pulses
                     if p.pulse_obj.name in pulses:
-                        new_ref_points.append((p.pulse_obj.name, p))
-
-                    t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
-                        p.ref_point_new * p.pulse_obj.length + \
-                        p.ref_point * pulse.pulse_obj.length
-                    p.pulse_obj.algorithm_time(t0)
+                        ref_pulses_dict_new.update({p.pulse_obj.name: p})
 
                     visited_pulses.append((t0, i, p))
                     i += 1
 
-            ref_points = new_ref_points
+            ref_pulses_dict = ref_pulses_dict_new
+            ref_pulses_dict_all.update(ref_pulses_dict_new)
+
         if len(visited_pulses) != len(self.unresolved_pulses):
-            log.error(len(visited_pulses), len(self.unresolved_pulses))
+            log.error(f"{len(visited_pulses), len(self.unresolved_pulses)}")
             for unpulse in visited_pulses:
                 if unpulse not in self.unresolved_pulses:
                     log.error(unpulse)
-            raise Exception('Not all pulses have been resolved!')
+            raise Exception(f'Not all pulses have been resolved: '
+                            f'{self.unresolved_pulses}')
 
         # adds the resolved pulses to the elements OrderedDictionary
         for (t0, i, p) in sorted(visited_pulses):
@@ -340,10 +373,14 @@ class Segment:
 
         pulses = {}
         for pulse in self.unresolved_pulses:
-            if pulse.ref_pulse not in pulses:
-                pulses[pulse.ref_pulse] = [pulse]
-            elif pulse.ref_pulse in pulses:
-                pulses[pulse.ref_pulse].append(pulse)
+            ref_pulse_list = pulse.ref_pulse
+            if not isinstance(ref_pulse_list, list):
+                ref_pulse_list = [ref_pulse_list]
+            for p in ref_pulse_list:
+                if p not in pulses:
+                    pulses[p] = [pulse]
+                else:
+                    pulses[p].append(pulse)
 
         return pulses
 
@@ -1033,13 +1070,106 @@ class Segment:
             string_repr += f"{i}: " + repr(p) + "\n"
         return string_repr
 
+    def export_tikz(self, qb_names, tscale=1e-6):
+        last_z = [(-np.inf, 0)] * len(qb_names)
+
+        output = ''
+        z_output = ''
+        start_output = '\\documentclass{standalone}\n\\usepackage{tikz}\n\\begin{document}\n\\scalebox{2}{'
+        start_output += '\\begin{tikzpicture}[x=10cm,y=2cm]\n'
+        start_output += '\\tikzstyle{CZdot} = [shape=circle, thick,draw,inner sep=0,minimum size=.5mm, fill=black]\n'
+        start_output += '\\tikzstyle{gate} = [draw,fill=white,minimum width=1cm, rotate=90]\n'
+        start_output += '\\tikzstyle{zgate} = [rotate=0]\n'
+        tmin = np.inf
+        tmax = -np.inf
+        num_single_qb = 0
+        num_two_qb = 0
+        num_virtual = 0
+        self.resolve_segment()
+        for p in self.unresolved_pulses:
+            if p.op_code != '' and p.op_code[:2] != 'RO':
+                l = p.pulse_obj.length
+                t = p.pulse_obj._t0 + l / 2
+                tmin = min(tmin, p.pulse_obj._t0)
+                tmax = max(tmax, p.pulse_obj._t0 + p.pulse_obj.length)
+                qb = qb_names.index(p.op_code[-3:])
+                op_code = p.op_code[:-4]
+                qbt = 0
+                if op_code[-3:-1] == 'qb':
+                    qbt = qb_names.index(op_code[-3:])
+                    op_code = op_code[:-4]
+                if op_code[-1:] == 's':
+                    op_code = op_code[:-1]
+                if op_code[:2] == 'CZ' or op_code[:4] == 'upCZ':
+                    num_two_qb += 1
+                    if len(op_code) > 4:
+                        val = -float(op_code[4:])
+                        gate_formatted = f'{gate_type}{(factor * val):.1f}'.replace(
+                            '.0', '')
+                        output += f'\\draw({t / tscale:.4f},-{qb})  node[CZdot] {{}} -- ({t / tscale:.4f},-{qbt}) node[gate, minimum height={l / tscale * 100:.4f}mm] {{\\tiny {gate_formatted}}};\n'
+                    else:
+                        output += f'\\draw({t / tscale:.4f},-{qb})  node[CZdot] {{}} -- ({t / tscale:.4f},-{qbt}) node[CZdot] {{}};\n'
+                elif op_code[0] == 'I':
+                    continue
+                else:
+                    if op_code[0] == 'm':
+                        factor = -1
+                        op_code = op_code[1:]
+                    else:
+                        factor = 1
+                    gate_type = 'R' + op_code[:1]
+                    val = float(op_code[1:])
+                    if val == 180:
+                        gate_formatted = op_code[:1]
+                    else:
+                        gate_formatted = f'{gate_type}{(factor * val):.1f}'.replace(
+                            '.0', '')
+                    if l == 0:
+                        if t - last_z[qb][0] > 1e-9:
+                            z_height = 0 if (
+                                        t - last_z[qb][0] > 100e-9 or last_z[qb][
+                                    1] >= 3) else last_z[qb][1] + 1
+                            z_output += f'\\draw[dashed,thick,shift={{(0,.03)}}] ({t / tscale:.4f},-{qb})--++(0,{0.3 + z_height * 0.1});\n'
+                        else:
+                            z_height = last_z[qb][1] + 1
+                        z_output += f'\\draw({t / tscale:.4f},-{qb})  node[zgate,shift={{({(0, .35 + z_height * .1)})}}] {{\\tiny {gate_formatted}}};\n'
+                        last_z[qb] = (t, z_height)
+                        num_virtual += 1
+                    else:
+                        output += f'\\draw({t / tscale:.4f},-{qb})  node[gate, minimum height={l / tscale * 100:.4f}mm] {{\\tiny {gate_formatted}}};\n'
+                        num_single_qb += 1
+        qb_output = ''
+        for qb, qb_name in enumerate(qb_names):
+            qb_output += f'\draw ({tmin / tscale:.4f},-{qb}) node[left] {{{qb_name}}} -- ({tmax / tscale:.4f},-{qb});\n'
+        output = start_output + qb_output + output + z_output
+        axis_ycoord = -len(qb_names) + .4
+        output += f'\\foreach\\x in {{{tmin / tscale},{tmin / tscale + .2},...,{tmax / tscale}}} \\pgfmathprintnumberto[fixed]{{\\x}}{{\\tmp}} \draw (\\x,{axis_ycoord})--++(0,-.1) node[below] {{\\tmp}} ;\n'
+        output += f'\\draw[->] ({tmin / tscale},{axis_ycoord}) -- ({tmax / tscale},{axis_ycoord}) node[right] {{$t/\\mathrm{{\\mu s}}$}};\n'
+        output += '\\end{tikzpicture}}\end{document}'
+        output += f'\n% {num_single_qb} single-qubit gates, {num_two_qb} two-qubit gates, {num_virtual} virtual gates'
+        return output
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        new_seg = cls.__new__(cls)
+        memo[id(self)] = new_seg
+        for k, v in self.__dict__.items():
+            if k == "pulsar": # the reference to pulsar cannot be deepcopied
+                setattr(new_seg, k, v)
+            else:
+                setattr(new_seg, k, deepcopy(v, memo))
+        return new_seg
+
 
 class UnresolvedPulse:
     """
     pulse_pars: dictionary containing pulse parameters
-    ref_pulse: 'segment_start', 'previous_pulse', pulse.name
+    ref_pulse: 'segment_start', 'previous_pulse', pulse.name, or a list of
+        multiple pulse.name.
     ref_point: 'start', 'end', 'middle', reference point of the reference pulse
     ref_point_new: 'start', 'end', 'middle', reference point of the new pulse
+    ref_function: 'max', 'min', 'mean', specifies how timing is chosen if
+        multiple pulse names are listed in ref_pulse (default: 'max')
     """
 
     def __init__(self, pulse_pars):
@@ -1064,11 +1194,13 @@ class UnresolvedPulse:
             raise ValueError('Passed invalid value for ref_point_new. Allowed '
                 'values are: start, end, middle. Default value: start')
 
+        self.ref_function = pulse_pars.get('ref_function', 'max')
         self.delay = pulse_pars.get('pulse_delay', 0)
         self.original_phase = pulse_pars.get('phase', 0)
         self.basis = pulse_pars.get('basis', None)
         self.operation_type = pulse_pars.get('operation_type', None)
         self.basis_rotation = pulse_pars.pop('basis_rotation', {})
+        self.op_code = pulse_pars.get('op_code', '')
 
         pulse_func = None
         for module in bpl.pulse_libraries:
@@ -1081,6 +1213,8 @@ class UnresolvedPulse:
                 pulse_pars['pulse_type']))
 
         self.pulse_obj = pulse_func(**pulse_pars)
+        # allow a pulse to modify its op_code (e.g., for C-ARB gates)
+        self.op_code = getattr(self.pulse_obj, 'op_code', self.op_code)
 
         if self.pulse_obj.codeword != 'no_codeword' and \
                 self.basis_rotation != {}:

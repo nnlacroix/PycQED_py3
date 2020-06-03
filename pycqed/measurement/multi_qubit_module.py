@@ -2236,6 +2236,9 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
         qbc (QuDev_transmon, str): control qubit
         qbt (QuDev_transmon, str): target qubit
         FIXME: add further args
+        compression_seg_lim (int): Default: None. If speficied, it activates the
+            compression of a 2D sweep (see Sequence.compress_2D_sweep) with the given
+            limit on the maximal number of segments per sequence.
     '''
 
     if isinstance(qbc, str):
@@ -2274,6 +2277,9 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
                       'unit': 'deg'}
         }
 
+    if exp_metadata is None:
+        exp_metadata = {}
+
     for qb in [qbc, qbt]:
         qb.prepare(drive='timedomain')
 
@@ -2295,7 +2301,13 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
             cal_points=cp, upload=False, prep_params=prep_params,
             max_flux_length=max_flux_length,
             num_cz_gates=num_cz_gates)
-
+    # compress 2D sweep
+    if kw.get('compression_seg_lim', None) is not None:
+        sequences, hard_sweep_points, soft_sweep_points, cf = \
+            sequences[0].compress_2D_sweep(sequences,
+                                           kw.get("compression_seg_lim"))
+        exp_metadata.update({'compression_factor': cf})
+        
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
         parameter_name=list(hard_sweep_params)[0],
@@ -2321,8 +2333,6 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
         det_get_values_kws=det_get_values_kws)[det_name]
     MC.set_detector_function(det_func)
 
-    if exp_metadata is None:
-        exp_metadata = {}
     exp_metadata.update({'leakage_qbname': qbc.name,
                          'cphase_qbname': qbt.name,
                          'preparation_params': prep_params,
