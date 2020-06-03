@@ -2236,6 +2236,9 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                       'unit': 'deg'}
         }
 
+    if exp_metadata is None:
+        exp_metadata = {}
+
     for qb in [qbc, qbt]:
         MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
@@ -2263,6 +2266,8 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
         sequences, hard_sweep_points, soft_sweep_points, cf = \
             sequences[0].compress_2D_sweep(sequences,
                                            kw.get("compression_seg_lim"))
+        exp_metadata.update({'compression_factor': cf})
+        
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
         parameter_name=list(hard_sweep_params)[0],
@@ -2287,8 +2292,6 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
         det_get_values_kws=det_get_values_kws)[det_name]
     MC.set_detector_function(det_func)
 
-    if exp_metadata is None:
-        exp_metadata = {}
     exp_metadata.update({'leakage_qbname': qbc.name,
                          'cphase_qbname': qbt.name,
                          'preparation_params': prep_params,
@@ -2300,7 +2303,6 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                               qbt.name: {'g': 0, 'e': 1}} if
                              (len(cal_states) != 0 and not classified) else None,
                          'data_to_fit': {qbc.name: 'pf', qbt.name: 'pe'},
-                         'compression_factor': cf,
                          'hard_sweep_params': hard_sweep_params,
                          'soft_sweep_params': soft_sweep_params})
     MC.run_2D(label, exp_metadata=exp_metadata)
