@@ -236,7 +236,7 @@ def Ramsey_time_with_flux_seq(qb_name, hard_sweep_dict, operation_dict,
                             cz_pulse_name,
                             artificial_detunings=0,
                             cal_points=None,
-                            upload=False, prep_params=dict()):
+                            upload=False, prep_params=None):
     '''
     Performs a Ramsey with interleaved Flux pulse
     Sequence
@@ -244,6 +244,8 @@ def Ramsey_time_with_flux_seq(qb_name, hard_sweep_dict, operation_dict,
         |X90|  -------------------     |X90|  ---  |RO|
                                      sweep time
     '''
+    if prep_params is None:
+        prep_params = {}
 
     seq_name = 'Ramsey_flux_seq'
 
@@ -302,7 +304,8 @@ def Ramsey_time_with_flux_seq(qb_name, hard_sweep_dict, operation_dict,
 
 
 def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
-                 operation_dict, cz_pulse_name, num_cz_gates=1, prep_params=dict(),
+                 operation_dict, cz_pulse_name, num_cz_gates=1,
+                 prep_params=None,
                  cal_points=None, upload=True):
     '''
     chevron sequence (sweep of the flux pulse length)
@@ -314,6 +317,8 @@ def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
     qb_target:     |X180|  --------------------------------------  |RO|
 
    '''
+    if prep_params is None:
+        prep_params = {}
 
     seq_name = 'Chevron_sequence'
 
@@ -447,7 +452,7 @@ def fluxpulse_amplitude_sequence(amplitudes,
                                  cz_pulse_name,
                                  delay=None,
                                  cal_points=None,
-                                 prep_params=dict(),
+                                 prep_params=None,
                                  upload=True):
     '''
     Performs X180 pulse on top of a fluxpulse
@@ -457,6 +462,8 @@ def fluxpulse_amplitude_sequence(amplitudes,
        |          ----------           |X180|  ------------------------ |RO|
        |          ---    | --------- fluxpulse ---------- |
     '''
+    if prep_params is None:
+        prep_params = {}
 
     seq_name = 'Fluxpulse_amplitude_sequence'
     ge_pulse = deepcopy(operation_dict['X180 ' + qb_name])
@@ -582,7 +589,7 @@ def T1_freq_sweep_seq(amplitudes,
                    flux_lengths,
                    cal_points=None,
                    upload=True,
-                   prep_params=dict()):
+                   prep_params=None):
     '''
     Performs a X180 pulse before changing the qubit frequency with the flux
 
@@ -591,6 +598,8 @@ def T1_freq_sweep_seq(amplitudes,
        |          ---|X180|  ------------------------------|RO|
        |          --------| --------- fluxpulse ---------- |
     '''
+    if prep_params is None:
+        prep_params = {}
 
     len_amp = len(amplitudes)
     amplitudes = np.repeat(amplitudes, len(flux_lengths))
