@@ -21,6 +21,7 @@ class CalibrationPoints:
         self.pulse_label_map = kwargs.get("pulse_label_map", default_map)
 
     def create_segments(self, operation_dict, pulse_modifs=dict(),
+                        segment_prefix='calibration_',
                         **prep_params):
         segments = []
 
@@ -51,7 +52,7 @@ class CalibrationPoints:
 
             pulse_list += generate_mux_ro_pulse_list(self.qb_names,
                                                      operation_dict)
-            seg = segment.Segment(f'calibration_{i}', pulse_list)
+            seg = segment.Segment(segment_prefix + f'{i}', pulse_list)
             segments.append(seg)
         return segments
 
