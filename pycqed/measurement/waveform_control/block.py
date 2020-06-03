@@ -46,6 +46,22 @@ class Block:
             sweep_index_list is provided. To have an effect, the block has
             to contain pulses with ParametricValues that refer to the
             parameters in the sweep_dicts.
+            In addition, parameters of pulses can be modified by pulse modifier
+            entries in the sweep dictionaries with the following format:
+
+            'attr=X, key_1=val_1, ..., key_N=val_N'
+            Searches all pulses p for which p[key_n] == val_n for all n,
+            and sweeps the attribute attr of these pulses.
+            If key_n is op_code, it suffices if the initial segment(s) of
+            the op_code match (e.g., 'X180' will also match 'X180 qb1').
+            If key_n is name or ref_pulse, it suffices if the original
+            (ref)pulse name (before a potential change in a previous build())
+            matches.
+
+            'attr=X, someparam=Y, otherparam=Z, occurence=i'
+            Sweep the attribute only for the ith pulse matching the
+            criteria, where i is an integer (zero-indexed)
+
         :param sweep_index_list: A list of N indices for an N-dimensional
             sweep. Determines for which sweep points from sweep_dicts_list
             the block should be build. Only used if also a sweep_dicts_list
@@ -190,9 +206,10 @@ class Block:
 
     def pulses_sweepcopy(self, sweep_dicts_list, index_list):
         """
-        Returns a deepcopy of the pulse list where ParametricValue() objects
-        in all pulses are resolved based on the provided sweep_dicts_list
-        and index_list.
+        Returns a deepcopy of the pulse list where, based on the provided
+        sweep_dicts_list and index_list, ParametricValue() objects
+        in all pulses are resolved and further pulse modifiers are applied.
+
         :param sweep_dicts_list: see description of build()
         :param sweep_index_list: see description of build()
 
@@ -203,12 +220,46 @@ class Block:
         if isinstance(sweep_dicts_list, dict):
             sweep_dicts_list = [sweep_dicts_list]
         pulses = deepcopy(self.pulses)
+        # resolve parametric values first
         for p in pulses:
             for attr, s in p.items():
                 if isinstance(s, ParametricValue):
                     for sweep_dict, ind in zip(sweep_dicts_list, index_list):
                         if s.param in sweep_dict:
                             p[attr] = s.resolve(sweep_dict, ind)
+
+        # resolve pulse modifiers now (they could overwrite parametric values)
+        def check_candidate(k, v, p):
+            attr = p.get(k, '')
+            if k == 'op_code':
+                return (attr + ' ').startswith(v + ' ')
+            elif k in ['name', 'ref_pulse']:
+                # make sure to also find pulse renamed by Block.build()
+                return (attr == v or attr.endswith("-|-" + v))
+            else:
+                return (attr == v)
+
+        for sweep_dict, ind in zip(sweep_dicts_list, index_list):
+            for param in sweep_dict.keys():
+                if '=' not in param:
+                    continue
+                modif = {l[0]: l[1] for l in
+                         [s.strip().split('=') for s in param.split(',')]}
+                if not 'attr' in modif:
+                    continue
+                attr = modif.pop('attr')
+                occurrence = modif.pop('occurrence', None)
+                n_occ = 0
+                for p in pulses:
+                    if all([check_candidate(k, v, p) for k, v in modif.items()]):
+                        if occurrence is None or int(occurrence) == n_occ:
+                            p.update({attr: ParametricValue(param).resolve(
+                                sweep_dict, ind)})
+                            if occurrence is not None:
+                                break
+                        else:
+                            n_occ += 1
+
         return pulses
 
 
