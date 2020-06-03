@@ -18,9 +18,11 @@ class Block:
     counter = 0
     INSIDE_BLOCKINFO_NAME = "BlockInfo"
 
-    def __init__(self, block_name, pulse_list:list):
+    def __init__(self, block_name, pulse_list:list, pulse_modifs=None):
         self.name = block_name
         self.pulses = deepcopy(pulse_list)
+        if pulse_modifs is not None:
+            self.pulses = self.pulses_sweepcopy([pulse_modifs], [None])
 
     def build(self, ref_point="end", ref_point_new="start",
               ref_pulse='previous_pulse', block_delay=0, name=None,
@@ -240,21 +242,27 @@ class Block:
                 return (attr == v)
 
         for sweep_dict, ind in zip(sweep_dicts_list, index_list):
-            for param in sweep_dict.keys():
-                if '=' not in param:
+            for param, d in sweep_dict.items():
+                if isinstance(param, int):
+                    param = f'occurrence={param}'
+                if param == 'all':
+                    modif = {}
+                elif '=' not in param:
                     continue
-                modif = {l[0]: l[1] for l in
-                         [s.strip().split('=') for s in param.split(',')]}
-                if not 'attr' in modif:
-                    continue
-                attr = modif.pop('attr')
+                else:
+                    modif = {l[0]: l[1] for l in [s.strip().split('=') for s
+                                                  in param.split(',')]}
+                attr = modif.pop('attr', None)
                 occurrence = modif.pop('occurrence', None)
                 n_occ = 0
                 for p in pulses:
                     if all([check_candidate(k, v, p) for k, v in modif.items()]):
                         if occurrence is None or int(occurrence) == n_occ:
-                            p.update({attr: ParametricValue(param).resolve(
-                                sweep_dict, ind)})
+                            if attr is None:
+                                p.update(d)
+                            else:
+                                p.update({attr: ParametricValue(
+                                    param).resolve(sweep_dict, ind)})
                             if occurrence is not None:
                                 break
                         else:
