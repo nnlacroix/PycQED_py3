@@ -174,14 +174,14 @@ class Device(Instrument):
             # operation
 
             # Add both qubit combinations to operations dict
-            # Still return a string instead of tuple as keys to be consisten
+            # Still return a string instead of tuple as keys to be consistent
             # with QudevTransmon class
+            this_operation = {}
+            for argument_name, parameter_name in op.items():
+                this_operation[argument_name] = self.get(parameter_name)
             for op_name in [op_tag[0] + ' ' + op_tag[1] + ' ' + op_tag[2],
                             op_tag[0] + ' ' + op_tag[2] + ' ' + op_tag[1]]:
-                two_qb_operation_dict[op_name] = {}
-                for argument_name, parameter_name in op.items():
-                    two_qb_operation_dict[op_name][argument_name] = \
-                        self.get(parameter_name)
+                two_qb_operation_dict[op_name] = this_operation
 
         operation_dict.update(two_qb_operation_dict)
 
