@@ -70,6 +70,27 @@ class CircuitBuilder:
             return mqm.get_multi_qubit_prep_params(
                 [qb.preparation_params() for qb in qubits])
 
+    def get_cz_operation_name(self, qb1, qb2):
+        """
+        Finds the name of the CZ gate between qubit1-qubit2 that exists in
+        self.operation_dict.
+        :param qb1: QuDev_transmon instance of one of the gate qubits
+        :param qb2: QuDev_transmon instance of the other gate qubit
+        :return: the CZ gate name
+        """
+        if not isinstance(qb1, str):
+            qb1 = qb1.name
+        if not isinstance(qb2, str):
+            qb2 = qb2.name
+
+        if f"{self.cz_pulse_name} {qb1} {qb2}" in self.operation_dict:
+            return f"{self.cz_pulse_name} {qb1} {qb2}"
+        elif f"{self.cz_pulse_name} {qb2} {qb1}" in self.operation_dict:
+            return f"{self.cz_pulse_name} {qb2} {qb1}"
+        else:
+            raise KeyError(f'CZ gate "{self.cz_pulse_name} {qb1} {qb2}" '
+                           f'not found.')
+
     def get_pulse(self, op, parse_z_gate=False):
         """
         Gets a pulse from the operation dictionary, and possibly parses
@@ -96,16 +117,9 @@ class CircuitBuilder:
             angle, qbn = op_info[0][1:], op_info[1]
             p = self.get_pulse(f"Z180 {qbn}", parse_z_gate=False)
             p['basis_rotation'] = {qbn: float(angle)}
-        elif op.startswith("CZ"):
-            qba, qbb = op_info[1], op_info[2]
-            if f"{self.cz_pulse_name} {qba} {qbb}" in self.operation_dict:
-                p = deepcopy(
-                    self.operation_dict[f"{self.cz_pulse_name} {qba} {qbb}"])
-            elif f"{self.cz_pulse_name} {qbb} {qba}" in self.operation_dict:
-                p = deepcopy(
-                    self.operation_dict[f"{self.cz_pulse_name} {qbb} {qba}"])
-            else:
-                raise KeyError(f'CZ gate "{self.cz_pulse_name} {qba} {qbb}" not found.')
+        elif op_info[0].startswith('CZ'):
+            operation = self.get_cz_operation_name(op_info[1], op_info[2])
+            p = deepcopy(self.operation_dict[operation])
         else:
             p = deepcopy(self.operation_dict[op])
         p['op_code'] = op
