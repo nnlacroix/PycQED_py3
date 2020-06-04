@@ -313,7 +313,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     self.proc_data_dict['sweep_points_dict'][qbn][
                         'sweep_points'], qbn)} for qbn in self.qb_names}
             self.proc_data_dict['sweep_points_dict'] = sweep_points_w_calpts
-        except TypeError as e:
+        except (TypeError) as e:
             log.error(e)
             log.warning("Failed retrieving cal point objects or states. "
                         "Please update measurement to provide cal point object "
@@ -329,8 +329,25 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         # create projected_data_dict
         self.data_to_fit = self.get_param_value('data_to_fit')
-        if self.cal_states_rotations is not None:
+        if self.cal_states_rotations is not None \
+            and not self.get_param_value('global_PCA', default_value=False):
             self.cal_states_analysis()
+        elif self.get_param_value('global_PCA', default_value=False):
+            self.cal_states_dict_for_rotation = {qb: [] for qb in self.qb_names}
+            if self.get_param_value('TwoD', default_value=False):
+                self.proc_data_dict['projected_data_dict'] = \
+                    self.rotate_data_TwoD(
+                        self.proc_data_dict['meas_results_per_qb'],
+                        self.channel_map, self.cal_states_dict_for_rotation,
+                        self.data_to_fit, global_PCA=True)
+            else:
+                self.proc_data_dict['projected_data_dict'] =\
+                    self.rotate_data(self.proc_data_dict['meas_results_per_qb'],
+                        self.channel_map, self.cal_states_dict_for_rotation,
+                        self.data_to_fit)
+
+            self.num_cal_points = np.array(list(
+                self.cal_states_dict.values())).flatten().size
         else:
             # this assumes data obtained with classifier detector!
             # ie pg, pe, pf are expected to be in the value_names
@@ -492,6 +509,17 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         data=np.array([v for v in meas_res_dict.values()]),
                         cal_zero_points=cal_zero_points,
                         cal_one_points=cal_one_points)
+
+                # if no calibration points are used rotate data manually
+                if len(cal_states_dict[qb_name]) == 0:
+                    mean = np.mean(
+                        rotated_data_dict[qb_name][data_to_fit[qb_name]])
+                    middle = (np.max(
+                        rotated_data_dict[qb_name][data_to_fit[qb_name]]) +
+                              np.min(rotated_data_dict[qb_name][
+                                         data_to_fit[qb_name]])) / 2
+                    rotated_data_dict[qb_name][data_to_fit[qb_name]]*=np.sign(
+                                                                middle-mean)
             else:
                 # multiple readouts per qubit per channel
                 if isinstance(channel_map[qb_name], str):
@@ -525,7 +553,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     @staticmethod
     def rotate_data_TwoD(meas_results_per_qb, channel_map,
-                         cal_states_dict, data_to_fit):
+                         cal_states_dict, data_to_fit, global_PCA=False):
         rotated_data_dict = OrderedDict()
         for qb_name, meas_res_dict in meas_results_per_qb.items():
             if len(cal_states_dict[qb_name]) == 0:
@@ -536,6 +564,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 cal_one_points = list(cal_states_dict[qb_name].values())[1]
             rotated_data_dict[qb_name] = OrderedDict()
             if len(meas_res_dict) == 1:
+                if global_PCA:
+                    raise NotImplementedError('Global PCA is not implemented \
+                                            for one channel RO!')
                 # one RO channel per qubit
                 raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
                 rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
@@ -551,15 +582,33 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
                 rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
                     deepcopy(raw_data_arr.transpose())
-                for col in range(raw_data_arr.shape[1]):
+                if not global_PCA:
+                    for col in range(raw_data_arr.shape[1]):
+                        data_array = np.array(
+                            [v[:, col] for v in meas_res_dict.values()])
+                        rotated_data_dict[qb_name][
+                                data_to_fit[qb_name]][col], _, _ = \
+                            a_tools.rotate_and_normalize_data_IQ(
+                                data=data_array,
+                                cal_zero_points=cal_zero_points,
+                                cal_one_points=cal_one_points)
+                else:
                     data_array = np.array(
-                        [v[:, col] for v in meas_res_dict.values()])
+                        [v.flatten() for v in meas_res_dict.values()])
                     rotated_data_dict[qb_name][
-                            data_to_fit[qb_name]][col], _, _ = \
+                            data_to_fit[qb_name]], _, _ = \
                         a_tools.rotate_and_normalize_data_IQ(
                             data=data_array,
                             cal_zero_points=cal_zero_points,
                             cal_one_points=cal_one_points)
+                    mean = np.mean(rotated_data_dict[qb_name][data_to_fit[
+                        qb_name]])
+                    middle = (np.max(rotated_data_dict[qb_name][data_to_fit[
+                        qb_name]])+np.min(rotated_data_dict[qb_name][data_to_fit[
+                        qb_name]]))/2
+                    rotated_data_dict[qb_name][data_to_fit[qb_name]]*= np.sign(
+                        middle-mean)
+                
             else:
                 # multiple readouts per qubit per channel
                 if isinstance(channel_map[qb_name], str):
@@ -3026,6 +3075,480 @@ class RODynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
                     'verticalalignment': 'top',
                     'plotfn': self.plot_text,
                     'text_string': textstr}
+
+class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
+    def __init__(self, qb_names, *args, **kwargs):
+        self.mask_freq = kwargs.pop('mask_freq', None)
+        self.mask_amp = kwargs.pop('mask_amp', None)
+
+        super().__init__(qb_names, *args, **kwargs)
+
+    def process_data(self):
+        super().process_data()
+
+        pdd = self.proc_data_dict
+        nr_sp = {qb: len(pdd['sweep_points_dict'][qb]['sweep_points']) \
+            for qb in self.qb_names}
+        nr_sp2d = {qb: len(pdd['sweep_points_2D_dict'][qb])\
+            for qb in self.qb_names}
+        nr_cp = self.num_cal_points
+
+        # make matrix out of vector
+        data_reshaped = {qb: \
+            np.reshape(deepcopy(pdd['data_to_fit'][qb]),(nr_sp[qb], nr_sp2d[qb])) \
+            for qb in self.qb_names}
+
+        pdd['data_reshaped'] = data_reshaped
+
+        # remove calibration points from data to fit
+        data_no_cp = {qb: \
+            np.array([data_reshaped[qb][i,:] for i in range(nr_sp[qb]-nr_cp)]) \
+            for qb in self.qb_names}
+
+        # apply mask
+        for qb in self.qb_names:
+            if self.mask_freq is None:
+                self.mask_freq = [True]*nr_sp2d[qb] # by default, no point is masked
+            if self.mask_amp is None:
+                self.mask_amp = [True]*(nr_sp[qb]-nr_cp)
+
+        pdd['freqs_masked'] = {}
+        pdd['amps_masked'] = {}
+        pdd['data_masked'] = {}
+
+        for qb in self.qb_names:
+            pdd['freqs_masked'][qb] = pdd['sweep_points_2D_dict'][qb][self.mask_freq]
+            pdd['amps_masked'][qb] = pdd['sweep_points_dict'][qb]['sweep_points'][
+                                     :-self.num_cal_points][self.mask_amp]
+            data_masked = data_no_cp[qb][self.mask_amp,:]
+            pdd['data_masked'][qb] = data_masked[:,self.mask_freq]
+
+
+    def prepare_fitting(self):
+        pdd = self.proc_data_dict
+        self.fit_dicts = OrderedDict()
+
+        # Gaussian fit of amplitude slices
+        gauss_mod = fit_mods.GaussianModel_v2()
+        for qb in self.qb_names:
+            for i in range(len(pdd['amps_masked'][qb])):
+                data = pdd['data_masked'][qb][i,:]
+                self.fit_dicts[f'gauss_fit_{qb}_{i}'] = {
+                    'model': gauss_mod,
+                    'fit_xvals': {'x': pdd['freqs_masked'][qb]},
+                    'fit_yvals': {'data': data}
+                    }
+
+    def analyze_fit_results(self):
+        pdd = self.proc_data_dict
+
+        pdd['gauss_center'] = {}
+        pdd['gauss_center_err'] = {}
+        pdd['filtered_center'] = {}
+        pdd['filtered_amps'] = {}
+
+        for qb in self.qb_names:
+            pdd['gauss_center'][qb] = np.array([
+                self.fit_res[f'gauss_fit_{qb}_{i}'].best_values['center']
+                for i in range(len(pdd['amps_masked'][qb]))])
+            pdd['gauss_center_err'][qb] = np.array([
+                self.fit_res[f'gauss_fit_{qb}_{i}'].params['center'].stderr
+                for i in range(len(pdd['amps_masked'][qb]))])
+
+            # filter out points with stderr > 1e6 Hz
+            pdd['filtered_center'][qb] = np.array([])
+            pdd['filtered_amps'][qb] = np.array([])
+            for i, stderr in enumerate(pdd['gauss_center_err'][qb]):
+                try:
+                    if stderr < 1e6:
+                        pdd['filtered_center'][qb] = \
+                            np.append(pdd['filtered_center'][qb],
+                                  pdd['gauss_center'][qb][i])
+                        pdd['filtered_amps'][qb] = \
+                            np.append(pdd['filtered_amps'][qb],
+                            pdd['sweep_points_dict'][qb]\
+                            ['sweep_points'][:-self.num_cal_points][i])
+                except:
+                    continue
+
+            # if gaussian fitting does not work (i.e. all points were filtered
+            # out above) use max value of data to get an estimate of freq
+            if len(pdd['filtered_amps'][qb]) == 0:
+                for qb in self.qb_names:
+                    freqs = np.array([])
+                    for i in range(pdd['data_masked'][qb].shape[0]):
+                        freqs = np.append(freqs, pdd['freqs_masked'][qb]\
+                            [np.argmax(pdd['data_masked'][qb][i,:])])
+                    pdd['filtered_center'][qb] = freqs
+                    pdd['filtered_amps'][qb] = pdd['amps_masked'][qb]
+
+            # fit the freqs to the qubit model
+            freq_mod = lmfit.Model(fit_mods.Qubit_dac_to_freq)
+            freq_mod.guess = fit_mods.Qubit_dac_arch_guess.__get__(freq_mod, freq_mod.__class__)
+
+            self.fit_dicts[f'freq_fit_{qb}'] = {
+                'model': freq_mod,
+                'fit_xvals': {'dac_voltage': pdd['filtered_amps'][qb]},
+                'fit_yvals': {'data': pdd['filtered_center'][qb]}}
+
+            self.run_fitting()
+
+    def prepare_plots(self):
+        pdd = self.proc_data_dict
+        rdd = self.raw_data_dict
+
+        for qb in self.qb_names:
+            self.plot_dicts[f'data_2d_{qb}'] = {
+                'title': rdd['measurementstring'] +
+                            '\n' + rdd['timestamp'],
+                'ax_id': f'data_2d_{qb}',
+                'plotfn': self.plot_colorxy,
+                'xvals': pdd['sweep_points_dict'][qb]['sweep_points'],
+                'yvals': pdd['sweep_points_2D_dict'][qb],
+                'zvals': np.transpose(pdd['data_reshaped'][qb]),
+                'xlabel': r'Flux pulse amplitude',
+                'xunit': 'V',
+                'ylabel': r'Qubit drive frequency',
+                'yunit': 'Hz',
+                'zlabel': 'Excited state population',
+            }
+
+            if self.do_fitting:
+                if self.options_dict.get('scatter', False):
+                    label = f'freq_scatter_{qb}'
+                    self.plot_dicts[label] = {
+                        'title': rdd['measurementstring'] +
+                        '\n' + rdd['timestamp'],
+                        'ax_id': f'data_2d_{qb}',
+                        'plotfn': self.plot_line,
+                        'linestyle': '',
+                        'xvals': pdd['filtered_amps'][qb],
+                        'yvals': pdd['filtered_center'][qb],
+                        'xlabel': r'Flux pulse amplitude',
+                        'xunit': 'V',
+                        'ylabel': r'Qubit drive frequency',
+                        'yunit': 'Hz',
+                        'color': 'purple'
+                        }
+
+                amps = pdd['sweep_points_dict'][qb]['sweep_points'][
+                                     :-self.num_cal_points]
+
+                label = f'freq_scatter_{qb}'
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'],
+                    'ax_id': f'data_2d_{qb}',
+                    'plotfn': self.plot_line,
+                    'linestyle': '-',
+                    'xvals': amps,
+                    'yvals': fit_mods.Qubit_dac_to_freq(amps,
+                            **self.fit_res[f'freq_fit_{qb}'].best_values),
+                    'color': 'red'
+                }
+
+class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
+    def process_data(self):
+        super().process_data()
+
+        pdd = self.proc_data_dict
+        nr_cp = self.num_cal_points
+        nr_amps = len(self.metadata['amplitudes'])
+        nr_lengths = len(self.metadata['flux_lengths'])
+
+        # make matrix out of vector
+        data_reshaped_no_cp = {qb: \
+            np.reshape(deepcopy(pdd['data_to_fit'][qb]\
+                [:len(pdd['data_to_fit'][qb])-nr_cp]),(\
+                nr_amps,nr_lengths)) for qb in self.qb_names}
+
+        pdd['data_reshaped_no_cp'] = data_reshaped_no_cp
+
+    def prepare_fitting(self):
+        pdd = self.proc_data_dict
+
+        self.fit_dicts = OrderedDict()
+        exp_mod = fit_mods.ExponentialModel()
+        for qb in self.qb_names:
+            for i, data in enumerate(pdd['data_reshaped_no_cp'][qb]):
+                self.fit_dicts[f'exp_fit_{qb}_amp_{i}'] = {
+                    'model': exp_mod,
+                    'fit_xvals': {'x': self.metadata['flux_lengths']},
+                    'fit_yvals': {'data': data}}
+
+    def analyze_fit_results(self):
+        pdd = self.proc_data_dict
+
+        pdd['T1'] = {}
+        pdd['T1_err'] = {}
+        pdd['mask'] = {}
+
+        for qb in self.qb_names:
+            pdd['T1'][qb] = np.array([
+                abs(self.fit_res[f'exp_fit_{qb}_amp_{i}'].best_values['decay'])
+                for i in range(len(self.metadata['amplitudes']))])
+            
+            pdd['T1_err'][qb] = np.array([
+                self.fit_res[f'exp_fit_{qb}_amp_{i}'].params['decay'].stderr
+                for i in range(len(self.metadata['amplitudes']))])
+
+            pdd['mask'][qb] = []
+            for i in range(len(self.metadata['amplitudes'])):
+                try:
+                    if pdd['T1_err'][qb][i] < 10 * pdd['T1'][qb][i]:
+                        pdd['mask'][qb].append(True)
+                    else:
+                        pdd['mask'][qb].append(False)
+                except TypeError:
+                    pdd['mask'][qb].append(False)
+    
+    def prepare_plots(self):
+        pdd = self.proc_data_dict
+        rdd = self.raw_data_dict
+
+        for qb in self.qb_names:
+
+            # Plot T1 vs flux pulse amplitude
+            mask = pdd['mask'][qb]
+            label = f'T1_fit_{qb}'
+            xvals = self.metadata['amplitudes'][mask] if \
+                self.metadata['frequencies'] is None else \
+                self.metadata['frequencies'][mask]
+            xlabel = r'Flux pulse amplitude' if \
+                self.metadata['frequencies'] is None else \
+                r'Derived qubit frequency'
+            self.plot_dicts[label] = {
+                'title': rdd['measurementstring'] +
+                            '\n' + rdd['timestamp'],
+                'plotfn': self.plot_line,
+                'linestyle': '-',
+                'xvals': xvals,
+                'yvals': pdd['T1'][qb][mask],
+                'yerr': pdd['T1_err'][qb][mask],
+                'xlabel': xlabel,
+                'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
+                'ylabel': r'T1',
+                'yunit': 's',
+                'color': 'blue',
+            }
+
+            # Plot rotated integrated average in dependece of flux pulse 
+            # amplitude and length
+            label = f'T1_color_plot_{qb}'
+            xvals = self.metadata['amplitudes'][mask] if \
+                self.metadata['frequencies'] is None else \
+                self.metadata['frequencies'][mask]
+            xlabel = r'Flux pulse amplitude' if \
+                self.metadata['frequencies'] is None else \
+                r'Derived qubit frequency'
+            self.plot_dicts[label] = {
+                'title': rdd['measurementstring'] +
+                            '\n' + rdd['timestamp'],
+                'plotfn': self.plot_colorxy,
+                'linestyle': '-',
+                'xvals': xvals,
+                'yvals': self.metadata['flux_lengths'],
+                'zvals': np.transpose(pdd['data_reshaped_no_cp'][qb]),
+                'xlabel': xlabel,
+                'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
+                'ylabel': r'Flux pulse length',
+                'yunit': 's',
+                'zlabel': r'Excited state population'
+            }
+
+            # Plot all fits in single figure
+            if not self.options_dict.get('all_fits', False):
+                continue
+
+            colormap = self.options_dict.get('colormap', mpl.cm.plasma)
+            for i in range(len(self.metadata['amplitudes'])):
+                color = colormap(i/(len(self.metadata['frequencies'])-1))
+                label = f'exp_fit_{qb}_amp_{i}'
+                freqs = self.metadata['frequencies'] is not None
+                fitid = self.metadata.get('frequencies', 
+                                          self.metadata['amplitudes'])[i]
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] +
+                            '\n' + rdd['timestamp'],
+                    'ax_id': f'T1_fits_{qb}',
+                    'xlabel': r'Flux pulse length',
+                    'xunit': 's',
+                    'ylabel': r'Excited state population',
+                    'plotfn': self.plot_fit,
+                    'fit_res': self.fit_res[label],
+                    'plot_init': self.options_dict.get('plot_init', False),
+                    'color': color,
+                    'setlabel': f'freq={fitid:.4f}' if freqs 
+                                        else f'amp={fitid:.4f}',
+                    'do_legend': False,
+                    'legend_bbox_to_anchor': (1, 1),
+                    'legend_pos': 'upper left',
+                    }
+                
+                label = f'freq_scatter_{qb}_{i}'
+                self.plot_dicts[label] = {
+                    'ax_id': f'T1_fits_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': self.metadata['flux_lengths'],
+                    'linestyle': '',
+                    'yvals': pdd['data_reshaped_no_cp'][qb][i,:],
+                    'color': color,
+                    'setlabel': f'freq={fitid:.4f}' if freqs 
+                                        else f'amp={fitid:.4f}',
+                }
+
+class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
+    def process_data(self):
+        super().process_data()
+
+        pdd = self.proc_data_dict
+        nr_cp = self.num_cal_points
+        nr_amps = len(self.metadata['amplitudes'])
+        nr_lengths = len(self.metadata['flux_lengths'])
+        nr_phases = len(self.metadata['phases'])
+
+        # make matrix out of vector
+        data_reshaped_no_cp = {qb: \
+            np.reshape(deepcopy(pdd['data_to_fit'][qb]\
+                [:len(pdd['data_to_fit'][qb])-nr_cp]),(\
+                nr_amps, nr_lengths, nr_phases)) for qb in self.qb_names}
+
+        pdd['data_reshaped_no_cp'] = data_reshaped_no_cp
+        if self.metadata['use_cal_points']:
+            pdd['cal_point_data'] = {qb: deepcopy(pdd['data_to_fit'][qb]\
+                    [len(pdd['data_to_fit'][qb])-nr_cp:]) for qb in self.qb_names}
+
+    def prepare_fitting(self):
+        pdd = self.proc_data_dict
+
+        self.fit_dicts = OrderedDict()
+
+        nr_amps = len(self.metadata['amplitudes'])
+
+
+        cos_mod = lmfit.Model(fit_mods.CosFunc)
+        cos_mod.guess = fit_mods.Cos_guess.__get__(cos_mod, cos_mod.__class__)
+        for qb in self.qb_names:
+            for i in range(nr_amps):
+                for j, data in enumerate(pdd['data_reshaped_no_cp'][qb][i]):
+                    self.fit_dicts[f'cos_fit_{qb}_{i}_{j}'] = {
+                        'model': cos_mod,
+                        'fit_xvals': {'t': self.metadata['phases']},
+                        'guess_dict': {'frequency': {'value': 1/360,
+                                                 'vary': False}},
+                        'fit_yvals': {'data': data}}
+
+    def analyze_fit_results(self):
+        pdd = self.proc_data_dict
+
+        pdd['T2'] = {}
+        pdd['T2_err'] = {}
+        pdd['mask'] = {}
+        pdd['phase_contrast'] = {}
+        nr_lengths = len(self.metadata['flux_lengths'])
+        nr_amps = len(self.metadata['amplitudes'])
+
+        for qb in self.qb_names:
+            pdd['phase_contrast'][qb] = {}
+            exp_mod = fit_mods.ExponentialModel()
+            for i in range(nr_amps):
+                pdd['phase_contrast'][qb][f'amp_{i}'] = np.array([self.fit_res[
+                                                        f'cos_fit_{qb}_{i}_{j}'
+                                                    ].best_values['amplitude']
+                                                    for j in
+                                                    range(nr_lengths)])
+
+                self.fit_dicts[f'exp_fit_{qb}_{i}'] = {
+                    'model': exp_mod,
+                    'fit_xvals': {'x': self.metadata['flux_lengths']},
+                    'fit_yvals': {'data': np.array([self.fit_res[
+                                                        f'cos_fit_{qb}_{i}_{j}'
+                                                    ].best_values['amplitude']
+                                                    for j in
+                                                    range(nr_lengths)])}}
+
+            self.run_fitting()
+
+            pdd['T2'][qb] = np.array([
+                abs(self.fit_res[f'exp_fit_{qb}_{i}'].best_values['decay'])
+                for i in range(len(self.metadata['amplitudes']))])
+
+            pdd['mask'][qb] = []
+            for i in range(len(self.metadata['amplitudes'])):
+                try:
+                    if self.fit_res[f'exp_fit_{qb}_{i}']\
+                                            .params['decay'].stderr < 1e-5:
+                        pdd['mask'][qb].append(True)
+                    else:
+                        pdd['mask'][qb].append(False)
+                except TypeError:
+                    pdd['mask'][qb].append(False)
+    
+    def prepare_plots(self):
+        pdd = self.proc_data_dict
+        rdd = self.raw_data_dict
+
+        for qb in self.qb_names:
+            mask = pdd['mask'][qb]
+            label = f'T2_fit_{qb}'
+            xvals = self.metadata['amplitudes'][mask] if \
+                self.metadata['frequencies'] is None else \
+                self.metadata['frequencies'][mask]
+            xlabel = r'Flux pulse amplitude' if \
+                self.metadata['frequencies'] is None else \
+                r'Derived qubit frequency'
+            self.plot_dicts[label] = {
+                'plotfn': self.plot_line,
+                'linestyle': '-',
+                'xvals': xvals,
+                'yvals': pdd['T2'][qb][mask],
+                'xlabel': xlabel,
+                'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
+                'ylabel': r'T2',
+                'yunit': 's',
+                'color': 'blue',
+            }
+
+            # Plot all fits in single figure
+            if not self.options_dict.get('all_fits', False):
+                continue
+
+            colormap = self.options_dict.get('colormap', mpl.cm.plasma)
+            for i in range(len(self.metadata['amplitudes'])):
+                color = colormap(i/(len(self.metadata['frequencies'])-1))
+                label = f'exp_fit_{qb}_amp_{i}'
+                freqs = self.metadata['frequencies'] is not None
+                fitid = self.metadata.get('frequencies',
+                                          self.metadata['amplitudes'])[i]
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] +
+                            '\n' + rdd['timestamp'],
+                    'ax_id': f'T2_fits_{qb}',
+                    'xlabel': r'Flux pulse length',
+                    'xunit': 's',
+                    'ylabel': r'Excited state population',
+                    'plotfn': self.plot_fit,
+                    'fit_res': self.fit_res[label],
+                    'plot_init': self.options_dict.get('plot_init', False),
+                    'color': color,
+                    'setlabel': f'freq={fitid:.4f}' if freqs
+                                        else f'amp={fitid:.4f}',
+                    'do_legend': False,
+                    'legend_bbox_to_anchor': (1, 1),
+                    'legend_pos': 'upper left',
+                    }
+                
+                label = f'freq_scatter_{qb}_{i}'
+                self.plot_dicts[label] = {
+                    'ax_id': f'T2_fits_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': self.metadata['phases'],
+                    'linestyle': '',
+                    'yvals': pdd['data_reshaped_no_cp'][qb][i,:],
+                    'color': color,
+                    'setlabel': f'freq={fitid:.4f}' if freqs
+                                        else f'amp={fitid:.4f}',
+                }
 
 class MeasurementInducedDephasingAnalysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):

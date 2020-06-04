@@ -436,6 +436,9 @@ class HDAWG8Pulsar:
         self.add_parameter('{}_compensation_pulse_delay'.format(name), 
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
+        self.add_parameter('{}_internal_modulation'.format(name), 
+                           initial_value=False, vals=vals.Bool(),
+                           parameter_class=ManualParameter)
     
     def _hdawg_create_marker_channel_parameters(self, id, name, awg):
         self.add_parameter('{}_id'.format(name), get_cmd=lambda _=id: _)
@@ -492,6 +495,22 @@ class HDAWG8Pulsar:
             raise NotImplementedError('Unknown parameter {}'.format(par))
         return g 
 
+    def get_divisor(self, chid, awg):
+        '''
+        Divisor is 1 for non modulated channels and 2 for modulated non 
+        marker channels.
+        '''
+
+        if chid[-1]=='m':
+            return 1
+
+        name = self._id_channel(chid, awg)
+        if self.get(f"{name}_internal_modulation"):
+            return 2
+        else: 
+            return 1
+
+    
     def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
             return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
@@ -499,12 +518,16 @@ class HDAWG8Pulsar:
         if not self._zi_waves_cleared:
             _zi_clear_waves()
             self._zi_waves_cleared = True
-        waves_to_upload = {h: waveforms[h]
+        
+        chids = [f'ch{i+1}{m}' for i in range(8) for m in ['','m']]
+        divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
+        
+        waves_to_upload = {h: divisor[chid]*waveforms[h][::divisor[chid]]
                                for codewords in awg_sequence.values() 
                                    if codewords is not None 
                                for cw, chids in codewords.items() 
                                    if cw != 'metadata'
-                               for h in chids.values()}
+                               for chid, h in chids.items()}
         self._zi_write_waves(waves_to_upload)
         
         ch_has_waveforms = {'ch{}{}'.format(i + 1, m): False 
@@ -516,6 +539,7 @@ class HDAWG8Pulsar:
             wave_definitions = []
             codeword_table_defs = []
             playback_strings = []
+            interleaves = []
 
             prev_dio_valid_polarity = obj.get(
                 'awgs_{}_dio_valid_polarity'.format(awg_nr))
@@ -525,9 +549,22 @@ class HDAWG8Pulsar:
             ch1mid = 'ch{}m'.format(awg_nr * 2 + 1)
             ch2id = 'ch{}'.format(awg_nr * 2 + 2)
             ch2mid = 'ch{}m'.format(awg_nr * 2 + 2)
+            chids = [ch1id, ch2id]
+
+            channels = [self._id_channel(chid, obj.name) for chid in chids]
 
             codeword_el = set()
+            if all([self.get(
+                f'{chan}_internal_modulation') for chan in channels]):
+                internal_mod = True
+            elif not any([self.get(
+                f'{chan}_internal_modulation') for chan in channels]):
+                internal_mod = False
+            else:
+                raise NotImplementedError('Internal modulation can only be' 
+                                          'specified per sub AWG!')
 
+            counter = 1
             current_segment = 'no_segment'
             for element in awg_sequence:
                 if awg_sequence[element] is None:
@@ -572,18 +609,26 @@ class HDAWG8Pulsar:
                         ch_has_waveforms[ch2id] |= wave[2] is not None
                         ch_has_waveforms[ch2mid] |= wave[3] is not None
 
-                    playback_strings += self._zi_playback_string(name=obj.name,
-                        device='hdawg', wave=wave, codeword=(nr_cw != 0))
+                    if not internal_mod:
+                        playback_strings += self._zi_playback_string(name=obj.name,
+                            device='hdawg', wave=wave, codeword=(nr_cw != 0))
+                    else:
+                        pb_string, interleave_string = \
+                            self._zi_interleaved_playback_string(name=obj.name, 
+                            device='hdawg', counter=counter, wave=wave, 
+                            codeword=(nr_cw != 0)) 
+                        counter += 1
+                        playback_strings += pb_string
+                        interleaves += interleave_string
                 
             if not any([ch_has_waveforms[ch] 
                     for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
                 continue
             
             awg_str = self._hdawg_sequence_string_template.format(
-                wave_definitions='\n'.join(wave_definitions),
+                wave_definitions='\n'.join(wave_definitions+interleaves),
                 codeword_table_defs='\n'.join(codeword_table_defs),
-                playback_string='\n  '.join(playback_strings),
-            )
+                playback_string='\n  '.join(playback_strings))
 
             # Hack needed to pass the sanity check of the ZI_base_instrument
             # class in 
@@ -1328,6 +1373,45 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             playback_string.append('setTrigger(RO_TRIG);')
             playback_string.append('setTrigger(WINT_EN);')
         return playback_string
+
+    def _zi_interleaved_playback_string(self, name, device, counter, 
+                                        wave, acq=False, codeword=False):
+        playback_string = []
+        w1, w2 = self._zi_waves_to_wavenames(wave)
+        if w1 is None or w2 is None:
+            raise ValueError('When using HDAWG modulation both I and Q need '  
+                              'to be defined')
+        
+        wname = f'wave{counter}'
+        interleaves = [f'wave {wname} = interleave({w1}, {w2});']
+
+        if not codeword:
+            if not acq:
+                playback_string.append(f'prefetch({wname},{wname});')
+        
+        trig_source = self.get('{}_trigger_source'.format(name))
+        if trig_source == 'Dig1':
+            playback_string.append(
+                'waitDigTrigger(1{});'.format(', 1' if device == 'uhf' else ''))
+        elif trig_source == 'Dig2':
+            if device == 'hdawg':
+                raise ValueError('ZI HDAWG does not support having Dig2 as trigger source.')
+            playback_string.append('waitDigTrigger(2,1);')
+        elif trig_source == 'DIO':
+            playback_string.append('waitDIOTrigger();')
+        else:
+            raise ValueError(f'Trigger source for {name} has to be "Dig1", "Dig2" or "DIO"!')
+        
+        if codeword:
+            # playback_string.append('playWaveDIO();')
+            raise NotImplementedError('Modulation in combination with codeword'
+                                      'pulses has not yet been implemented!')
+        else:
+            playback_string.append(f'playWave({wname},{wname});')
+        if acq:
+            playback_string.append('setTrigger(RO_TRIG);')
+            playback_string.append('setTrigger(WINT_EN);')
+        return playback_string, interleaves
 
     def _zi_codeword_table_entry(self, codeword, wave):
         w1, w2 = self._zi_waves_to_wavenames(wave)

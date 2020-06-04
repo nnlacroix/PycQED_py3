@@ -23,7 +23,6 @@ class Amplifier_Characterization_Analysis(ba.BaseDataAnalysis):
         self.params_dict = {
             'sweep_parameter_names': 'Experimental Data.sweep_parameter_names',
             'sweep_parameter_units': 'Experimental Data.sweep_parameter_units',
-            'sweep_points': 'sweep_points',
             'measurementstring': 'measurementstring',
             'measured_values': 'measured_values',
             'value_names': 'value_names',
@@ -36,19 +35,17 @@ class Amplifier_Characterization_Analysis(ba.BaseDataAnalysis):
 
     def process_data(self):
         # Extract sweep points
-        self.proc_data_dict['dim'] = \
-            len(self.raw_data_dict['sweep_points'][0].shape)
+        self.proc_data_dict['dim'] = 2 if 'soft_sweep_points' in self.raw_data_dict[0] else 1
         self.proc_data_dict['sweep_label'] = \
-            self.raw_data_dict['sweep_parameter_names'][0]
+            self.raw_data_dict[0]['sweep_parameter_names']
+        print(self.proc_data_dict['sweep_label'])
         self.proc_data_dict['sweep_unit'] = \
-            self.raw_data_dict['sweep_parameter_units'][0]
+            self.raw_data_dict[0]['sweep_parameter_units']
         if self.proc_data_dict['dim'] > 1:
-            self.proc_data_dict['dim'] = \
-                self.raw_data_dict['sweep_points'][0].shape[0]
             self.proc_data_dict['sweep_points'] = \
-                unsorted_unique(self.raw_data_dict['sweep_points'][0][0])
+                unsorted_unique(self.raw_data_dict[0]['hard_sweep_points'])
             self.proc_data_dict['sweep_points_2D'] = \
-                unsorted_unique(self.raw_data_dict['sweep_points'][0][1])
+                unsorted_unique(self.raw_data_dict[0]['soft_sweep_points'])
             self.proc_data_dict['sweep_label'], \
                 self.proc_data_dict['sweep_label_2D'] = \
                 self.proc_data_dict['sweep_label'][:2]
@@ -56,41 +53,37 @@ class Amplifier_Characterization_Analysis(ba.BaseDataAnalysis):
                 self.proc_data_dict['sweep_unit_2D'] = \
                 self.proc_data_dict['sweep_unit'][:2]
             self.proc_data_dict['sweep_label'] = \
-                self.proc_data_dict['sweep_label'].decode('UTF-8')
+                self.proc_data_dict['sweep_label']
             self.proc_data_dict['sweep_label_2D'] = \
-                self.proc_data_dict['sweep_label_2D'].decode('UTF-8')
+                self.proc_data_dict['sweep_label_2D']
             self.proc_data_dict['sweep_unit'] = \
-                self.proc_data_dict['sweep_unit'].decode('UTF-8')
+                self.proc_data_dict['sweep_unit']
             self.proc_data_dict['sweep_unit_2D'] = \
-                self.proc_data_dict['sweep_unit_2D'].decode('UTF-8')
+                self.proc_data_dict['sweep_unit_2D']
         else:
             self.proc_data_dict['sweep_points'] = \
-                self.raw_data_dict['sweep_points'][0]
-            self.proc_data_dict['sweep_label'] = \
-                self.proc_data_dict['sweep_label'][0].decode('UTF-8')
-            self.proc_data_dict['sweep_unit'] = \
-                self.proc_data_dict['sweep_unit'][0].decode('UTF-8')
+                self.raw_data_dict[0]['hard_sweep_points']
 
         # Extract signal and noise powers
         self.proc_data_dict['signal_power'] = \
-            self.raw_data_dict['measured_values'][0][0] ** 2 + \
-            self.raw_data_dict['measured_values'][0][1] ** 2
+            self.raw_data_dict[0]['measured_data']['I'] ** 2 + \
+            self.raw_data_dict[0]['measured_data']['Q'] ** 2
         self.proc_data_dict['signal_power_ref'] = \
-            self.raw_data_dict['measured_values'][1][0] ** 2 + \
-            self.raw_data_dict['measured_values'][1][1] ** 2
-        correlator_scale = self.options_dict.get('correlator_scale', 3)
+            self.raw_data_dict[1]['measured_data']['I'] ** 2 + \
+            self.raw_data_dict[1]['measured_data']['Q'] ** 2
+        correlator_scale = self.options_dict.get('correlator_scale', 1)
         self.proc_data_dict['total_power'] = \
-            (self.raw_data_dict['measured_values'][0][2] +
-             self.raw_data_dict['measured_values'][0][3]) * correlator_scale
+            (self.raw_data_dict[0]['measured_data']['corr (0,0)'] +
+             self.raw_data_dict[0]['measured_data']['corr (1,1)']) * correlator_scale
         self.proc_data_dict['total_power_ref'] = \
-            (self.raw_data_dict['measured_values'][1][2] +
-             self.raw_data_dict['measured_values'][1][3]) * correlator_scale
+            (self.raw_data_dict[1]['measured_data']['corr (0,0)'] +
+             self.raw_data_dict[1]['measured_data']['corr (1,1)']) * correlator_scale
         if self.proc_data_dict['dim'] > 1:
             for key in ['signal_power', 'total_power']:
                 self.proc_data_dict[key] = np.reshape(
                     self.proc_data_dict[key],
-                    (len(self.proc_data_dict['sweep_points_2D']),
-                     len(self.proc_data_dict['sweep_points'])))
+                    (len(self.proc_data_dict['sweep_points']),
+                     len(self.proc_data_dict['sweep_points_2D']))).T
         self.proc_data_dict['noise_power'] = \
             self.proc_data_dict['total_power'] - \
             self.proc_data_dict['signal_power']
