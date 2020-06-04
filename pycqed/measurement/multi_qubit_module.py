@@ -426,6 +426,84 @@ def measure_multiplexed_readout(qubits, liveplot=False,
             use_preselection=preselection
         ))
 
+def measure_ssro(qubits, states=('g', 'e'), shots=10000, label=None,
+                 preselection=True, all_states_combinations=False, upload=True,
+                 exp_metadata=None, analyze=True, update=True):
+    """
+    Measures in single shot readout the specified states and performs
+    a Gaussian mixture fit to calibrate the state classfier and provide the
+    single shot readout probability assignment matrix
+    Args:
+        qubits (list): list of qubits to calibrate in parallel
+        states (tuple, str): if tuple, each entry will be interpreted as a state.
+            if string (e.g. "gef"), each letter will be interpreted as a state.
+        shots (int): number of shots
+        label (str): measurement label
+        preselection (bool): force preselection even if not in preparation params
+        all_states_combinations (bool): if False, then all qubits are prepared
+            simultaneously in the first state and then read out, then all qubits
+            are prepared in the second state, etc. If True, then all combinations
+            are measured, which allows to characterize the multiplexed readout of
+            each basis state. e.g. say qubits = [qb1, qb2], states = "ge" and
+            all_states_combinations = False, then the different segments will be "g, g"
+            and "e, e" for "qb1, qb2" respectively. all_states_combinations=True would
+            yield "g,g", "g, e", "e, g" , "e,e".
+        upload (bool): upload waveforms to AWGs
+        exp_metadata (dict): experimental metadata
+        analyze (bool): analyze data
+        update (bool): update readout classifier parameters
+
+    Returns:
+
+    """
+
+    # combine operations and preparation dictionaries
+    operation_dict = get_operation_dict(qubits)
+    qb_names = [qb.name for qb in qubits]
+    prep_params = get_multi_qubit_prep_params([qb.preparation_params()
+                                               for qb in qubits])
+    if preselection: # force preselection for this measurement if desired by user
+        prep_params['preparation_type'] = "preselection"
+    if prep_params['preparation_type'] not in ['preselection', 'wait']:
+        raise NotImplementedError("Active reset not yet supported for this measurement")
+
+    # create and set sequence
+    cp = CalibrationPoints.multi_qubit(qb_names, states, n_per_state=1,
+                                       all_combinations=all_states_combinations)
+    seq = sequence.Sequence("SSRO_calibration",
+                            cp.create_segments(operation_dict, **prep_params))
+
+    # prepare measurement
+    label = f"SSRO_calibration_{states}_{qb_names}" if label is None else label
+    if exp_metadata is None:
+        exp_metadata = {}
+    exp_metadata.update({"cal_points": repr(cp),
+                         "prep_params": prep_params,
+                         "all_states_combinations": all_states_combinations,
+                         "shots": shots})
+    for qb in qubits:
+        qb.prepare(drive='timedomain')
+    df = get_multiplexed_readout_detector_functions(
+            qubits, nr_shots=shots)['int_log_det']
+    MC = qubits[0].instr_mc.get_instr()
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq,
+                                                   upload=upload))
+    MC.set_sweep_points(np.arange(seq.n_acq_elements()))
+    MC.set_detector_function(df)
+
+    # run measurement
+    temp_values = [(MC.soft_avg, 1)]
+    # required to ensure having original prep_params after mmnt in case preselection=True
+    temp_values += [(qb.preparation_params, prep_params) for qb in qubits]
+    with temporary_value(*temp_values):
+        MC.run(name=label, exp_metadata=exp_metadata)
+
+    # analyze
+    if analyze:
+        channel_map = {qb.name: qb.int_log_det.value_names[0] + ' ' +
+                                qb.instr_uhf()
+                       for qb in qubits}
+    return seq
 
 def measure_active_reset(qubits, shots=5000,
                          qutrit=False, upload=True, label=None,
