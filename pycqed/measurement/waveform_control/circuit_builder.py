@@ -337,6 +337,8 @@ class CircuitBuilder:
             fill_values = {}
         if pulse_modifs is None:
             pulse_modifs = {}
+        if isinstance(operations, str):
+            operations = [operations]
 
         pulses = [self.get_pulse(op.format(**fill_values), True)
                   for op in operations]
