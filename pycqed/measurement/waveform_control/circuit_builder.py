@@ -6,14 +6,35 @@ from pycqed.measurement import multi_qubit_module as mqm
 
 
 class CircuitBuilder:
+    """
+    A class that helps to build blocks, segments, or sequences, e.g.,
+    when implementing quantum algorithms.
+
+    :param dev: the device on which the algorithm will be executed
+    :param qubits: a list of qubit objects or names if the builder should
+        act only on a subset of qubits (default: all qubits of the device)
+    :param kw: keyword arguments
+         cz_pulse_name: (str) the prefix of CZ gates (default: upCZ)
+         prep_params: (dict) custom preparation params (default: from
+            instrument settings)
+    """
 
     STD_INIT = {'0': 'I', '1': 'X180', '+': 'Y90', '-': 'mY90'}
 
-    def __init__(self, qubits, **kwargs):
-        self.qubits = qubits
-        self.operation_dict = deepcopy(mqm.get_operation_dict(qubits))
-        self.cz_pulse_name = kwargs.get('cz_pulse_name', 'upCZ')
-        self.prep_params = kwargs.get('prep_params', None)
+    def __init__(self, dev=None, qubits=None, **kw):
+        assert (dev is not None or qubits is not None)
+        self.dev = dev
+        if qubits is None:
+            self.qubits = dev.qubits()
+        else:
+            self.qubits = [dev.get_qb(qb) if isinstance(qb, str) else qb
+                           for qb in qubits]
+        if dev is None:  # this is only allowed for backwards compatibility
+            self.operation_dict = deepcopy(mqm.get_operation_dict(qubits))
+        else:
+            self.operation_dict = dev.get_operation_dict()
+        self.cz_pulse_name = kw.get('cz_pulse_name', 'upCZ')
+        self.prep_params = kw.get('prep_params', None)
 
     def get_qubits(self, qb_names='all'):
         """
@@ -43,6 +64,8 @@ class CircuitBuilder:
         qubits, qb_names = self.get_qubits(qb_names)
         if self.prep_params is not None:
             return self.prep_params
+        elif self.dev is not None:
+            return self.dev.get_prep_params(qubits)
         else:
             return mqm.get_multi_qubit_prep_params(
                 [qb.preparation_params() for qb in qubits])
