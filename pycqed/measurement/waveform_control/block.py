@@ -270,6 +270,21 @@ class Block:
 
         return pulses
 
+    def prefix_parametric_values(self, prefix, params=None):
+        """
+        Adds a prefix to the parameter name of ParametricValues in the pulses
+        of the block.
+
+        :param prefix: (str) prefix to be added
+        :param params: (optional list of str) if given, prefix only these
+            parameter names
+        """
+        for p in self.pulses:
+            for k, s in p.items():
+                if isinstance(s, ParametricValue):
+                    if params is None or s.param in params:
+                        s.param = prefix + s.param
+
 
 class ParametricValue:
     """
@@ -305,7 +320,7 @@ class ParametricValue:
         elif 'values' in sweep_dict[self.param]:  # convention in sweep_dicts
             v = d['values'][ind]
         else: # convention in SweepPoints class
-            v = d[ind][0]
+            v = d[0][ind]
         if self.func is None:
             return v
         else:
