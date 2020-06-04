@@ -310,8 +310,8 @@ class CircuitBuilder:
             preparation_pulses += [block_end]
             return Block(block_name, preparation_pulses)
 
-    def mux_readout(self, qb_names='all', element_name='RO', ref_point='end',
-                    pulse_delay=0.0):
+    def mux_readout(self, qb_names='all', element_name='RO', **pulse_pars):
+
         block_name = "Readout"
         qubits, qb_names = self.get_qubits(qb_names)
         ro_pulses = []
@@ -320,8 +320,7 @@ class CircuitBuilder:
             ro_pulse['name'] = '{}_{}'.format(element_name, j)
             ro_pulse['element_name'] = element_name
             if j == 0:
-                ro_pulse['pulse_delay'] = pulse_delay
-                ro_pulse['ref_point'] = ref_point
+                ro_pulse.update(pulse_pars)
             else:
                 ro_pulse['ref_point'] = 'start'
             ro_pulses.append(ro_pulse)
