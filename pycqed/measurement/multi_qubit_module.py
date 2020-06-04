@@ -2216,7 +2216,7 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
                          'data_to_fit': {qbc.name: 'pf', qbt.name: 'pe'},
                          'hard_sweep_params': hard_sweep_params,
                          'soft_sweep_params': soft_sweep_params,
-                         'prepend_pulse_dicts': str(prepend_pulse_dicts)})
+                         'prepend_pulse_dicts': prepend_pulse_dicts})
     exp_metadata.update(kw)
     MC.run_2D(label, exp_metadata=exp_metadata)
     if analyze:
@@ -2507,8 +2507,7 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                                  'cal_states_rotations':
                                      {qb.name: {'g': 0, 'e': 1} for qb in qbs},
                                  'hard_sweep_params': hard_sweep_params,
-                                 'prepend_pulse_dicts':
-                                     str(prepend_pulse_dicts)})
+                                 'prepend_pulse_dicts': prepend_pulse_dicts})
             MC.run(label, exp_metadata=exp_metadata)
 
             if analyze:
