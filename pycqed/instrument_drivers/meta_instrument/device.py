@@ -179,6 +179,8 @@ class Device(Instrument):
             this_operation = {}
             for argument_name, parameter_name in op.items():
                 this_operation[argument_name] = self.get(parameter_name)
+            this_operation['op_code'] = op_tag[0] + ' ' + op_tag[1] + ' ' \
+                                        + op_tag[2]
             for op_name in [op_tag[0] + ' ' + op_tag[1] + ' ' + op_tag[2],
                             op_tag[0] + ' ' + op_tag[2] + ' ' + op_tag[1]]:
                 two_qb_operation_dict[op_name] = this_operation
