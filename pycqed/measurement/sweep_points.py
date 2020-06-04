@@ -43,12 +43,24 @@ class SweepPoints(list):
         sp.add_sweep_parameter(f'amps_{qb}', np.linspace(0, 1, 20),
         'V', 'Pulse amplitude')
     """
-    def __init__(self, param_name=None, values=None, unit='', label=None):
+    def __init__(self, param_name=None, values=None, unit='', label=None,
+                 from_dict_list=None):
         super().__init__()
         if param_name is not None and values is not None:
             if label is None:
                 label = param_name
             self.append({param_name: (values, unit, label)})
+        elif from_dict_list is not None:
+            for d in from_dict_list:
+                if len(d) == 0 or isinstance(list(d.values())[0], tuple):
+                    # assume that dicts have the same format as this class
+                    self.append(d)
+                else:
+                    # import from a list of sweep dicts in the old format
+                    self.append({k: (v['values'],
+                                     v.get('unit',''),
+                                     v.get('label', k))
+                                 for k, v in d.items()})
 
     def add_sweep_parameter(self, param_name, values, unit='', label=None):
         if label is None:
