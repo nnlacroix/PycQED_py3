@@ -81,4 +81,6 @@ class SweepPoints(list):
 
         return sweep_points_map
 
-
+    def update(self, sweep_points):
+        for d, u in zip(self, sweep_points):
+            d.update(u)
