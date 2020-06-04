@@ -171,12 +171,11 @@ class CircuitBuilder:
                                    **prep_params).build())
         for i, (qbn, init) in enumerate(zip(qb_names, init_state)):
             # add qb name and "s" for reference to start of previous pulse
-            op = self.STD_INIT.get(init, init) + \
-                 f"{'s' if len(pulses) != 0 and simultaneous else ''} " + qbn
-            pulse = self.get_pulse(op)
-            # if i == 0:
-            #     pulse['ref_pulse'] = 'segment_start'
-            pulses.append(pulse)
+            op = self.STD_INIT.get(init, init)
+            if op != 'I':
+                op += f"{'s' if len(pulses) != 0 and simultaneous else ''} " + qbn
+                pulse = self.get_pulse(op)
+                pulses.append(pulse)
         return Block(block_name, pulses)
 
     def prepare(self, qb_names='all', ref_pulse='start', preparation_type='wait',
