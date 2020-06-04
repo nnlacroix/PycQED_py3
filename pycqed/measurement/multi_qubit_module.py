@@ -2321,7 +2321,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name,
                          'classified_ro': classified,
                          'rotate': len(cal_states) != 0 and not classified,
                          'cal_states_rotations':
-                             {qbc.name: {'g': 0, 'f': 1},
+                             {qbc.name: {'g': 0, 'e': 1, 'f': 2},
                               qbt.name: {'g': 0, 'e': 1}} if
                              (len(cal_states) != 0 and not classified) else None,
                          'data_to_fit': {qbc.name: 'pf', qbt.name: 'pe'},

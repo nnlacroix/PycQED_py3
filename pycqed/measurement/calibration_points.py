@@ -125,7 +125,8 @@ class CalibrationPoints:
 
         return qb_names
 
-    def get_rotations(self, last_ge_pulses=False, qb_names=None):
+    def get_rotations(self, last_ge_pulses=False, qb_names=None,
+                      enforce_two_cal_states=False):
         """
         Get rotation dictionaries for each qubit in qb_names,
         as used by the analysis for plotting.
@@ -161,7 +162,7 @@ class CalibrationPoints:
             order = {"g": 0, "e": 1, "f": 2}
             unique = list(np.unique(states[qbn]))
             unique.sort(key=lambda s: order[s])
-            if len(unique) == 3:
+            if len(unique) == 3 and enforce_two_cal_states:
                 unique = np.delete(unique, 1 if last_ge_pulses[i] else 0)
             rotations[qbn] = {unique[i]: i for i in range(len(unique))}
         log.info(f"Calibration Points Rotation: {rotations}")
