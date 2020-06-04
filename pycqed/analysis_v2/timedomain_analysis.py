@@ -341,7 +341,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             # for now assuming the same for all qubits.
             self.cal_states_dict = self.cp.get_indices(
                 self.qb_names, prep_params)[self.qb_names[0]]
-            print(self.cal_states_dict)
             if rotate:
                 cal_states_rots = self.cp.get_rotations(last_ge_pulses,
                         self.qb_names[0])[self.qb_names[0]] if rotate else None
@@ -3847,8 +3846,10 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                                         qbn]['msmt_sweep_points'])
             # check if the sweep points are repeated 3 times as they have to be
             # for the qscale analysis:
-            # take the first 3 entries and check if they are all the same
-            # or different
+            # Takes the first 3 entries and check if they are all the same or different.
+            # Needed For backwards compatibility with QudevTransmon.measure_qscale()
+            # that does not (yet) use Sweeppoints object.
+
             unique_sp = np.unique(sweep_points[:3])
             if unique_sp.size > 1:
                 sweep_points = np.repeat(sweep_points, 3)
