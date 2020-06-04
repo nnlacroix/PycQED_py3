@@ -396,7 +396,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             self.cal_states_dict_for_rotation = self.cal_states_dict
         else:
             if self.cal_states_dict is None:
-                print('Assuming two cal states, |g> and |e>, and using '
+                log.info('Assuming two cal states, |g> and |e>, and using '
                       'sweep_points[-4:-2] as |g> cal points, and '
                       'sweep_points[-2::] as |e> cal points.')
                 self.cal_states_dict = OrderedDict()
@@ -471,7 +471,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     @staticmethod
     def rotate_data_3_cal_states(qb_name, meas_results_per_qb, channel_map,
                                  cal_states_dict):
-        print('in 3state rotation')
         # FOR 3 CAL STATES
         rotated_data_dict = OrderedDict()
         meas_res_dict  =meas_results_per_qb[qb_name]
@@ -495,7 +494,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     @staticmethod
     def rotate_data(qb_name, meas_results_per_qb, channel_map,
                     cal_states_dict, data_to_fit):
-        print('in 2state rotation')
         # ONLY WORKS FOR 2 CAL STATES
         meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict = OrderedDict()
@@ -559,7 +557,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     @staticmethod
     def rotate_data_3_cal_states_TwoD(qb_name, meas_results_per_qb,
                                       channel_map, cal_states_dict):
-        print('in 3state rotation 2D')
         # FOR 3 CAL STATES
         meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict = OrderedDict()
@@ -595,7 +592,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     @staticmethod
     def rotate_data_TwoD(qb_name, meas_results_per_qb, channel_map,
                          cal_states_dict, data_to_fit):
-        print('in 2state rotation 2D')
         meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict = OrderedDict()
         if len(cal_states_dict[qb_name]) == 0:
@@ -3468,7 +3464,7 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
                 period_num=n_piHalf_pulse,
                 cov=cov_freq_phase)
         except Exception as e:
-            print(e)
+            log.error(e)
             piPulse_std = 0
             piHalfPulse_std = 0
 
