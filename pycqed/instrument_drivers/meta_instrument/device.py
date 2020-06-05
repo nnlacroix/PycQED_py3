@@ -179,6 +179,8 @@ class Device(Instrument):
             this_operation = {}
             for argument_name, parameter_name in op.items():
                 this_operation[argument_name] = self.get(parameter_name)
+            this_operation['op_code'] = op_tag[0] + ' ' + op_tag[1] + ' ' \
+                                        + op_tag[2]
             for op_name in [op_tag[0] + ' ' + op_tag[1] + ' ' + op_tag[2],
                             op_tag[0] + ' ' + op_tag[2] + ' ' + op_tag[1]]:
                 two_qb_operation_dict[op_name] = this_operation
@@ -355,6 +357,10 @@ class Device(Instrument):
             for param, init_val in params.items():
                 self.add_pulse_parameter(op_name, par_name + '_' + param, param,
                                          initial_value=init_val)
+
+            # needed for unresolved pulses but not attribute of pulse object
+            if 'basis_rotation' not in params.keys():
+                self.add_pulse_parameter(op_name, par_name + '_basis_rotation', 'basis_rotation', initial_value={})
 
             # Update flux pulse channels
             for qb, c in zip([qb1, qb2], ['channel', 'channel2']):
