@@ -41,13 +41,15 @@ class Pulse:
             instance generates waveforms form. Defaults to empty list.
     """
 
-    def __init__(self, name, element_name, codeword='no_codeword', length=0,
-                 channels=None):
+    def __init__(self, name, element_name, **kw):
+
         self.name = name
         self.element_name = element_name
-        self.codeword = codeword
-        self.length = length
-        self.channels = channels if channels is not None else []
+        self.codeword = kw.pop('codeword', 'no_codeword')
+
+        # Set default pulse_params and overwrite with params in keyword argument list if applicable
+        for k, v in self.pulse_params().items():
+            setattr(self, k, (v if k not in kw else kw[k]))
 
         self._t0 = None
 
