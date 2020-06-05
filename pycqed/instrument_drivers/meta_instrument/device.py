@@ -359,7 +359,8 @@ class Device(Instrument):
                                          initial_value=init_val)
 
             # needed for unresolved pulses but not attribute of pulse object
-            self.add_pulse_parameter(op_name, par_name + '_basis_rotation', 'basis_rotation', initial_value={})
+            if 'basis_rotation' not in params.keys():
+                self.add_pulse_parameter(op_name, par_name + '_basis_rotation', 'basis_rotation', initial_value={})
 
             # Update flux pulse channels
             for qb, c in zip([qb1, qb2], ['channel', 'channel2']):
