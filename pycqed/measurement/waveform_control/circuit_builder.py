@@ -1,3 +1,5 @@
+import numpy as np
+from copy import copy
 from copy import deepcopy
 from pycqed.measurement.waveform_control.block import Block
 from pycqed.measurement.waveform_control.sequence import Sequence
@@ -478,3 +480,81 @@ class CircuitBuilder:
         for block in blocks:
             sequential.extend(block.build())
         return sequential
+
+    def sweep_n_dim(self, body_block, sweep_points, cal_points=None,
+                 init_state='0', seq_name='Sequence', ro_kwargs=None,
+                 return_segments=False, **kw):
+        """
+        Creates a sequence or a list of segments by doing an N-dim sweep
+        over the given operations based on the sweep_points.
+        Currently, only 1D and 2D sweeps are implemented.
+
+        :param body_block: block containing the pulses to be swept (excluding
+            initialization and readout)
+        :param sweep_points: SweepPoints object
+        :param cal_points: CalibrationPoints object
+        :param init_state: initialization state (string or list),
+            see documentation of initialize().
+        :param seq_name: Name (str) of the sequence (default: "Sequence")
+        :param ro_kwargs: Keyword arguments (dict) for the function
+            mux_readout().
+        :param return_segments: whether to return segments or the sequence
+        :param kw: keyword arguments (to allow pass through kw even if it
+            contains entries that are not needed)
+        :return:
+            - if return_segments==True:
+                1D: list of segments, number of 1d sweep points or
+                2D: list of list of segments, list of numbers of sweep points
+            - else:
+                1D: sequence, number acquisition elements
+                2D: list of sequences, number of acquisition elements, number
+                    of sequences
+        """
+        sweep_dims = len(sweep_points)
+        if sweep_dims > 2:
+            raise NotImplementedError('Only 1D and 2D sweeps are implemented.')
+
+        if ro_kwargs is None:
+            ro_kwargs = {}
+
+        nr_sp_list = [len(list(d.values())[0][0]) for d in sweep_points]
+
+        if sweep_dims == 1:
+            sweep_points = copy(sweep_points)
+            sweep_points.add_sweep_dimension()
+            nr_sp_list.append(1)
+
+        prep = self.initialize(init_state=init_state)
+        ro = self.mux_readout(**ro_kwargs)
+        segblock = self.sequential_blocks('segblock', [prep, body_block, ro])
+
+        seqs = []
+        for i in range(nr_sp_list[1]):
+            this_seq_name = seq_name + (f'_{i}' if sweep_dims == 2 else '')
+            seq = Sequence(this_seq_name)
+            for j in range(nr_sp_list[0]):
+                seq.add(Segment(f'seg{j}', segblock.build(
+                    sweep_dicts_list=sweep_points, sweep_index_list=[j, i])))
+            if cal_points is not None:
+                seq.extend(cal_points.create_segments(self.operation_dict,
+                                                      **self.get_prep_params()))
+            seqs.append(seq)
+
+        if return_segments:
+            segs = [list(seq.segments.values()) for seq in seqs]
+            if sweep_dims == 1:
+                return segs[0], nr_sp_list[0]
+            else:
+                return segs, nr_sp_list
+
+        # repeat UHF seqZ code
+        for s in seqs:
+            for ro_op in [p['op_code'] for p in ro.pulses]:
+                s.repeat_ro(ro_op, self.operation_dict)
+
+        if sweep_dims == 1:
+            return seqs[0], np.arange(seqs[0].n_acq_elements())
+        else:
+            return seqs, np.arange(seqs[0].n_acq_elements()), \
+                   np.arange(nr_sp_list[1])
+
