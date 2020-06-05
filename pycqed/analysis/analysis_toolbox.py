@@ -1258,6 +1258,15 @@ def rotate_and_normalize_data_no_cal_points(data, **kw):
     # max_min_difference = max(normalized_data -  min(normalized_data))
     # normalized_data = (normalized_data-min(normalized_data))/max_min_difference
 
+    # data always rotated such that majority of data points is smaller than the mid point
+    # between min and max (if data_mostly_g).
+    mean = np.mean(normalized_data)
+    middle = (np.max(normalized_data) + np.min(normalized_data)) / 2
+    if kw.pop('data_mostly_g', True):
+        normalized_data *= np.sign(middle - mean)
+    else:
+        normalized_data *= -np.sign(middle - mean)
+
     return normalized_data
 
 
