@@ -540,7 +540,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     @staticmethod
     def rotate_data(qb_name, meas_results_per_qb, channel_map,
                     cal_states_dict, data_to_fit):
-        # ONLY WORKS FOR 2 or 0 CAL STATES
+        # ONLY WORKS FOR 2 CAL STATES
         meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict = OrderedDict()
         if len(cal_states_dict[qb_name]) == 0:
@@ -684,10 +684,14 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     data_to_fit[qb_name]], _, _ = \
                     a_tools.rotate_and_normalize_data_IQ(
                         data=data_array,
-                        cal_zero_points=None,
+                        cal_zero_points=None,  # if cal_points are None, rotation via PCA
                         cal_one_points=None,
-                        data_mostly_g=data_mostly_g)
+                        data_mostly_g=data_mostly_g  # True if most points are expected to be ground state
+                    )
         else:
+            if global_PCA:
+                raise NotImplementedError('Global PCA is not implemented \
+                                        for multiple RPs per qubit channel!')
             # multiple readouts per qubit per channel
             if isinstance(channel_map[qb_name], str):
                 qb_ro_ch0 = channel_map[qb_name]
