@@ -317,7 +317,8 @@ class ParametricValue:
         d = sweep_dict[self.param]
         if not hasattr(d, '__iter__'):
             v = d
-        elif 'values' in sweep_dict[self.param]:  # convention in sweep_dicts
+        elif isinstance(sweep_dict[self.param], dict) and 'values' in \
+                sweep_dict[self.param]:  # convention in sweep_dicts
             v = d['values'][ind]
         else: # convention in SweepPoints class
             v = d[0][ind]
