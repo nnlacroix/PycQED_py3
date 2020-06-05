@@ -3170,8 +3170,9 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
         pdd = self.proc_data_dict
         nr_sp = {qb: len(pdd['sweep_points_dict'][qb]['sweep_points']) \
             for qb in self.qb_names}
-        nr_sp2d = {qb: len(pdd['sweep_points_2D_dict'][qb])\
+        nr_sp2d = {qb: len(pdd['sweep_points_2D_dict'][qb][self.raw_data_dict['sweep_parameter_names'][1]])\
             for qb in self.qb_names}
+        print()
         nr_cp = self.num_cal_points
 
         # make matrix out of vector
@@ -3198,7 +3199,8 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
         pdd['data_masked'] = {}
 
         for qb in self.qb_names:
-            pdd['freqs_masked'][qb] = pdd['sweep_points_2D_dict'][qb][self.mask_freq]
+            pdd['freqs_masked'][qb] = \
+                pdd['sweep_points_2D_dict'][qb][self.raw_data_dict['sweep_parameter_names'][1]][self.mask_freq]
             pdd['amps_masked'][qb] = pdd['sweep_points_dict'][qb]['sweep_points'][
                                      :-self.num_cal_points][self.mask_amp]
             data_masked = data_no_cp[qb][self.mask_amp,:]
@@ -3285,7 +3287,7 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 'ax_id': f'data_2d_{qb}',
                 'plotfn': self.plot_colorxy,
                 'xvals': pdd['sweep_points_dict'][qb]['sweep_points'],
-                'yvals': pdd['sweep_points_2D_dict'][qb],
+                'yvals': pdd['sweep_points_2D_dict'][qb][self.raw_data_dict['sweep_parameter_names'][1]],
                 'zvals': np.transpose(pdd['data_reshaped'][qb]),
                 'xlabel': r'Flux pulse amplitude',
                 'xunit': 'V',
