@@ -2040,7 +2040,10 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
 
     if qbr is None:
         qbr = qbt
-    elif qbr != qbc and qbr != qbt:
+    elif isinstance(qbr, str):
+        qbr = dev.get_qb(qbr)
+
+    if qbr != qbc and qbr != qbt:
         raise ValueError('Only target or control qubit can be read out!')
 
     # check whether qubits are connected
