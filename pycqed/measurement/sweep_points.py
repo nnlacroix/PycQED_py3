@@ -37,11 +37,11 @@ class SweepPoints(list):
     sp = SweepPoints()
     for qb in ['qb1', 'qb2', 'qb3']:
         sp.add_sweep_parameter(f'lengths_{qb}', np.linspace(10e-9, 1e-6, 80),
-        's', 'Pulse length')
+        's', 'Pulse length, $L$')
     sp.add_sweep_dimension()
     for qb in ['qb1', 'qb2', 'qb3']:
         sp.add_sweep_parameter(f'amps_{qb}', np.linspace(0, 1, 20),
-        'V', 'Pulse amplitude')
+        'V', 'Pulse amplitude, $A$')
     """
     def __init__(self, param_name=None, values=None, unit='', label=None,
                  from_dict_list=None):
@@ -73,22 +73,22 @@ class SweepPoints(list):
     def add_sweep_dimension(self):
         self.append(dict())
 
-    def get_sweep_points_map(self, keys_list):
+    def get_meas_obj_sweep_points_map(self, measured_objects):
         """
         Assumes the order of params in each sweep dimension corresponds to
         the order of keys in keys_list
 
-        :param keys_list: list of strings to be used as keys in the returned
-            dictionary
-        :return: {keys[k]: list(d)[k] for d in self for k in keys_list}
+        :param measured_objects: list of strings to be used as keys in the
+            returned dictionary. These are the measured object names
+        :return: {keys[k]: list(d)[k] for d in self for k in measured_objects}
         """
 
-        sweep_points_map = OrderedDict()
-        if len(keys_list) != len(self[0]):
+        if len(measured_objects) != len(self[0]):
             raise ValueError('The number of keys and number of sweep '
                              'parameters do not match.')
 
-        for i, key in enumerate(keys_list):
+        sweep_points_map = OrderedDict()
+        for i, key in enumerate(measured_objects):
             sweep_points_map[key] = [list(d)[i] for d in self]
 
         return sweep_points_map
