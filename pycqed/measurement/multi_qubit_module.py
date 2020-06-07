@@ -653,10 +653,11 @@ def measure_parity_correction(qb0, qb1, qb2, feedback_delay, f_LO,
         '' if reset else '_noreset', '_'.join([qb.name for qb in qubits])),
         exp_metadata=exp_metadata)
 
-def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map, 
-                                preps=None, upload=True, prep_params=None, 
+
+def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map,
+                                preps=None, upload=True, prep_params=None,
                                 cal_points=None, analyze=True,
-                                exp_metadata=None, label=None, 
+                                exp_metadata=None, label=None,
                                 detector='int_avg_det'):
     """
 
@@ -680,10 +681,10 @@ def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map,
     qb_names = [qb.name for qb in qubits]
     for qb in qubits:
         qb.prepare(drive='timedomain')
-    
+
     if label is None:
         label = 'Parity-1-round_'+'-'.join([qb.name for qb in qubits])
-    
+
     if prep_params is None:
         prep_params = get_multi_qubit_prep_params(
             [qb.preparation_params() for qb in qubits])
@@ -692,7 +693,7 @@ def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map,
         cal_points = CalibrationPoints.multi_qubit(qb_names, 'ge')
 
     if preps is None:
-        preps = [''.join(s) 
+        preps = [''.join(s)
             for s in itertools.product(*len(data_qubits)*['ge'])]
 
     MC = ancilla_qubit.instr_mc.get_instr()
@@ -708,8 +709,8 @@ def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map,
 
     MC.set_detector_function(
         get_multiplexed_readout_detector_functions(
-            qubits, 
-            nr_averages=ancilla_qubit.acq_averages(), 
+            qubits,
+            nr_averages=ancilla_qubit.acq_averages(),
             nr_shots=ancilla_qubit.acq_shots(),
         )[detector])
     if exp_metadata is None:
@@ -717,6 +718,7 @@ def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map,
     exp_metadata.update(
         {'sweep_name': 'Preparation',
          'preparations': preps,
+         'CZ_map': CZ_map,
          'cal_points': repr(cal_points),
          'rotate': True,
          'cal_states_rotations':
@@ -733,13 +735,99 @@ def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map,
         channel_map = {
             qb.name: qb.int_log_det.value_names[0] + ' ' + qb.instr_uhf() for qb in
             qubits}
-        tda.MultiQubit_TimeDomain_Analysis(qb_names=qb_names, options_dict=dict(
-                channel_map=channel_map
-            ))
+        tda.MultiQubit_TimeDomain_Analysis(qb_names=qb_names)#, options_dict=dict(
+            #     channel_map=channel_map
+            # ))
+
+
+def measure_parity_single_round_dd(ancilla_qubit, data_qubits, CZ_map,
+                                  preps=None, upload=True, prep_params=None,
+                                  cal_points=None, analyze=True,
+                                  exp_metadata=None, label=None,
+                                  DD_map=None, detector='int_avg_det'):
+    """
+
+    :param ancilla_qubit:
+    :param data_qubits:
+    :param CZ_map: example:
+        {'CZ qb1 qb2': ['Y90 qb1', 'CX qb1 qb2', 'mY90 qb1'],
+         'CZ qb3 qb4': ['CZ qb4 qb3']}
+    :param preps:
+    :param upload:
+    :param prep_params:
+    :param cal_points:
+    :param analyze:
+    :param exp_metadata:
+    :param label:
+    :param detector:
+    :return:
+    """
+
+    qubits = [ancilla_qubit] + data_qubits
+    qb_names = [qb.name for qb in qubits]
+    for qb in qubits:
+        qb.prepare(drive='timedomain')
+
+    if label is None:
+        label = 'Parity-1-round_dd_' + '-'.join([qb.name for qb in qubits])
+
+    if prep_params is None:
+        prep_params = get_multi_qubit_prep_params(
+            [qb.preparation_params() for qb in qubits])
+
+    if cal_points is None:
+        cal_points = CalibrationPoints.multi_qubit(qb_names, 'ge')
+
+    if preps is None:
+        preps = [''.join(s)
+                 for s in itertools.product(*len(data_qubits) * ['ge'])]
+
+    MC = ancilla_qubit.instr_mc.get_instr()
+
+    seq, sweep_points = mqs.parity_single_round_spec_dd_seq(
+        ancilla_qubit.name, [qb.name for qb in data_qubits], CZ_map,
+        preps=preps, cal_points=cal_points, prep_params=prep_params,
+        operation_dict=get_operation_dict(qubits), DD_map=DD_map, upload=False)
+
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(
+        sequence=seq, upload=upload, parameter_name='Preparation'))
+    MC.set_sweep_points(sweep_points)
+
+    MC.set_detector_function(
+        get_multiplexed_readout_detector_functions(
+            qubits,
+            nr_averages=ancilla_qubit.acq_averages(),
+            nr_shots=ancilla_qubit.acq_shots(),
+        )[detector])
+    if exp_metadata is None:
+        exp_metadata = {}
+    exp_metadata.update(
+        {'sweep_name': 'Preparation',
+         'preparations': preps,
+         'CZ_map': CZ_map,
+         'DD_map': DD_map,
+         'cal_points': repr(cal_points),
+         'rotate': True,
+         'cal_states_rotations':
+             {qbn: {'g': 0, 'e': 1} for qbn in qb_names},
+         'data_to_fit': {qbn: 'pe' for qbn in qb_names},
+         'preparation_params': prep_params,
+         'hard_sweep_params': {'preps': {'values': np.arange(0, len(preps)),
+                                         'unit': ''}}
+         })
+
+    MC.run(label, exp_metadata=exp_metadata)
+
+    if analyze:
+        # channel_map = {
+        #     qb.name: qb.int_log_det.value_names[0] + ' ' + qb.instr_uhf() for qb in
+        #     qubits}
+        tda.MultiQubit_TimeDomain_Analysis(qb_names=qb_names)
+                                           # options_dict=dict(channel_map=channel_map))
 
 
 def measure_parity_single_round_phases(ancilla_qubit, data_qubits, CZ_map,
-                                       phases = np.linspace(0,2*np.pi,7),
+                                       phases=np.linspace(0, 2*np.pi, 7),
                                        prep_anc='g', upload=True,
                                        prep_params=None,
                                        cal_points=None, analyze=True,
@@ -2226,7 +2314,8 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name, qbss=None,
         if predictive_label:
             label = 'Predictive_cphase_measurement'
         else:
-            label = 'CPhase_measurement'
+
+            label = f'CPhase_measurement'
         if len(qbss) > 0:
             label += '_withSpectator' + ('' if len(qbss) == 1 else 's')
         if classified:

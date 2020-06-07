@@ -899,15 +899,154 @@ def parity_single_round_seq(ancilla_qubit_name, data_qubit_names, CZ_map,
     return seq, np.arange(seq.n_acq_elements())
 
 
-def parity_single_round__phases_seq(ancilla_qubit_name, data_qubit_names, CZ_map,
-                                    phases, prep_anc,
-                                    cal_points, prep_params,
-                                    operation_dict,
-                                    upload=True):
+def parity_single_round_spec_dd_seq(ancilla_qubit_name, data_qubit_names, CZ_map,
+                                    preps, cal_points, prep_params, operation_dict,
+                                    DD_map=None, upload=True):
     seq_name = 'Parity_1_round_sequence'
     qb_names = [ancilla_qubit_name] + data_qubit_names
 
-    if prep_anc=='e':
+    all_pulsess = []
+    for prep in preps:
+        all_pulses = []
+
+        prep_ops = [{'g': 'I ', 'e': 'X180 ', '+': 'Y90 ', '-': 'mY90 '}[s] \
+                    + dqn for s, dqn in zip(prep, data_qubit_names)]
+        prep_pulses = [deepcopy(operation_dict[p_op]) for p_op in prep_ops]
+        for pp in prep_pulses:
+            pp['element_name'] = f'drive_{prep}'
+        all_pulses += prep_pulses
+
+        main_pulses = [deepcopy(operation_dict['Y90 ' + ancilla_qubit_name])]
+        main_pulses[-1]['element_name'] = f'drive_{prep}'
+        for i, dqn in enumerate(data_qubit_names):
+            op = 'CZ ' + ancilla_qubit_name + ' ' + dqn
+            main_pulses += [deepcopy(operation_dict[CZ_map.get(op, [op])[0]])]
+            main_pulses[-1]['name'] = f'CZ_{i}_{prep}'
+            main_pulses[-1]['element_name'] = f'flux_{prep}'
+            # if i == len(data_qubit_names) / 2 - 1:
+            #     main_pulses += [deepcopy(operation_dict[
+            #                                  'Y180 ' + ancilla_qubit_name])]
+            #     main_pulses[-1]['element_name'] = f'drive_{prep}'
+
+        main_pulses += [deepcopy(operation_dict['Y90 ' + ancilla_qubit_name])]
+        main_pulses[-1]['element_name'] = f'drive_{prep}'
+        if DD_map is not None:
+            for i, dqn in enumerate(data_qubit_names):
+                op = 'CZ ' + ancilla_qubit_name + ' ' + dqn
+                dd_pulses = [deepcopy(operation_dict[dd_op]) for
+                             dd_op in DD_map[op]]
+                dd_pulses[0]['ref_pulse'] = f'CZ_{i}_{prep}'
+                dd_pulses[0]['ref_point'] = 'middle'
+                dd_pulses[0]['ref_point_new'] = 'middle'
+                for p in dd_pulses:
+                    p['element_name'] = f'drive_{prep}'
+                main_pulses += dd_pulses
+        all_pulses += main_pulses
+
+        end_ops = [{'g': 'I ', 'e': 'I ', '+': 'Y90 ', '-': 'Y90 '}[s] \
+                   + dqn for s, dqn in zip(prep, data_qubit_names)]
+        end_pulses = [deepcopy(operation_dict[p_op]) for p_op in end_ops]
+        for ep in end_pulses:
+            ep['element_name'] = f'drive_{prep}'
+        all_pulses += end_pulses
+
+        all_pulses += generate_mux_ro_pulse_list(qb_names, operation_dict)
+        all_pulsess.append(all_pulses)
+
+    all_pulsess_with_prep = all_pulsess
+
+    seq = pulse_list_list_seq(all_pulsess_with_prep, seq_name, upload=False)
+
+    # add calibration segments
+    if cal_points is not None:
+        seq.extend(cal_points.create_segments(operation_dict, **prep_params))
+
+    if upload:
+       ps.Pulsar.get_instance().program_awgs(seq)
+
+    return seq, np.arange(seq.n_acq_elements())
+
+
+# def parity_single_round_phases__spec_dd_seq(ancilla_qubit_name, data_qubit_names,
+#                                     CZ_map, phases, prep_anc, cal_points,
+#                                     prep_params, operation_dict,
+#                                     DD_map=None, upload=True):
+#     seq_name = 'Parity_1_round_sequence'
+#     qb_names = [ancilla_qubit_name] + data_qubit_names
+#
+#     prep_ops = ['Y90' + (' ' if i==0 else 's ') + dqn for i,dqn in
+#                 enumerate(data_qubit_names)]
+#     end_ops = ['mY90' + (' ' if i==0 else 's ') + dqn for i,dqn in
+#                 enumerate(data_qubit_names)]
+#
+#     all_pulsess = []
+#     for n, phase in enumerate(phases):
+#         all_pulses = []
+#         for i, op in enumerate(prep_ops):
+#             all_pulses.append(deepcopy(operation_dict[op]))
+#             all_pulses[-1]['element_name'] = f'drive_{n}'
+#
+#         if prep_anc == 'e':
+#             all_pulses += [deepcopy(operation_dict['Y180 ' + ancilla_qubit_name])]
+#         else:
+#             all_pulses += [deepcopy(operation_dict['I ' + ancilla_qubit_name])]
+#         all_pulses[-1]['element_name'] = f'drive_{n}'
+#
+#         main_pulses = []
+#         for i, dqn in enumerate(data_qubit_names):
+#             op = 'CZ ' + ancilla_qubit_name + ' ' + dqn
+#             main_pulses += [deepcopy(operation_dict[CZ_map.get(op, [op])[0]])]
+#             main_pulses[-1]['name'] = f'CZ_{i}_{n}'
+#             main_pulses[-1]['element_name'] = f'flux_{n}'
+#             if i == len(data_qubit_names) / 2 - 1:
+#                 main_pulses += [deepcopy(operation_dict[
+#                                              'Y180 ' + ancilla_qubit_name])]
+#                 main_pulses[-1]['element_name'] = f'drive_{n}'
+#         if DD_map is not None:
+#             for i, dqn in enumerate(data_qubit_names):
+#                 op = 'CZ ' + ancilla_qubit_name + ' ' + dqn
+#                 dd_pulses = [deepcopy(operation_dict[dd_op]) for
+#                              dd_op in DD_map[op]]
+#                 dd_pulses[0]['ref_pulse'] = f'CZ_{i}_{n}'
+#                 dd_pulses[0]['ref_point'] = 'middle'
+#                 dd_pulses[0]['ref_point_new'] = 'middle'
+#                 for p in dd_pulses:
+#                     p['element_name'] = f'drive_{n}'
+#                 main_pulses += dd_pulses
+#         all_pulses += main_pulses
+#
+#         for i, op in enumerate(end_ops):
+#             all_pulses.append(deepcopy(operation_dict[op]))
+#             all_pulses[-1]['element_name'] = f'drive_{n}'
+#             all_pulses[-1]['phase'] = phase/np.pi*180
+#
+#         all_pulses += generate_mux_ro_pulse_list(qb_names, operation_dict)
+#         all_pulsess.append(all_pulses)
+#     from pprint import pprint
+#     pprint(all_pulsess)
+#     all_pulsess_with_prep = \
+#         [add_preparation_pulses(seg, operation_dict, qb_names, **prep_params)
+#          for seg in all_pulsess]
+#
+#     seq = pulse_list_list_seq(all_pulsess_with_prep, seq_name, upload=False)
+#
+#     # add calibration segments
+#     if cal_points is not None:
+#         seq.extend(cal_points.create_segments(operation_dict, **prep_params))
+#
+#     if upload:
+#        ps.Pulsar.get_instance().program_awgs(seq)
+#
+#     return seq, np.arange(seq.n_acq_elements())
+
+
+def parity_single_round__phases_seq(ancilla_qubit_name, data_qubit_names,
+                                    CZ_map, phases, prep_anc, cal_points,
+                                    prep_params, operation_dict, upload=True):
+    seq_name = 'Parity_1_round_sequence'
+    qb_names = [ancilla_qubit_name] + data_qubit_names
+
+    if prep_anc == 'e':
         main_ops = ['Y180 ' + ancilla_qubit_name]
     else:
         main_ops = ['I ' + ancilla_qubit_name]
