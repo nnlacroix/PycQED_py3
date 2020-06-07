@@ -2031,7 +2031,8 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
                     cz_pulse_name, upload=True, label=None, qbr=None,
                     classified=False, n_cal_points_per_state=2,
                     num_cz_gates=1, cal_states='auto', prep_params=None,
-                    exp_metadata=None, analyze=True, return_seq=False):
+                    exp_metadata=None, analyze=True, return_seq=False,
+                    channels_to_upload=None):
 
     if isinstance(qbc, str):
         qbc = dev.get_qb(qbc)
@@ -2087,7 +2088,10 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
     MC.set_sweep_points(hard_sweep_points)
 
     # sweep over flux pulse amplitude of qbc
-    channels_to_upload = [qbc.flux_pulse_channel()]
+    if channels_to_upload is None:
+        channels_to_upload = [qbc.flux_pulse_channel(),
+                              qbt.flux_pulse_channel()]
+
     MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
         hard_sweep_func, sequences,
         list(soft_sweep_params)[0], list(soft_sweep_params.values())[0]['unit'],
