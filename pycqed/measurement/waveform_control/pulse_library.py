@@ -142,7 +142,7 @@ class BufferedSquarePulse(pulse.Pulse):
         params = {
             'pulse_type': 'BufferedSquarePulse',
             'channel': None,
-            'channels': None,
+            'channels': [],
             'amplitude': 0,
             'pulse_length': 0,
             'buffer_length_start': 0,
@@ -885,7 +885,7 @@ class SquarePulse(pulse.Pulse):
         params = {
             'pulse_type': 'SquarePulse',
             'channel': None,
-            'channels': None,
+            'channels': [],
             'amplitude': 0,
             'length': 0,
         }
