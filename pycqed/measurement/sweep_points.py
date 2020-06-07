@@ -1,7 +1,7 @@
 import logging
 log = logging.getLogger(__name__)
 from collections import OrderedDict
-
+from copy import deepcopy
 
 class SweepPoints(list):
     """
@@ -51,7 +51,7 @@ class SweepPoints(list):
                 label = param_name
             self.append({param_name: (values, unit, label)})
         elif from_dict_list is not None:
-            for d in from_dict_list:
+            for d in deepcopy(from_dict_list):
                 if len(d) == 0 or isinstance(list(d.values())[0], tuple):
                     # assume that dicts have the same format as this class
                     self.append(d)
