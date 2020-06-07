@@ -55,6 +55,13 @@ class CalibBuilder(CircuitBuilder):
 
     def run_measurement(self, **kw):
 
+        # FIXME: currently, we read out all qubits involved in the
+        #  measurement (typically those found by find_qubits_in_tasks). But
+        #  maybe this is not always desired. For instance, in a dyn phase
+        #  measurement, there is no need to read out qbc/qbt if they are not
+        #  part of qbuits_to_measure. We could introduce a property
+        #  self.ro_qubits (which defaults to self.qubits).
+
         for qb in self.qubits:
             qb.prepare(drive='timedomain')
 
