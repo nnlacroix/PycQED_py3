@@ -277,7 +277,7 @@ def get_measobj_properties(data_dict, props_to_extract='all', **params):
     if 'cp' in props_to_extract:
         cp = get_param('cal_points', data_dict, raise_error=True, **params)
         if isinstance(cp, str):
-            cp = eval(cp)
+            cp = CalibrationPoints.from_string(cp)
         props_to_return += [cp]
     if 'sp' in props_to_extract:
         sp = get_param('sweep_points', data_dict, raise_error=True, **params)

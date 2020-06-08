@@ -262,7 +262,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
                                  **params)
     if isinstance(cp, str):
-        cp = eval(cp)
+        cp = CalibrationPoints.from_string(cp)
     sp_name = params.get('sp_name', mospm[mobjn][0])
     sweep_info = [v for d in sp for k, v in d.items() if sp_name == k]
     if len(sweep_info) == 0:
@@ -391,7 +391,7 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
                                  **params)
     if isinstance(cp, str):
-        cp = eval(cp)
+        cp = CalibrationPoints.from_string(cp)
 
     sp_names = params.get('sp_names', mospm[mobjn])
     sweep_info = [v for d in sp for k, v in d.items() if k in sp_names]
@@ -512,7 +512,7 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
                                  **params)
     if isinstance(cp, str):
-        cp = eval(cp)
+        cp = CalibrationPoints.from_string(cp)
 
     if keys_in is None:
         keys_in = movnm[mobjn]
@@ -639,7 +639,7 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
                                  **params)
     if isinstance(cp, str):
-        cp = eval(cp)
+        cp = CalibrationPoints.from_string(cp)
 
     if keys_in is None:
         keys_in = movnm[mobjn]
