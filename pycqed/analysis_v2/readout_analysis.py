@@ -882,27 +882,7 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
         params = dict()
 
         if method == 'ncc':
-            class NCC:
-                def __init__(self, cluster_centers):
-                    """
-                    cluster_centers is a dict of cluster centers
-                    (name as key, n dimensional array as value)
-
-                    """
-                    self.cluster_centers = cluster_centers
-                def predict(self, X):
-                    pred_states = []
-                    for pt in X:
-                        dist = []
-                        for _, cluster_center in self.cluster_centers.items():
-                            dist.append(np.linalg.norm(pt - cluster_center))
-                        dist = np.asarray(dist)
-                        pred_states.append(np.argmin(dist))
-                    pred_states = np.array(pred_states)
-                    return pred_states
-                def predict_proba(self, X):
-                    raise NotImplementedError("Not implemented for NCC")
-            ncc = NCC(self.proc_data_dict['analysis_params']['mu'])
+            ncc = self.NCC(self.proc_data_dict['analysis_params']['mu'])
             pred_states = ncc.predict(X)
             self.clf_ = ncc
             return pred_states, dict()
@@ -1291,6 +1271,7 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             raise ValueError("covariance type: {} is not supported"
                              .format(cov_type))
         return covs
+
     def prepare_plots(self):
         cmap = plt.get_cmap('tab10')
         tab_x = a_tools.truncate_colormap(cmap, 0, len(self.levels)/10)
@@ -1359,6 +1340,28 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             fig_key = 'state_prob_matrix_masked_{}'.format(self.classif_method)
             self.figs[fig_key] = fig
 
+    class NCC:
+        def __init__(self, cluster_centers):
+            """
+            cluster_centers is a dict of cluster centers
+            (name as key, n dimensional array as value)
+
+            """
+            self.cluster_centers = cluster_centers
+
+        def predict(self, X):
+            pred_states = []
+            for pt in X:
+                dist = []
+                for _, cluster_center in self.cluster_centers.items():
+                    dist.append(np.linalg.norm(pt - cluster_center))
+                dist = np.asarray(dist)
+                pred_states.append(np.argmin(dist))
+            pred_states = np.array(pred_states)
+            return pred_states
+
+        def predict_proba(self, X):
+            raise NotImplementedError("Not implemented for NCC")
 
 class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
     """

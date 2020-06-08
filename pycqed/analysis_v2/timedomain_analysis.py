@@ -5724,27 +5724,8 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         params = dict()
 
         if method == 'ncc':
-            class NCC:
-                def __init__(self, cluster_centers):
-                    """
-                    cluster_centers is a dict of cluster centers
-                    (name as key, n dimensional array as value)
-
-                    """
-                    self.cluster_centers = cluster_centers
-                def predict(self, X):
-                    pred_states = []
-                    for pt in X:
-                        dist = []
-                        for _, cluster_center in self.cluster_centers.items():
-                            dist.append(np.linalg.norm(pt - cluster_center))
-                        dist = np.asarray(dist)
-                        pred_states.append(np.argmin(dist))
-                    pred_states = np.array(pred_states)
-                    return pred_states
-                def predict_proba(self, X):
-                    raise NotImplementedError("Not implemented for NCC")
-            ncc = NCC(self.proc_data_dict['analysis_params']['means'][qb_name])
+            ncc = SSROQutrit.NCC(
+                self.proc_data_dict['analysis_params']['means'][qb_name])
             pred_states = ncc.predict(X)
             # self.clf_ = ncc
             return pred_states, dict(), ncc
@@ -5763,11 +5744,10 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             pred_states = np.argmax(gm.predict_proba(X), axis=1)
 
             params['means_'] = gm.means_
-            params['covariances_'] = gm.covariances_ #covs
+            params['covariances_'] = gm.covariances_
             params['covariance_type'] = gm.covariance_type
             params['weights_'] = gm.weights_
             params['precisions_cholesky_'] = gm.precisions_cholesky_
-            # self.clf_ = gm
             return pred_states, params, gm
 
         elif method == "threshold":
@@ -5777,7 +5757,6 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             pred_states = tree.predict(X)
             params["thresholds"], params["mapping"] = \
                 self._extract_tree_info(tree, self.cp.get_states(qb_name)[qb_name])
-            # self.clf_ = tree
             if len(params["thresholds"]) == 1:
                 msg = "Best 2 thresholds to separate this data lie on axis {}" \
                     ", most probably because the data is not well separated." \
