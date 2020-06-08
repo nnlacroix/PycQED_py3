@@ -892,7 +892,6 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
                                           mode='rl')
 
 
-
 class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
     """
     Detector used for correlation mode with the UHFQC.
