@@ -428,7 +428,7 @@ def measure_multiplexed_readout(qubits, liveplot=False,
 
 def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
                  preselection=True, all_states_combinations=False, upload=True,
-                 exp_metadata=None, analyze=True, update=True):
+                 exp_metadata=None, analyze=True, analysis_kwargs=None, update=True):
     """
     Measures in single shot readout the specified states and performs
     a Gaussian mixture fit to calibrate the state classfier and provide the
@@ -455,7 +455,13 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
         upload (bool): upload waveforms to AWGs
         exp_metadata (dict): experimental metadata
         analyze (bool): analyze data
-        update (bool): update readout classifier parameters
+        analysis_kwargs (dict): arguments for the analysis. Defaults to all qb names
+        update (bool): update readout classifier parameters.
+            Does not update the readout correction matrix (i.e. qb.acq_state_prob_mtx),
+            as we ended up using this a lot less often than the update for readout
+            classifier params. The user can still access the state_prob_mtx through
+            the analysis object and set the corresponding parameter manually if desired.
+
 
     Returns:
 
@@ -482,12 +488,17 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
 
     # prepare measurement
     label = f"SSRO_calibration_{states}_{qb_names}" if label is None else label
+    channel_map = {qb.name: [vn + ' ' + qb.instr_uhf()
+                             for vn in qb.int_log_det.value_names]
+                   for qb in qubits}
     if exp_metadata is None:
         exp_metadata = {}
     exp_metadata.update({"cal_points": repr(cp),
                          "preparation_params": prep_params,
                          "all_states_combinations": all_states_combinations,
-                         "n_shots": n_shots})
+                         "n_shots": n_shots,
+                         "channel_map": channel_map
+                         })
     for qb in qubits:
         qb.prepare(drive='timedomain')
     df = get_multiplexed_readout_detector_functions(
@@ -500,6 +511,7 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
 
     # run measurement
     temp_values = [(MC.soft_avg, 1)]
+
     # required to ensure having original prep_params after mmnt
     # in case preselection=True
     temp_values += [(qb.preparation_params, prep_params) for qb in qubits]
@@ -508,10 +520,17 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
 
     # analyze
     if analyze:
-        channel_map = {qb.name: qb.int_log_det.value_names[0] + ' ' +
-                                qb.instr_uhf()
-                       for qb in qubits}
-    return seq
+        if analysis_kwargs is None:
+            analysis_kwargs = dict()
+        if "qb_names" not in analysis_kwargs:
+            analysis_kwargs["qb_names"] = qb_names # all qubits by default
+        a = tda.MultiQutrit_Singleshot_Readout_Analysis(**analysis_kwargs)
+        for qb in qubits:
+            classifier_params = a.proc_data_dict[
+                'analysis_params']['classifier_params'][qb.name]
+            if update:
+                qb.acq_classifier_params(classifier_params)
+        return a
 
 def measure_active_reset(qubits, shots=5000,
                          qutrit=False, upload=True, label=None,
