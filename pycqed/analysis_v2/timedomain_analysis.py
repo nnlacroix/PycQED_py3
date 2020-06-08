@@ -5734,7 +5734,11 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             cov_type = kw.pop("covariance_type", "tied")
             # full allows full covariance matrix for each level. Other options
             # see GM documentation
-            gm = GM(n_components=len(self.cp.get_states(qb_name)[qb_name]),
+            # assumes if repeated state, should be considered of the same component
+            # this classification method should not be used for multiplexed SSRO
+            # analysis
+            n_qb_states = len(np.unique(self.cp.get_states(qb_name)[qb_name]))
+            gm = GM(n_components=n_qb_states,
                     covariance_type=cov_type,
                     random_state=0,
                     means_init=[mu for _, mu in
@@ -5865,9 +5869,8 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 means = pdd['analysis_params']['means'][qbn]
                 try:
                     covs = self._get_covariances(self.clf_[qbn])
-
-                except Exception as e:
-                    pass
+                except Exception as e: # not a gmm model--> no cov.
+                    covs = []
 
                 for i, mean in enumerate(means.values()):
                     main_ax.scatter(mean[0], mean[1], color='w', s=80)
@@ -5877,15 +5880,25 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                                       edgecolor='w', linestyle='--',
                                       linewidth=1)
 
-                # plot thresholds
+                # plot thresholds and mapping
                 plt_fn = {0: main_ax.axvline, 1: main_ax.axhline}
                 thresholds = pdd['analysis_params'][
                     'classifier_params'][qbn].get("thresholds", dict())
+                mapping = pdd['analysis_params'][
+                    'classifier_params'][qbn].get("mapping", dict())
                 for k, thres in thresholds.items():
                     plt_fn[k](thres, linewidth=2,
                               label="threshold i.u. {}: {:.5f}".format(k, thres),
                               color='k', linestyle="--")
                     main_ax.legend(loc=[0.2,-0.62])
+
+                ax_frac = {0: (0.07, 0.1), # locations for codewords
+                           1: (0.83, 0.1),
+                           2: (0.07, 0.9),
+                           3: (0.83, 0.9)}
+                for cw, state in mapping.items():
+                    main_ax.annotate("0b{:02b}".format(cw) + f":{state}",
+                                     ax_frac[cw], xycoords='axes fraction')
 
                 self.figs[f'{qbn}_{self.classif_method}_classifier_{dk}'] = fig
             if show:

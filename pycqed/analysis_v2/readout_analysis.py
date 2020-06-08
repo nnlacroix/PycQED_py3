@@ -1307,12 +1307,21 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             plt_fn = {0: main_ax.axvline, 1: main_ax.axhline}
             thresholds = self.proc_data_dict['analysis_params'][
                 'classifier_params'].get("thresholds", dict())
+            mapping = self.proc_data_dict['analysis_params'][
+                'classifier_params'].get("mapping", dict())
             for k, thres in thresholds.items():
                 plt_fn[k](thres, linewidth=2,
                           label="threshold i.u. {}: {:.5f}".format(k, thres),
                           color='k', linestyle="--")
                 main_ax.legend(loc=[0.2,-0.62])
 
+            ax_frac = {0: (0.07, 0.1),  # locations for codewords
+                       1: (0.83, 0.1),
+                       2: (0.07, 0.9),
+                       3: (0.83, 0.9)}
+            for cw, state in mapping.items():
+                main_ax.annotate("0b{:02b}".format(cw) + f":{state}",
+                                 ax_frac[cw], xycoords='axes fraction')
             self.figs['{}_classifier_{}'.format(self.classif_method, dk)] = fig
         if show:
             plt.show()
