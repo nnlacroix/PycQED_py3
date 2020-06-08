@@ -443,7 +443,8 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
             in the ith segment. In the latter case, all_state_combinations is ignored.
         n_shots (int): number of shots
         label (str): measurement label
-        preselection (bool): force preselection even if not in preparation params
+        preselection (bool): force preselection even if not in preparation params.
+            If False then prep_param of first qubit is taken.
         all_states_combinations (bool): if False, then all qubits are prepared
             simultaneously in the first state and then read out, then all qubits
             are prepared in the second state, etc. If True, then all combinations
