@@ -426,7 +426,7 @@ def measure_multiplexed_readout(qubits, liveplot=False,
             use_preselection=preselection
         ))
 
-def measure_ssro(qubits, states=('g', 'e'), shots=10000, label=None,
+def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
                  preselection=True, all_states_combinations=False, upload=True,
                  exp_metadata=None, analyze=True, update=True):
     """
@@ -435,9 +435,13 @@ def measure_ssro(qubits, states=('g', 'e'), shots=10000, label=None,
     single shot readout probability assignment matrix
     Args:
         qubits (list): list of qubits to calibrate in parallel
-        states (tuple, str): if tuple, each entry will be interpreted as a state.
-            if string (e.g. "gef"), each letter will be interpreted as a state.
-        shots (int): number of shots
+        states (tuple, str, list of tuples): if tuple, each entry will be interpreted
+            as a state. if string (e.g. "gef"), each letter will be interpreted
+            as a state. All qubits will be prepared simultaneously in each given state.
+            If list of tuples is given, then each tuple should be of length = qubits
+            and the ith tuple should represent the state that each qubit should have
+            in the ith segment. In the latter case, all_state_combinations is ignored.
+        n_shots (int): number of shots
         label (str): measurement label
         preselection (bool): force preselection even if not in preparation params
         all_states_combinations (bool): if False, then all qubits are prepared
@@ -468,7 +472,10 @@ def measure_ssro(qubits, states=('g', 'e'), shots=10000, label=None,
         raise NotImplementedError("Active reset not yet supported for this measurement")
 
     # create and set sequence
-    cp = CalibrationPoints.multi_qubit(qb_names, states, n_per_state=1,
+    if np.ndim(states) == 2: # list of custom states provided
+        cp = CalibrationPoints(qb_names, states)
+    else:
+        cp = CalibrationPoints.multi_qubit(qb_names, states, n_per_state=1,
                                        all_combinations=all_states_combinations)
     seq = sequence.Sequence("SSRO_calibration",
                             cp.create_segments(operation_dict, **prep_params))
@@ -478,13 +485,13 @@ def measure_ssro(qubits, states=('g', 'e'), shots=10000, label=None,
     if exp_metadata is None:
         exp_metadata = {}
     exp_metadata.update({"cal_points": repr(cp),
-                         "prep_params": prep_params,
+                         "preparation_params": prep_params,
                          "all_states_combinations": all_states_combinations,
-                         "shots": shots})
+                         "n_shots": n_shots})
     for qb in qubits:
         qb.prepare(drive='timedomain')
     df = get_multiplexed_readout_detector_functions(
-            qubits, nr_shots=shots)['int_log_det']
+            qubits, nr_shots=n_shots)['int_log_det']
     MC = qubits[0].instr_mc.get_instr()
     MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq,
                                                    upload=upload))
@@ -493,7 +500,8 @@ def measure_ssro(qubits, states=('g', 'e'), shots=10000, label=None,
 
     # run measurement
     temp_values = [(MC.soft_avg, 1)]
-    # required to ensure having original prep_params after mmnt in case preselection=True
+    # required to ensure having original prep_params after mmnt
+    # in case preselection=True
     temp_values += [(qb.preparation_params, prep_params) for qb in qubits]
     with temporary_value(*temp_values):
         MC.run(name=label, exp_metadata=exp_metadata)
