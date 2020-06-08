@@ -22,6 +22,7 @@ class CalibrationPoints:
         self.prep_params = None
 
     def create_segments(self, operation_dict, pulse_modifs=dict(),
+                        segment_prefix='calibration_',
                         **prep_params):
         segments = []
         self.prep_params = prep_params
@@ -53,7 +54,7 @@ class CalibrationPoints:
 
             pulse_list += generate_mux_ro_pulse_list(self.qb_names,
                                                      operation_dict)
-            seg = segment.Segment(f'calibration_{i}', pulse_list)
+            seg = segment.Segment(segment_prefix + f'{i}', pulse_list)
             segments.append(seg)
 
         return segments
@@ -81,12 +82,11 @@ class CalibrationPoints:
         Args:
             qb_names: qubit name or list of qubit names to retrieve
                 the indices of. Defaults to all.
+            prep_params: QuDev_transmon preparation_params attribute
 
         Returns: dict where keys are qb_names and values dict of {state: ind}
 
         """
-        if prep_params is None:
-            prep_params = self.prep_params
         if prep_params is None:
             prep_params = {}
         prep_type = prep_params.get('preparation_type', 'wait')
@@ -127,7 +127,8 @@ class CalibrationPoints:
 
         return qb_names
 
-    def get_rotations(self, last_ge_pulses=False, qb_names=None):
+    def get_rotations(self, last_ge_pulses=False, qb_names=None,
+                      enforce_two_cal_states=False):
         """
         Get rotation dictionaries for each qubit in qb_names,
         as used by the analysis for plotting.
@@ -163,7 +164,7 @@ class CalibrationPoints:
             order = {"g": 0, "e": 1, "f": 2}
             unique = list(np.unique(states[qbn]))
             unique.sort(key=lambda s: order[s])
-            if len(unique) == 3:
+            if len(unique) == 3 and enforce_two_cal_states:
                 unique = np.delete(unique, 1 if last_ge_pulses[i] else 0)
             rotations[qbn] = {unique[i]: i for i in range(len(unique))}
         log.info(f"Calibration Points Rotation: {rotations}")
@@ -189,6 +190,23 @@ class CalibrationPoints:
                      for state in states for _ in range(n_per_state)]
 
         return CalibrationPoints(qb_names, labels)
+
+    @staticmethod
+    def from_string(cal_points_string):
+        """
+        Recreates a CalibrationPoints object from a string representation.
+        Avoids having "eval" statements throughout the codebase.
+        Args:
+            cal_points_string: string representation of the CalibrationPoints
+
+        Returns: CalibrationPoint object
+        Examples:
+            >>> cp = CalibrationPoints(['qb1'], ['g', 'e'])
+            >>> cp_repr = repr(cp) # create string representation
+            >>> # do other things including saving cp_str somewhere
+            >>> cp = CalibrationPoints.from_string(cp_repr)
+        """
+        return eval(cal_points_string)
 
     def extend_sweep_points(self, sweep_points, qb_name):
         """

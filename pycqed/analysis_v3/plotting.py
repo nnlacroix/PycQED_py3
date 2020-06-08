@@ -323,7 +323,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
     # is not found; we do not strictly need them here
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False, **params)
     if isinstance(cp, str):
-        cp = eval(cp)
+        cp = CalibrationPoints.from_string(cp)
 
     # get the sweep points information
     sp_name = params.get('sp_name', mospm[mobjn][0])
@@ -451,7 +451,7 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
     # is not found; we do not strictly need them here
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False, **params)
     if isinstance(cp, str):
-        cp = eval(cp)
+        cp = CalibrationPoints.from_string(cp)
 
     # get the sweep points information
     sp_names = params.get('sp_names', mospm[mobjn])
@@ -580,7 +580,7 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     # is not found; we do not strictly need them here
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False, **params)
     if isinstance(cp, str):
-        cp = eval(cp)
+        cp = CalibrationPoints.from_string(cp)
 
     # get data_to_proc_dict
     if keys_in is None:
@@ -715,7 +715,7 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     # is not found; we do not strictly need them here
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False, **params)
     if isinstance(cp, str):
-        cp = eval(cp)
+        cp = CalibrationPoints.from_string(cp)
 
     # get data_to_proc_dict
     if keys_in is None:

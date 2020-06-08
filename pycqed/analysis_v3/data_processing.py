@@ -413,7 +413,7 @@ def rotate_iq(data_dict, keys_in, keys_out=None, **params):
 
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=True, **params)
     if isinstance(cp, str):
-        cp = eval(cp)
+        cp = CalibrationPoints.from_string(cp)
     last_ge_pulse = hlp_mod.get_param('last_ge_pulse', data_dict,
                                       default_value=[], **params)
     mobjn = hlp_mod.get_param('meas_obj_names', data_dict,
@@ -477,7 +477,7 @@ def rotate_1d_array(data_dict, keys_in, keys_out=None, **params):
     cp = hlp_mod.get_param('cal_points', data_dict, raise_error=True,
                                  **params)
     if isinstance(cp, str):
-        cp = eval(cp)
+        cp = CalibrationPoints.from_string(cp)
     last_ge_pulses = hlp_mod.get_param('last_ge_pulses', data_dict,
                                              default_value=[], **params)
     mobjn = hlp_mod.get_param('meas_obj_names', data_dict,

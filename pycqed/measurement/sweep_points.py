@@ -61,7 +61,7 @@ class SweepPoints(list):
     def add_sweep_dimension(self):
         self.append(dict())
 
-    def get_sweep_points_map(self, measured_objects):
+    def get_meas_obj_sweep_points_map(self, measured_objects):
         """
         Assumes the order of params in each sweep dimension corresponds to
         the order of keys in keys_list
