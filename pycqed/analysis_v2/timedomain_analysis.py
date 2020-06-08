@@ -5694,6 +5694,10 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 pred_presel = self.clf_[qbn].predict(presel_shots_per_qb[qbn])
                 presel_filter = \
                     pred_presel == self.states_info['g']['int']
+                if np.sum(presel_filter) == 0:
+                    log.warning(f"{qbn}: No data left after preselection! "
+                                f"Skipping preselection data & figures.")
+                    continue
                 qb_shots_masked = qb_shots[presel_filter]
                 prep_states = prep_states[presel_filter]
                 pred_states = self.clf_[qbn].predict(qb_shots_masked)
@@ -5844,7 +5848,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                           scale=self.options_dict.get("hist_scale", "linear"),
                           cmap=tab_x)
             data_keys = [k for k in list(pdd.keys()) if
-                            k.startswith("data")]
+                            k.startswith("data") and qbn in pdd[k]]
 
             for dk in data_keys:
                 data = pdd[dk][qbn]
