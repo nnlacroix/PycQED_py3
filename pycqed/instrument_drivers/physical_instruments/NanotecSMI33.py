@@ -10,13 +10,6 @@ Requires
     PySerial
 """
 
-# instance = NanotecSMI33()
-#
-# instance.acceleration_ramp(3)
-# instance.acceleration_ramp()
-
-# set_cmd=(lambda x, arg='b': self.write_parameter(arg, x)),
-
 log = logging.getLogger(__name__)
 
 class NanotecSMI33(VisaInstrument):
@@ -36,7 +29,8 @@ class NanotecSMI33(VisaInstrument):
                 between 1 and 254
             kwargs: Additional keyword arguments
         """
-        super().__init__(name, address, terminator='\r',**kwargs)
+        super().__init__(name, address, terminator='\r', visalib='@py',
+                         **kwargs)
 
         if id not in [str(i) for i in range(1, 255)] + ['*']:
             raise ValueError('id must be * or a number from 1 to 254')
@@ -52,11 +46,27 @@ class NanotecSMI33(VisaInstrument):
             get_parser=(lambda x, cmd='b': int(self.parse_cmd_response(
                 x,
                 self.build_get_string(cmd)))),
+            max_val_age=0,
             vals=Ints(min_value=1,
                       max_value=65535),
             docstring=('Acceleration rate'
                        'Min value: 1'
                        'Max value: 65535'))
+
+        self.add_parameter(
+            'acceleration_mode',
+            label='Acceleration Mode',
+            unit='',
+            get_cmd=(lambda cmd=':ramp_mode': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':ramp_mode': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':ramp_mode': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            max_val_age=0,
+            val_mapping={'Trapezoidal': 0,
+                         'Sinusoidal': 1,
+                         'Jerk-free': 2},
+            docstring='Set the acceleration mode')
 
         self.add_parameter(
             'acceleration_jerk',
@@ -82,6 +92,7 @@ class NanotecSMI33(VisaInstrument):
             get_parser=(lambda x, cmd='B': int(self.parse_cmd_response(
                 x,
                 self.build_get_string(cmd)))),
+            max_val_age=0,
             vals=Ints(min_value=0,
                       max_value=65535),
             docstring=('Braking rate'
@@ -104,7 +115,7 @@ class NanotecSMI33(VisaInstrument):
                        'Max value: 100000000'))
 
         self.add_parameter(
-            'coninuation_record',
+            'continuation_record',
             label='Continuation Record',
             unit='',
             get_cmd=(lambda cmd='N': self.build_get_string(cmd)),
@@ -146,6 +157,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                 x,
                 self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
                          'RecordSelectBit0': 2,
@@ -173,6 +185,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
                          'RecordSelectBit0': 2,
@@ -200,6 +213,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
                          'RecordSelectBit0': 2,
@@ -227,6 +241,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
                          'RecordSelectBit0': 2,
@@ -254,6 +269,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
                          'RecordSelectBit0': 2,
@@ -281,6 +297,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
                          'RecordSelectBit0': 2,
@@ -308,6 +325,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
                          'RecordSelectBit0': 2,
@@ -335,6 +353,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
                          'RecordSelectBit0': 2,
@@ -362,6 +381,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
                          'Running': 2},
@@ -378,6 +398,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
                          'Running': 2},
@@ -394,6 +415,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
                          'Running': 2},
@@ -410,6 +432,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
                          'Running': 2},
@@ -426,6 +449,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
                          'Running': 2},
@@ -442,6 +466,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
                          'Running': 2},
@@ -458,6 +483,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
                          'Running': 2},
@@ -474,6 +500,7 @@ class NanotecSMI33(VisaInstrument):
                         int(self.parse_cmd_response(
                             x,
                             self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
                          'Running': 2},
@@ -488,6 +515,7 @@ class NanotecSMI33(VisaInstrument):
             get_parser=(lambda x, cmd='d': int(self.parse_cmd_response(
                 x,
                 self.build_get_string(cmd)))),
+            max_val_age=0,
             val_mapping={'Left': 0,
                          'Right': 1},
             docstring='Direction of rotation (left or right)')
@@ -506,8 +534,8 @@ class NanotecSMI33(VisaInstrument):
             docstring='Change direction of rotation on repeat')
 
         self.add_parameter(
-            'error_correction_behavior',
-            label='Error Correction Behavior',
+            'error_correction',
+            label='Error Correction',
             unit='',
             get_cmd=(lambda cmd='U': self.build_get_string(cmd)),
             set_cmd=(lambda x, cmd='U': self.build_set_string(cmd, x)),
@@ -517,7 +545,7 @@ class NanotecSMI33(VisaInstrument):
             val_mapping={'Off': 0,
                          'CorrectionAfterTravel': 1,
                          'CorrectionDuringTravel': 2},
-            docstring=('Set the error correction mode'
+            docstring=('Error correction mode'
                        'Can be Off, CorrectionAfterTravel, or'
                        'CorrectionDuringTravel. CorrectionDuringTravel'
                        'is included only for compatibility reasons and'
@@ -532,7 +560,6 @@ class NanotecSMI33(VisaInstrument):
             get_parser=(lambda x, cmd='v': int(self.parse_cmd_response(
                 x,
                 self.build_get_string(cmd)))),
-            max_val_age=0,
             docstring='Firmware version')
 
         self.add_parameter(
@@ -612,6 +639,7 @@ class NanotecSMI33(VisaInstrument):
             get_parser=(lambda x, cmd='h': int(self.parse_cmd_response(
                 x,
                 self.build_get_string(cmd)))),
+            max_val_age=0,
             vals=Ints(min_value=0,
                       max_value=196671),
             docstring=('Set the IO polarity mask (32 bits)'
@@ -637,6 +665,7 @@ class NanotecSMI33(VisaInstrument):
             get_parser=(lambda x, cmd='l': int(self.parse_cmd_response(
                 x,
                 self.build_get_string(cmd)))),
+            max_val_age=0,
             vals=Ints(min_value=0,
                       max_value=4294967295),
             docstring=('Set the limit switch behavior'
@@ -734,6 +763,7 @@ class NanotecSMI33(VisaInstrument):
             get_parser=(lambda x, cmd='i': int(self.parse_cmd_response(
                 x,
                 self.build_get_string(cmd)))),
+            max_val_age=0,
             vals=Ints(min_value=0,
                       max_value=150),
             docstring=('Set the phase current (in %)'
@@ -750,6 +780,7 @@ class NanotecSMI33(VisaInstrument):
             get_parser=(lambda x, cmd='r': int(self.parse_cmd_response(
                 x,
                 self.build_get_string(cmd)))),
+            max_val_age=0,
             vals=Ints(min_value=0,
                       max_value=150),
             docstring=('Set the phase current at standstill (in %)'
@@ -817,20 +848,6 @@ class NanotecSMI33(VisaInstrument):
                        'A value of 0 corresponds to an abrupt stop.'))
 
         self.add_parameter(
-            'ramp_type',
-            label='Ramp Type',
-            unit='',
-            get_cmd=(lambda cmd=':ramp_mode': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':ramp_mode': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':ramp_mode': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
-            val_mapping={'Trapezoidal': 0,
-                         'Sinusoidal': 1,
-                         'Jerk-free': 2},
-            docstring='Set the ramp type')
-
-        self.add_parameter(
             'repetitions',
             label='Repetitions',
             unit='',
@@ -845,6 +862,18 @@ class NanotecSMI33(VisaInstrument):
                        'A value of zero means infinite repetitions'))
 
         self.add_parameter(
+            'reset_position_error',
+            label='Reset Position Error',
+            unit='Steps',
+            get_cmd=False,
+            set_cmd=(lambda x, cmd='D': self.build_set_string(cmd, x)),
+            vals=Ints(min_value=-100000000,
+                      max_value=+100000000),
+            docstring=('Reset position error.'
+                       'Used to clear speed errors and set position to'
+                       'the given value'))
+
+        self.add_parameter(
             'reverse_clearance',
             label='Reverse Clearance',
             unit='Steps',
@@ -855,6 +884,7 @@ class NanotecSMI33(VisaInstrument):
                 self.build_get_string(cmd)))),
             vals=Ints(min_value=0,
                       max_value=9999),
+            max_val_age=0,
             docstring=('Set the reverse clearance (in steps)'
                        'This is the number of steps that is added to'
                        'a movement command when changing directions to'
@@ -918,6 +948,8 @@ class NanotecSMI33(VisaInstrument):
                        'In absolute positioning mode, this sets the target'
                        'position'))
 
+        self.connect_message()
+
     def build_get_string(self, parameter: str) -> str:
         if parameter[0] == ':' and parameter[1] not in ['b', 'B']:
             return self._start_character + self.id + str(parameter)
@@ -932,6 +964,14 @@ class NanotecSMI33(VisaInstrument):
             return(self._start_character + self.id + str(parameter)
                    + str(value))
 
+    def get_idn(self):
+        info = self.ask_raw(self._start_character + self.id + 'v' + '\r')
+        info = info.split[' '][1].rstrip('\r').split('_')
+        return {'vendor': 'Nanotec',
+                'model': info[0],
+                'serial': '',
+                'firmware': info[2]}
+
     def load_record_from_eeprom(self, index: int) -> None:
         """
         Load a record from the EEPROM
@@ -945,13 +985,13 @@ class NanotecSMI33(VisaInstrument):
         # long commands
         if command[0] == ':':
             if response == self.id + ':?':
-                raise Exception(f'Unknown command {command}')
+                raise ValueError(f'Unknown command {command}')
             return response[len(self.id) + str(command):]
         # normal commands
         else:
             if response == (self._start_character + self.id
                             + str(command) + '?'):
-                raise Exception(f'Unknown command {command}')
+                raise ValueError(f'Unknown command {command}')
             return response[len(self._start_character + self.id
                             + str(command) + str(self.id)):]
 
