@@ -1,462 +1,976 @@
+import logging
 import numpy as np
-import serial
 
+from qcodes import VisaInstrument
+from qcodes.utils.validators import Enum, Ints, Numbers
 
-class NanotecSMI33():
-    def __init__(self, port, id, baudrate=115200, timeout=0.5):
-        self.baudrate = baudrate
-        if id in range(1,254) or id == '*':
-            self.id = id
-        else:
-            #TODO: warn about incorrect ID
-            pass
-        self.port = port
-        self.timeout = timeout
-        self._buffer_length = 128
-        self._line_terminator = '\r'
+"""
+Requires
+    pyVISA-py
+    PySerial
+"""
+
+# instance = NanotecSMI33()
+#
+# instance.acceleration_ramp(3)
+# instance.acceleration_ramp()
+
+# set_cmd=(lambda x, arg='b': self.write_parameter(arg, x)),
+
+log = logging.getLogger(__name__)
+
+class NanotecSMI33(VisaInstrument):
+    """
+    This is a driver for the Nanotec SMI33 Motor controller
+
+    Status: not tested
+
+    Only a subset of all features have been included
+    """
+    def __init__(self, name: str, address, id: str, **kwargs) -> None:
+        """
+        Args:
+            name: The name of this instance
+            address: The address of the controller
+            id: The id of the motor which can be either '*' or a number
+                between 1 and 254
+            kwargs: Additional keyword arguments
+        """
+        super().__init__(name, address, terminator='\r',**kwargs)
+
+        if id not in [str(i) for i in range(1, 255)] + ['*']:
+            raise ValueError('id must be * or a number from 1 to 254')
+        self.id = id
         self._start_character = '#'
 
+        self.add_parameter(
+            'acceleration',
+            label='Acceleration',
+            unit='',
+            get_cmd=(lambda cmd='b': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='b': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='b': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=1,
+                      max_value=65535),
+            docstring=('Acceleration rate'
+                       'Min value: 1'
+                       'Max value: 65535'))
 
-        #TODO: set error correction mode (U) = 0
+        self.add_parameter(
+            'acceleration_jerk',
+            label='Acceleration Jerk',
+            unit='',
+            get_cmd=(lambda cmd=':b': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':b': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':b': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=1,
+                      max_value=100000000),
+            docstring=('Acceleration jerk'
+                       'Min value: 1'
+                       'Max value: 100000000'))
 
-    def _check_bit(self, byte, bit_number):
-        return byte & 1 << bit_number != 0
+        self.add_parameter(
+            'braking',
+            label='Breaking',
+            unit='',
+            get_cmd=(lambda cmd='B': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='B': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='B': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=65535),
+            docstring=('Braking rate'
+                       'Min value: 1'
+                       'Max value: 65535'))
 
-    def query(self, command):
-        #TODO: Check command and raise exception if incorrect
-        with serial.Serial(self.port,
-                           self.baudrate,
-                           timeout=self.timeout) as ser:
-            message = bytes(  self._start_character
-                            + self.id
-                            + command
-                            + self.line_terminator)
-            ser.write(message)
-            response = ser.read_until(self._line_terminator,
-                                      self._buffer_length)
-            if response == message + b'?':
-                #TODO: unknown command
-                pass
-            # Remove ID from response
-            return response[1:]
+        self.add_parameter(
+            'braking_jerk',
+            label='Braking Jerk',
+            unit='',
+            get_cmd=(lambda cmd=':B': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':B': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':B': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=1,
+                      max_value=100000000),
+            docstring=('Breaking jerk'
+                       'Min value: 1'
+                       'Max value: 100000000'))
 
-    def read_parameter(self, parameter):
-        #TODO: Check parameter and raise exception if incorrect
-        command = 'Z' + parameter
-        response = self.query(command)
-        # Remove command from response
-        value = response[len(command):]
-        return value
+        self.add_parameter(
+            'coninuation_record',
+            label='Continuation Record',
+            unit='',
+            get_cmd=(lambda cmd='N': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='N': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='N': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=32),
+            docstring=('Record in EEPROM to continue with after finishing'
+                       'the current record.'
+                       'Min value is 0'
+                       'Max value is 32'
+                       'If the value is set to 0, this setting has no'
+                       'effect.'))
 
-    def read_acceleration_ramp(self):
-        return np.uint16(self.read_parameter('b'))
+        self.add_parameter(
+            'command_response',
+            label='Command Response',
+            unit='',
+            get_cmd=False,
+            set_cmd=(lambda x, cmd='|': self.build_set_string(cmd, x)),
+            val_mapping={'Disabled': 0,
+                         'Enabled': 1},
+            docstring=('Enable or disable command response'
+                       'If disabled, the controller will obey all commands'
+                       'that are sent without responding.'
+                       'Note that this disables response to any commands'
+                       'including those reading out other settings'))
 
-    def read_auto_correction_record(self, index=0):
-        """Read the record in controller to use for ramp rates and speeds
-        for the correction run.
-        Index may be between 0 and 32. Indices 1 through 32 refer to
-        record addresses 1 through 32. An index of 0 disables the error
-        correction run and causes an error to be raised if the error
-        correction mode is enabled.
-        """
-        return np.uint8(self.read_parameter('F'))
+        self.add_parameter(
+            'digital_input_1_function',
+            label='Digital Input 1 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_in_a': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_in_a':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_in_a':
+                        int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'StartRecord/ErrorReset': 1,
+                         'RecordSelectBit0': 2,
+                         'RecordSelectBit1': 3,
+                         'RecordSelectBit2': 4,
+                         'RecordSelectBit3': 5,
+                         'RecordSelectBit4': 6,
+                         'ExternalLimitSwitch': 7,
+                         'Trigger': 8,
+                         'Direction': 9,
+                         'Enable': 10,
+                         'Clock': 11,
+                         'ClockDirectionMode1': 12,
+                         'ClockDirectionMode2': 13},
+            docstring='Function of digital input 1')
 
-    def read_bldc_current_time_constant(self, time_constant=0):
-        """Read current time constant for BLDC motors
-        time_constant is defined in ms
-        """
-        return int(self.read_parameter(':itime'))
+        self.add_parameter(
+            'digital_input_2_function',
+            label='Digital Input 2 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_in_b': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_in_b':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_in_b':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'StartRecord/ErrorReset': 1,
+                         'RecordSelectBit0': 2,
+                         'RecordSelectBit1': 3,
+                         'RecordSelectBit2': 4,
+                         'RecordSelectBit3': 5,
+                         'RecordSelectBit4': 6,
+                         'ExternalLimitSwitch': 7,
+                         'Trigger': 8,
+                         'Direction': 9,
+                         'Enable': 10,
+                         'Clock': 11,
+                         'ClockDirectionMode1': 12,
+                         'ClockDirectionMode2': 13},
+            docstring='Function of digital input 2')
 
-    def read_bldc_peak_current(self, current=0):
-        """Read peak current for BLDC motors
-        current is specified in percent (0-150)
-        """
-        return int(self.read_parameter(':ipeak'))
+        self.add_parameter(
+            'digital_input_3_function',
+            label='Digital Input 3 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_in_c': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_in_c':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_in_c':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'StartRecord/ErrorReset': 1,
+                         'RecordSelectBit0': 2,
+                         'RecordSelectBit1': 3,
+                         'RecordSelectBit2': 4,
+                         'RecordSelectBit3': 5,
+                         'RecordSelectBit4': 6,
+                         'ExternalLimitSwitch': 7,
+                         'Trigger': 8,
+                         'Direction': 9,
+                         'Enable': 10,
+                         'Clock': 11,
+                         'ClockDirectionMode1': 12,
+                         'ClockDirectionMode2': 13},
+            docstring='Function of digital input 3')
 
-    def read_brake_ramp(self):
-        return np.uint16(self.read_parameter('B'))
+        self.add_parameter(
+            'digital_input_4_function',
+            label='Digital Input 4 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_in_d': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_in_d':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_in_d':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'StartRecord/ErrorReset': 1,
+                         'RecordSelectBit0': 2,
+                         'RecordSelectBit1': 3,
+                         'RecordSelectBit2': 4,
+                         'RecordSelectBit3': 5,
+                         'RecordSelectBit4': 6,
+                         'ExternalLimitSwitch': 7,
+                         'Trigger': 8,
+                         'Direction': 9,
+                         'Enable': 10,
+                         'Clock': 11,
+                         'ClockDirectionMode1': 12,
+                         'ClockDirectionMode2': 13},
+            docstring='Function of digital input 4')
 
-    def read_current_record(self):
-        return self.read_parameter('|')
+        self.add_parameter(
+            'digital_input_5_function',
+            label='Digital Input 5 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_in_e': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_in_e':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_in_e':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'StartRecord/ErrorReset': 1,
+                         'RecordSelectBit0': 2,
+                         'RecordSelectBit1': 3,
+                         'RecordSelectBit2': 4,
+                         'RecordSelectBit3': 5,
+                         'RecordSelectBit4': 6,
+                         'ExternalLimitSwitch': 7,
+                         'Trigger': 8,
+                         'Direction': 9,
+                         'Enable': 10,
+                         'Clock': 11,
+                         'ClockDirectionMode1': 12,
+                         'ClockDirectionMode2': 13},
+            docstring='Function of digital input 5')
 
-    def read_encoder_direction(self):
-        """Read the direction of the rotary encoder.
-        The direction can either be normal or reversed.
-        """
-        states = {
-            0: 'normal',
-            1: 'reversed',
-        }
-        return states[int(self.read_parameter('q'))]
+        self.add_parameter(
+            'digital_input_6_function',
+            label='Digital Input 6 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_in_f': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_in_f':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_in_f':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'StartRecord/ErrorReset': 1,
+                         'RecordSelectBit0': 2,
+                         'RecordSelectBit1': 3,
+                         'RecordSelectBit2': 4,
+                         'RecordSelectBit3': 5,
+                         'RecordSelectBit4': 6,
+                         'ExternalLimitSwitch': 7,
+                         'Trigger': 8,
+                         'Direction': 9,
+                         'Enable': 10,
+                         'Clock': 11,
+                         'ClockDirectionMode1': 12,
+                         'ClockDirectionMode2': 13},
+            docstring='Function of digital input 6')
 
-    # def read_errors(self, index):
-    #     for index in range(32):
-    #         parameter = str(index) + 'E'
-    #         response = self.read_parameter(parameter)
-    #         # {0x00: None,
-    #         #  0x01: 'LOWVOLTAGE',
-    #         #  0x02: 'TEMP',
-    #         #  0x04: 'TMC',
-    #         #  0x08: 'EE',
-    #         #  0x10: 'QEI',
-    #         #  0x20: 'INTERNAL',
-    #         #  }
+        self.add_parameter(
+            'digital_input_7_function',
+            label='Digital Input 7 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_in_g': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_in_g':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_in_g':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'StartRecord/ErrorReset': 1,
+                         'RecordSelectBit0': 2,
+                         'RecordSelectBit1': 3,
+                         'RecordSelectBit2': 4,
+                         'RecordSelectBit3': 5,
+                         'RecordSelectBit4': 6,
+                         'ExternalLimitSwitch': 7,
+                         'Trigger': 8,
+                         'Direction': 9,
+                         'Enable': 10,
+                         'Clock': 11,
+                         'ClockDirectionMode1': 12,
+                         'ClockDirectionMode2': 13},
+            docstring='Function of digital input 7')
 
-    def read_error_correction_mode(self):
-        """Read the error correcting mode"""
-        modes = {
-            0: 'off',
-            1: 'correction_after_travel',
-            2: 'correction_during_travel',
-        }
-        return modes[int(self.read_parameter('U'))]
+        self.add_parameter(
+            'digital_input_8_function',
+            label='Digital Input 8 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_in_h': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_in_h':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_in_h':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'StartRecord/ErrorReset': 1,
+                         'RecordSelectBit0': 2,
+                         'RecordSelectBit1': 3,
+                         'RecordSelectBit2': 4,
+                         'RecordSelectBit3': 5,
+                         'RecordSelectBit4': 6,
+                         'ExternalLimitSwitch': 7,
+                         'Trigger': 8,
+                         'Direction': 9,
+                         'Enable': 10,
+                         'Clock': 11,
+                         'ClockDirectionMode1': 12,
+                         'ClockDirectionMode2': 13},
+            docstring='Function of digital input 8')
 
-    def read_firmware_info(self):
-        #TODO: parse fields
-        return self.read_parameter('v')
+        self.add_parameter(
+            'digital_output_1_function',
+            label='Digital Output 1 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_out_a': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_out_a':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_out_a':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'Ready': 1,
+                         'Running': 2},
+            docstring='Function of digital output 1')
 
-    def read_limit_switch_behavior(self):
-        #TODO: parse fields
-        return np.uint32(self.read_parameter('l'))
+        self.add_parameter(
+            'digital_output_2_function',
+            label='Digital Output 2 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_out_b': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_out_b':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_out_a':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'Ready': 1,
+                         'Running': 2},
+            docstring='Function of digital output 2')
 
-    def read_maximum_frequency(self):
-        return np.uint32(self.read_parameter('o'))
+        self.add_parameter(
+            'digital_output_3_function',
+            label='Digital Output 3 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_out_c': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_out_c':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_out_c':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'Ready': 1,
+                         'Running': 2},
+            docstring='Function of digital output 3')
 
-    def read_motor_address(self):
-        return np.uint8(self.read_paramter('m'))
+        self.add_parameter(
+            'digital_output_4_function',
+            label='Digital Output 4 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_out_d': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_out_d':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_out_d':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'Ready': 1,
+                         'Running': 2},
+            docstring='Function of digital output 4')
 
-    def read_motor_id(self):
-        """Read motor ID
-        A motor ID is a uint32 between 0 and 2147483647 that uniquely
-        identifies a motor type and connection type. This motor ID is
-        used by the NanoPro software to automatically set some
-        parameters like phase currents.
-        """
-        return np.uint32(self.read_parameter(':mt'))
+        self.add_parameter(
+            'digital_output_5_function',
+            label='Digital Output 5 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_out_e': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_out_e':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_out_e':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'Ready': 1,
+                         'Running': 2},
+            docstring='Function of digital output 5')
 
-    def read_motor_type(self, motor_type='stepper'):
-        """Sets type of motor"""
-        motors = {
-            0: 'stepper',
-            1: 'BLDCwHall',
-            2: 'BLDCwHallwEnc',
-        }
-        return motors(int(self.read_parameter(':CL_motor_type')))
+        self.add_parameter(
+            'digital_output_6_function',
+            label='Digital Output 6 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_out_f': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_out_f':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_out_f':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'Ready': 1,
+                         'Running': 2},
+            docstring='Function of digital output 6')
 
-    def read_phase_current(self):
-        """Reads the phase current
-        current is specified in percent (0-150)"""
-        return int(self.read_parameter('i'))
+        self.add_parameter(
+            'digital_output_7_function',
+            label='Digital Output 7 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_out_g': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_out_g':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_out_g':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'Ready': 1,
+                         'Running': 2},
+            docstring='Function of digital output 7')
 
-    def read_phase_current_standstill(self):
-        """Reads the phase current at standstill
-        current is specified in percent (0-150)"""
-        return int(self.read_parameter('r'))
+        self.add_parameter(
+            'digital_output_8_function',
+            label='Digital Output 8 Function',
+            unit='',
+            get_cmd=(lambda cmd=':port_out_h': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':port_out_h':
+                     self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':port_out_h':
+                        int(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            val_mapping={'UserDefined': 0,
+                         'Ready': 1,
+                         'Running': 2},
+            docstring='Function of digital output 8')
 
-    def read_position(self):
-        return int(self.read_parameter('C'))
+        self.add_parameter(
+            'direction',
+            label='Direction',
+            unit='',
+            get_cmd=(lambda cmd='d': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='d': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='d': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            val_mapping={'Left': 0,
+                         'Right': 1},
+            docstring='Direction of rotation (left or right)')
 
-    def read_position_mode(self):
-        return self.read_parameter('p')
+        self.add_parameter(
+            'direction_change_on_repeat',
+            label='Direction Change on Repeat',
+            unit='',
+            get_cmd=(lambda cmd='t': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='t': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='t': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            val_mapping={False: 0,
+                         True: 1},
+            docstring='Change direction of rotation on repeat')
 
-    def read_quickstop_ramp(self):
-        return self.read_parameter('H')
+        self.add_parameter(
+            'error_correction_behavior',
+            label='Error Correction Behavior',
+            unit='',
+            get_cmd=(lambda cmd='U': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='U': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='U': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            val_mapping={'Off': 0,
+                         'CorrectionAfterTravel': 1,
+                         'CorrectionDuringTravel': 2},
+            docstring=('Set the error correction mode'
+                       'Can be Off, CorrectionAfterTravel, or'
+                       'CorrectionDuringTravel. CorrectionDuringTravel'
+                       'is included only for compatibility reasons and'
+                       'is implemented by CorrectionAfterTravel.'))
 
-    def read_record(self, record=None):
-        """Reads record from EEPROM
-        if record is None, reads the currently-loaded settings
-        otherwise, if record in range(1,32), reads record from EEPROM.
-        """
-        if record is None:
-            return self.read_parameter('|')
+        self.add_parameter(
+            'firmware_version',
+            label='Firmware Version',
+            unit='',
+            get_cmd=(lambda cmd='v': self.build_get_string(cmd)),
+            set_cmd=False,
+            get_parser=(lambda x, cmd='v': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            max_val_age=0,
+            docstring='Firmware version')
+
+        self.add_parameter(
+            'input_debounce_time',
+            label='Input Debounce Time',
+            unit='ms',
+            get_cmd=(lambda cmd='K': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='K': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='K': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=250),
+            docstring=('Debounce time for inputs in ms'
+                       'Min value is 0'
+                       'Max value is 250'))
+
+        self.add_parameter(
+            'io_input_mask',
+            label='IO Input Mask',
+            unit='',
+            get_cmd=(lambda cmd='L': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='L': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='L': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=196671),
+            docstring=('Set the IO input mask (32 bits)'
+                       'If a bit of the mask is 1, the input or output is used'
+                       'by the controller. If the bit is 0, the input or output'
+                       'is available to the user.'
+                       'Bit 0: Input 1'
+                       'Bit 1: Input 2'
+                       'Bit 2: Input 3'
+                       'Bit 3: Input 4'
+                       'Bit 4: Input 5'
+                       'Bit 5: Input 6'
+                       'Bit 16: Output 1'
+                       'Bit 17: Output 2'
+                       'Invalid masks are discarded even if echoed by'
+                       'the controller.'))
+
+        self.add_parameter(
+            'io_output_mask',
+            label='IO Output Mask',
+            unit='',
+            get_cmd=(lambda cmd='Y': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='Y': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='Y': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=196671),
+            docstring=('Set the IO output mask (32 bits)'
+                       'If a bit of the mask is 1, the input or output is used'
+                       'by the controller (as long as it free in the IO input'
+                       'mask. If the bit is 0, the input or output'
+                       'is available to the user.'
+                       'Bit 0: Input 1'
+                       'Bit 1: Input 2'
+                       'Bit 2: Input 3'
+                       'Bit 3: Input 4'
+                       'Bit 4: Input 5'
+                       'Bit 5: Input 6'
+                       'Bit 16: Output 1'
+                       'Bit 17: Output 2'
+                       'Invalid masks are discarded even if echoed by'
+                       'the controller.'))
+
+        self.add_parameter(
+            'io_polarity',
+            label='IO Polarity',
+            unit='',
+            get_cmd=(lambda cmd='h': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='h': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='h': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=196671),
+            docstring=('Set the IO polarity mask (32 bits)'
+                       'If a bit of the mask is 1, the polarity is retained.'
+                       'If the bit is 0, the polarity is reversed.'
+                       'Bit 0: Input 1'
+                       'Bit 1: Input 2'
+                       'Bit 2: Input 3'
+                       'Bit 3: Input 4'
+                       'Bit 4: Input 5'
+                       'Bit 5: Input 6'
+                       'Bit 16: Output 1'
+                       'Bit 17: Output 2'
+                       'Invalid masks are discarded even if echoed by'
+                       'the controller.'))
+
+        self.add_parameter(
+            'limit_switch_behavior',
+            label='Limit Switch Behavior',
+            unit='',
+            get_cmd=(lambda cmd='l': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='l': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='l': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=4294967295),
+            docstring=('Set the limit switch behavior'
+                       '16-bit mask'))
+
+        self.add_parameter(
+            'maximum_frequency',
+            label='Maximum Frequency',
+            unit='Steps/s',
+            get_cmd=(lambda cmd='o': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='o': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='o': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=1,
+                      max_value=1000000),
+            docstring=('Maximum frequency in steps per second'
+                       'Min value: 1'
+                       'Max value: 1000000'
+                       'Maximum value depends on stepping mode'))
+
+        self.add_parameter(
+            'maximum_frequency2',
+            label='Maximum Frequency 2',
+            unit='Steps/s',
+            get_cmd=(lambda cmd='n': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='n': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='n': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=1,
+                      max_value=1000000),
+            docstring=('Maximum frequency 2 in steps per second'
+                       'Min value: 1'
+                       'Max value: 1000000'
+                       'Maximum value depends on stepping mode.'
+                       'This speed is only used in flag positioning mode'))
+
+        self.add_parameter(
+            'minimum_frequency',
+            label='Minimum Frequency',
+            unit='Steps/s',
+            get_cmd=(lambda cmd='u': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='u': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='u': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=1,
+                      max_value=160000),
+            docstring=('Minimum frequency in steps per second'
+                       'Min value: 1'
+                       'Max value: 160000'
+                       'Motor starts moving at this speed at the beginning'
+                       'of a record and then accelerates at the set rate'
+                       'to the maximum frequency'))
+
+        self.add_parameter(
+            'motor_referenced',
+            label='Motor Referenced',
+            unit='',
+            get_cmd=(lambda cmd=':is_referenced': self.build_get_string(cmd)),
+            set_cmd=False,
+            get_parser=(lambda x, cmd=':is_referenced':
+                        bool(self.parse_cmd_response(
+                            x,
+                            self.build_get_string(cmd)))),
+            max_val_age=0,
+            docstring=('Set the limit switch behavior'
+                       '16-bit mask'))
+
+        self.add_parameter(
+            'pause',
+            label='Pause',
+            unit='ms',
+            get_cmd=(lambda cmd='P': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='P': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='P': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=65535),
+            docstring=('Pause time between current record and continuation'
+                       'record in ms.'
+                       'Min value is 0'
+                       'Max value is 65535'
+                       'Has no effect if the current record specifies no'
+                       'continuation record'))
+
+        self.add_parameter(
+            'phase_current',
+            label='Phase Current',
+            unit='%',
+            get_cmd=(lambda cmd='i': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='i': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='i': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=150),
+            docstring=('Set the phase current (in %)'
+                       'Min value: 0'
+                       'Max value: 150'
+                       'Should not be set above 100'))
+
+        self.add_parameter(
+            'phase_current_standstill',
+            label='Phase Current at Standstill',
+            unit='%',
+            get_cmd=(lambda cmd='r': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='r': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='r': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=150),
+            docstring=('Set the phase current at standstill (in %)'
+                       'Min value: 0'
+                       'Max value: 150'
+                       'Should not be set above 100'))
+
+        self.add_parameter(
+            'position',
+            label='Position',
+            unit='Steps',
+            get_cmd=(lambda cmd='C': self.build_get_string(cmd)),
+            set_cmd=False,
+            get_parser=(lambda x, cmd='C': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            max_val_age=0,
+            docstring=('Current motor position relative to last reference'
+                       'run'))
+
+        self.add_parameter(
+            'positioning_mode',
+            label='Positioning Mode',
+            unit='',
+            get_cmd=(lambda cmd='p': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='p': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='p': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            val_mapping={'Relative': 1,
+                         'Absolute': 2,
+                         'InternalReferenceRun': 3,
+                         'ExternalReferenceRun': 4,
+                         'Speed': 5,
+                         'Flag': 6,
+                         'ClockManualLeft': 7,
+                         'ClockManualRight': 8,
+                         'ClockIntRefRun': 9,
+                         'ClockExtRefRun': 10,
+                         'AnalogSpeed': 11,
+                         'Joystick': 12,
+                         'AnalogPosition': 13,
+                         'HWReference': 14,
+                         'Torque': 15,
+                         'CLQuickTest': 16,
+                         'ClTest': 17,
+                         'CLAutotune': 18,
+                         'CLQuickTest2': 19},
+            docstring='Positioning Mode')
+
+        self.add_parameter(
+            'quickstop',
+            label='Quick Stop',
+            unit='',
+            get_cmd=(lambda cmd='H': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='H': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='H': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=8000),
+            docstring=('Quickstop rate'
+                       'Min value: 0'
+                       'Max value: 8000'
+                       'A value of 0 corresponds to an abrupt stop.'))
+
+        self.add_parameter(
+            'ramp_type',
+            label='Ramp Type',
+            unit='',
+            get_cmd=(lambda cmd=':ramp_mode': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd=':ramp_mode': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd=':ramp_mode': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            val_mapping={'Trapezoidal': 0,
+                         'Sinusoidal': 1,
+                         'Jerk-free': 2},
+            docstring='Set the ramp type')
+
+        self.add_parameter(
+            'repetitions',
+            label='Repetitions',
+            unit='',
+            get_cmd=(lambda cmd='W': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='W': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='W': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=254),
+            docstring=('Repetitions of the current record'
+                       'A value of zero means infinite repetitions'))
+
+        self.add_parameter(
+            'reverse_clearance',
+            label='Reverse Clearance',
+            unit='Steps',
+            get_cmd=(lambda cmd='z': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='z': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='z': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=0,
+                      max_value=9999),
+            docstring=('Set the reverse clearance (in steps)'
+                       'This is the number of steps that is added to'
+                       'a movement command when changing directions to'
+                       'compensate for play in the system'
+                       'Min value: 0'
+                       'Max value: 9999'))
+
+        self.add_parameter(
+            'status',
+            label='Status',
+            unit='',
+            get_cmd=(lambda cmd='$': self.build_get_string(cmd)),
+            set_cmd=False,
+            get_parser=(lambda x, cmd='$': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            max_val_age=0,
+            docstring=('Controller status, 8-bit mask'
+                       'Bit 0 == 1 means the controller is ready'
+                       'Bit 1 == 1 means that zero position has been reached'
+                       'Bit 2 == 1 means that there has been a position error'
+                       'Bit 3 == 1 means that input 1 was set while the'
+                       'controller was ready'
+                       'Bit 4 is always set to 1'
+                       'Bit 5 is always set to 0'
+                       'Bit 6 is always set to 1'
+                       'Bit 7 is always set to 0'))
+
+        self.add_parameter(
+            'step_mode',
+            label='Step Mode',
+            unit='',
+            get_cmd=(lambda cmd='g': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='g': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='g': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Enum(1, 2, 4, 5, 8, 10, 16, 32, 64, 254, 255),
+            docstring=('Step mode'
+                       'Must be one of '
+                       '[1, 2, 4, 5, 8, 10, 16, 32, 64, 254, 255]'
+                       'Values from 1 to 64 set the number of microsteps'
+                       'per step. Value 254 selects the feed rate mode'
+                       'and value 255 selects the adaptive step mode.'))
+
+        self.add_parameter(
+            'travel_distance',
+            label='Travel Distance',
+            unit='Steps',
+            get_cmd=(lambda cmd='s': self.build_get_string(cmd)),
+            set_cmd=(lambda x, cmd='s': self.build_set_string(cmd, x)),
+            get_parser=(lambda x, cmd='s': int(self.parse_cmd_response(
+                x,
+                self.build_get_string(cmd)))),
+            vals=Ints(min_value=-100000000,
+                      max_value=+100000000),
+            docstring=('Travel distance in steps'
+                       'Min value: -100000000'
+                       'Max value: +100000000'
+                       'Can only be positive when in relative positioning mode'
+                       'In absolute positioning mode, this sets the target'
+                       'position'))
+
+    def build_get_string(self, parameter: str) -> str:
+        if parameter[0] == ':' and parameter[1] not in ['b', 'B']:
+            return self._start_character + self.id + str(parameter)
         else:
-            return self.read_parameter(str(record) + '|')
+            return self._start_character + self.id + 'Z' + str(parameter)
 
+    def build_set_string(self, parameter: str, value: str = '') -> str:
+        if parameter[0] == ':' and parameter[1] not in ['b', 'B']:
+            return (self._start_character + self.id + str(parameter)
+                    + '=' + str(value))
+        else:
+            return(self._start_character + self.id + str(parameter)
+                   + str(value))
 
-    def read_repetition_number(self):
-        return self.read_parameter('W')
-
-    def read_rotation_direction(self):
-        #TODO: return left or right rather than number
-        directions = {
-            0: 'left',
-            1: 'right',
-        }
-        return directions[self.read_parameter('d')]
-
-
-    def read_status(self):
-        response = self.read_parameter('$')
-        status = response[0]
-        # Check controller status
-        if _check_bit(status, 0):
-            #TODO error has occurred
-            pass
-        # Check if zero position reached
-        if _check_bit(status, 1):
-            pass
-        # Check if position error occurred
-        if _check_bit(status, 2):
-            pass
-
-    def read_step_mode(self):
-        return int(self.read_parameter('g'))
-
-    def read_swing_out_time(self):
-        """Read the swing out time
-        The swing out time is the settling time between when the
-        controller finishes a run and when it reads the encoder
-        position.
-        The swing_out_time is defined in multiples of 10 ms.
-        This time only matters for error correction runs.
+    def load_record_from_eeprom(self, index: int) -> None:
         """
-        return np.uint8(self.read_parameter('O'))
-
-    def read_travel_distance(self):
-        return int(self.read_parameter('s'))
-
-    def reset_position_error(self, value=None):
-        self.write_parameter('D', value)
-
-    def set_acceleration_ramp(self, value):
-        """Set acceleration ramp
-        Acceleration in Hz/ms = (3000.0/sqrt(float)<parameter>))-11.7)
+        Load a record from the EEPROM
+        Args
+            index: integer between 1 and 32
+        :return:
         """
-        self.write_parameter('b', np.uint16(value))
+        self.write(self.build_set_string('y', str(index)))
 
-    def set_auto_correction_record(self, index=0):
-        """Set record in controller to use for ramp rates and speeds
-        for the correction run.
-        Index may be between 0 and 32. Indices 1 through 32 refer to
-        record addresses 1 through 32. An index of 0 disables the error
-        correction run and causes an error to be raised if the error
-        correction mode is enabled.
+    def parse_cmd_response(self, response: str, command: str) -> str:
+        # long commands
+        if command[0] == ':':
+            if response == self.id + ':?':
+                raise Exception(f'Unknown command {command}')
+            return response[len(self.id) + str(command):]
+        # normal commands
+        else:
+            if response == (self._start_character + self.id
+                            + str(command) + '?'):
+                raise Exception(f'Unknown command {command}')
+            return response[len(self._start_character + self.id
+                            + str(command) + str(self.id)):]
+
+    def save_record_to_eeprom(self, index: int) -> None:
         """
-        self.write_parameter('F', str(np.uint8(index)))
-
-    def set_bldc_current_time_constant(self, time_constant=0):
-        """Set current time constant for BLDC motors
-        time_constant is defined in ms
+        Save the current record to the EEPROM
+        Args
+            index: integer between 1 and 32
+        :return:
         """
-        self.write_parameter(':itime', str(np.uint16(time_constant)))
-
-    def set_bldc_peak_current(self, current=0):
-        """Set peak current for BLDC motors
-        current is specified in percent (0-150)
-        """
-        self.write_parameter(':ipeak',str(np.uint8(current)))
-
-    def set_brake_ramp(self, value=0):
-        """Set brake ramp
-        To convert to Hz/ms, see formula in set_acceleration_ramp
-        A value of 0 (default) means that the braking rate equals the
-        acceleration rate
-        """
-        self.write_parameter('B', np.uint16(value))
-
-    def set_command_response(self, response='enabled'):
-        """Enable/disable controller responses to commands"""
-        responses = {
-            'disabled': 0,
-            'enabled': 1,
-        }
-        self.write('|', responses[response])
-
-    def set_encoder_direction(self,state='normal'):
-        """Set the direction of the rotary encoder
-        The direction can either be normal or reversed.
-        """
-        states = {
-            'normal': 0,
-            'reversed': 1,
-        }
-        self.write_parameter('q',str(states[state]))
-
-    def set_error_correction_mode(self, mode='off'):
-        """Set the error correction mode
-        For motors without an encoder, this must be disabled to avoid
-        erroneous correction attempts. correction_after_travel and
-        correction_during_travel both correct errors after the run
-        is completed.
-        """
-        modes = {
-            'off': 0,
-            'correction_after_travel': 1,
-            'correction_during_travel': 2
-        }
-        if mode not in values.keys():
-            #TODO print error message
-            pass
-        self.write_parameter(modes[mode])
-
-    def set_limit_switch_behavior(self, behavior_mask=17442):
-        """Set the limit switch behavior
-        The behavior is specified as a 16-bit uint32 integer mask.
-        """
-        #TODO: verify that constraints on mask is fulfilled
-        self.write_parameter('l',np.uint32(behavior_mask))
-
-    # def set_keyword_parameter(self, keyword, value):
-    #     command = keyword + '=' + str(value)
-    #     response = self.query(command)
-    #     if response != command:
-    #         #TODO: error
-    #         pass
-
-    def set_maximum_frequency(self, frequency):
-        """Set maximum frequency (steps per second)"""
-        self.write_parameter('o', np.uint32(frequency))
-
-    def set_motor_address(self, address):
-        """Set motor address
-        address must be a uint8 between 1 and 254
-        """
-        self.write_parameter('m', np.uint8(address))
-
-    def set_motor_id(self, id=0):
-        """Set motor ID
-        A motor ID is a uint32 between 0 and 2147483647 that uniquely
-        identifies a motor type and connection type. This motor ID is
-        used by the NanoPro software to automatically set some
-        parameters like phase currents.
-        """
-        self.write_parameter(':mt', np.uint32(id))
-
-    def set_motor_type(self, motor_type='stepper'):
-        """Sets type of motor"""
-        motors = {
-            'stepper': 0,
-            'BLDCwHall': 1,
-            'BLDCwHallwEnc': 2,
-        }
-        self.write_parameter(':CL_motor_type', motors[motor_type])
-
-    def set_phase_current(self, current):
-        """Sets the phase current
-        current is specified in percent (0-150)
-        """
-        self.write_parameter('i', str(np.uint8(current)))
-
-    def set_phase_current_standstill(self, current):
-        """Sets the phase current at standstill
-        current is specified in percent (0-150)
-        """
-        self.write_parameter('r', str(np.uint8(current)))
-
-    def set_position_mode(self, mode=1):
-        """Set the positioning mode
-        Defaults to 1 (relative positioning)
-        """
-        self.write_parameter('p', np.uint8(mode))
-
-    def set_quickstop_ramp(self, value):
-        """Set quickstop ramp
-        0 means abrupt stop"""
-        self.write_parameter('H', np.uint16(value))
-
-    def set_repetition_number(self, repetitions=1):
-        """Set number of repetitions of current record
-        Typically 1 repetition
-        0 equivalent to infinite repetitions
-        """
-        self.write_parameter('W', np.uint8(repetitions))
-
-    def set_rotation_direction(self, direction):
-        direction_values = {
-            'Left': 0,
-            'Right': 1,
-        }
-        #TODO: check that direction is in values
-        self.write_parameter('d', direction_values[direction])
-
-    def set_step_mode(self, value):
-        """Set number of microsteps per step
-        Must be in [1, 2, 4, 5, 8, 10, 16, 32, 64, 254, 255]
-        254 and 255 have special meanings, see Nanotec documentation
-        """
-        if value not in [1, 2, 4, 5, 8, 10, 16, 32, 64, 254, 255]:
-            #TODO: value error
-            pass
-        self.write_parameter('g', value)
-
-    def set_swing_out_time(self, swing_out_time=8):
-        """Set the swing out time
-        The swing out time is the settling time between when the
-        controller finishes a run and when it reads the encoder
-        position.
-        The swing_out_time is defined in multiples of 10 ms.
-        This time only matters for error correction runs.
-        """
-        self.write_parameter('O', np.uint8(swing_out_time))
-
-    def set_travel_distance(self, value):
-        """Set travel distance in (micro-)steps
-        In relative mode, only positive values are allowed"""
-        self.write_parameter('s', int(value))
+        self.write(self.build_set_string('>', str(index)))
 
     def start_motor(self):
-        self.write_parameter('A')
+        self.write(self.build_set_string('A'))
 
     def stop_motor(self, ramp='Quickstop'):
         types = {
             'Quickstop': 0,
             'Brake': 1,
         }
-        #TODO: add error checking to ramp type
-        self.write_parameter('S', types[ramp])
-
-    def write(self, command, value=None):
-        """Write to controller without checking for a response"""
-        #TODO: Check command and raise exception if incorrect
-        if value is not None:
-            command += value
-        with serial.Serial(self.port,
-                           self.baudrate,
-                           timeout=self.timeout) as ser:
-            message = bytes(  self._start_character
-                            + self.id
-                            + command
-                            + self.line_terminator)
-            ser.write(message)
-
-    def write_parameter(self, parameter, value=None):
-        #TODO: Check parameter and raise exception if incorrect
-        command = parameter
-        if value is not None:
-            if parameter[0] == ':':
-                command += '='
-            command += str(value)
-        response = self.query(command)
-        if response != command:
-            #TODO error occurred
-            pass
-
-
-
-
-"""
-'#' + command + '\r'
-
-'$' read status
-'A' start motor
-'b' set acceleration ramp
-'B' set the brake ramp
-'C' read out position
-'d' set direction of rotation
-'D' clear errors
-'E' errors
-'g' set step mode
-'H' set quickstop ramp
-'I' set the limit switch behavior
-'m' set drive address
-'n' set maximum frequency 2
-'o' set maximum frequency
-'p' set the positioning mode
-'s' set the travel distance
-'S' stops the motor
-'t' set change of direction for repeat modes?
-'U' set error correction mode
-'u' set minimum frequency
-'v' read firmware version
-'Z + command' read from motor
-"""
+        # TODO: add error checking to ramp type
+        self.write(self.build_set_string('S', str(types[ramp])))
