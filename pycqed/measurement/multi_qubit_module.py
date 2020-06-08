@@ -19,6 +19,7 @@ import pycqed.measurement.awg_sweep_functions_multi_qubit as awg_swf2
 import pycqed.measurement.pulse_sequences.multi_qubit_tek_seq_elts as mqs
 import pycqed.measurement.pulse_sequences.fluxing_sequences as fsqs
 import pycqed.measurement.detector_functions as det
+import pycqed.analysis.fitting_models as fms
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.measurement.calibration_points import CalibrationPoints
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
@@ -31,6 +32,7 @@ from pycqed.analysis_v3 import helper_functions as hlp_mod
 import pycqed.measurement.waveform_control.sequence as sequence
 from pycqed.utilities.general import temporary_value
 from pycqed.analysis_v2 import tomography_qudev as tomo
+
 
 try:
     import \
@@ -932,7 +934,7 @@ def measure_parity_single_round_phases(ancilla_qubit, data_qubits, CZ_map,
         ))
 
 
-def measure_tomography(qubits, prep_sequence, state_name,
+def measure_tomography(dev, qubits, prep_sequence, state_name,
                        rots_basis=tomo.DEFAULT_BASIS_ROTS,
                        operation_dict=None,
                        use_cal_points=True,
@@ -940,25 +942,22 @@ def measure_tomography(qubits, prep_sequence, state_name,
                        rho_target=None,
                        shots=4096,
                        ro_spacing=1e-6,
-                       ro_slack=10e-9,
                        thresholded=False,
                        liveplot=True,
                        nreps=1, run=True,
+                       operation_dict=None,
                        upload=True):
     exp_metadata = {}
 
-    if operation_dict is None:
-        operation_dict = get_operation_dict(qubits)
+    MC = dev.instr_mc.get_instr()
 
-    for qb in qubits:
-        MC = qb.instr_mc.get_instr()
+    qubits = [dev.get_qb(qb) if isinstance(qb, str) else qb for qb in qubits]
 
     for qb in qubits:
         qb.prepare(drive='timedomain')
 
-    if ro_spacing is None:
-        ro_spacing = calculate_minimal_readout_spacing(qubits, ro_slack,
-                                                       drive_pulses=1)
+    if operation_dict is None:
+        operation_dict = dev.get_operation_dict()
 
     qubit_names = [qb.name for qb in qubits]
     if preselection:
@@ -1047,12 +1046,21 @@ def measure_tomography(qubits, prep_sequence, state_name,
 
 
 def measure_two_qubit_randomized_benchmarking(
-        qb1, qb2, cliffords, nr_seeds, cz_pulse_name,
+        dev, qb1, qb2, cliffords,
+        nr_seeds, cz_pulse_name,
         character_rb=False, net_clifford=0,
         clifford_decomposition_name='HZ', interleaved_gate=None,
         n_cal_points_per_state=2, cal_states=tuple(),
         label=None, prep_params=None, upload=True, analyze_RB=True,
         classified=True, correlated=False, thresholded=True, averaged=True):
+
+    # check whether qubits are connected
+    dev.check_connection(qb1, qb2)
+
+    if isinstance(qb1, str):
+        qb1 = dev.get_qb(qb1)
+    if isinstance(qb2, str):
+        qb2 = dev.get_qb(qb2)
 
     qb1n = qb1.name
     qb2n = qb2.name
@@ -1068,25 +1076,25 @@ def measure_two_qubit_randomized_benchmarking(
                 interleaved_gate, clifford_decomposition_name, nr_seeds,
                 cliffords[-1], qb1n, qb2n)
 
+    MC = dev.instr_mc.get_instr()
+
     for qb in qubits:
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     if prep_params is None:
-        prep_params = get_multi_qubit_prep_params(
-            [qb.preparation_params() for qb in [qb1, qb2]])
+        prep_params = dev.get_prep_params([qb1, qb2])
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states)
     cp = CalibrationPoints.multi_qubit([qb1n, qb2n], cal_states,
                                        n_per_state=n_cal_points_per_state)
 
-    operation_dict = get_operation_dict(qubits)
+    operation_dict = dev.get_operation_dict()
     sequences, hard_sweep_points, soft_sweep_points = \
         mqs.two_qubit_randomized_benchmarking_seqs(
             qb1n=qb1n, qb2n=qb2n, operation_dict=operation_dict,
             cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
-            max_clifford_idx=24**2 if character_rb else 11520,
-            cz_pulse_name=cz_pulse_name, net_clifford=net_clifford,
+            max_clifford_idx=24 ** 2 if character_rb else 11520,
+            cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}', net_clifford=net_clifford,
             clifford_decomposition_name=clifford_decomposition_name,
             interleaved_gate=interleaved_gate, upload=False,
             cal_points=cp, prep_params=prep_params)
@@ -1096,7 +1104,7 @@ def measure_two_qubit_randomized_benchmarking(
         parameter_name='Nr. Cliffords', unit='')
     MC.set_sweep_function(hard_sweep_func)
     MC.set_sweep_points(hard_sweep_points if classified else
-                        hard_sweep_points*max(qb.acq_shots() for qb in qubits))
+                        hard_sweep_points * max(qb.acq_shots() for qb in qubits))
 
     MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
         hard_sweep_func, sequences, 'Nr. Seeds', ''))
@@ -1142,7 +1150,7 @@ def measure_two_qubit_randomized_benchmarking(
                     'cal_points': repr(cp),
                     'sweep_points': sp,
                     'meas_obj_sweep_points_map':
-                       {qbn: ['nr_seeds', 'cliffords'] for qbn in mobj_names},
+                        {qbn: ['nr_seeds', 'cliffords'] for qbn in mobj_names},
                     'meas_obj_value_names_map': meas_obj_value_names_map,
                     'processing_pipe': pp}
     MC.run_2D(name=label, exp_metadata=exp_metadata)
@@ -2108,18 +2116,35 @@ def calibrate_n_qubits(qubits, f_LO, sweep_points_dict, sweep_params=None,
                                     'updated.' % e)
 
 
-def measure_chevron(qbc, qbt, qbr, hard_sweep_params, soft_sweep_params,
-                    cz_pulse_name, upload=True, label=None,
+def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
+                    cz_pulse_name, upload=True, label=None, qbr=None,
                     classified=False, n_cal_points_per_state=2,
-                    cal_states='auto', prep_params=None,
-                    exp_metadata=None, analyze=True):
+                    num_cz_gates=1, cal_states='auto', prep_params=None,
+                    exp_metadata=None, analyze=True, return_seq=False,
+                    channels_to_upload=None):
+
+    if isinstance(qbc, str):
+        qbc = dev.get_qb(qbc)
+    if isinstance(qbt, str):
+        qbt = dev.get_qb(qbt)
+
+    if qbr is None:
+        qbr = qbt
+    elif isinstance(qbr, str):
+        qbr = dev.get_qb(qbr)
+
+    if qbr != qbc and qbr != qbt:
+        raise ValueError('Only target or control qubit can be read out!')
+
+    # check whether qubits are connected
+    dev.check_connection(qbc, qbt)
 
     if len(list(soft_sweep_params)) > 1:
         log.warning('There is more than one soft sweep parameter.')
     if label is None:
         label = 'Chevron_{}{}'.format(qbc.name, qbt.name)
-    MC = qbr.instr_mc.get_instr()
-    for qb in [qbc, qbt, qbr]:
+    MC = dev.find_instrument('MC')
+    for qb in [qbc, qbt]:
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states)
@@ -2127,17 +2152,22 @@ def measure_chevron(qbc, qbt, qbr, hard_sweep_params, soft_sweep_params,
                                         n_per_state=n_cal_points_per_state)
 
     if prep_params is None:
-        prep_params = \
-            get_multi_qubit_prep_params([qb.preparation_params()
-                                         for qb in [qbc, qbt]])
+        prep_params = dev.get_prep_params([qbc, qbt])
+
+    operation_dict = dev.get_operation_dict()
+
     sequences, hard_sweep_points, soft_sweep_points = \
         fsqs.chevron_seqs(
             qbc_name=qbc.name, qbt_name=qbt.name, qbr_name=qbr.name,
             hard_sweep_dict=hard_sweep_params,
             soft_sweep_dict=soft_sweep_params,
-            operation_dict=get_operation_dict([qbc, qbt, qbr]),
+            operation_dict=operation_dict,
             cz_pulse_name=cz_pulse_name,
+            num_cz_gates=num_cz_gates,
             cal_points=cp, upload=False, prep_params=prep_params)
+
+    if return_seq:
+        return sequences
 
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
@@ -2146,7 +2176,11 @@ def measure_chevron(qbc, qbt, qbr, hard_sweep_params, soft_sweep_params,
     MC.set_sweep_function(hard_sweep_func)
     MC.set_sweep_points(hard_sweep_points)
 
-    channels_to_upload = [qbc.get_operation_dict()[cz_pulse_name]['channel']]
+    # sweep over flux pulse amplitude of qbc
+    if channels_to_upload is None:
+        channels_to_upload = [qbc.flux_pulse_channel(),
+                              qbt.flux_pulse_channel()]
+
     MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
         hard_sweep_func, sequences,
         list(soft_sweep_params)[0], list(soft_sweep_params.values())[0]['unit'],
@@ -2302,27 +2336,39 @@ def measure_cphase_nn(qbc, qbt, qbr, lengths, amps, alphas=None,
         return
 
 
-def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name, qbss=None,
-                   qbs_operations=None, hard_sweep_params=None,
-                   max_flux_length=None, num_cz_gates=1,
-                   n_cal_points_per_state=1, cal_states='auto',
+def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
+                   hard_sweep_params=None, max_flux_length=None,
+                   num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
                    prep_params=None, exp_metadata=None, label=None,
                    analyze=True, upload=True, for_ef=True, **kw):
     '''
     method to measure the leakage and the phase acquired during a flux pulse
-    conditioned on the state of the control qubit (self).
+    conditioned on the state of the control qubit (qbc).
     In this measurement, the phase from two Ramsey type measurements
     on qb_target is measured, once with the control qubit in the excited state
     and once in the ground state. The conditional phase is calculated as the
     difference.
 
     Args:
-        qbc (QuDev_transmon): control qubit / fluxed qubit
-        qbt (QuDev_transmon): target qubit / non-fluxed qubit
+        dev (Device)
+        qbc (QuDev_transmon, str): control qubit
+        qbt (QuDev_transmon, str): target qubit
+        FIXME: add further args
         compression_seg_lim (int): Default: None. If speficied, it activates the
             compression of a 2D sweep (see Sequence.compress_2D_sweep) with the given
             limit on the maximal number of segments per sequence.
     '''
+
+    if isinstance(qbc, str):
+        qbc = dev.get_qb(qbc)
+    if isinstance(qbt, str):
+        qbt = dev.get_qb(qbt)
+
+    # check whether qubits are connected
+    dev.check_connection(qbc, qbt)
+
+    MC = dev.instr_mc.get_instr()
+
     plot_all_traces = kw.get('plot_all_traces', True)
     plot_all_probs = kw.get('plot_all_probs', True)
     classified = kw.get('classified', False)
@@ -2332,8 +2378,7 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name, qbss=None,
         qbss = []
 
     if prep_params is None:
-        prep_params = get_multi_qubit_prep_params(
-            [qb.preparation_params() for qb in ([qbc, qbt] + qbss)])
+        prep_params = dev.get_prep_params([qbc, qbt])
 
     if label is None:
         if predictive_label:
@@ -2353,28 +2398,27 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name, qbss=None,
 
     if hard_sweep_params is None:
         hard_sweep_params = {
-            'phase': {'values': np.tile(np.linspace(0, 2*np.pi, 8)*180/np.pi, 2),
+            'phase': {'values': np.tile(np.linspace(0, 2 * np.pi, 6) * 180 / np.pi, 2),
                       'unit': 'deg'}
         }
 
     for qb in ([qbc, qbt] + qbss):
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
                                                     for_ef=for_ef)
     cp = CalibrationPoints.multi_qubit([qbc.name, qbt.name], cal_states,
-                                        n_per_state=n_cal_points_per_state)
+                                       n_per_state=n_cal_points_per_state)
 
     if max_flux_length is not None:
-        log.debug(f'max_flux_length = {max_flux_length*1e9:.2f} ns, set by user')
-    operation_dict = get_operation_dict([qbc, qbt] + qbss)
+        log.debug(f'max_flux_length = {max_flux_length * 1e9:.2f} ns, set by user')
+    operation_dict = dev.get_operation_dict()
     sequences, hard_sweep_points, soft_sweep_points = \
         fsqs.cphase_seqs(
             hard_sweep_dict=hard_sweep_params,
             soft_sweep_dict=soft_sweep_params,
             qbc_name=qbc.name, qbt_name=qbt.name,
-            cz_pulse_name=cz_pulse_name,
+            cz_pulse_name=cz_pulse_name + f' {qbc.name} {qbt.name}',
             operation_dict=operation_dict,
             cal_points=cp, upload=False, prep_params=prep_params,
             max_flux_length=max_flux_length,
@@ -2394,7 +2438,8 @@ def measure_cphase(qbc, qbt, soft_sweep_params, cz_pulse_name, qbss=None,
     MC.set_sweep_function(hard_sweep_func)
     MC.set_sweep_points(hard_sweep_points)
 
-    channels_to_upload = [operation_dict[cz_pulse_name]['channel']]
+    channels_to_upload = [operation_dict[cz_pulse_name +
+                                         f' {qbc.name} {qbt.name}']['channel']]
     MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
         hard_sweep_func, sequences,
         list(soft_sweep_params)[0], list(soft_sweep_params.values())[0]['unit'],
@@ -2888,15 +2933,17 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
     return results
 
 
-def measure_dynamic_phases(qbc, qbt, cz_pulse_name, num_cz_gates=1,
-                           hard_sweep_params=None,
-                           qubits_to_measure=None, cal_points=True, qbss=None,
+def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
+                           qubits_to_measure=None, cal_points=True,
                            analyze=True, upload=True, n_cal_points_per_state=1,
                            cal_states='auto', prep_params=None,
                            exp_metadata=None, classified=False, update=False,
                            reset_phases_before_measurement=True,
-                           qbs_operations=None, basis_rot_par=None,
                            prepend_n_cz=0):
+    if isinstance(qbc, str):
+        qbc = dev.get_qb(qbc)
+    if isinstance(qbt, str):
+        qbt = dev.get_qb(qbt)
 
     if qbss is None:
         qbss = []
@@ -2905,17 +2952,23 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, num_cz_gates=1,
     if hard_sweep_params is None:
         hard_sweep_params = {
             'phase': {
-                'values': np.tile(np.linspace(0, 2*np.pi, 8)*180/np.pi, 2),
+                'values': np.tile(np.linspace(0, 2 * np.pi, 6) * 180 / np.pi, 2),
                 'unit': 'deg'}}
-
-    if basis_rot_par is None:
-        basis_rot_par = f'{cz_pulse_name[:-8]}_{qbt.name}_basis_rotation'
 
     if reset_phases_before_measurement:
         dyn_phases = {qb.name: 0 for qb in qubits_to_measure}
-        qbc.set(basis_rot_par, dyn_phases)
+        dev.get_pulse_par(cz_pulse_name,
+                           qbc, qbt, 'basis_rotation')(dyn_phases)
     else:
-        dyn_phases = qbc.get(basis_rot_par)
+        dyn_phases = dev.get_pulse_par(cz_pulse_name,
+                                        qbc, qbt, 'basis_rotation')()
+
+    # check whether qubits are connected
+    dev.check_connection(qbc, qbt)
+
+    if prep_params is None:
+        prep_params = dev.get_prep_params([qbc, qbt])
+
     for qb in qubits_to_measure:
         label = f'Dynamic_phase_measurement_CZ{qbt.name}{qbc.name}'
         if len(qbss) > 0:
@@ -2933,16 +2986,13 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, num_cz_gates=1,
         else:
             cp = None
 
-        if prep_params is None:
-            prep_params = qb.preparation_params()
         seq, hard_sweep_points = \
             fsqs.dynamic_phase_seq(
                 qb_name=qb.name, hard_sweep_dict=hard_sweep_params,
-                operation_dict=get_operation_dict(
-                    [qbc, qbt] + qubits_to_measure+qbss),
-                cz_pulse_name=cz_pulse_name, num_cz_gates=num_cz_gates,
+                operation_dict=dev.get_operation_dict(),
+                cz_pulse_name=cz_pulse_name + f' {qbc.name} {qbt.name}',
                 cal_points=cp,
-                prepend_n_cz=prepend_n_cz, qbs_operations=qbs_operations,
+                prepend_n_cz=prepend_n_cz,
                 upload=False, prep_params=prep_params)
 
         MC.set_sweep_function(awg_swf.SegmentHardSweep(
@@ -2966,18 +3016,19 @@ def measure_dynamic_phases(qbc, qbt, cz_pulse_name, num_cz_gates=1,
         MC.run(label, exp_metadata=exp_metadata)
 
         if analyze:
-            flux_pulse_amp = None
-            if 'amplitude' in qbc.get_operation_dict()[cz_pulse_name]:
-                flux_pulse_amp = qbc.get_operation_dict()[cz_pulse_name]['amplitude']
             MA = tda.CZDynamicPhaseAnalysis(qb_names=[qb.name], options_dict={
-                'flux_pulse_length': qbc.get_operation_dict()[cz_pulse_name][
-                    'pulse_length'],
-                'flux_pulse_amp': flux_pulse_amp})
+                'flux_pulse_length': dev.get_pulse_par(cz_pulse_name,
+                                                        qbc, qbt,
+                                                        'pulse_length')(),
+                'flux_pulse_amp': dev.get_pulse_par(cz_pulse_name,
+                                                     qbc, qbt,
+                                                     'amplitude')(), })
             dyn_phases[qb.name] = \
                 MA.proc_data_dict['analysis_params_dict'][qb.name][
-                    'dynamic_phase']['val']*180/np.pi/num_cz_gates
+                    'dynamic_phase']['val'] * 180 / np.pi
     if update and reset_phases_before_measurement:
-        qbc.set(basis_rot_par, dyn_phases)
+        dev.get_pulse_par(cz_pulse_name,
+                           qbc, qbt, 'basis_rotation')(dyn_phases)
     return dyn_phases
 
 
@@ -3081,6 +3132,115 @@ def measure_dynamic_phases_from_spec(qbc, qbt, qbdd_list, cz_pulse_name,
     if update and reset_phases_before_measurement:
         qbc.set(basis_rot_par, dyn_phases)
     return dyn_phases
+
+
+def measure_J_coupling(dev, qbm, qbs, freqs, cz_pulse_name,
+                       label=None, cal_points=False, prep_params=None,
+                       cal_states='auto', n_cal_points_per_state=1,
+                       freq_s=None, f_offset=0, exp_metadata=None,
+                       upload=True, analyze=True):
+
+    """
+    Measure the J coupling between the qubits qbm and qbs at the interaction
+    frequency freq.
+
+    :param qbm:
+    :param qbs:
+    :param freq:
+    :param cz_pulse_name:
+    :param label:
+    :param cal_points:
+    :param prep_params:
+    :return:
+    """
+
+    # check whether qubits are connected
+    dev.check_connection(qbm, qbs)
+
+    if isinstance(qbm, str):
+        qbm = dev.get_qb(qbm)
+    if isinstance(qbs, str):
+        qbs = dev.get_qb(qbs)
+
+    if label is None:
+        label = f'J_coupling_{qbm.name}{qbs.name}'
+    MC = dev.instr_mc.get_instr()
+
+    for qb in [qbm, qbs]:
+        qb.prepare(drive='timedomain')
+
+    if cal_points:
+        cal_states = CalibrationPoints.guess_cal_states(cal_states)
+        cp = CalibrationPoints.single_qubit(
+            qbm.name, cal_states, n_per_state=n_cal_points_per_state)
+    else:
+        cp = None
+    if prep_params is None:
+        prep_params = dev.get_prep_params([qbm, qbs])
+
+    operation_dict = dev.get_operation_dict()
+
+    # Adjust amplitude of stationary qubit
+    if freq_s is None:
+        freq_s = freqs.mean()
+
+    amp_s = fms.Qubit_freq_to_dac(freq_s,
+                                  **qbs.fit_ge_freq_from_flux_pulse_amp())
+
+    fit_paras = qbm.fit_ge_freq_from_flux_pulse_amp()
+
+    amplitudes = fms.Qubit_freq_to_dac(freqs,
+                                       **fit_paras)
+
+    amplitudes = np.array(amplitudes)
+
+    if np.any((amplitudes > abs(fit_paras['V_per_phi0']) / 2)):
+        amplitudes -= fit_paras['V_per_phi0']
+    elif np.any((amplitudes < -abs(fit_paras['V_per_phi0']) / 2)):
+        amplitudes += fit_paras['V_per_phi0']
+
+    for [qb1, qb2] in [[qbm, qbs], [qbs, qbm]]:
+        operation_dict[cz_pulse_name + f' {qb1.name} {qb2.name}'] \
+            ['amplitude2'] = amp_s
+
+    freqs += f_offset
+
+    cz_pulse_name += f' {qbm.name} {qbs.name}'
+
+    seq, sweep_points, sweep_points_2D = \
+        fsqs.fluxpulse_amplitude_sequence(
+            amplitudes=amplitudes, freqs=freqs, qb_name=qbm.name,
+            operation_dict=operation_dict,
+            cz_pulse_name=cz_pulse_name, cal_points=cp,
+            prep_params=prep_params, upload=False)
+
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(
+        sequence=seq, upload=upload, parameter_name='Amplitude', unit='V'))
+
+    MC.set_sweep_points(sweep_points)
+    MC.set_sweep_function_2D(swf.Offset_Sweep(
+        qbm.instr_ge_lo.get_instr().frequency,
+        -qbm.ge_mod_freq(),
+        name='Drive frequency',
+        parameter_name='Drive frequency', unit='Hz'))
+    MC.set_sweep_points_2D(sweep_points_2D)
+    MC.set_detector_function(qbm.int_avg_det)
+    if exp_metadata is None:
+        exp_metadata = {}
+    exp_metadata.update({'sweep_points_dict': {qbm.name: amplitudes},
+                         'sweep_points_dict_2D': {qbm.name: freqs},
+                         'use_cal_points': cal_points,
+                         'preparation_params': prep_params,
+                         'cal_points': repr(cp),
+                         'rotate': cal_points,
+                         'data_to_fit': {qbm.name: 'pe'},
+                         "sweep_name": "Amplitude",
+                         "sweep_unit": "V",
+                         "global_PCA": True})
+    MC.run_2D(label, exp_metadata=exp_metadata)
+
+    if analyze:
+        ma.MeasurementAnalysis(TwoD=True)
 
 
 def measure_ramsey_with_flux_pulse(qb, cz_pulse_name, hard_sweep_params=None,
