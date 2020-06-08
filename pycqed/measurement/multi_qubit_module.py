@@ -943,9 +943,7 @@ def measure_tomography(dev, qubits, prep_sequence, state_name,
                        shots=4096,
                        ro_spacing=1e-6,
                        thresholded=False,
-                       liveplot=True,
-                       nreps=1, run=True,
-                       operation_dict=None,
+                       liveplot=True, run=True,
                        upload=True):
     exp_metadata = {}
 

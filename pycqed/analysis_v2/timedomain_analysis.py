@@ -2083,7 +2083,9 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                                compared to when calculating fidelity.
     """
     def __init__(self, *args, **kwargs):
+        auto = kwargs.pop('auto', True)
         super().__init__(*args, **kwargs)
+        kwargs['auto'] = auto
         self.single_timestamp = True
         self.params_dict = {'exp_metadata': 'exp_metadata'}
         self.numeric_params = []
@@ -2121,11 +2123,11 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             Omega = np.diag(np.ones(len(Fs)))
         elif len(Omega.shape) == 1:
             Omega = np.diag(Omega)
-        metadata = self.raw_data_dict.get('exp_metadata', {})
-        if metadata is None:
-            metadata = {}
-        self.raw_data_dict['exp_metadata'] = metadata
-        basis_rots_str = metadata.get('basis_rots_str', None)
+        self.metadata = self.raw_data_dict.get('exp_metadata', {})
+        if self.metadata is None:
+            self.metadata = {}
+        self.raw_data_dict['exp_metadata'] = self.metadata
+        basis_rots_str = self.metadata.get('basis_rots_str', None)
         basis_rots_str = self.options_dict.get('basis_rots_str', basis_rots_str)
         if basis_rots_str is not None:
             nr_qubits = int(np.round(np.log2(d)))
@@ -2133,7 +2135,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                                                 repeat=nr_qubits))
             rotations = tomo.standard_qubit_pulses_to_rotations(pulse_list)
         else:
-            rotations = metadata.get('basis_rots', None)
+            rotations = self.metadata.get('basis_rots', None)
             rotations = self.options_dict.get('basis_rots', rotations)
             if rotations is None:
                 raise KeyError("Either 'basis_rots_str' or 'basis_rots' "
@@ -2165,7 +2167,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             self.proc_data_dict['rho'] = rho_ls
             if self.options_dict.get('mle', False):
                 rho_mle = tomo.mle_tomography(
-                    all_mus, all_Fs, None,
+                    all_mus, all_Fs,
                     all_Omegas if self.get_param_value('use_covariance_matrix', False) else None,
                     rho_guess=rho_ls)
                 self.proc_data_dict['rho_mle'] = rho_mle
@@ -2174,7 +2176,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         rho = self.proc_data_dict['rho']
         self.proc_data_dict['purity'] = (rho * rho).tr().real
 
-        rho_target = metadata.get('rho_target', None)
+        rho_target = self.metadata.get('rho_target', None)
         rho_target = self.options_dict.get('rho_target', rho_target)
         if rho_target is not None:
             self.proc_data_dict['fidelity'] = tomo.fidelity(rho, rho_target)
