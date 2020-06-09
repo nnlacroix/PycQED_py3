@@ -825,7 +825,7 @@ class NanotecSMI33(VisaInstrument):
 
 
     def get_idn(self):
-        info = self.ask(self._start_character + self.controller_id + 'Zv')
+        info = self.ask('v')
         info = info.split(' ')[1].split('_')
         return {'vendor': 'Nanotec',
                 'model': info[0],
