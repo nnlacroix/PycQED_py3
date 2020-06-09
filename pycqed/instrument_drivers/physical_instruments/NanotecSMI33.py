@@ -33,6 +33,11 @@ class NanotecSMI33(VisaInstrument):
         super().__init__(name, address, terminator='\r', visalib='@py',
                          **kwargs)
 
+        # Set correct serial parameters
+        self.visa_handle.baud_rate = 115200
+        self.visa_handle.read_termination = '\r'
+        self.visa_handle.write_termination = '\r'
+
         if controller_id not in [str(i) for i in range(1, 255)] + ['*']:
             raise ValueError('controller_id must be * or a number from 1 to 254')
         self.controller_id = controller_id
@@ -966,7 +971,7 @@ class NanotecSMI33(VisaInstrument):
                    + str(value))
 
     def get_idn(self):
-        info = self.ask_raw(self._start_character + self.controller_id + 'v' + '\r')
+        info = self.ask_raw(self._start_character + self.controller_id + 'Zv' + '\r')
         info = info.split(' ')[1].rstrip('\r').split('_')
         return {'vendor': 'Nanotec',
                 'model': info[0],
