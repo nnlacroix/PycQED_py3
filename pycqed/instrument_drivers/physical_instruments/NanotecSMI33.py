@@ -812,20 +812,20 @@ class NanotecSMI33(VisaInstrument):
     def ask(self, cmd: str) -> str:
         # Case for 'long' commands
         if cmd[0] == ':' and cmd[1] not in ['b', 'B']:
-            motor_cmd = str(self._start_character + self.controller_id + cmd)
+            motor_cmd = self._start_character + self.controller_id + cmd
             motor_response = super().ask(motor_cmd)
             response = motor_response.lstrip('0').split(cmd)[1]
             return response
         # Case for all other normal commands
         else:
-            motor_cmd = str(self._start_character + self.controller_id + 'Z' + cmd)
+            motor_cmd = self._start_character + self.controller_id + 'Z' + cmd
             motor_response = super().ask(motor_cmd)
             response = motor_response.lstrip('0').split(cmd)[1]
             return response
 
 
     def get_idn(self):
-        info = self.ask(str(self._start_character + self.controller_id + 'Zv'))
+        info = self.ask(self._start_character + self.controller_id + 'Zv')
         info = info.split(' ')[1].split('_')
         return {'vendor': 'Nanotec',
                 'model': info[0],
@@ -862,5 +862,5 @@ class NanotecSMI33(VisaInstrument):
         self.write('S' + str(types[ramp]))
 
     def write(self, cmd: str) -> None:
-        motor_cmd = str(self._start_character + self.controller_id + cmd)
+        motor_cmd = self._start_character + self.controller_id + cmd
         super().write(motor_cmd)
