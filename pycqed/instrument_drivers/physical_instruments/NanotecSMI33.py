@@ -33,7 +33,7 @@ class NanotecSMI33(VisaInstrument):
         super().__init__(name, address, terminator='\r', visalib='@py',
                          **kwargs)
 
-        if id not in [str(i) for i in range(1, 255)] + ['*']:
+        if controller_id not in [str(i) for i in range(1, 255)] + ['*']:
             raise ValueError('id must be * or a number from 1 to 254')
         self.id = controller_id
         self._start_character = '#'
