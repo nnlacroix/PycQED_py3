@@ -563,9 +563,9 @@ class NanotecSMI33(VisaInstrument):
             unit='',
             get_cmd=(lambda cmd='v': self.build_get_string(cmd)),
             set_cmd=False,
-            get_parser=(lambda x, cmd='v': int(self.parse_cmd_response(
+            get_parser=(lambda x, cmd='v': self.parse_cmd_response(
                 x,
-                self.build_get_string(cmd)))),
+                self.build_get_string(cmd))),
             docstring='Firmware version')
 
         self.add_parameter(
