@@ -1,11 +1,13 @@
 import time
 import logging
 
-import NanotecSMI33
+from pycqed.instrument_drivers.physical_instruments.NanotecSMI33\
+    import NanotecSMI33
+
 
 class QudevDisplacer(NanotecSMI33):
-    def __init__(self, name: str, address: str, id: str = '*', **kwargs) -> None:
-        super().__init__(name, address, id, **kwargs)
+    def __init__(self, name: str, address: str, controller_id: str = '*', **kwargs) -> None:
+        super().__init__(name, address, controller_id, **kwargs)
         self._lower_bound = None
         self._upper_bound = None
         self._is_initialized = False
@@ -81,9 +83,6 @@ class QudevDisplacer(NanotecSMI33):
                 direction = 'Left'
             self._drive_absolute(position, direction, speed)
             self.wait_until_status(5)
-
-
-
 
     def _escape_limit(self, direction: str, steps: int) -> None:
         # Configure motor
@@ -256,7 +255,6 @@ class QudevDisplacer(NanotecSMI33):
         # wait until controller finishes moving or the limit is reached
         self.wait_until_status(5)
 
-
     def wait_until_status(self, mask: int = 5, timeout: int = 30) -> None:
         """
         Wait until controller has a status given by the mask
@@ -265,8 +263,8 @@ class QudevDisplacer(NanotecSMI33):
         :return:
         """
         self.command_response('Enabled')
-        t0 = time.now()
-        while (time.now() - t0) < timeout:
+        t0 = time.time()
+        while (time.time() - t0) < timeout:
             if self.status() & mask > 0:
                 break
             else:

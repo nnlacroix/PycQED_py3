@@ -12,6 +12,7 @@ Requires
 
 log = logging.getLogger(__name__)
 
+
 class NanotecSMI33(VisaInstrument):
     """
     This is a driver for the Nanotec SMI33 Motor controller
@@ -20,7 +21,7 @@ class NanotecSMI33(VisaInstrument):
 
     Only a subset of all features have been included
     """
-    def __init__(self, name: str, address, id: str, **kwargs) -> None:
+    def __init__(self, name: str, address, controller_id: str, **kwargs) -> None:
         """
         Args:
             name: The name of this instance
@@ -34,7 +35,7 @@ class NanotecSMI33(VisaInstrument):
 
         if id not in [str(i) for i in range(1, 255)] + ['*']:
             raise ValueError('id must be * or a number from 1 to 254')
-        self.id = id
+        self.id = controller_id
         self._start_character = '#'
 
         self.add_parameter(
@@ -155,8 +156,8 @@ class NanotecSMI33(VisaInstrument):
                      self.build_set_string(cmd, x)),
             get_parser=(lambda x, cmd=':port_in_a':
                         int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+                            x,
+                            self.build_get_string(cmd)))),
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
