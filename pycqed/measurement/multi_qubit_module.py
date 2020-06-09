@@ -481,8 +481,6 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
         prep_params['preparation_type'] = "preselection"
     else:
         prep_params['preparation_type'] = "wait"
-    if prep_params['preparation_type'] not in ['preselection', 'wait']:
-        raise NotImplementedError("Active reset not yet supported for this measurement")
 
     # create and set sequence
     if np.ndim(states) == 2: # list of custom states provided
