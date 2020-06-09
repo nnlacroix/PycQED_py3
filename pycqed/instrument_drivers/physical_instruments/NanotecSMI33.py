@@ -814,13 +814,13 @@ class NanotecSMI33(VisaInstrument):
         if cmd[0] == ':' and cmd[1] not in ['b', 'B']:
             motor_cmd = self._start_character + self.controller_id + cmd
             motor_response = super().ask(motor_cmd)
-            response = motor_response.lstrip('0').split(cmd)[1]
+            response = motor_response.lstrip('0').split(cmd)[1].lstrip('=')
             return response
         # Case for all other normal commands
         else:
             motor_cmd = self._start_character + self.controller_id + 'Z' + cmd
             motor_response = super().ask(motor_cmd)
-            response = motor_response.lstrip('0').split(cmd)[1]
+            response = motor_response.lstrip('0').split(cmd)[1].lstrip()
             return response
 
 
