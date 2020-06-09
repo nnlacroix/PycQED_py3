@@ -47,11 +47,10 @@ class NanotecSMI33(VisaInstrument):
             'acceleration',
             label='Acceleration',
             unit='',
-            get_cmd=(lambda cmd='b': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='b': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='b': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='b',
+            set_cmd='b{}',
+            get_parser=int,
+            set_parser=int,
             max_val_age=0,
             vals=Ints(min_value=1,
                       max_value=65535),
@@ -63,11 +62,9 @@ class NanotecSMI33(VisaInstrument):
             'acceleration_mode',
             label='Acceleration Mode',
             unit='',
-            get_cmd=(lambda cmd=':ramp_mode': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':ramp_mode': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':ramp_mode': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd=':ramp_mode',
+            set_cmd=':ramp_mode={}',
+            set_parser=int,
             max_val_age=0,
             val_mapping={'Trapezoidal': 0,
                          'Sinusoidal': 1,
@@ -78,11 +75,9 @@ class NanotecSMI33(VisaInstrument):
             'acceleration_jerk',
             label='Acceleration Jerk',
             unit='',
-            get_cmd=(lambda cmd=':b': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':b': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':b': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd=':b',
+            set_cmd=':b{}',
+            get_parser=int,
             vals=Ints(min_value=1,
                       max_value=100000000),
             docstring=('Acceleration jerk'
@@ -93,11 +88,9 @@ class NanotecSMI33(VisaInstrument):
             'braking',
             label='Breaking',
             unit='',
-            get_cmd=(lambda cmd='B': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='B': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='B': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='B',
+            set_cmd='B{}',
+            get_parser=int,
             max_val_age=0,
             vals=Ints(min_value=0,
                       max_value=65535),
@@ -109,11 +102,9 @@ class NanotecSMI33(VisaInstrument):
             'braking_jerk',
             label='Braking Jerk',
             unit='',
-            get_cmd=(lambda cmd=':B': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':B': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':B': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd=':B',
+            set_cmd=':B{}',
+            get_parser=int,
             vals=Ints(min_value=1,
                       max_value=100000000),
             docstring=('Breaking jerk'
@@ -124,11 +115,9 @@ class NanotecSMI33(VisaInstrument):
             'continuation_record',
             label='Continuation Record',
             unit='',
-            get_cmd=(lambda cmd='N': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='N': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='N': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='N',
+            set_cmd='N{}',
+            get_parser=int,
             vals=Ints(min_value=0,
                       max_value=32),
             docstring=('Record in EEPROM to continue with after finishing'
@@ -143,7 +132,7 @@ class NanotecSMI33(VisaInstrument):
             label='Command Response',
             unit='',
             get_cmd=False,
-            set_cmd=(lambda x, cmd='|': self.build_set_string(cmd, x)),
+            set_cmd='|{}',
             val_mapping={'Disabled': 0,
                          'Enabled': 1},
             docstring=('Enable or disable command response'
@@ -156,13 +145,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_input_1_function',
             label='Digital Input 1 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_in_a': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_in_a':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_in_a':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_in_a',
+            set_cmd=':port_in_a={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
@@ -184,13 +168,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_input_2_function',
             label='Digital Input 2 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_in_b': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_in_b':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_in_b':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_in_b',
+            set_cmd=':port_in_b={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
@@ -212,13 +191,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_input_3_function',
             label='Digital Input 3 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_in_c': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_in_c':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_in_c':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_in_c',
+            set_cmd=':port_in_c={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
@@ -240,13 +214,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_input_4_function',
             label='Digital Input 4 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_in_d': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_in_d':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_in_d':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_in_d',
+            set_cmd=':port_in_d={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
@@ -268,13 +237,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_input_5_function',
             label='Digital Input 5 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_in_e': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_in_e':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_in_e':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_in_e',
+            set_cmd=':port_in_e={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
@@ -296,13 +260,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_input_6_function',
             label='Digital Input 6 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_in_f': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_in_f':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_in_f':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_in_f',
+            set_cmd=':port_in_f={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
@@ -324,13 +283,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_input_7_function',
             label='Digital Input 7 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_in_g': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_in_g':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_in_g':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_in_g',
+            set_cmd=':port_in_g={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
@@ -352,13 +306,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_input_8_function',
             label='Digital Input 8 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_in_h': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_in_h':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_in_h':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_in_h',
+            set_cmd=':port_in_h={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'StartRecord/ErrorReset': 1,
@@ -380,13 +329,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_output_1_function',
             label='Digital Output 1 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_out_a': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_out_a':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_out_a':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_out_a',
+            set_cmd=':port_out_a={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
@@ -397,13 +341,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_output_2_function',
             label='Digital Output 2 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_out_b': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_out_b':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_out_a':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_out_b',
+            set_cmd=':port_out_b={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
@@ -414,13 +353,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_output_3_function',
             label='Digital Output 3 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_out_c': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_out_c':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_out_c':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_out_c',
+            set_cmd=':port_out_c={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
@@ -431,13 +365,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_output_4_function',
             label='Digital Output 4 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_out_d': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_out_d':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_out_d':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_out_d',
+            set_cmd=':port_out_d={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
@@ -448,13 +377,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_output_5_function',
             label='Digital Output 5 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_out_e': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_out_e':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_out_e':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_out_e',
+            set_cmd=':port_out_e={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
@@ -465,13 +389,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_output_6_function',
             label='Digital Output 6 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_out_f': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_out_f':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_out_f':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_out_f',
+            set_cmd=':port_out_f={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
@@ -482,13 +401,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_output_7_function',
             label='Digital Output 7 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_out_g': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_out_g':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_out_g':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_out_g',
+            set_cmd=':port_out_g={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
@@ -499,13 +413,8 @@ class NanotecSMI33(VisaInstrument):
             'digital_output_8_function',
             label='Digital Output 8 Function',
             unit='',
-            get_cmd=(lambda cmd=':port_out_h': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd=':port_out_h':
-                     self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd=':port_out_h':
-                        int(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_cmd=':port_out_h',
+            set_cmd=':port_out_h={}',
             max_val_age=0,
             val_mapping={'UserDefined': 0,
                          'Ready': 1,
@@ -516,11 +425,8 @@ class NanotecSMI33(VisaInstrument):
             'direction',
             label='Direction',
             unit='',
-            get_cmd=(lambda cmd='d': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='d': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='d': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='d',
+            set_cmd='d{}',
             max_val_age=0,
             val_mapping={'Left': 0,
                          'Right': 1},
@@ -530,11 +436,8 @@ class NanotecSMI33(VisaInstrument):
             'direction_change_on_repeat',
             label='Direction Change on Repeat',
             unit='',
-            get_cmd=(lambda cmd='t': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='t': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='t': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='t',
+            set_cmd='t{}',
             val_mapping={False: 0,
                          True: 1},
             docstring='Change direction of rotation on repeat')
@@ -543,11 +446,8 @@ class NanotecSMI33(VisaInstrument):
             'error_correction',
             label='Error Correction',
             unit='',
-            get_cmd=(lambda cmd='U': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='U': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='U': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='U',
+            set_cmd='U{}',
             val_mapping={'Off': 0,
                          'CorrectionAfterTravel': 1,
                          'CorrectionDuringTravel': 2},
@@ -561,22 +461,17 @@ class NanotecSMI33(VisaInstrument):
             'firmware_version',
             label='Firmware Version',
             unit='',
-            get_cmd=(lambda cmd='v': self.build_get_string(cmd)),
+            get_cmd='v',
             set_cmd=False,
-            get_parser=(lambda x, cmd='v': self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd))),
             docstring='Firmware version')
 
         self.add_parameter(
             'input_debounce_time',
             label='Input Debounce Time',
             unit='ms',
-            get_cmd=(lambda cmd='K': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='K': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='K': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='K',
+            set_cmd='K{}',
+            get_parser=int,
             vals=Ints(min_value=0,
                       max_value=250),
             docstring=('Debounce time for inputs in ms'
@@ -587,11 +482,9 @@ class NanotecSMI33(VisaInstrument):
             'io_input_mask',
             label='IO Input Mask',
             unit='',
-            get_cmd=(lambda cmd='L': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='L': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='L': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='L',
+            set_cmd='L{}',
+            get_parser=int,
             vals=Ints(min_value=0,
                       max_value=196671),
             docstring=('Set the IO input mask (32 bits)'
@@ -613,11 +506,9 @@ class NanotecSMI33(VisaInstrument):
             'io_output_mask',
             label='IO Output Mask',
             unit='',
-            get_cmd=(lambda cmd='Y': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='Y': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='Y': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='Y',
+            set_cmd='Y{}',
+            get_parser=int,
             vals=Ints(min_value=0,
                       max_value=196671),
             docstring=('Set the IO output mask (32 bits)'
@@ -640,11 +531,9 @@ class NanotecSMI33(VisaInstrument):
             'io_polarity',
             label='IO Polarity',
             unit='',
-            get_cmd=(lambda cmd='h': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='h': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='h': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='h',
+            set_cmd='h{}',
+            get_parser=int,
             max_val_age=0,
             vals=Ints(min_value=0,
                       max_value=196671),
@@ -666,11 +555,9 @@ class NanotecSMI33(VisaInstrument):
             'limit_switch_behavior',
             label='Limit Switch Behavior',
             unit='',
-            get_cmd=(lambda cmd='l': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='l': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='l': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='l',
+            set_cmd='l{}',
+            get_parser=int,
             max_val_age=0,
             vals=Ints(min_value=0,
                       max_value=4294967295),
@@ -681,11 +568,9 @@ class NanotecSMI33(VisaInstrument):
             'maximum_frequency',
             label='Maximum Frequency',
             unit='Steps/s',
-            get_cmd=(lambda cmd='o': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='o': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='o': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='o',
+            set_cmd='o{}',
+            get_parser=int,
             vals=Ints(min_value=1,
                       max_value=1000000),
             docstring=('Maximum frequency in steps per second'
@@ -697,11 +582,9 @@ class NanotecSMI33(VisaInstrument):
             'maximum_frequency2',
             label='Maximum Frequency 2',
             unit='Steps/s',
-            get_cmd=(lambda cmd='n': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='n': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='n': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='n',
+            set_cmd='n{}',
+            get_parser=int,
             vals=Ints(min_value=1,
                       max_value=1000000),
             docstring=('Maximum frequency 2 in steps per second'
@@ -714,11 +597,9 @@ class NanotecSMI33(VisaInstrument):
             'minimum_frequency',
             label='Minimum Frequency',
             unit='Steps/s',
-            get_cmd=(lambda cmd='u': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='u': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='u': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='u',
+            set_cmd='u{}',
+            get_parser=int,
             vals=Ints(min_value=1,
                       max_value=160000),
             docstring=('Minimum frequency in steps per second'
@@ -732,12 +613,9 @@ class NanotecSMI33(VisaInstrument):
             'motor_referenced',
             label='Motor Referenced',
             unit='',
-            get_cmd=(lambda cmd=':is_referenced': self.build_get_string(cmd)),
+            get_cmd=':is_referenced',
             set_cmd=False,
-            get_parser=(lambda x, cmd=':is_referenced':
-                        bool(self.parse_cmd_response(
-                            x,
-                            self.build_get_string(cmd)))),
+            get_parser=bool,
             max_val_age=0,
             docstring=('Set the limit switch behavior'
                        '16-bit mask'))
@@ -746,11 +624,9 @@ class NanotecSMI33(VisaInstrument):
             'pause',
             label='Pause',
             unit='ms',
-            get_cmd=(lambda cmd='P': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='P': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='P': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='P',
+            set_cmd='P{}',
+            get_parser=int,
             vals=Ints(min_value=0,
                       max_value=65535),
             docstring=('Pause time between current record and continuation'
@@ -764,11 +640,9 @@ class NanotecSMI33(VisaInstrument):
             'phase_current',
             label='Phase Current',
             unit='%',
-            get_cmd=(lambda cmd='i': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='i': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='i': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='i',
+            set_cmd='i{}',
+            get_parser=int,
             max_val_age=0,
             vals=Ints(min_value=0,
                       max_value=150),
@@ -781,11 +655,9 @@ class NanotecSMI33(VisaInstrument):
             'phase_current_standstill',
             label='Phase Current at Standstill',
             unit='%',
-            get_cmd=(lambda cmd='r': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='r': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='r': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='r',
+            set_cmd='r{}',
+            get_parser=int,
             max_val_age=0,
             vals=Ints(min_value=0,
                       max_value=150),
@@ -798,11 +670,9 @@ class NanotecSMI33(VisaInstrument):
             'position',
             label='Position',
             unit='Steps',
-            get_cmd=(lambda cmd='C': self.build_get_string(cmd)),
+            get_cmd='C',
             set_cmd=False,
-            get_parser=(lambda x, cmd='C': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_parser=int,
             max_val_age=0,
             docstring=('Current motor position relative to last reference'
                        'run'))
@@ -811,11 +681,8 @@ class NanotecSMI33(VisaInstrument):
             'positioning_mode',
             label='Positioning Mode',
             unit='',
-            get_cmd=(lambda cmd='p': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='p': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='p': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='p',
+            set_cmd='p{}',
             val_mapping={'Relative': 1,
                          'Absolute': 2,
                          'InternalReferenceRun': 3,
@@ -841,11 +708,9 @@ class NanotecSMI33(VisaInstrument):
             'quickstop',
             label='Quick Stop',
             unit='',
-            get_cmd=(lambda cmd='H': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='H': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='H': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='H',
+            set_cmd='H{}',
+            get_parser=int,
             vals=Ints(min_value=0,
                       max_value=8000),
             docstring=('Quickstop rate'
@@ -857,11 +722,9 @@ class NanotecSMI33(VisaInstrument):
             'repetitions',
             label='Repetitions',
             unit='',
-            get_cmd=(lambda cmd='W': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='W': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='W': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='W',
+            set_cmd='W{}',
+            get_parser=int,
             vals=Ints(min_value=0,
                       max_value=254),
             docstring=('Repetitions of the current record'
@@ -872,7 +735,7 @@ class NanotecSMI33(VisaInstrument):
             label='Reset Position Error',
             unit='Steps',
             get_cmd=False,
-            set_cmd=(lambda x, cmd='D': self.build_set_string(cmd, x)),
+            set_cmd='D{}',
             vals=Ints(min_value=-100000000,
                       max_value=+100000000),
             docstring=('Reset position error.'
@@ -883,11 +746,9 @@ class NanotecSMI33(VisaInstrument):
             'reverse_clearance',
             label='Reverse Clearance',
             unit='Steps',
-            get_cmd=(lambda cmd='z': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='z': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='z': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='z',
+            set_cmd='z{}',
+            get_parser=int,
             vals=Ints(min_value=0,
                       max_value=9999),
             max_val_age=0,
@@ -902,11 +763,9 @@ class NanotecSMI33(VisaInstrument):
             'status',
             label='Status',
             unit='',
-            get_cmd=(lambda cmd='$': self.build_get_string(cmd)),
+            get_cmd='$',
             set_cmd=False,
-            get_parser=(lambda x, cmd='$': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_parser=int,
             max_val_age=0,
             docstring=('Controller status, 8-bit mask'
                        'Bit 0 == 1 means the controller is ready'
@@ -923,11 +782,9 @@ class NanotecSMI33(VisaInstrument):
             'step_mode',
             label='Step Mode',
             unit='',
-            get_cmd=(lambda cmd='g': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='g': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='g': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='g',
+            set_cmd='g{}',
+            get_parser=int,
             vals=Enum(1, 2, 4, 5, 8, 10, 16, 32, 64, 254, 255),
             docstring=('Step mode'
                        'Must be one of '
@@ -940,11 +797,9 @@ class NanotecSMI33(VisaInstrument):
             'travel_distance',
             label='Travel Distance',
             unit='Steps',
-            get_cmd=(lambda cmd='s': self.build_get_string(cmd)),
-            set_cmd=(lambda x, cmd='s': self.build_set_string(cmd, x)),
-            get_parser=(lambda x, cmd='s': int(self.parse_cmd_response(
-                x,
-                self.build_get_string(cmd)))),
+            get_cmd='s',
+            set_cmd='s{}',
+            get_parser=int,
             vals=Ints(min_value=-100000000,
                       max_value=+100000000),
             docstring=('Travel distance in steps'
@@ -956,23 +811,24 @@ class NanotecSMI33(VisaInstrument):
 
         self.connect_message()
 
-    def build_get_string(self, parameter: str) -> str:
-        if parameter[0] == ':' and parameter[1] not in ['b', 'B']:
-            return self._start_character + self.controller_id + str(parameter)
+    def ask(cmd: str) -> str:
+        # Case for 'long' commands
+        if cmd[0] == ':' and cmd[1] not in ['b', 'B']:
+            motor_cmd = self._start_character + self.controller_id + cmd
+            motor_response = super().ask(motor_cmd)
+            response = motor_response.lstrip('0').split(cmd)[1]
+            return response
+        # Case for all other normal commands
         else:
-            return self._start_character + self.controller_id + 'Z' + str(parameter)
+            motor_cmd = self._start_character + self.controller_id + 'Z' + cmd
+            motor_response = super().ask(motor_cmd)
+            response = motor_response.lstrip('0').split(cmd)[1]
+            return response
 
-    def build_set_string(self, parameter: str, value: str = '') -> str:
-        if parameter[0] == ':' and parameter[1] not in ['b', 'B']:
-            return (self._start_character + self.controller_id + str(parameter)
-                    + '=' + str(value))
-        else:
-            return(self._start_character + self.controller_id + str(parameter)
-                   + str(value))
 
     def get_idn(self):
-        info = self.ask_raw(self._start_character + self.controller_id + 'Zv')
-        info = info.split(' ')[1].rstrip('\r').split('_')
+        info = self.ask(self._start_character + self.controller_id + 'Zv')
+        info = info.split(' ')[1].split('_')
         return {'vendor': 'Nanotec',
                 'model': info[0],
                 'serial': '',
@@ -985,21 +841,7 @@ class NanotecSMI33(VisaInstrument):
             index: integer between 1 and 32
         :return:
         """
-        self.write(self.build_set_string('y', str(index)))
-
-    def parse_cmd_response(self, response: str, command: str) -> str:
-        # long commands
-        if command[0] == ':':
-            if response == self.controller_id + ':?':
-                raise ValueError(f'Unknown command {command}')
-            return response[len(self.controller_id) + str(command):]
-        # normal commands
-        else:
-            if response == (self._start_character + self.controller_id
-                            + str(command) + '?'):
-                raise ValueError(f'Unknown command {command}')
-            return response[len(self._start_character + self.controller_id
-                            + str(command) + str(self.controller_id)):]
+        self.write('y' + str(index))
 
     def save_record_to_eeprom(self, index: int) -> None:
         """
@@ -1008,10 +850,10 @@ class NanotecSMI33(VisaInstrument):
             index: integer between 1 and 32
         :return:
         """
-        self.write(self.build_set_string('>', str(index)))
+        self.write('>' + str(index))
 
     def start_motor(self):
-        self.write(self.build_set_string('A'))
+        self.write('A')
 
     def stop_motor(self, ramp='Quickstop'):
         types = {
@@ -1019,4 +861,8 @@ class NanotecSMI33(VisaInstrument):
             'Brake': 1,
         }
         # TODO: add error checking to ramp type
-        self.write(self.build_set_string('S', str(types[ramp])))
+        self.write('S' + str(types[ramp]))
+
+    def write(cmd: str) -> None:
+        motor_cmd = self._start_character + self.controller_id + cmd
+        motor_response = super().write(motor_cmd)
