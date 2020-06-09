@@ -26,7 +26,7 @@ class NanotecSMI33(VisaInstrument):
         Args:
             name: The name of this instance
             address: The address of the controller
-            id: The id of the motor which can be either '*' or a number
+            controller_id: The id of the motor which can be either '*' or a number
                 between 1 and 254
             kwargs: Additional keyword arguments
         """
@@ -34,8 +34,8 @@ class NanotecSMI33(VisaInstrument):
                          **kwargs)
 
         if controller_id not in [str(i) for i in range(1, 255)] + ['*']:
-            raise ValueError('id must be * or a number from 1 to 254')
-        self.id = controller_id
+            raise ValueError('controller_id must be * or a number from 1 to 254')
+        self.controller_id = controller_id
         self._start_character = '#'
 
         self.add_parameter(
@@ -953,21 +953,21 @@ class NanotecSMI33(VisaInstrument):
 
     def build_get_string(self, parameter: str) -> str:
         if parameter[0] == ':' and parameter[1] not in ['b', 'B']:
-            return self._start_character + self.id + str(parameter)
+            return self._start_character + self.controller_id + str(parameter)
         else:
-            return self._start_character + self.id + 'Z' + str(parameter)
+            return self._start_character + self.controller_id + 'Z' + str(parameter)
 
     def build_set_string(self, parameter: str, value: str = '') -> str:
         if parameter[0] == ':' and parameter[1] not in ['b', 'B']:
-            return (self._start_character + self.id + str(parameter)
+            return (self._start_character + self.controller_id + str(parameter)
                     + '=' + str(value))
         else:
-            return(self._start_character + self.id + str(parameter)
+            return(self._start_character + self.controller_id + str(parameter)
                    + str(value))
 
     def get_idn(self):
-        info = self.ask_raw(self._start_character + self.id + 'v' + '\r')
-        info = info.split[' '][1].rstrip('\r').split('_')
+        info = self.ask_raw(self._start_character + self.controller_id + 'v' + '\r')
+        info = info.split(' ')[1].rstrip('\r').split('_')
         return {'vendor': 'Nanotec',
                 'model': info[0],
                 'serial': '',
@@ -985,16 +985,16 @@ class NanotecSMI33(VisaInstrument):
     def parse_cmd_response(self, response: str, command: str) -> str:
         # long commands
         if command[0] == ':':
-            if response == self.id + ':?':
+            if response == self.controller_id + ':?':
                 raise ValueError(f'Unknown command {command}')
-            return response[len(self.id) + str(command):]
+            return response[len(self.controller_id) + str(command):]
         # normal commands
         else:
-            if response == (self._start_character + self.id
+            if response == (self._start_character + self.controller_id
                             + str(command) + '?'):
                 raise ValueError(f'Unknown command {command}')
-            return response[len(self._start_character + self.id
-                            + str(command) + str(self.id)):]
+            return response[len(self._start_character + self.controller_id
+                            + str(command) + str(self.controller_id)):]
 
     def save_record_to_eeprom(self, index: int) -> None:
         """
