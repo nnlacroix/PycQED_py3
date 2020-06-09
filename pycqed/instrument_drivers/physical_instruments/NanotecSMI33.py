@@ -809,7 +809,7 @@ class NanotecSMI33(VisaInstrument):
 
         self.connect_message()
 
-    def ask(cmd: str) -> str:
+    def ask(self, cmd: str) -> str:
         # Case for 'long' commands
         if cmd[0] == ':' and cmd[1] not in ['b', 'B']:
             motor_cmd = self._start_character + self.controller_id + cmd
