@@ -236,6 +236,7 @@ class BaseDataAnalysis(object):
             return self.options_dict.get(param_name, default_value)
         # multi timestamp with different metadata
         elif isinstance(self.metadata, (list, tuple)) and len(self.metadata) != 0:
+            print(self.metadata)
             return self.options_dict.get(param_name,
                 self.metadata[metadata_index].get(param_name, default_value))
         # base case
@@ -408,12 +409,12 @@ class BaseDataAnalysis(object):
                              rd in self.raw_data_dict]
 
             for i, rd_dict in enumerate(self.raw_data_dict):
+                if len(rd_dict['exp_metadata']) == 0:
+                    self.metadata[i] = {}
                 temp_dict_list.append(
                     self.add_measured_data(
                         rd_dict,
                         self.get_param_value('compression_factor', 1, i)))
-                if len(rd_dict['exp_metadata']) == 0:
-                    rd_dict['exp_metadata'] = {}
             self.raw_data_dict = tuple(temp_dict_list)
 
 
