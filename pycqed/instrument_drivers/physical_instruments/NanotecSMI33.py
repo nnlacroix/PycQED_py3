@@ -760,5 +760,5 @@ class NanotecSMI33(VisaInstrument):
             motor_cmd = self._start_character + self.controller_id + cmd
             super().write(motor_cmd)
         else:
-        motor_cmd = self._start_character + self.controller_id + cmd
-        response =  super().ask(motor_cmd)
+            motor_cmd = self._start_character + self.controller_id + cmd
+            response =  super().ask(motor_cmd)
