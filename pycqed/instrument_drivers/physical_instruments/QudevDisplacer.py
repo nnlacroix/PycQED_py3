@@ -32,9 +32,9 @@ class QudevDisplacer(NanotecSMI33):
         self.continuation_record(0)
         self.direction(direction)
         self.direction_change_on_repeat(False)
-        self.minimum_frequency(30)
         self.maximum_frequency(speed)
         self.maximum_frequency2(100)
+        self.minimum_frequency(30)
         self.pause(0)
         self.positioning_mode('Absolute')
         self.quickstop(0)
@@ -93,26 +93,23 @@ class QudevDisplacer(NanotecSMI33):
             self.wait_until_status(5)
 
     def _escape_limit(self, direction: str, steps: int) -> None:
-        # Configure motor
-        self.reset_position_error(0)
-        # TODO: should have a with ... construct to always reenable
-        #       command response
         # self.command_response('Disabled')
-        self.positioning_mode('Relative')
-        self.travel_distance(steps)
-        self.minimum_frequency(30)
-        self.maximum_frequency(100)
-        self.maximum_frequency2(100)
         self.acceleration(65535)
         self.braking(65535)
-        self.quickstop(0)
+        self.continuation_record(0)
         self.direction(direction)
         self.direction_change_on_repeat(False)
-        self.repetitions(1)
+        self.maximum_frequency(100)
+        self.maximum_frequency2(100)
+        self.minimum_frequency(30)
         self.pause(0)
-        self.continuation_record(0)
-        self.command_response('Enabled')
-        # Start motor
+        self.positioning_mode('Relative')
+        self.quickstop(0)
+        self.repetitions(1)
+        self.reset_position_error(0)
+        self.travel_distance(steps)
+        # self.command_response('Enabled')
+
         self.start_motor()
         # Wait until controller reaches limit
         # (LabVIEW code had a hard coded wait of 3s)
