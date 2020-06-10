@@ -5565,6 +5565,12 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
     def extract_data(self):
         super().extract_data()
 
+        if self.qb_names is None:
+            # get all qubits from cal_points of first timetrace
+            cp = CalibrationPoints.from_string(
+                self.get_param_value('cal_points', None, 0))
+            self.qb_names = deepcopy(cp.qb_names)
+
         self.channel_map = self.get_param_value('channel_map', None,
                                                 metadata_index=0)
         if self.channel_map is None:
@@ -5613,7 +5619,12 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
                     {qb_state: ttrace_per_ro_ch[0] + 1j *ttrace_per_ro_ch[1]})
 
             timetraces = ana_params['timetraces'][qbn] # for convenience
-            basis_labels = self.get_param_value('acq_weights_basis', ['ge', 'gf'])
+            basis_labels = self.get_param_value('acq_weights_basis', None, 0)
+            if basis_labels is None:
+                # guess basis labels from # states measured
+                basis_labels = ["ge", "gf"] \
+                    if len(ana_params['timetraces'][qbn]) > 2 else ['ge']
+
             if isinstance(basis_labels, dict):
                 # if different basis for qubits, then select the according one
                 basis_labels = basis_labels[qbn]
@@ -5690,7 +5701,7 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             ax_id = len(ana_params["timetraces"][qbn]) # id plots for weights
             for i, weights in enumerate(ana_params['optimal_weights'][qbn]):
                 for func, label in zip((np.real, np.imag), ('I', "Q")):
-                    self.plot_dicts[f"{plot_name}_weights_{label}"] = {
+                    self.plot_dicts[f"{plot_name}_weights_{label}_{i}"] = {
                         'fig_id': plot_name,
                         'ax_id': ax_id,
                         'plotfn': self.plot_line,
@@ -5707,8 +5718,6 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
                         "do_legend": True,
                         "legend_pos": "upper right",
                         }
-
-
 
 
 class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
