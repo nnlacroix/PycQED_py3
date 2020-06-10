@@ -755,5 +755,10 @@ class NanotecSMI33(VisaInstrument):
         self.write('S' + str(types[ramp]))
 
     def write(self, cmd: str) -> None:
+        # Handle case of command that disables responding to commands
+        if cmd == '|0':
+            motor_cmd = self._start_character + self.controller_id + cmd
+            super().write(motor_cmd)
+        else:
         motor_cmd = self._start_character + self.controller_id + cmd
         response =  super().ask(motor_cmd)
