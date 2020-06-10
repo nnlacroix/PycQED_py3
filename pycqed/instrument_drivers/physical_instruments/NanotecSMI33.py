@@ -811,7 +811,7 @@ class NanotecSMI33(VisaInstrument):
 
     def ask(self, cmd: str) -> str:
         # Case for 'long' commands
-        if cmd[0] == ':' and cmd[1] not in ['b', 'B']:
+        if cmd[0] == ':' and len(cmd) > 2:
             motor_cmd = self._start_character + self.controller_id + cmd
             motor_response = super().ask(motor_cmd)
             response = motor_response.lstrip('0').split(cmd)[1].lstrip('=')
