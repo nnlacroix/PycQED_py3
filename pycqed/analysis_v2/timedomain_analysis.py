@@ -5523,8 +5523,38 @@ class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
                  'legend_pos': 'upper right'})
 
 class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
-
+    """
+    Analysis class for timetraces, in particular use to compute
+    Optimal SNR integration weights.
+    """
     def __init__(self, qb_names=None, auto=True, **kwargs):
+        """
+        Initializes the timetrace analysis class.
+        Args:
+            qb_names (list): name of the qubits to analyze (can be a subset
+                of the measured qubits)
+            auto (bool): Start analysis automatically
+            **kwargs:
+                t_start: timestamp of the first timetrace
+                t_stop: timestamp of the last timetrace to analyze
+                options_dict (dict): relevant parameters:
+                    acq_weights_basis (list, dict):
+                        list of basis vectors used to compute optimal weight.
+                        e.g. ["ge", 'gf'], the first basis vector will be the
+                        "e" timetrace minus the "g" timetrace and the second basis
+                        vector is f - g. The first letter in each basis state is the
+                        "reference state", i.e. the one of which the timetrace
+                         is substracted. Can also be passed as a dictionary where
+                         keys are the qubit names and the values are lists of basis states
+                         in case different bases should be used for different qubits.
+                    orthonormalize (bool): Whether or not to orthonormalize the
+                        weight basis
+                    tmax (float): time boundary for the plot (not the weights)
+                        in seconds.
+                    scale_weights (bool): scales the weights near unity to avoid
+                        loss of precision on FPGA if weights are too small
+
+        """
         super().__init__( **kwargs)
         self.qb_names = qb_names
 
@@ -5587,9 +5617,11 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             if isinstance(basis_labels, dict):
                 # if different basis for qubits, then select the according one
                 basis_labels = basis_labels[qbn]
+
+            # check that states from the basis are included in mmnt
             for bs in basis_labels:
                 for qb_s in bs:
-                     assert qb_s  in timetraces,\
+                     assert qb_s in timetraces,\
                          f'State: {qb_s} on {qbn} was not provided in the given ' \
                          f'timestamps but was requested as part of the basis' \
                          f' {basis_labels}. Please choose another weight basis.'
@@ -5599,11 +5631,18 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             # orthonormalize if required
             if self.get_param_value("orthonormalize", False):
                 basis = math.gram_schmidt(basis.T).T
-                basis_labels = basis_labels[0] + ["ortho"] * (len(basis_labels) - 1)
+                basis_labels = [bs + "_ortho" if bs != basis_labels[0] else bs
+                                for bs in basis_labels]
 
+            # scale if required
+            if self.get_param_value('scale_weights', True):
+                k = np.amax([(np.max(np.abs(b.real)),
+                              np.max(np.abs(b.imag))) for b in basis])
+                basis /= k
             ana_params['optimal_weights'][qbn] = basis
             ana_params['optimal_weights_basis_labels'][qbn] = basis_labels
 
+            self.save_processed_data()
 
     def prepare_plots(self):
 
@@ -5661,8 +5700,7 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
                         "marker": "",
                         'xunit': 's',
                         'yvals': func(weights * modulation),
-                        'ylabel': 'Voltage, $V$',
-                        'yunit': 'V',
+                        'ylabel': 'Voltage, $V$ (arb.u.)',
                         "sharex": True,
                         "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
                         "setdesc": label + f"_{i+1}",
