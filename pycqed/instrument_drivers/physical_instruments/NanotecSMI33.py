@@ -720,7 +720,7 @@ class NanotecSMI33(VisaInstrument):
     def get_idn(self):
         # Make sure that the controller responds by placing it back into transmit
         # mode
-        response = self.ask('|1')
+        response = super().ask(self._start_character + self.controller_id + '|1')
         info = self.ask('v')
         info = info.split('_')
         return {'vendor': 'Nanotec',
