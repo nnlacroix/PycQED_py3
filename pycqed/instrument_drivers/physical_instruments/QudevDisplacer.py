@@ -22,21 +22,26 @@ class QudevDisplacer(NanotecSMI33):
         :param speed:
         :return:
         """
+        assert self._is_initialized, 'Motor is not initialized'
+        assert self.motor_referenced, 'Motor is not referenced. Run init'
         # self.command_response('Disabled')
-        self.positioning_mode('Absolute')
-        self.travel_distance(position)
+        self.acceleration(65535)
+        self.acceleration_jerk(1)
+        self.braking(65535)
+        self.braking_jerk(100000000)
+        self.continuation_record(0)
+        self.direction(direction)
+        self.direction_change_on_repeat(False)
         self.minimum_frequency(30)
         self.maximum_frequency(speed)
         self.maximum_frequency2(100)
-        self.acceleration(65535)
-        self.braking(65535)
-        self.quickstop(0)
-        self.direction(direction)
-        self.direction_change_on_repeat(False)
-        self.repetitions(1)
         self.pause(0)
-        self.continuation_record(0)
-        self.command_response('Enabled')
+        self.positioning_mode('Absolute')
+        self.quickstop(0)
+        self.repetitions(1)
+        self.travel_distance(position)
+        # self.command_response('Enabled')
+
         self.start_motor()
 
     def drive_motor(self, position: int, speed: int = 600,
@@ -55,11 +60,14 @@ class QudevDisplacer(NanotecSMI33):
         :param clearance_steps:
         :return:
         """
+        assert self._is_initialized, 'Motor is not initialized'
+        assert self.motor_referenced, 'Motor is not referenced. Run init'
         self.safety_check()
         if (position < self._lower_bound + minimum_steps_to_limit or
             position > self._upper_bound - minimum_steps_to_limit):
             pass
-            # TODO: add warning
+            # TODO: add warning that position is being changed due to
+            #       constraints
         position = max(position, self._lower_bound + minimum_steps_to_limit)
         position = min(position, self._upper_bound - minimum_steps_to_limit)
         if mode == 'Normal':
