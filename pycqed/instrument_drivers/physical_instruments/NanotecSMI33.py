@@ -378,7 +378,7 @@ class NanotecSMI33(VisaInstrument):
             set_cmd='L{}',
             get_parser=int,
             vals=Ints(min_value=0,
-                      max_value=196671),
+                      max_value=458815),
             docstring=('Set the IO input mask (32 bits)'
                        'If a bit of the mask is 1, the input or output is used'
                        'by the controller. If the bit is 0, the input or output'
@@ -406,7 +406,7 @@ class NanotecSMI33(VisaInstrument):
             docstring=('Set the IO output mask (32 bits)'
                        'If a bit of the mask is 1, the input or output is used'
                        'by the controller (as long as it free in the IO input'
-                       'mask. If the bit is 0, the input or output'
+                       'mask). If the bit is 0, the input or output'
                        'is available to the user.'
                        'Bit 0: Input 1'
                        'Bit 1: Input 2'
@@ -428,7 +428,7 @@ class NanotecSMI33(VisaInstrument):
             get_parser=int,
             max_val_age=0,
             vals=Ints(min_value=0,
-                      max_value=196671),
+                      max_value=458815),
             docstring=('Set the IO polarity mask (32 bits)'
                        'If a bit of the mask is 1, the polarity is retained.'
                        'If the bit is 0, the polarity is reversed.'
@@ -507,7 +507,7 @@ class NanotecSMI33(VisaInstrument):
             unit='',
             get_cmd=':is_referenced',
             set_cmd=False,
-            get_parser=bool,
+            get_parser=(lambda x: bool(int(x)),
             max_val_age=0,
             docstring=('Set the limit switch behavior'
                        '16-bit mask'))
