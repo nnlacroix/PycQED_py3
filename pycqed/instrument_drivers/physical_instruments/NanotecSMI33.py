@@ -1,6 +1,6 @@
 import logging
-import numpy as np
 
+import pyvisa
 from qcodes import VisaInstrument
 from qcodes.utils.validators import Enum, Ints, Numbers
 
@@ -864,3 +864,5 @@ class NanotecSMI33(VisaInstrument):
     def write(self, cmd: str) -> None:
         motor_cmd = self._start_character + self.controller_id + cmd
         super().write(motor_cmd)
+        # Flush the input IO buffer to clear the response from the controller
+        self.visa_handle.flush(pyvisa.constants.VI_IO_IN_BUF)
