@@ -278,52 +278,6 @@ class NanotecSMI33(VisaInstrument):
             docstring='Function of digital input 6')
 
         self.add_parameter(
-            'digital_input_7_function',
-            label='Digital Input 7 Function',
-            unit='',
-            get_cmd=':port_in_g',
-            set_cmd=':port_in_g={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'StartRecord/ErrorReset': 1,
-                         'RecordSelectBit0': 2,
-                         'RecordSelectBit1': 3,
-                         'RecordSelectBit2': 4,
-                         'RecordSelectBit3': 5,
-                         'RecordSelectBit4': 6,
-                         'ExternalLimitSwitch': 7,
-                         'Trigger': 8,
-                         'Direction': 9,
-                         'Enable': 10,
-                         'Clock': 11,
-                         'ClockDirectionMode1': 12,
-                         'ClockDirectionMode2': 13},
-            docstring='Function of digital input 7')
-
-        self.add_parameter(
-            'digital_input_8_function',
-            label='Digital Input 8 Function',
-            unit='',
-            get_cmd=':port_in_h',
-            set_cmd=':port_in_h={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'StartRecord/ErrorReset': 1,
-                         'RecordSelectBit0': 2,
-                         'RecordSelectBit1': 3,
-                         'RecordSelectBit2': 4,
-                         'RecordSelectBit3': 5,
-                         'RecordSelectBit4': 6,
-                         'ExternalLimitSwitch': 7,
-                         'Trigger': 8,
-                         'Direction': 9,
-                         'Enable': 10,
-                         'Clock': 11,
-                         'ClockDirectionMode1': 12,
-                         'ClockDirectionMode2': 13},
-            docstring='Function of digital input 8')
-
-        self.add_parameter(
             'digital_output_1_function',
             label='Digital Output 1 Function',
             unit='',
@@ -358,66 +312,6 @@ class NanotecSMI33(VisaInstrument):
                          'Ready': 1,
                          'Running': 2},
             docstring='Function of digital output 3')
-
-        self.add_parameter(
-            'digital_output_4_function',
-            label='Digital Output 4 Function',
-            unit='',
-            get_cmd=':port_out_d',
-            set_cmd=':port_out_d={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'Ready': 1,
-                         'Running': 2},
-            docstring='Function of digital output 4')
-
-        self.add_parameter(
-            'digital_output_5_function',
-            label='Digital Output 5 Function',
-            unit='',
-            get_cmd=':port_out_e',
-            set_cmd=':port_out_e={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'Ready': 1,
-                         'Running': 2},
-            docstring='Function of digital output 5')
-
-        self.add_parameter(
-            'digital_output_6_function',
-            label='Digital Output 6 Function',
-            unit='',
-            get_cmd=':port_out_f',
-            set_cmd=':port_out_f={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'Ready': 1,
-                         'Running': 2},
-            docstring='Function of digital output 6')
-
-        self.add_parameter(
-            'digital_output_7_function',
-            label='Digital Output 7 Function',
-            unit='',
-            get_cmd=':port_out_g',
-            set_cmd=':port_out_g={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'Ready': 1,
-                         'Running': 2},
-            docstring='Function of digital output 7')
-
-        self.add_parameter(
-            'digital_output_8_function',
-            label='Digital Output 8 Function',
-            unit='',
-            get_cmd=':port_out_h',
-            set_cmd=':port_out_h={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'Ready': 1,
-                         'Running': 2},
-            docstring='Function of digital output 8')
 
         self.add_parameter(
             'direction',
