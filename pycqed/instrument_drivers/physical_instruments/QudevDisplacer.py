@@ -251,7 +251,7 @@ class QudevDisplacer(NanotecSMI33):
         self.limit_switch_behavior(0b100010000100010)
         # Reload record 3 from EEPROM (set in find_limits)
         self.load_record_from_eeprom(3)
-        self.start()
+        self.start_motor()
         # wait until controller finishes moving or the limit is reached
         self.wait_until_status(5)
 
