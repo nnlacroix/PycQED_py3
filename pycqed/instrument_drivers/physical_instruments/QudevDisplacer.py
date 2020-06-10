@@ -195,7 +195,7 @@ class QudevDisplacer(NanotecSMI33):
                     direction = 'Right'
                 else:
                     direction = 'Left'
-                self.escape_limit(direction, steps=30*i)
+                self._escape_limit(direction, steps=30*i)
                 previous_direction = self.direction()
 
         # Find the limits by driving to the upper limit in external reference
