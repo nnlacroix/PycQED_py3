@@ -64,6 +64,7 @@ class CalibrationPoints:
 
             seg = segment.Segment(segment_prefix + f'{i}', pulse_list)
             segments.append(seg)
+
         return segments
 
     def get_states(self, qb_names=None):
@@ -83,16 +84,21 @@ class CalibrationPoints:
         return {qbn: [s[self.qb_names.index(qbn)] for s in self.states]
                 for qbn in qb_names}
 
-    def get_indices(self, qb_names=None):
+    def get_indices(self, qb_names=None, prep_params=None):
         """
         Get calibration indices
         Args:
             qb_names: qubit name or list of qubit names to retrieve
                 the indices of. Defaults to all.
+            prep_params: QuDev_transmon preparation_params attribute
 
         Returns: dict where keys are qb_names and values dict of {state: ind}
 
         """
+        if prep_params is None:
+            prep_params = {}
+        prep_type = prep_params.get('preparation_type', 'wait')
+
         qb_names = self._check_qb_names(qb_names)
         indices = dict()
         states = self.get_states(qb_names)
@@ -100,9 +106,20 @@ class CalibrationPoints:
         for qbn in qb_names:
             unique, idx, inv = np.unique(states[qbn], return_inverse=True,
                                         return_index=True)
-            indices[qbn] = {s: [-len(states[qbn]) + j
-                                for j in range(len(inv)) if i == inv[j]]
-                            for i, s in enumerate(unique)}
+            if prep_type == 'preselection':
+                indices[qbn] = {s: [-2*len(states[qbn]) + 2*j + 1
+                                    for j in range(len(inv)) if i == inv[j]]
+                                for i, s in enumerate(unique)}
+            elif 'active_reset' in prep_type:
+                reset_reps = prep_params['reset_reps']
+                indices[qbn] = {s: [-(reset_reps+1)*len(states[qbn]) +
+                                    reset_reps*(j + 1)+j for j in
+                                    range(len(inv)) if i == inv[j]]
+                                for i, s in enumerate(unique)}
+            else:
+                indices[qbn] = {s: [-len(states[qbn]) + j
+                                    for j in range(len(inv)) if i == inv[j]]
+                                for i, s in enumerate(unique)}
 
         log.info(f"Calibration Points Indices: {indices}")
         return indices
@@ -118,7 +135,8 @@ class CalibrationPoints:
 
         return qb_names
 
-    def get_rotations(self, last_ge_pulses=False, qb_names=None):
+    def get_rotations(self, last_ge_pulses=False, qb_names=None,
+                      enforce_two_cal_states=False):
         """
         Get rotation dictionaries for each qubit in qb_names,
         as used by the analysis for plotting.
@@ -154,7 +172,7 @@ class CalibrationPoints:
             order = {"g": 0, "e": 1, "f": 2}
             unique = list(np.unique(states[qbn]))
             unique.sort(key=lambda s: order[s])
-            if len(unique) == 3:
+            if len(unique) == 3 and enforce_two_cal_states:
                 unique = np.delete(unique, 1 if last_ge_pulses[i] else 0)
             rotations[qbn] = {unique[i]: i for i in range(len(unique))}
         log.info(f"Calibration Points Rotation: {rotations}")

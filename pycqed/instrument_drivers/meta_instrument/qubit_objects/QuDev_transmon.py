@@ -1324,7 +1324,7 @@ class QuDev_transmon(Qubit):
                              'cal_points': repr(cp),
                              'sweep_points': sp,
                              'meas_obj_sweep_points_map':
-                                 sp.get_sweep_points_map([self.name]),
+                                 sp.get_meas_obj_sweep_points_map([self.name]),
                              'meas_obj_value_names_map':
                                  meas_obj_value_names_map,
                              'processing_pipe': pp})
@@ -3745,7 +3745,7 @@ def add_CZ_pulse(qbc, qbt):
                                 vals=vals.Enum('BufferedSquarePulse',
                                                'BufferedCZPulse',
                                                'NZBufferedCZPulse',
-                                               'BufferedCZPulseEffectiveTime'))
+                                               ))
         qbc.add_pulse_parameter(op_name, ps_name + '_channel', 'channel',
                                 initial_value='', vals=vals.Strings())
         qbc.add_pulse_parameter(op_name, ps_name + '_aux_channels_dict',
