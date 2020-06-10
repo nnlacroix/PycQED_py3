@@ -5087,21 +5087,19 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):
         super().process_data()
 
-        self.leakage_qbname = self.get_param_value('leakage_qbname')
-        self.cphase_qbname = self.get_param_value('cphase_qbname')
-        if self.leakage_qbname is None and self.cphase_qbname is None:
-            raise ValueError('Please provide either leakage_qbname or '
-                             'cphase_qbname.')
-        elif self.cphase_qbname is None:
-            self.cphase_qbname = [qbn for qbn in self.qb_names if
-                                  qbn != self.leakage_qbname][0]
-        elif self.leakage_qbname is None:
-            self.leakage_qbname = [qbn for qbn in self.qb_names if
-                                   qbn != self.cphase_qbname]
-            if len(self.leakage_qbname) > 0:
-                self.leakage_qbname = self.leakage_qbname[0]
-            else:
-                self.leakage_qbname = None
+        self.leakage_qbnames = self.get_param_value('leakage_qbnames')
+        self.cphase_qbnames = self.get_param_value('cphase_qbnames')
+        if self.leakage_qbnames is None and self.cphase_qbnames is None:
+            raise ValueError('Please provide either leakage_qbnames or '
+                             'cphase_qbnames.')
+        elif self.cphase_qbnames is None:
+            self.cphase_qbnames = [qbn for qbn in self.qb_names if
+                                  qbn not in self.leakage_qbname]
+        elif self.leakage_qbnames is None:
+            self.leakage_qbnames = [qbn for qbn in self.qb_names if
+                                   qbn not in self.cphase_qbnames]
+            if len(self.leakage_qbnames) == 0:
+                self.leakage_qbnames = None
 
         for qbn, data in self.proc_data_dict['data_to_fit'].items():
             if data.shape[1] != self.proc_data_dict['sweep_points_dict'][qbn][
@@ -5135,7 +5133,7 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                     qbn]['msmt_sweep_points'])
                 data = self.proc_data_dict['data_to_fit_reshaped'][qbn][row, :]
                 key = 'fit_{}{}_{}'.format(labels[row % 2], row, qbn)
-                if qbn == self.cphase_qbname:
+                if qbn in self.cphase_qbnames:
                     # fit cphase qb results to a cosine
                     model = lmfit.Model(fit_mods.CosFunc)
                     guess_pars = fit_mods.Cos_guess(
@@ -5172,7 +5170,7 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
         # get cphases population losses
         keys = [k for k in list(self.fit_dicts.keys()) if
-                self.cphase_qbname in k]
+                any(cp_qb in k for cp_qb in self.cphase_qbname)]
         fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
         # cphases
         phases = np.array([fr.best_values['phase'] for fr in fit_res_objs])
@@ -5210,14 +5208,14 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
             'population_loss'] = {'val': population_loss,
                                   'stderr': population_loss_stderrs}
 
-        if self.leakage_qbname is not None:
+        if self.leakage_qbnames is not None:
             # get leakage
             if self.get_param_value('classified_ro', False):
                 leakage = self.leakage_values[0::2] - self.leakage_values[1::2]
                 leakage_errs = np.zeros(len(leakage))
             else:
                 keys = [k for k in list(self.fit_dicts.keys()) if
-                        self.leakage_qbname in k]
+                        any(cp_qb in k for cp_qb in self.leakage_qbnames)]
                 fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
 
                 lines = np.array([fr.best_values['c'] for fr in fit_res_objs])
@@ -5260,11 +5258,11 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
             legend_pos = 'upper right'
             legend_ncol = 2
 
-            if qbn == self.cphase_qbname and \
+            if qbn in self.cphase_qbnames and \
                     self.get_latex_prob_label(prob_label) == \
                     self.get_latex_prob_label(self.data_to_fit[qbn]):
                 figure_name = 'Cphase_{}_{}'.format(qbn, prob_label)
-            elif qbn == self.leakage_qbname and \
+            elif qbn in self.leakage_qbnames and \
                     self.get_latex_prob_label(prob_label) == \
                     self.get_latex_prob_label(self.data_to_fit[qbn]):
                 figure_name = 'Leakage_{}_{}'.format(qbn, prob_label)
@@ -5304,11 +5302,10 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                 # phases = phases[:-self.num_cal_points]
                 # data = data[:-self.num_cal_points]
 
-            if self.leakage_qbname is not None:
-                legend_label = '{} in $|g\\rangle$'.format(
-                    self.leakage_qbname) if row % 2 != 0 else \
-                    '{} in $|e\\rangle$'.format(
-                        self.leakage_qbname)
+            if self.leakage_qbnames is not None:
+                legend_label = '{} in $|g\\rangle$'.format(qbn) \
+                    if row % 2 != 0 else \
+                    '{} in $|e\\rangle$'.format(qbn)
             else:
                 legend_label = 'qbc in $|g\\rangle$' if \
                     row % 2 != 0 else 'qbc in $|e\\rangle$'
@@ -5355,7 +5352,7 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                 k = 'fit_{}{}_{}'.format(
                     'e' if row % 2 == 0 else 'g', row, qbn)
 
-                if qbn == self.cphase_qbname:
+                if qbn in self.cphase_qbnames:
                     fit_res = self.fit_dicts[k]['fit_res']
                     self.plot_dicts[k + '_' + prob_label] = {
                         'fig_id': figure_name,
@@ -5418,7 +5415,7 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
 
                 if self.do_fitting and len(self.proc_data_dict[
                                'analysis_params_dict']['cphase']['val']) == 1:
-                        if qbn == self.cphase_qbname:
+                        if qbn in self.cphase_qbnames:
                             textstr = 'Cphase = {:.2f}'.format(
                                 self.proc_data_dict['analysis_params_dict'][
                                     'cphase']['val'][0]*180/np.pi) + \
