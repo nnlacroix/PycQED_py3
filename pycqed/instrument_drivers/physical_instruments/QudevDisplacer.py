@@ -16,13 +16,28 @@ class QudevDisplacer(Instrument):
         super().__init__(name, **kwargs)
 
         # Add instrument references
-        self.add_parameter('instr_attenuator',
+        self.add_parameter('attenuator',
                            parameter_class=InstrumentRefParameter)
-        self.add_parameter('instr_phase_shifter',
+        self.add_parameter('phase_shifter',
                            parameter_class=InstrumentRefParameter)
 
         # Add displacer board control parameters
-        self.add_parameter('attenuator_position',
-                           label='Attenuator Position',
-                           unit='',
-                           get_cmd=)
+        self.add_parameter(
+            'attenuator_position',
+            label='Attenuator Position',
+            unit='',
+            get_cmd=self.attenuator.instrument.position_normalized,
+            set_cmd=self.attenuator.instrument.position_normalized,
+            docstring=('Attenuator motor position (normalized)'
+                       'Min value: 0.0'
+                       'Max value: 1.0'))
+
+        self.add_parameter(
+            'phase_shifter_position',
+            label='Phase Shifter Position',
+            unit='',
+            get_cmd=self.phase_shifter.instrument.position_normalized,
+            set_cmd=self.phase_shifter.instrument.position_normalized,
+            docstring=('Phase shifter motor position (normalized)'
+                       'Min value: 0.0'
+                       'Max value: 1.0'))
