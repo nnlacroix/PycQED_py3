@@ -918,7 +918,7 @@ def parity_single_round_spec_dd_seq(ancilla_qubit_name, data_qubit_names, CZ_map
             pp['element_name'] = f'drive_{prep}'
         all_pulses += prep_pulses
 
-        main_pulses = [deepcopy(operation_dict['Y90 ' + ancilla_qubit_name])]
+        main_pulses = [deepcopy(operation_dict['mY90 ' + ancilla_qubit_name])]
         main_pulses[-1]['element_name'] = f'drive_{prep}'
         for i, dqn in enumerate(data_qubit_names):
             op = 'CZ ' + ancilla_qubit_name + ' ' + dqn
