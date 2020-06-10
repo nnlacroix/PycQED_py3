@@ -5917,33 +5917,6 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         presel_shots_per_qb = dict() # store preselection ro
         means = defaultdict(dict)    # store mean per qb for each ro_ch
         pdd = self.proc_data_dict    # for convenience of notation
-        # for qbn in self.qb_names:
-        #     # shape is (n_shots, 2) i.e. one column for each ro_ch
-        #     qb_shots_all_states = \
-        #         np.asarray(list(
-        #             self.proc_data_dict['meas_results_per_qb'][qbn].values())).T
-        #     for i, qb_state in enumerate(self.cp.get_states(qbn)):
-        #         # store separately shots with different state preparation
-        #         shots_per_qb[qbn][qb_state] = qb_shots_all_states[i::n_states]
-        #         # make 2D array in case only one channel (1D array)
-        #         if len(shots_per_qb[qbn][qb_state].shape) == 1:
-        #             shots_per_qb[qbn][qb_state] = \
-        #                 np.expand_dims(shots_per_qb[qbn][qb_state], axis=-1)
-        #         means[qbn][qb_state] = np.mean(shots_per_qb[qbn][qb_state], axis=0)
-        #     if self.preselection:
-        #         # preselection shots were removed so look at raw data
-        #         # and look at only the first out of every two readouts
-        #         presel_shots_all_states = \
-        #             np.asarray(list(self.proc_data_dict[
-        #                                 'meas_results_per_qb_raw'][qbn].values())).T[::2]
-        #         for i, qb_state in enumerate(self.cp.get_states(qbn)):
-        #             # store separately shots with different state preparation
-        #             presel_shots_per_qb[qbn][qb_state] = \
-        #                 presel_shots_all_states[i::n_states]
-        #             # make 2D array in case only one channel (1D array)
-        #             if len(presel_shots_per_qb[qbn][qb_state].shape) == 1:
-        #                 presel_shots_per_qb[qbn][qb_state] = \
-        #                     np.expand_dims(presel_shots_per_qb[qbn][qb_state], axis=-1)
 
         for qbn in self.qb_names:
             # shape is (n_shots, n_ro_ch) i.e. one column for each ro_ch
