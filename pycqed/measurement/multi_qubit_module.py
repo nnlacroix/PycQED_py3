@@ -562,7 +562,7 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
                 'analysis_params']['classifier_params'][qb.name]
             if update:
                 qb.acq_classifier_params(classifier_params)
-        return a, seq
+        return a
 
 def find_optimal_weights(qubits, states=('g', 'e'), upload=True,
                          acq_length=4096/1.8e9, exp_metadata=None,
@@ -698,7 +698,6 @@ def find_optimal_weights(qubits, states=('g', 'e'), upload=True,
                                 f"automatically.")
                 qb.acq_weights_basis(a.proc_data_dict['analysis_params_dict'
                     ]['optimal_weights_basis_labels'][qb.name])
-
 
 
 def measure_active_reset(qubits, shots=5000,
