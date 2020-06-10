@@ -32,6 +32,7 @@ from pycqed.analysis_v3 import helper_functions as hlp_mod
 import pycqed.measurement.waveform_control.sequence as sequence
 from pycqed.utilities.general import temporary_value
 from pycqed.analysis_v2 import tomography_qudev as tomo
+import pycqed.analysis.analysis_toolbox as a_tools
 
 
 try:
@@ -542,10 +543,13 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
                 qb.acq_classifier_params(classifier_params)
         return a, seq
 
-def measure_timetraces(qubits, states=('g', 'e'), upload=True,
-                       acq_length=4096/1.8e9, exp_metadata=None):
+def find_optimal_weights(qubits, states=('g', 'e'), upload=True,
+                         acq_length=4096/1.8e9, exp_metadata=None,
+                         analyze=True, analysis_kwargs=None,
+                         acq_weights_basis=None, orthonormalize=False,
+                         update=True):
     """
-    Measures time traces for specified states
+    Measures time traces for specified states and
     Args:
         qubits: qubits on which traces should be measured
         states (tuple, list, str): if str or tuple of single character strings,
@@ -561,6 +565,15 @@ def measure_timetraces(qubits, states=('g', 'e'), upload=True,
         upload: upload waveforms to AWG
         acq_length: length of timetrace to record
         exp_metadata: experimental metadata
+        acq_weights_basis (list): shortcut for analysis parameter.
+            list of basis vectors used for computing the weights.
+            (see Timetrace Analysis). e.g. ["ge", "gf"] yields basis vectors e - g
+            and f - g. If None, defaults to  ["ge", "gf"] when more than 2 traces are
+            passed to the analysis and to ['ge'] if 2 traces are measured.
+        orthonormalize (bool): shortcut for analysis parameter. Whether or not to
+            orthonormalize the optimal weights (see MultiQutrit Timetrace Analysis)
+        update (bool): update weights
+
 
     Returns:
 
@@ -598,7 +611,9 @@ def measure_timetraces(qubits, states=('g', 'e'), upload=True,
              'sweep_unit': ['s'],
              'sweep_points': sweep_points,
              'acq_length': acq_length,
-             'channel_map': channel_map})
+             'channel_map': channel_map,
+             'orthonormalize': orthonormalize,
+             "acq_weights_basis": acq_weights_basis})
 
         for state in states:
             # create sequence
@@ -626,6 +641,43 @@ def measure_timetraces(qubits, states=('g', 'e'), upload=True,
                 qubits, nr_samples=npoints)["inp_avg_det"]
             MC.set_detector_function(df)
             MC.run(name=name, exp_metadata=exp_metadata)
+
+    if analyze:
+        tps = a_tools.latest_data(n_matches=len(states),
+                                  return_timestamp=True)[0]
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+        if 't_start' not in analysis_kwargs:
+            analysis_kwargs.update({"t_start": tps[0],
+                                    "t_stop": tps[-1]})
+
+        options_dict = dict(orthonormalize=orthonormalize,
+                            acq_weights_basis=acq_weights_basis)
+        options_dict.update(analysis_kwargs.pop("options_dict", {}))
+        a = tda.MultiQutrit_Timetrace_Analysis(options_dict=options_dict,
+                                               **analysis_kwargs)
+
+        if update:
+            for qb in qubits:
+                weights = a.proc_data_dict['analysis_params_dict'
+                    ]['optimal_weights'][qb.name]
+                if np.ndim(weights) == 1:
+                    # single channel
+                    qb.acq_weights_I(weights.real)
+                    qb.acq_weights_Q(weights.imag)
+                elif np.ndim(weights) == 2 and len(weights) == 2:
+                    # two channels
+                    qb.acq_weights_I(weights[0].real)
+                    qb.acq_weights_Q(weights[0].imag)
+                    qb.acq_weights_I2(weights[1].real)
+                    qb.acq_weights_Q2(weights[1].imag)
+                else:
+                    log.warning(f"{qb.name}: Number of weight vectors > 2: "
+                                f"{len(weights)}. Cannot update weights "
+                                f"automatically.")
+                qb.acq_weights_basis(a.proc_data_dict['analysis_params_dict'
+                    ]['optimal_weights_basis_labels'][qb.name])
+
 
 
 def measure_active_reset(qubits, shots=5000,
