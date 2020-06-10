@@ -161,7 +161,7 @@ class QudevDisplacer(NanotecSMI33):
         self.acceleration(6000)
         self.braking(65535)
         self.quickstop(0)
-        self.distance('Right')
+        self.direction('Right')
         self.direction_change_on_repeat(False)
         self.repetitions(1)
         self.pause(200)
