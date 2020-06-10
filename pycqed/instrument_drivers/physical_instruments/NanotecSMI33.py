@@ -826,10 +826,10 @@ class NanotecSMI33(VisaInstrument):
 
     def get_idn(self):
         info = self.ask('v')
-        info = info.split(' ')[1].split('_')
+        info = info.split('_')
         return {'vendor': 'Nanotec',
                 'model': info[0],
-                'serial': '',
+                'serial': None,
                 'firmware': info[2]}
 
     def load_record_from_eeprom(self, index: int) -> None:
