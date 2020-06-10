@@ -4,6 +4,7 @@ import logging
 from pycqed.instrument_drivers.physical_instruments.NanotecSMI33\
     import NanotecSMI33
 
+log = logging.getLogger(__name__)
 
 class QudevDisplacer(NanotecSMI33):
     def __init__(self, name: str, address: str, controller_id: str = '*', **kwargs) -> None:
@@ -64,10 +65,8 @@ class QudevDisplacer(NanotecSMI33):
         assert self.motor_referenced, 'Motor is not referenced. Run init'
         self.safety_check()
         if (position < self._lower_bound + minimum_steps_to_limit or
-            position > self._upper_bound - minimum_steps_to_limit):
-            pass
-            # TODO: add warning that position is being changed due to
-            #       constraints
+                position > self._upper_bound - minimum_steps_to_limit):
+            log.warning('Position outside of safe region. Value clamped.')
         position = max(position, self._lower_bound + minimum_steps_to_limit)
         position = min(position, self._upper_bound - minimum_steps_to_limit)
         if mode == 'Normal':
@@ -95,7 +94,9 @@ class QudevDisplacer(NanotecSMI33):
     def _escape_limit(self, direction: str, steps: int) -> None:
         # self.command_response('Disabled')
         self.acceleration(65535)
+        self.acceleration_jerk(1)
         self.braking(65535)
+        self.braking_jerk(100000000)
         self.continuation_record(0)
         self.direction(direction)
         self.direction_change_on_repeat(False)
@@ -123,61 +124,65 @@ class QudevDisplacer(NanotecSMI33):
         :return:
         """
         # Prepare first record
+        # An external reference run means that the motor will run until
+        # the limit switch is triggered (in this case, due to the limit
+        # switch behavior and IO polarity, it will run until the limit
+        # switch is released).
+        # After the limit switch is released,
         # self.command_response('Disabled')
-        self.positioning_mode('ExternalReferenceRun')
-        self.travel_distance(100)
-        self.minimum_frequency(30)
-        self.maximum_frequency(250)
-        self.maximum_frequency2(250)
         self.acceleration(6000)
+        self.acceleration_jerk(1)
         self.braking(1)
-        self.quickstop(0)
+        self.braking_jerk(100000000)
+        self.continuation_record(2)
         self.direction('Right')
         self.direction_change_on_repeat(False)
-        self.repetitions(1)
+        self.maximum_frequency(250)
+        self.maximum_frequency2(250)
+        self.minimum_frequency(30)
         self.pause(200)
-        self.continuation_record(2)
+        self.positioning_mode('ExternalReferenceRun')
+        self.quickstop(0)
+        self.repetitions(1)
+        self.travel_distance(100)
+        # self.command_response('Enabled')
         self.save_record_to_eeprom(1)
-        self.command_response('Enabled')
+
         # Prepare second record
         # self.command_response('Disabled')
-        self.positioning_mode('Relative')
-        self.travel_distance(100000000)
-        self.minimum_frequency(30)
-        self.maximum_frequency(250)
-        self.maximum_frequency2(250)
         self.acceleration(6000)
+        self.acceleration_jerk(1)
         self.braking(1)
-        self.quickstop(0)
+        self.braking_jerk(100000000)
+        self.continuation_record(0)
         self.direction('Left')
         self.direction_change_on_repeat(False)
-        self.repetitions(254)
-        self.pause(200)
-        self.continuation_record(0)
-        self.save_record_to_eeprom(2)
-        self.command_response('Enabled')
-        # Prepare third record
-        # self.command_response('Disabled')
-        self.positioning_mode('Relative')
-        self.travel_distance(300)
-        self.minimum_frequency(30)
         self.maximum_frequency(250)
         self.maximum_frequency2(250)
-        self.acceleration(6000)
-        self.braking(65535)
-        self.quickstop(0)
-        self.direction('Right')
-        self.direction_change_on_repeat(False)
-        self.repetitions(1)
+        self.minimum_frequency(30)
         self.pause(200)
-        self.continuation_record(0)
-        self.save_record_to_eeprom(3)
-        self.command_response('Enabled')
+        self.positioning_mode('Relative')
+        self.quickstop(0)
+        self.repetitions(254)
+        self.travel_distance(100000000)
+        # self.command_response('Enabled')
+        self.save_record_to_eeprom(2)
+
         # Start sequence
         self.load_record_from_eeprom(1)
         self.start_motor()
 
-    def initialize(self, reverse_clearance: int = 0):
+    def initialize(self, reverse_clearance: int = 0) -> None:
+        """
+        Prepare motor for operation
+        Configure the motor settings and perform mechanical limit seeking
+        Digital input 6 is configured as the external limit switch with
+        inverted polarity (such that the controller is triggered when
+        the limit switch turns off).
+        The external limit switch is configured for free run backwards
+        mode during an external reference run and stop mode during normal
+        runs.
+        """
         self.command_response('Enabled')
         self.firmware_version()
         self.phase_current(20)
@@ -195,7 +200,7 @@ class QudevDisplacer(NanotecSMI33):
         # Escape the limit if we are currently at one
         previous_direction = self.direction()
         if self.limit_switch_on():
-            for i in range(1,3):
+            for i in range(1, 3):
                 if previous_direction == 'Left':
                     direction = 'Right'
                 else:
@@ -251,11 +256,26 @@ class QudevDisplacer(NanotecSMI33):
         """
         self._lower_bound = 0
         self._upper_bound = self.position()
-        self.reset_position_error(0)
-        # Set limit switch behavior to correct value
+        # self.command_response('Disabled')
+        self.acceleration(6000)
+        self.acceleration_jerk(1)
+        self.braking(65535)
+        self.braking_jerk(100000000)
+        self.continuation_record(0)
+        self.direction('Right')
+        self.direction_change_on_repeat(False)
         self.limit_switch_behavior(0b100010000100010)
-        # Reload record 3 from EEPROM (set in find_limits)
-        self.load_record_from_eeprom(3)
+        self.maximum_frequency(250)
+        self.maximum_frequency2(250)
+        self.minimum_frequency(30)
+        self.pause(200)
+        self.positioning_mode('Relative')
+        self.quickstop(0)
+        self.repetitions(1)
+        self.reset_position_error(0)
+        self.travel_distance(300)
+        # self.command_response('Enabled')
+
         self.start_motor()
         # wait until controller finishes moving or the limit is reached
         self.wait_until_status(5)
@@ -269,8 +289,6 @@ class QudevDisplacer(NanotecSMI33):
         """
         self.command_response('Enabled')
         t0 = time.time()
-        while (time.time() - t0) < timeout:
-            if self.status() & mask > 0:
-                break
-            else:
-                time.sleep(0.1)
+        while (time.time() - t0) < timeout and (self.status() & mask == 0):
+            # TODO: add warning when timeout occurs
+            time.sleep(0.05)
