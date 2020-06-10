@@ -335,6 +335,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 reset_reps = prep_params.get('reset_reps', 1)
                 self.data_filter = lambda x: x[reset_reps::reset_reps+1]
                 self.data_with_reset = True
+            elif "preselection" in prep_params.get('preparation_type', 'wait'):
+                self.data_filter = lambda x: x[1::2]  # filter preselection RO
         if self.data_filter is None:
             self.data_filter = lambda x: x
 
@@ -378,9 +380,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                                          default_value={})
 
         # create projected_data_dict
-        self.data_to_fit = self.get_param_value('data_to_fit')
-        if self.cal_states_rotations is not None \
-            and not self.get_param_value('global_PCA', default_value=False):
+        self.data_to_fit = self.get_param_value('data_to_fit', {})
+        global_PCA = self.get_param_value('global_PCA', default_value=False)
+        if self.cal_states_rotations is not None or global_PCA:
             self.cal_states_analysis()
         else:
             # this assumes data obtained with classifier detector!
