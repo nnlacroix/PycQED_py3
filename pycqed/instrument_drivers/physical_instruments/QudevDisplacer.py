@@ -201,9 +201,9 @@ class QudevDisplacer(NanotecSMI33):
         # Find the limits by driving to the upper limit in external reference
         # run mode and then driving to lower limit in relative mode until
         # the limit switch is reached and the motor stops
-        self.find_limits()
+        self._find_limits()
         # Uses record 3 set in find_limits to travel away from the limit
-        self.travel_away_from_limit()
+        self._travel_away_from_limit()
         self.limit_switch_behavior(0b10010000100010)
         self._is_initialized = True
 
@@ -269,9 +269,3 @@ class QudevDisplacer(NanotecSMI33):
                 break
             else:
                 time.sleep(0.1)
-
-
-
-
-
-
