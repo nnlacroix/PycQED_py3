@@ -22,6 +22,9 @@ from copy import deepcopy
 from pycqed.measurement.calibration_points import CalibrationPoints
 import matplotlib.pyplot as plt
 import logging
+
+from pycqed.utilities import math
+
 log = logging.getLogger(__name__)
 try:
     import qutip as qtp
@@ -5518,6 +5521,157 @@ class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
                 {'legend_ncol': 2,
                  'legend_bbox_to_anchor': (1, -0.15),
                  'legend_pos': 'upper right'})
+
+class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
+
+    def __init__(self, qb_names=None, auto=True, **kwargs):
+        super().__init__( **kwargs)
+        self.qb_names = qb_names
+
+        if auto:
+            self.run_analysis()
+            self.data_file.close()
+
+    def extract_data(self):
+        super().extract_data()
+
+        self.channel_map = self.get_param_value('channel_map', None,
+                                                metadata_index=0)
+        if self.channel_map is None:
+            # assume same channel map for all timetraces (pick 0th)
+            value_names = self.raw_data_dict[0]['value_names']
+            if np.ndim(value_names) > 0:
+                value_names = value_names
+            if 'w' in value_names[0]:
+                self.channel_map = a_tools.get_qb_channel_map_from_hdf(
+                    self.qb_names, value_names=value_names,
+                    file_path=self.raw_data_dict['folder'])
+            else:
+                self.channel_map = {}
+                for qbn in self.qb_names:
+                    self.channel_map[qbn] = value_names
+
+        if len(self.channel_map) == 0:
+            raise ValueError('No qubit RO channels have been found.')
+
+    def process_data(self):
+        super().process_data()
+        pdd = self.proc_data_dict
+
+        pdd['analysis_params_dict'] = dict()
+        ana_params = pdd['analysis_params_dict']
+        ana_params['timetraces'] = defaultdict(dict)
+        ana_params['optimal_weights'] = defaultdict(dict)
+        ana_params['optimal_weights_basis_labels'] = defaultdict(dict)
+        for qbn in self.qb_names:
+            # retrieve time traces
+            for i, rdd in enumerate(self.raw_data_dict):
+                ttrace_per_ro_ch = [rdd["measured_data"][ch]
+                                    for ch in self.channel_map[qbn]]
+                if len(ttrace_per_ro_ch) != 2:
+                    raise NotImplementedError(
+                        'This analysis does not support optimal weight '
+                        f'measurement based on {len(ttrace_per_ro_ch)} ro channels.'
+                        f' Try again with 2 RO channels.')
+                cp = CalibrationPoints.from_string(
+                    self.get_param_value('cal_points', None, i))
+                # get state of qubit. There can be only one cal point per sequence
+                # when using uhf for time traces so it is the 0th state
+                qb_state = cp.states[0][cp.qb_names.index(qbn)]
+                # store all timetraces in same pdd for convenience
+                ana_params['timetraces'][qbn].update(
+                    {qb_state: ttrace_per_ro_ch[0] + 1j *ttrace_per_ro_ch[1]})
+
+            timetraces = ana_params['timetraces'][qbn] # for convenience
+            basis_labels = self.get_param_value('acq_weights_basis', ['ge', 'gf'])
+            if isinstance(basis_labels, dict):
+                # if different basis for qubits, then select the according one
+                basis_labels = basis_labels[qbn]
+            for bs in basis_labels:
+                for qb_s in bs:
+                     assert qb_s  in timetraces,\
+                         f'State: {qb_s} on {qbn} was not provided in the given ' \
+                         f'timestamps but was requested as part of the basis' \
+                         f' {basis_labels}. Please choose another weight basis.'
+            basis = np.array([timetraces[b[1]] - timetraces[b[0]]
+                              for b in basis_labels])
+
+            # orthonormalize if required
+            if self.get_param_value("orthonormalize", False):
+                basis = math.gram_schmidt(basis.T).T
+                basis_labels = basis_labels[0] + ["ortho"] * (len(basis_labels) - 1)
+
+            ana_params['optimal_weights'][qbn] = basis
+            ana_params['optimal_weights_basis_labels'][qbn] = basis_labels
+
+
+    def prepare_plots(self):
+
+        pdd = self.proc_data_dict
+        rdd = self.raw_data_dict
+        ana_params = self.proc_data_dict['analysis_params_dict']
+        for qbn in self.qb_names:
+            mod_freq = float(self.get_hdf_param_value(
+                self.data_file[f"Instrument settings/{qbn}"], 'ro_mod_freq'))
+            tbase = rdd[0]['hard_sweep_points']
+            basis_labels = pdd["analysis_params_dict"][
+                'optimal_weights_basis_labels'][qbn]
+            title = 'Optimal SNR weights ' + qbn + \
+                    "".join(['\n' + rddi["timestamp"] for rddi in rdd]) \
+                            + f'\nWeight Basis: {basis_labels}'
+            plot_name = f"weights_{qbn}"
+            xlabel = "Time, $t$"
+            modulation = np.exp(2j * np.pi * mod_freq * tbase)
+
+            for ax_id, (state, ttrace) in \
+                enumerate(ana_params["timetraces"][qbn].items()):
+                for func, label in zip((np.real, np.imag), ('I', "Q")):
+                    # plot timetraces for each state, I and Q channels
+                    self.plot_dicts[f"{plot_name}_{state}_{label}"] = {
+                        'fig_id': plot_name,
+                        'ax_id': ax_id,
+                        'plotfn': self.plot_line,
+                        'xvals': tbase,
+                        'xunit': 's',
+                        "marker": "",
+                        'yvals': func(ttrace*modulation),
+                        'ylabel': 'Voltage, $V$',
+                        'yunit': 'V',
+                        "sharex": True,
+                        "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
+                        "setdesc": label + f"_{state}",
+                        "setlabel": "",
+                        "do_legend":True,
+                        "legend_pos": "upper right",
+                        'numplotsx': 1,
+                        'numplotsy': len(rdd) + 1, # #states + 1 for weights
+                        'plotsize': (10,
+                                     (len(rdd) + 1) * 3), # 3 inches per plot
+                        'title': title if ax_id == 0 else ""}
+            ax_id = len(ana_params["timetraces"][qbn]) # id plots for weights
+            for i, weights in enumerate(ana_params['optimal_weights'][qbn]):
+                for func, label in zip((np.real, np.imag), ('I', "Q")):
+                    self.plot_dicts[f"{plot_name}_weights_{label}"] = {
+                        'fig_id': plot_name,
+                        'ax_id': ax_id,
+                        'plotfn': self.plot_line,
+                        'xvals': tbase,
+                        'xlabel': xlabel,
+                        "setlabel": "",
+                        "marker": "",
+                        'xunit': 's',
+                        'yvals': func(weights * modulation),
+                        'ylabel': 'Voltage, $V$',
+                        'yunit': 'V',
+                        "sharex": True,
+                        "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
+                        "setdesc": label + f"_{i+1}",
+                        "do_legend": True,
+                        "legend_pos": "upper right",
+                        }
+
+
+
 
 class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
     """
