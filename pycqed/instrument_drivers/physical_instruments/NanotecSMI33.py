@@ -878,6 +878,6 @@ class NanotecSMI33(VisaInstrument):
         # self.visa_handle.flush(pyvisa.constants.VI_WRITE_BUF)
         # self.visa_handle.flush(pyvisa.constants.VI_READ_BUF)
         motor_cmd = self._start_character + self.controller_id + cmd
-        response =  self.ask(motor_cmd)
+        response =  super().ask(motor_cmd)
         # Flush the input IO buffer to clear the response from the controller
         # self.visa_handle.flush(pyvisa.constants.VI_READ_BUF)
