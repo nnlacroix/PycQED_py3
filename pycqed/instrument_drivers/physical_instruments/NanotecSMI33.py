@@ -1,6 +1,5 @@
 import logging
 
-import pyvisa
 from qcodes import VisaInstrument
 from qcodes.utils.validators import Enum, Ints, Numbers
 
