@@ -811,8 +811,8 @@ class NanotecSMI33(VisaInstrument):
 
     def ask(self, cmd: str) -> str:
         # Flush the input IO buffer to clear the response from the controller
-        # self.visa_handle.flush(pyvisa.constants.VI_IO_IN_BUF |
-        #                        pyvisa.constants.VI_IO_OUT_BUF)
+        self.visa_handle.flush(pyvisa.constants.VI_WRITE_BUF)
+        self.visa_handle.flush(pyvisa.constants.VI_READ_BUF)
         # Case for 'long' commands
         if cmd[0] == ':' and len(cmd) > 2:
             motor_cmd = self._start_character + self.controller_id + cmd
