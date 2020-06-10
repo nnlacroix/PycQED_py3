@@ -507,7 +507,7 @@ class NanotecSMI33(VisaInstrument):
             unit='',
             get_cmd=':is_referenced',
             set_cmd=False,
-            get_parser=(lambda x: bool(int(x)),
+            get_parser=(lambda x: bool(int(x))),
             max_val_age=0,
             docstring=('Set the limit switch behavior'
                        '16-bit mask'))
