@@ -22,7 +22,7 @@ class QudevDisplacer(NanotecSMI33):
         :param speed:
         :return:
         """
-        self.command_response('Disabled')
+        # self.command_response('Disabled')
         self.positioning_mode('Absolute')
         self.travel_distance(position)
         self.minimum_frequency(30)
@@ -89,7 +89,7 @@ class QudevDisplacer(NanotecSMI33):
         self.reset_position_error(0)
         # TODO: should have a with ... construct to always reenable
         #       command response
-        self.command_response('Disabled')
+        # self.command_response('Disabled')
         self.positioning_mode('Relative')
         self.travel_distance(steps)
         self.minimum_frequency(30)
@@ -118,7 +118,7 @@ class QudevDisplacer(NanotecSMI33):
         :return:
         """
         # Prepare first record
-        self.command_response('Disabled')
+        # self.command_response('Disabled')
         self.positioning_mode('ExternalReferenceRun')
         self.travel_distance(100)
         self.minimum_frequency(30)
@@ -135,7 +135,7 @@ class QudevDisplacer(NanotecSMI33):
         self.save_record_to_eeprom(1)
         self.command_response('Enabled')
         # Prepare second record
-        self.command_response('Disabled')
+        # self.command_response('Disabled')
         self.positioning_mode('Relative')
         self.travel_distance(100000000)
         self.minimum_frequency(30)
@@ -152,7 +152,7 @@ class QudevDisplacer(NanotecSMI33):
         self.save_record_to_eeprom(2)
         self.command_response('Enabled')
         # Prepare third record
-        self.command_response('Disabled')
+        # self.command_response('Disabled')
         self.positioning_mode('Relative')
         self.travel_distance(300)
         self.minimum_frequency(30)
