@@ -216,7 +216,7 @@ class BaseDataAnalysis(object):
                 'close_figs', False))
 
     @staticmethod
-    def get_hdf_param_value(group, param_name):
+    def get_hdf_datafile_param_value(group, param_name):
         '''
         Returns an attribute "key" of the group "Experimental Data"
         in the hdf5 datafile.
@@ -229,6 +229,30 @@ class BaseDataAnalysis(object):
         if type(s) == np.ndarray:
             s = [s.decode('utf-8') for s in s]
         return s
+
+    def get_hdf_param_value(self, path_to_group, attribute, hdf_file_index=0):
+        """
+        Gets the attribute (i.e. parameter) of a given group in the hdf file.
+        Args:
+            path_to_group (str): path to group. e.g. "Instrument settings/qb1"
+            attribute: attribute name. e.g. "T1"
+            hdf_file_index: index of the file to use in case of
+                multiple timestamps.
+
+        Returns:
+
+        """
+        h5mode = self.options_dict.get('h5mode', 'r+')
+        folder = a_tools.get_folder(self.timestamps[hdf_file_index])
+        h5filepath = a_tools.measurement_filename(folder)
+        data_file = h5py.File(h5filepath, h5mode)
+
+        try:
+            return self.get_hdf_datafile_param_value(data_file[path_to_group],
+                                                     attribute)
+        except Exception as e:
+            data_file.close()
+            raise e
 
     def get_param_value(self, param_name, default_value=None, metadata_index=0):
         # no stored metadata
@@ -252,7 +276,7 @@ class BaseDataAnalysis(object):
             folder = a_tools.get_folder(timestamp)
             h5mode = self.options_dict.get('h5mode', 'r+')
             h5filepath = a_tools.measurement_filename(folder)
-            self.data_file = h5py.File(h5filepath, h5mode)
+            data_file = h5py.File(h5filepath, h5mode)
             try:
                 if 'timestamp' in raw_data_dict_ts:
                     raw_data_dict_ts['timestamp'] = timestamp
@@ -263,34 +287,34 @@ class BaseDataAnalysis(object):
                         os.path.split(folder)[1][7:]
                 if 'measured_data' in raw_data_dict_ts:
                     raw_data_dict_ts['measured_data'] = \
-                        np.array(self.data_file['Experimental Data']['Data']).T
+                        np.array(data_file['Experimental Data']['Data']).T
 
                 for save_par, file_par in self.params_dict.items():
                     if len(file_par.split('.')) == 1:
                         par_name = file_par.split('.')[0]
-                        for group_name in self.data_file.keys():
-                            if par_name in list(self.data_file[group_name].attrs):
+                        for group_name in data_file.keys():
+                            if par_name in list(data_file[group_name].attrs):
                                 raw_data_dict_ts[save_par] = \
-                                    self.get_hdf_param_value(
-                                        self.data_file[group_name], par_name)
+                                    self.get_hdf_datafile_param_value(
+                                        data_file[group_name], par_name)
                     else:
                         group_name = '/'.join(file_par.split('.')[:-1])
                         par_name = file_par.split('.')[-1]
-                        if group_name in self.data_file:
-                            if par_name in list(self.data_file[group_name].attrs):
+                        if group_name in data_file:
+                            if par_name in list(data_file[group_name].attrs):
                                 raw_data_dict_ts[save_par] = \
-                                    self.get_hdf_param_value(
-                                        self.data_file[group_name], par_name)
-                            elif par_name in list(self.data_file[group_name].keys()):
+                                    self.get_hdf_datafile_param_value(
+                                        data_file[group_name], par_name)
+                            elif par_name in list(data_file[group_name].keys()):
                                 raw_data_dict_ts[save_par] = \
-                                    read_dict_from_hdf5({}, self.data_file[
+                                    read_dict_from_hdf5({}, data_file[
                                         group_name][par_name])
                     if isinstance(raw_data_dict_ts[save_par], list) and \
                             len(raw_data_dict_ts[save_par]) == 1:
                         raw_data_dict_ts[save_par] = \
                             raw_data_dict_ts[save_par][0]
             except Exception as e:
-                self.data_file.close()
+                data_file.close()
                 raise e
             raw_data_dict.append(raw_data_dict_ts)
 
