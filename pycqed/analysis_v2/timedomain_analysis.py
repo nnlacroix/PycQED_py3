@@ -260,10 +260,11 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         elif self.sp is not None:
             self.proc_data_dict['sweep_points_2D_dict'] = OrderedDict()
             for qbn in self.qb_names:
-                self.proc_data_dict['sweep_points_2D_dict'][qbn] = \
-                    {qbn: {
-                        self.sp[i+1][pn][2]: self.sp[i+1][pn][0] for i, pn in
-                        enumerate(self.mospm[qbn][1:])}}
+                self.proc_data_dict['sweep_points_2D_dict'][qbn] = OrderedDict()
+                for pn in self.mospm[qbn]:
+                    if pn in self.sp[1]:
+                        self.proc_data_dict['sweep_points_2D_dict'][qbn][
+                            pn] = self.sp[1][pn][0]
         else:
             if len(self.raw_data_dict['soft_sweep_points'].shape) == 1:
                 self.proc_data_dict['sweep_points_2D_dict'] = \
@@ -3172,7 +3173,6 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
             for qb in self.qb_names}
         nr_sp2d = {qb: len(pdd['sweep_points_2D_dict'][qb][self.raw_data_dict['sweep_parameter_names'][1]])\
             for qb in self.qb_names}
-        print()
         nr_cp = self.num_cal_points
 
         # make matrix out of vector
@@ -5094,7 +5094,7 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                              'cphase_qbnames.')
         elif self.cphase_qbnames is None:
             self.cphase_qbnames = [qbn for qbn in self.qb_names if
-                                  qbn not in self.leakage_qbname]
+                                  qbn not in self.leakage_qbnames]
         elif self.leakage_qbnames is None:
             self.leakage_qbnames = [qbn for qbn in self.qb_names if
                                    qbn not in self.cphase_qbnames]
@@ -5168,68 +5168,73 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def analyze_fit_results(self):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
-        # get cphases population losses
-        keys = [k for k in list(self.fit_dicts.keys()) if
-                any(cp_qb in k for cp_qb in self.cphase_qbname)]
-        fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
-        # cphases
-        phases = np.array([fr.best_values['phase'] for fr in fit_res_objs])
-        phases_errs = np.array([fr.params['phase'].stderr
-                                for fr in fit_res_objs])
-        phases_errs[phases_errs == None] = 0.0
+        for cp_qbn in self.cphase_qbnames:
+            # get cphases population losses
+            keys = [k for k in list(self.fit_dicts.keys()) if cp_qbn in k]
+            fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
+            # cphases
+            phases = np.array([fr.best_values['phase'] for fr in fit_res_objs])
+            phases_errs = np.array([fr.params['phase'].stderr
+                                    for fr in fit_res_objs])
+            phases_errs[phases_errs == None] = 0.0
 
-        cphases = phases[0::2] - phases[1::2]
-        cphases[cphases < 0] += 2*np.pi
-        cphases_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
-                                           phases_errs[1::2]**2,
-                                           dtype=np.float64))
-        self.proc_data_dict['analysis_params_dict'][
-            'cphase'] = {'val': cphases, 'stderr': cphases_stderrs}
+            cphases = phases[0::2] - phases[1::2]
+            cphases[cphases < 0] += 2*np.pi
+            cphases_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
+                                               phases_errs[1::2]**2,
+                                               dtype=np.float64))
+            self.proc_data_dict['analysis_params_dict'][f'cphase_{cp_qbn}'] = \
+                {'val': cphases, 'stderr': cphases_stderrs}
 
-        # population losses
-        amps = np.array([fr.best_values['amplitude'] for fr in fit_res_objs])
-        amps_errs = np.array([fr.params['amplitude'].stderr
-                                for fr in fit_res_objs])
-        amps_errs[amps_errs == None] = 0.0
+            # population losses
+            amps = np.array([fr.best_values['amplitude'] for fr
+                             in fit_res_objs])
+            amps_errs = np.array([fr.params['amplitude'].stderr
+                                    for fr in fit_res_objs])
+            amps_errs[amps_errs == None] = 0.0
 
-        population_loss = np.abs(amps[0::2] - amps[1::2])/amps[1::2]
-        x   = amps[0::2] - amps[1::2]
-        x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
-                         dtype=np.float64)
-        y = amps[1::2]
-        y_err = amps_errs[1::2]
-        try:
-            population_loss_stderrs = np.sqrt(np.array(
-                ((y * x_err) ** 2 + (x * y_err) ** 2) / (y ** 4),
-                dtype=np.float64))
-        except:
-            population_loss_stderrs = float("nan")
-        self.proc_data_dict['analysis_params_dict'][
-            'population_loss'] = {'val': population_loss,
-                                  'stderr': population_loss_stderrs}
+            population_loss = np.abs(amps[0::2] - amps[1::2])/amps[1::2]
+            x   = amps[0::2] - amps[1::2]
+            x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
+                             dtype=np.float64)
+            y = amps[1::2]
+            y_err = amps_errs[1::2]
+            try:
+                population_loss_stderrs = np.sqrt(np.array(
+                    ((y * x_err) ** 2 + (x * y_err) ** 2) / (y ** 4),
+                    dtype=np.float64))
+            except:
+                population_loss_stderrs = float("nan")
+            self.proc_data_dict['analysis_params_dict'][
+                f'population_loss_{cp_qbn}'] = \
+                {'val': population_loss, 'stderr': population_loss_stderrs}
 
         if self.leakage_qbnames is not None:
-            # get leakage
-            if self.get_param_value('classified_ro', False):
-                leakage = self.leakage_values[0::2] - self.leakage_values[1::2]
-                leakage_errs = np.zeros(len(leakage))
-            else:
-                keys = [k for k in list(self.fit_dicts.keys()) if
-                        any(cp_qb in k for cp_qb in self.leakage_qbnames)]
-                fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
+            for lk_qbn in self.leakage_qbnames:
+                # get leakage
+                if self.get_param_value('classified_ro', False):
+                    leakage = self.leakage_values[0::2] - \
+                              self.leakage_values[1::2]
+                    leakage_errs = np.zeros(len(leakage))
+                else:
+                    keys = [k for k in list(self.fit_dicts.keys()) if
+                            lk_qbn in k]
+                    fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
 
-                lines = np.array([fr.best_values['c'] for fr in fit_res_objs])
-                lines_errs = np.array([fr.params['c'].stderr for
-                                       fr in fit_res_objs])
-                lines_errs[lines_errs == None] = 0.0
+                    lines = np.array([fr.best_values['c'] for fr
+                                      in fit_res_objs])
+                    lines_errs = np.array([fr.params['c'].stderr for
+                                           fr in fit_res_objs])
+                    lines_errs[lines_errs == None] = 0.0
 
-                leakage = lines[0::2] - lines[1::2]
-                leakage_errs = np.array(np.sqrt(lines_errs[0::2]**2 +
-                                                lines_errs[1::2]**2),
-                                 dtype=np.float64)
+                    leakage = lines[0::2] - lines[1::2]
+                    leakage_errs = np.array(np.sqrt(lines_errs[0::2]**2 +
+                                                    lines_errs[1::2]**2),
+                                     dtype=np.float64)
 
-            self.proc_data_dict['analysis_params_dict'][
-                'leakage'] = {'val': leakage, 'stderr': leakage_errs}
+                self.proc_data_dict['analysis_params_dict'][
+                    f'leakage_{lk_qbn}'] = \
+                    {'val': leakage, 'stderr': leakage_errs}
 
         self.save_processed_data(key='analysis_params_dict')
 
@@ -5312,7 +5317,10 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
             hard_sweep_params = self.get_param_value('hard_sweep_params')
             sweep_name = self.get_param_value('sweep_name')
             sweep_unit = self.get_param_value('sweep_unit')
-            if hard_sweep_params is not None:
+            if self.sp is not None:
+                xlabel = self.sp[0]['phase'][2]
+                xunit = self.sp[0]['phase'][1]
+            elif hard_sweep_params is not None:
                 xlabel = list(hard_sweep_params)[0]
                 xunit = list(hard_sweep_params.values())[0][
                     'unit']
@@ -5402,6 +5410,8 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
         return figure_name
 
     def prepare_plots(self):
+        cphases_temp = self.proc_data_dict['analysis_params_dict'][
+            f'cphase_{self.cphase_qbnames[0]}']['val']
         if self.options_dict.get('plot_all_traces', True):
             for j, qbn in enumerate(self.qb_names):
                 if self.options_dict.get('plot_all_probs', True):
@@ -5413,25 +5423,25 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                         self.data_to_fit[qbn], self.proc_data_dict[
                             'data_to_fit'][qbn], qbn)
 
-                if self.do_fitting and len(self.proc_data_dict[
-                               'analysis_params_dict']['cphase']['val']) == 1:
+                if self.do_fitting and len(cphases_temp) == 1:
                         if qbn in self.cphase_qbnames:
                             textstr = 'Cphase = {:.2f}'.format(
                                 self.proc_data_dict['analysis_params_dict'][
-                                    'cphase']['val'][0]*180/np.pi) + \
+                                    f'cphase_{qbn}']['val'][0]*180/np.pi) + \
                                       r'$^{\circ}$' + \
                                     '$\\pm${:.2f}'.format(self.proc_data_dict[
-                                          'analysis_params_dict']['cphase'][
+                                          'analysis_params_dict'][
+                                          f'cphase_{qbn}'][
                                           'stderr'][0] * 180 / np.pi) + \
                                       r'$^{\circ}$'
                             textstr += '\nPopulation loss = ' + \
                                        '{:.3f} $\\pm$ {:.3f}'.format(
                                 self.proc_data_dict[
                                     'analysis_params_dict'][
-                                    'population_loss']['val'][0],
+                                    f'population_loss_{qbn}']['val'][0],
                                                 self.proc_data_dict[
                                     'analysis_params_dict'][
-                                    'population_loss']['stderr'][0])
+                                    f'population_loss_{qbn}']['stderr'][0])
                             self.plot_dicts['text_msg_' + qbn] = {
                                 'fig_id': 'Cphase_{}_pe'.format(qbn),
                                 'ypos': -0.2,
@@ -5443,9 +5453,9 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                         else:
                             textstr = 'Leakage = {:.5f} $\\pm$ {:.5f}'.format(
                                 self.proc_data_dict['analysis_params_dict'][
-                                    'leakage']['val'][0],
+                                    f'leakage_{qbn}']['val'][0],
                                 self.proc_data_dict['analysis_params_dict'][
-                                    'leakage']['stderr'][0])
+                                    f'leakage_{qbn}']['stderr'][0])
                             self.plot_dicts['text_msg_' + qbn] = {
                                 'fig_id': figure_name,
                                 'ypos': -0.2,
@@ -5456,48 +5466,42 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                                 'text_string': textstr}
 
         # plot analysis results
-        if self.do_fitting and len(self.proc_data_dict[
-                'analysis_params_dict']['cphase']['val']) > 1:
-            # unique_swpts2d = [np.unique(arr) for arr in self.raw_data_dict[
-            #     'sweep_points_2D_dict'][self.qb_names[0]]]
-            # swpts2d_lengths = np.array([len(np.unique(arr)) for arr in
-            #                             unique_swpts2d])
-            # swpts2d_idxs = np.where(swpts2d_lengths > 1)[0]
-            assert ('soft_sweep_params' in self.metadata)
-            ss_pars = self.metadata['soft_sweep_params']
-
-            for idx, ss_pname in enumerate(ss_pars):
-                for param_name, results_dict in self.proc_data_dict[
-                        'analysis_params_dict'].items():
-                    reps = len(results_dict['val']) / \
-                           len(ss_pars[ss_pname]['values'])
-                    plot_name = '{}_vs_{}'.format(param_name, ss_pname)
-                    if param_name == 'cphase':
-                        yvals = results_dict['val']*180/np.pi - 180
-                        yerr = results_dict['stderr']*180/np.pi
-                        ylabel = param_name + '-$180^{\\circ}$'
-                        self.plot_dicts[plot_name+'_hline'] = {
-                            'fig_id': plot_name,
-                            'plotfn': self.plot_hlines,
-                            'y': 0,
-                            'xmin': np.min(ss_pars[ss_pname]['values']),
-                            'xmax': np.max(ss_pars[ss_pname]['values']),
-                            'colors': 'gray'}
-                    else:
-                        yvals = results_dict['val']
-                        yerr = results_dict['stderr']
-                        ylabel = param_name
-                    self.plot_dicts[plot_name] = {
-                        'plotfn': self.plot_line,
-                        'xvals': np.repeat(ss_pars[ss_pname]['values'], reps),
-                        'xlabel': ss_pname,
-                        'xunit': ss_pars[ss_pname]['unit'],
-                        'yvals': yvals,
-                        'yerr': yerr if param_name != 'leakage' else None,
-                        'ylabel': ylabel,
-                        'yunit': 'deg' if param_name == 'cphase' else '',
-                        'linestyle': 'none',
-                        'do_legend': False}
+        if self.do_fitting and len(cphases_temp) > 1:
+            for qbn in self.qb_names:
+                ss_pars = self.proc_data_dict['sweep_points_2D_dict'][qbn]
+                for idx, ss_pname in enumerate(ss_pars):
+                    sp_info = self.sp[1][ss_pname]
+                    for param_name, results_dict in self.proc_data_dict[
+                            'analysis_params_dict'].items():
+                        if qbn in param_name:
+                            reps = len(results_dict['val']) / len(sp_info[0])
+                            plot_name = f'{param_name}_vs_{sp_info[2]}'
+                            if param_name == 'cphase':
+                                yvals = results_dict['val']*180/np.pi - 180
+                                yerr = results_dict['stderr']*180/np.pi
+                                ylabel = param_name + '-$180^{\\circ}$'
+                                self.plot_dicts[plot_name+'_hline'] = {
+                                    'fig_id': plot_name,
+                                    'plotfn': self.plot_hlines,
+                                    'y': 0,
+                                    'xmin': np.min(sp_info[0]),
+                                    'xmax': np.max(sp_info[0]),
+                                    'colors': 'gray'}
+                            else:
+                                yvals = results_dict['val']
+                                yerr = results_dict['stderr']
+                                ylabel = param_name
+                            self.plot_dicts[plot_name] = {
+                                'plotfn': self.plot_line,
+                                'xvals': np.repeat(sp_info[0], reps),
+                                'xlabel': sp_info[2],
+                                'xunit': sp_info[1],
+                                'yvals': yvals,
+                                'yerr': yerr if param_name != 'leakage' else None,
+                                'ylabel': ylabel,
+                                'yunit': 'deg' if param_name == 'cphase' else '',
+                                'linestyle': 'none',
+                                'do_legend': False}
 
 
 class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):

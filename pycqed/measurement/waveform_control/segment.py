@@ -1061,7 +1061,8 @@ class Segment:
             plt.tight_layout()
             if savefig:
                 plt.savefig(f'{self.name}.png')
-            # plt.show()
+            plt.show()
+            plt.close(fig)
             return fig, ax
         except Exception as e:
             log.error(f"Could not plot: {self.name}")

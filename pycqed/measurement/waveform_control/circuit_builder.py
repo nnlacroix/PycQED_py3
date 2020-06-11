@@ -42,7 +42,8 @@ class CircuitBuilder:
         """
         Wrapper to get 'all' qubits, single qubit specified as string
         or list of qubits, checking they are in self.qubits
-        :param qb_names: 'all', single qubit name (eg. 'qb1') or list of qb names
+        :param qb_names: 'all', single qubit name (eg. 'qb1') or list of
+            qb names
         :return: list of qb names
         """
         stored_qb_names = [qb.name for qb in self.qubits]
@@ -60,7 +61,8 @@ class CircuitBuilder:
 
         for qb in qb_names:
             assert qb in stored_qb_names, f"{qb} not found in {stored_qb_names}"
-        return [self.qubits[stored_qb_names.index(qb)] for qb in qb_names], qb_names
+        return [self.qubits[stored_qb_names.index(qb)] for qb in qb_names], \
+               qb_names
 
     def get_prep_params(self, qb_names='all'):
         qubits, qb_names = self.get_qubits(qb_names)
@@ -102,7 +104,8 @@ class CircuitBuilder:
              will perform a 100 degree Z rotation
         Args:
             op: operation
-            parse_z_gate: whether or not to look for Zgates with arbitrary angles.
+            parse_z_gate: whether or not to look for Zgates with arbitrary
+            angles.
 
         Returns: deepcopy of the pulse dictionary
 
@@ -148,9 +151,9 @@ class CircuitBuilder:
               In that case the same init_state is done on all qubits
             - list of standard init. Must then be of same length as 'qubits' and
               in the same order.
-            - list of arbitrary pulses (which are in the operation_dict). Must be
-              of the same lengths as 'qubits' and in the same order. Should not
-              include space and qubit name (those are added internally).
+            - list of arbitrary pulses (which are in the operation_dict). Must
+              be of the same lengths as 'qubits' and in the same order. Should
+              not include space and qubit name (those are added internally).
         :param qb_names (list or 'all'): list of qubits on which init should be
             applied. Defaults to all qubits.
         :param prep_params: preparation parameters
@@ -165,8 +168,9 @@ class CircuitBuilder:
             init_state = [init_state] * len(qb_names)
         else:
             assert len(init_state) == len(qb_names), \
-                "There must be a one to one mapping between initializations and " \
-                f"qubits. Got {len(init_state)} init and {len(qb_names)} qubits"
+                f"There must be a one to one mapping between initializations " \
+                f"and qubits. Got {len(init_state)} init and {len(qb_names)} " \
+                f"qubits"
 
         pulses = []
         pulses.extend(self.prepare(qb_names, ref_pulse="start",
@@ -175,21 +179,24 @@ class CircuitBuilder:
             # add qb name and "s" for reference to start of previous pulse
             op = self.STD_INIT.get(init, init)
             if op != 'I':
-                op += f"{'s' if len(pulses) != 0 and simultaneous else ''} " + qbn
+                op += f"{'s' if len(pulses) != 0 and simultaneous else ''} " + \
+                      qbn
                 pulse = self.get_pulse(op)
                 pulses.append(pulse)
         return Block(block_name, pulses)
 
-    def prepare(self, qb_names='all', ref_pulse='start', preparation_type='wait',
-                post_ro_wait=1e-6, ro_separation=1.5e-6, reset_reps=3,
-                final_reset_pulse=False, threshold_mapping=None, block_name=None):
+    def prepare(self, qb_names='all', ref_pulse='start',
+                preparation_type='wait', post_ro_wait=1e-6,
+                ro_separation=1.5e-6, reset_reps=3, final_reset_pulse=False,
+                threshold_mapping=None, block_name=None):
         """
-        Prepares specified qb for an experiment by creating preparation pulse for
-        preselection or active reset.
+        Prepares specified qb for an experiment by creating preparation pulse
+        for preselection or active reset.
         Args:
             qb_names: which qubits to prepare. Defaults to all.
             ref_pulse: reference pulse of the first pulse in the pulse list.
-                reset pulse will be added in front of this. If the pulse list is empty,
+                reset pulse will be added in front of this.
+                If the pulse list is empty,
                 reset pulses will simply be before the block_start.
             preparation_type:
                 for nothing: 'wait'
@@ -233,16 +240,17 @@ class CircuitBuilder:
                         (state_ops[threshold_mapping[qbn][1]], 1)]
                 elif preparation_type == 'active_reset_ef':
                     assert len(threshold_mapping[qbn]) == 4, \
-                        "Active reset for the f-level requires a mapping of length 4" \
-                            f" but only {len(threshold_mapping)} were given: " \
-                            f"{threshold_mapping}"
+                        f"Active reset for the f-level requires a mapping of " \
+                        f"length 4 but only {len(threshold_mapping)} were " \
+                        f"given: {threshold_mapping}"
                     ops_and_codewords[qbn] = [
                         (state_ops[threshold_mapping[qbn][0]], 0),
                         (state_ops[threshold_mapping[qbn][1]], 1),
                         (state_ops[threshold_mapping[qbn][2]], 2),
                         (state_ops[threshold_mapping[qbn][3]], 3)]
                 else:
-                    raise ValueError(f'Invalid preparation type {preparation_type}')
+                    raise ValueError(f'Invalid preparation type '
+                                     f'{preparation_type}')
 
             reset_pulses = []
             for i, qbn in enumerate(qb_names):
@@ -258,11 +266,14 @@ class CircuitBuilder:
                             pulse_length = 0
                             for jj in range(1, j + 1):
                                 if 'pulse_length' in reset_pulses[-1 - jj]:
-                                    pulse_length += reset_pulses[-1 - jj]['pulse_length']
+                                    pulse_length += reset_pulses[-1 - jj][
+                                        'pulse_length']
                                 else:
-                                    pulse_length += reset_pulses[-1 - jj]['sigma'] * \
-                                                    reset_pulses[-1 - jj]['nr_sigma']
-                            reset_pulses[-1]['pulse_delay'] = post_ro_wait + pulse_length
+                                    pulse_length += \
+                                        reset_pulses[-1 - jj]['sigma'] * \
+                                        reset_pulses[-1 - jj]['nr_sigma']
+                            reset_pulses[-1]['pulse_delay'] = post_ro_wait + \
+                                                              pulse_length
 
             prep_pulse_list = []
             for rep in range(reset_reps):
@@ -275,8 +286,8 @@ class CircuitBuilder:
                     ro_list[0]['ref_pulse'] = ref_pulse
                     ro_list[0]['pulse_delay'] = -reset_reps * ro_separation
                 else:
-                    ro_list[0]['ref_pulse'] = 'refpulse_reset_element_{}'.format(
-                        rep - 1)
+                    ro_list[0]['ref_pulse'] = \
+                        'refpulse_reset_element_{}'.format(rep - 1)
                     ro_list[0]['pulse_delay'] = ro_separation
                     ro_list[0]['ref_point'] = 'start'
 
@@ -313,9 +324,9 @@ class CircuitBuilder:
             return Block(block_name, preparation_pulses)
 
     def mux_readout(self, qb_names='all', element_name='RO', **pulse_pars):
-
         block_name = "Readout"
         qubits, qb_names = self.get_qubits(qb_names)
+        print(qb_names)
         ro_pulses = []
         for j, qb_name in enumerate(qb_names):
             ro_pulse = deepcopy(self.operation_dict['RO ' + qb_name])
