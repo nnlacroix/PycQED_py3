@@ -29,3 +29,13 @@ def gram_schmidt(B):
             Ai = Ai - t * Aj
         B[:, i] = normalize(Ai)
     return B
+
+
+def factors(n):
+    """
+    Returns all factors of n
+    """
+    import functools
+    return list(functools.reduce(list.__add__,
+                                 ([i, n // i] for i in range(1, int(n ** 0.5) + 1)
+                                  if n % i == 0)))

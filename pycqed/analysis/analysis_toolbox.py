@@ -482,17 +482,37 @@ def get_timestamps_in_range(timestamp_start, timestamp_end=None,
                                          each_label in x]
         else:
             matched_measdirs = all_measdirs
+
         if (date.date() - datetime_start.date()).days == 0:
             # Check if newer than starting timestamp
             timemark_start = timemark_from_datetime(datetime_start)
-            matched_measdirs = [dirname for dirname in matched_measdirs
-                            if int(dirname[:6]) >= int(timemark_start)]
+            temp = []
+            for dirname in matched_measdirs:
+                try:
+                    # if the date folder contains any file in addition to data
+                    # folders this code will give a ValueError because
+                    # dirname[:6] cannot be converted to int
+                    if int(dirname[:6]) >= int(timemark_start):
+                        temp += [dirname]
+                except ValueError:
+                    pass
+            matched_measdirs = temp
 
         if (date.date() - datetime_end.date()).days == 0:
             # Check if older than ending timestamp
             timemark_end = timemark_from_datetime(datetime_end)
-            matched_measdirs = [dirname for dirname in matched_measdirs if
-                            int(dirname[:6]) <= int(timemark_end)]
+            temp = []
+            for dirname in matched_measdirs:
+                try:
+                    # if the date folder contains any file in addition to data
+                    # folders this code will give a ValueError because
+                    # dirname[:6] cannot be converted to int
+                    if int(dirname[:6]) <= int(timemark_end):
+                        temp += [dirname]
+                except ValueError:
+                    pass
+            matched_measdirs = temp
+
         timestamps = ['{}_{}'.format(datemark, dirname[:6])
                       for dirname in matched_measdirs]
         timestamps.reverse()
@@ -1257,6 +1277,19 @@ def rotate_and_normalize_data_no_cal_points(data, **kw):
     # normalized_data = final_data[1,:]/max_min_distance
     # max_min_difference = max(normalized_data -  min(normalized_data))
     # normalized_data = (normalized_data-min(normalized_data))/max_min_difference
+
+    # data always rotated such that majority of data points is smaller than the mid point
+    # between min and max (if data_mostly_g).
+    mean = np.mean(normalized_data)
+    middle = (np.max(normalized_data) + np.min(normalized_data)) / 2
+
+    if kw.get('data_mostly_g', None) is None:
+        return normalized_data
+
+    if kw.get('data_mostly_g'):
+        normalized_data *= np.sign(middle - mean)
+    else:
+        normalized_data *= -np.sign(middle - mean)
 
     return normalized_data
 

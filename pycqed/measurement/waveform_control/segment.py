@@ -62,7 +62,7 @@ class Segment:
                 len(self.unresolved_pulses))
         self._pulse_names.add(pars_copy['name'])
 
-        # Makes sure that element name is unique within sequence of 
+        # Makes sure that element name is unique within sequence of
         # segments by appending the segment name to the element name
         # and that RO pulses have their own elements if no element_name
         # was provided
@@ -77,12 +77,12 @@ class Segment:
         else:
             pars_copy['element_name'] += '_' + self.name
 
-        
+
         # add element to set of acquisition elements
         if pars_copy.get('operation_type', None) == 'RO':
             if pars_copy['element_name'] not in self.acquisition_elements:
                 self.acquisition_elements.add(pars_copy['element_name'])
-        
+
 
         new_pulse = UnresolvedPulse(pars_copy)
 
@@ -140,7 +140,7 @@ class Segment:
         self.elements = odict()
 
         visited_pulses = []
-        ref_points = []
+        ref_pulses_dict = {}
         i = 0
 
         pulses = self.gen_refpoint_dict()
@@ -148,7 +148,7 @@ class Segment:
         # add pulses that refer to segment start
         for pulse in pulses['segment_start']:
             if pulse.pulse_obj.name in pulses:
-                ref_points.append((pulse.pulse_obj.name, pulse))
+                ref_pulses_dict.update({pulse.pulse_obj.name: pulse})
             t0 = pulse.delay - pulse.ref_point_new * pulse.pulse_obj.length
             pulse.pulse_obj.algorithm_time(t0)
             visited_pulses.append((t0, i, pulse))
@@ -157,32 +157,65 @@ class Segment:
         if len(visited_pulses) == 0:
             raise ValueError('No pulse references to the segment start!')
 
+        ref_pulses_dict_all = deepcopy(ref_pulses_dict)
         # add remaining pulses
-        while len(ref_points) > 0:
-            new_ref_points = []
-            for (name, pulse) in ref_points:
+        while len(ref_pulses_dict) > 0:
+            ref_pulses_dict_new = {}
+            for name, pulse in ref_pulses_dict.items():
                 for p in pulses[name]:
+                    if isinstance(p.ref_pulse, list):
+                        if p.pulse_obj.name in [vp[2].pulse_obj.name for vp
+                                                in visited_pulses]:
+                            continue
+                        if not all([ref_pulse in ref_pulses_dict_all for
+                                    ref_pulse in p.ref_pulse]):
+                            continue
+
+                        t0_list = []
+                        delay_list = [p.delay] * len(p.ref_pulse) if not isinstance(p.delay, list) else p.delay
+                        ref_point_list = [p.ref_point] * len(p.ref_pulse) if not isinstance(p.ref_point, list) \
+                            else p.ref_point
+
+                        for (ref_pulse, delay, ref_point) in zip(p.ref_pulse, delay_list, ref_point_list):
+                            t0_list.append(ref_pulses_dict_all[ref_pulse].pulse_obj.algorithm_time() + delay -
+                                           p.ref_point_new * p.pulse_obj.length +
+                                           ref_point * ref_pulses_dict_all[ref_pulse].pulse_obj.length)
+
+                        if p.ref_function == 'max':
+                            t0 = max(t0_list)
+                        elif p.ref_function == 'min':
+                            t0 = min(t0_list)
+                        elif p.ref_function == 'mean':
+                            t0 = np.mean(t0_list)
+                        else:
+                            raise ValueError('Passed invalid value for ' +
+                                'ref_function. Allowed values are: max, min, mean.' +
+                                ' Default value: max')
+                    else:
+                        t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
+                            p.ref_point_new * p.pulse_obj.length + \
+                            p.ref_point * pulse.pulse_obj.length
+
+                    p.pulse_obj.algorithm_time(t0)
 
                     # add p.name to reference list if it is used as a key
                     # in pulses
                     if p.pulse_obj.name in pulses:
-                        new_ref_points.append((p.pulse_obj.name, p))
-
-                    t0 = pulse.pulse_obj.algorithm_time() + p.delay - \
-                        p.ref_point_new * p.pulse_obj.length + \
-                        p.ref_point * pulse.pulse_obj.length
-                    p.pulse_obj.algorithm_time(t0)
+                        ref_pulses_dict_new.update({p.pulse_obj.name: p})
 
                     visited_pulses.append((t0, i, p))
                     i += 1
 
-            ref_points = new_ref_points
+            ref_pulses_dict = ref_pulses_dict_new
+            ref_pulses_dict_all.update(ref_pulses_dict_new)
+
         if len(visited_pulses) != len(self.unresolved_pulses):
-            log.error(len(visited_pulses), len(self.unresolved_pulses))
+            log.error(f"{len(visited_pulses), len(self.unresolved_pulses)}")
             for unpulse in visited_pulses:
                 if unpulse not in self.unresolved_pulses:
                     log.error(unpulse)
-            raise Exception('Not all pulses have been resolved!')
+            raise Exception(f'Not all pulses have been resolved: '
+                            f'{self.unresolved_pulses}')
 
         # adds the resolved pulses to the elements OrderedDictionary
         for (t0, i, p) in sorted(visited_pulses):
@@ -253,8 +286,8 @@ class Segment:
                     if c in pulse_area:
                         pulse_area[c][0] += pulse.pulse_area(
                             c, tvals[c][pulse_start:pulse_end])
-                        # Overwrite this entry for all elements. The last 
-                        # element on that channel will be the one that 
+                        # Overwrite this entry for all elements. The last
+                        # element on that channel will be the one that
                         # is saved.
                         pulse_area[c][1] = element
                     else:
@@ -265,7 +298,7 @@ class Segment:
 
         # Add all compensation pulses to the last element after the last pulse
         # of the segment and for each element with a compensation pulse save
-        # the pulse with the greatest length to determine the new length 
+        # the pulse with the greatest length to determine the new length
         # of the element
         i = 1
         comp_i = 1
@@ -340,10 +373,14 @@ class Segment:
 
         pulses = {}
         for pulse in self.unresolved_pulses:
-            if pulse.ref_pulse not in pulses:
-                pulses[pulse.ref_pulse] = [pulse]
-            elif pulse.ref_pulse in pulses:
-                pulses[pulse.ref_pulse].append(pulse)
+            ref_pulse_list = pulse.ref_pulse
+            if not isinstance(ref_pulse_list, list):
+                ref_pulse_list = [ref_pulse_list]
+            for p in ref_pulse_list:
+                if p not in pulses:
+                    pulses[p] = [pulse]
+                else:
+                    pulses[p].append(pulse)
 
         return pulses
 
@@ -430,7 +467,7 @@ class Segment:
         for awg in awg_hierarchy:
             if awg not in self.elements_on_awg:
                 continue
-            
+
             # for master AWG no trigger_pulse has to be added
             if len(self.pulsar.get('{}_trigger_channels'.format(awg))) == 0:
                 continue
@@ -653,7 +690,6 @@ class Segment:
             t_start = math.floor((t_start + 0.5*sample_time) / start_gran) \
                       * start_gran
 
-
         # make sure that element length is multiple of
         # sample granularity
         gran = self.pulsar.get('{}_granularity'.format(awg))
@@ -665,7 +701,7 @@ class Segment:
 
         return [t_start, samples]
 
-    def waveforms(self, awgs=None, elements=None, channels=None, 
+    def waveforms(self, awgs=None, elements=None, channels=None,
                         codewords=None):
         """
         After all the pulses have been added, the timing resolved and the 
@@ -738,7 +774,7 @@ class Segment:
                     for channel in pulse_channels:
                         chan_tvals[channel] = tvals[channel].copy(
                         )[pulse_start:pulse_end]
-                    
+
                     # calculate pulse waveforms
                     pulse_wfs = pulse.waveforms(chan_tvals)
 
@@ -826,7 +862,7 @@ class Segment:
                                 wfs[codeword][channel])
 
         return awg_wfs
-    
+
     def get_element_codewords(self, element, awg=None):
         codewords = set()
         if awg is not None:
@@ -851,26 +887,29 @@ class Segment:
     def calculate_hash(self, elname, codeword, channel):
         if not self.pulsar.reuse_waveforms():
             return (self.name, elname, codeword, channel)
-        
+
         awg = self.pulsar.get(f'{channel}_awg')
-        tstart, length = self.element_start_end[elname][awg] 
+        tstart, length = self.element_start_end[elname][awg]
         hashlist = []
         hashlist.append(length)  # element length in samples
         if self.pulsar.get(f'{channel}_type') == 'analog' and \
                 self.pulsar.get(f'{channel}_distortion') == 'precalculate':
-            # don't compare the kernels, just assume that all channels' 
+            # don't compare the kernels, just assume that all channels'
             # distortion kernels are different
-            hashlist.append(channel) 
+            hashlist.append(channel)
         else:
             hashlist.append(self.pulsar.clock(channel=channel))  # clock rate
-            for par in ['type', 'amp']:
-                hashlist.append(self.pulsar.get(f'{channel}_{par}'))
-        
+            for par in ['type', 'amp', 'internal_modulation']:
+                try:
+                    hashlist.append(self.pulsar.get(f'{channel}_{par}'))
+                except KeyError:
+                    hashlist.append(False)
+
         for pulse in self.elements[elname]:
             if pulse.codeword in {'no_codeword', codeword}:
                 hashlist += pulse.hashables(tstart, channel)
         return tuple(hashlist)
-        
+
 
     def tvals(self, channel_list, element):
         """
@@ -1110,13 +1149,27 @@ class Segment:
         output += f'\n% {num_single_qb} single-qubit gates, {num_two_qb} two-qubit gates, {num_virtual} virtual gates'
         return output
 
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        new_seg = cls.__new__(cls)
+        memo[id(self)] = new_seg
+        for k, v in self.__dict__.items():
+            if k == "pulsar": # the reference to pulsar cannot be deepcopied
+                setattr(new_seg, k, v)
+            else:
+                setattr(new_seg, k, deepcopy(v, memo))
+        return new_seg
+
 
 class UnresolvedPulse:
     """
     pulse_pars: dictionary containing pulse parameters
-    ref_pulse: 'segment_start', 'previous_pulse', pulse.name
+    ref_pulse: 'segment_start', 'previous_pulse', pulse.name, or a list of
+        multiple pulse.name.
     ref_point: 'start', 'end', 'middle', reference point of the reference pulse
     ref_point_new: 'start', 'end', 'middle', reference point of the new pulse
+    ref_function: 'max', 'min', 'mean', specifies how timing is chosen if
+        multiple pulse names are listed in ref_pulse (default: 'max')
     """
 
     def __init__(self, pulse_pars):
@@ -1141,6 +1194,7 @@ class UnresolvedPulse:
             raise ValueError('Passed invalid value for ref_point_new. Allowed '
                 'values are: start, end, middle. Default value: start')
 
+        self.ref_function = pulse_pars.get('ref_function', 'max')
         self.delay = pulse_pars.get('pulse_delay', 0)
         self.original_phase = pulse_pars.get('phase', 0)
         self.basis = pulse_pars.get('basis', None)
