@@ -449,7 +449,7 @@ def measure_multiplexed_readout(qubits, liveplot=False,
             use_preselection=preselection
         ))
 
-def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
+def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
                  preselection=True, all_states_combinations=False, upload=True,
                  exp_metadata=None, analyze=True, analysis_kwargs=None, update=True):
     """
@@ -457,6 +457,7 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
     a Gaussian mixture fit to calibrate the state classfier and provide the
     single shot readout probability assignment matrix
     Args:
+        dev (Device): device object
         qubits (list): list of qubits to calibrate in parallel
         states (tuple, str, list of tuples): if tuple, each entry will be interpreted
             as a state. if string (e.g. "gef"), each letter will be interpreted
@@ -492,12 +493,12 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
     Returns:
 
     """
-
     # combine operations and preparation dictionaries
-    operation_dict = get_operation_dict(qubits)
-    qb_names = [qb.name for qb in qubits]
-    prep_params = get_multi_qubit_prep_params([qb.preparation_params()
-                                               for qb in qubits])
+    qubits = dev.get_qubits(qubits)
+    qb_names = dev.get_qubits(qubits, "str")
+    operation_dict = dev.get_operation_dict(qubits=qubits)
+    prep_params = dev.get_prep_params(qubits)
+
     if preselection is None:
         pass
     elif preselection: # force preselection for this measurement if desired by user
@@ -535,7 +536,7 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
                          })
     df = get_multiplexed_readout_detector_functions(
             qubits, nr_shots=n_shots)['int_log_det']
-    MC = qubits[0].instr_mc.get_instr()
+    MC = dev.instr_mc.get_instr()
     MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq,
                                                    upload=upload))
     MC.set_sweep_points(np.arange(seq.n_acq_elements()))
@@ -564,7 +565,7 @@ def measure_ssro(qubits, states=('g', 'e'), n_shots=10000, label=None,
                 qb.acq_classifier_params(classifier_params)
         return a
 
-def find_optimal_weights(qubits, states=('g', 'e'), upload=True,
+def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
                          acq_length=4096/1.8e9, exp_metadata=None,
                          analyze=True, analysis_kwargs=None,
                          acq_weights_basis=None, orthonormalize=False,
@@ -572,6 +573,7 @@ def find_optimal_weights(qubits, states=('g', 'e'), upload=True,
     """
     Measures time traces for specified states and
     Args:
+        dev (Device): quantum device object
         qubits: qubits on which traces should be measured
         states (tuple, list, str): if str or tuple of single character strings,
             then interprets each letter as a state and does it on all qubits
@@ -600,6 +602,7 @@ def find_optimal_weights(qubits, states=('g', 'e'), upload=True,
 
     """
     # check whether timetraces can be compute simultaneously
+    qubits = dev.get_qubits(qubits)
     uhf_names = np.array([qubit.instr_uhf.get_instr().name for qubit in qubits])
     unique, counts = np.unique(uhf_names, return_counts=True)
     for u, c in zip(unique, counts):
@@ -610,10 +613,9 @@ def find_optimal_weights(qubits, states=('g', 'e'), upload=True,
                              f"simultaneously.")
 
     # combine operations and preparation dictionaries
-    operation_dict = get_operation_dict(qubits)
-    qb_names = [qb.name for qb in qubits]
-    prep_params = get_multi_qubit_prep_params([qb.preparation_params()
-                                               for qb in qubits])
+    operation_dict = dev.get_operation_dict(qubits=qubits)
+    qb_names = dev.get_qubits(qubits, "str")
+    prep_params = dev.get_prep_params(qubits)
     MC = qubits[0].instr_mc.get_instr()
 
     if exp_metadata is None:
@@ -698,7 +700,7 @@ def find_optimal_weights(qubits, states=('g', 'e'), upload=True,
                                 f"automatically.")
                 qb.acq_weights_basis(a.proc_data_dict['analysis_params_dict'
                     ]['optimal_weights_basis_labels'][qb.name])
-
+        return a
 
 def measure_active_reset(qubits, shots=5000,
                          qutrit=False, upload=True, label=None,
