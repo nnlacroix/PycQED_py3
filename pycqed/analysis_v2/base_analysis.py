@@ -248,8 +248,10 @@ class BaseDataAnalysis(object):
         data_file = h5py.File(h5filepath, h5mode)
 
         try:
-            return self.get_hdf_datafile_param_value(data_file[path_to_group],
-                                                     attribute)
+            value = self.get_hdf_datafile_param_value(data_file[path_to_group],
+                                                      attribute)
+            data_file.close()
+            return value
         except Exception as e:
             data_file.close()
             raise e
