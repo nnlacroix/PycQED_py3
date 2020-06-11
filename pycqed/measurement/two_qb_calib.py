@@ -97,7 +97,8 @@ class CalibBuilder(CircuitBuilder):
         self.exp_metadata.update({
             'preparation_params': self.get_prep_params(),
             'rotate': len(self.cal_states) != 0 and not self.classified,
-            'sweep_points': self.sweep_points
+            'sweep_points': self.sweep_points,
+            'ro_qubits': [qb.name for qb in self.ro_qubits]
         })
         if self.task_list is not None:
             self.exp_metadata.update({'task_list': self.task_list})
@@ -124,7 +125,7 @@ class CalibBuilder(CircuitBuilder):
         """
         self.cal_states = CalibrationPoints.guess_cal_states(cal_states,
                                                         for_ef=for_ef)
-        cp = CalibrationPoints.multi_qubit([qb.name for qb in self.qubits],
+        cp = CalibrationPoints.multi_qubit([qb.name for qb in self.ro_qubits],
                                            self.cal_states,
                                            n_per_state=n_cal_points_per_state)
         return cp
@@ -179,7 +180,6 @@ class CalibBuilder(CircuitBuilder):
             global_sweep_points = \
                 SweepPoints(from_dict_list=[global_sweep_points[0]])
         self.sweep_points = global_sweep_points
-        self.cal_points = self.get_cal_points(**kw)
         self.exp_metadata.update({'cal_points': repr(self.cal_points)})
         # only measure ro_qubits
         if 'ro_kwargs' in kw:
@@ -306,7 +306,7 @@ class CPhase(CalibBuilder):
             self.ro_qubits = self.get_ro_qubits()
             self.guess_label(**kw)
             sweep_points = self.add_default_sweep_points(sweep_points, **kw)
-
+            self.cal_points = self.get_cal_points(**kw)
             self.sequences, sp = \
                 self.parallel_sweep(task_list, sweep_points, self.cphase_block,
                                     **kw)
@@ -388,9 +388,9 @@ class CPhase(CalibBuilder):
         predictive_label = kw.pop('predictive_label', False)
         if self.label is None:
             if predictive_label:
-                self.label = 'Predictive_cphase_nz_measurement'
+                self.label = 'Predictive_cphase_measurement'
             else:
-                self.label = 'CPhase_nz_measurement'
+                self.label = 'CPhase_measurement'
             if self.classified:
                 self.label += '_classified'
             if 'active' in self.get_prep_params()['preparation_type']:
@@ -492,9 +492,12 @@ class DynamicPhase(CalibBuilder):
                 self.data_to_fit = {}
 
                 self.task_list = task_list
+                self.ro_qubits = self.get_ro_qubits(task_list)
                 self.guess_label(**kw)
                 sweep_points = self.add_default_sweep_points(sweep_points, **kw)
-
+                if 'for_ef' not in kw:
+                    kw['for_ef'] = False
+                self.cal_points = self.get_cal_points(**kw)
                 self.basis_rot_pars = {}
 
                 for task in task_list:
@@ -508,7 +511,6 @@ class DynamicPhase(CalibBuilder):
                         self.old_dyn_phases[task['prefix']] = deepcopy(
                             self.basis_rot_pars[task['prefix']]())
 
-                self.ro_qubits = self.get_ro_qubits(task_list)
                 tmpvals = [(v, self.old_dyn_phases[k]) for k, v in
                            self.basis_rot_pars.items()]
                 with temporary_value(*tmpvals):
@@ -612,8 +614,8 @@ class DynamicPhase(CalibBuilder):
                 if '=' not in k and k != 'flux_pulse_off':
                     p[k] = ParametricValue(k)
 
-        self.cal_states_rotations.update({qb: {'g': 0, 'e': 1} for qb in
-                                          qubits_to_measure})
+        self.cal_states_rotations.update(self.cal_points.get_rotations(
+            qb_names=qubits_to_measure, **kw))
         self.data_to_fit.update({qb: 'pe' for qb in qubits_to_measure})
         return self.sequential_blocks(
             f"dynphase {'_'.join(qubits_to_measure)}", [pb, ir, fp, fr])

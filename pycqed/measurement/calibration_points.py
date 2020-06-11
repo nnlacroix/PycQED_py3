@@ -142,6 +142,8 @@ class CalibrationPoints:
         """
         qb_names = self._check_qb_names(qb_names)
         states = self.get_states(qb_names)
+        if isinstance(last_ge_pulses, bool) and len(qb_names) > 1:
+            last_ge_pulses = len(qb_names)*[last_ge_pulses]
         rotations = dict()
 
         if len(qb_names) == 0:

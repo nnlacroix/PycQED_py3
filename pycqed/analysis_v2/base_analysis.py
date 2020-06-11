@@ -235,7 +235,8 @@ class BaseDataAnalysis(object):
         if not hasattr(self, "metadata") or self.metadata is None:
             return self.options_dict.get(param_name, default_value)
         # multi timestamp with different metadata
-        elif isinstance(self.metadata, (list, tuple)) and len(self.metadata) != 0:
+        elif isinstance(self.metadata, (list, tuple)) and \
+                len(self.metadata) != 0:
             return self.options_dict.get(param_name,
                 self.metadata[metadata_index].get(param_name, default_value))
         # base case

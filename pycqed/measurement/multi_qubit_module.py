@@ -2411,11 +2411,6 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                            reset_phases_before_measurement=True,
                            extract_only=False, simultaneous=False,
                            prepend_pulse_dicts=None, **kw):
-    if isinstance(qbc, str):
-        qbc = dev.get_qb(qbc)
-    if isinstance(qbt, str):
-        qbt = dev.get_qb(qbt)
-
     """
     Function to calibrate the dynamic phases for a CZ gate.
     :param dev: (Device object)
@@ -2457,6 +2452,11 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
     :param kw: keyword arguments
 
     """
+    if isinstance(qbc, str):
+        qbc = dev.get_qb(qbc)
+    if isinstance(qbt, str):
+        qbt = dev.get_qb(qbt)
+
     if qubits_to_measure is None:
         qubits_to_measure = [qbc, qbt]
     if hard_sweep_params is None:

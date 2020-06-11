@@ -326,7 +326,6 @@ class CircuitBuilder:
     def mux_readout(self, qb_names='all', element_name='RO', **pulse_pars):
         block_name = "Readout"
         qubits, qb_names = self.get_qubits(qb_names)
-        print(qb_names)
         ro_pulses = []
         for j, qb_name in enumerate(qb_names):
             ro_pulse = deepcopy(self.operation_dict['RO ' + qb_name])
