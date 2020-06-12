@@ -23,21 +23,21 @@ class QudevDisplacer(Instrument):
 
         # Add displacer board control parameters
         self.add_parameter(
-            'attenuator_position',
-            label='Attenuator Position',
+            'attenuator_setting',
+            label='Attenuator Setting',
             unit='',
-            get_cmd=self.attenuator.instrument.position_normalized,
-            set_cmd=self.attenuator.instrument.position_normalized,
-            docstring=('Attenuator motor position (normalized)'
+            get_cmd=self.attenuator.instrument.setting_normalized,
+            set_cmd=self.attenuator.instrument.setting_normalized,
+            docstring=('Attenuator setting (normalized)'
                        'Min value: 0.0'
                        'Max value: 1.0'))
 
         self.add_parameter(
-            'phase_shifter_position',
-            label='Phase Shifter Position',
+            'phase_shifter_setting',
+            label='Phase Shifter Setting',
             unit='',
-            get_cmd=self.phase_shifter.instrument.position_normalized,
-            set_cmd=self.phase_shifter.instrument.position_normalized,
-            docstring=('Phase shifter motor position (normalized)'
+            get_cmd=self.phase_shifter.instrument.setting_normalized,
+            set_cmd=self.phase_shifter.instrument.setting_normalized,
+            docstring=('Phase shifter setting (normalized)'
                        'Min value: 0.0'
                        'Max value: 1.0'))
