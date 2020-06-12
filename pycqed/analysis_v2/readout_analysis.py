@@ -1594,7 +1594,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
             filter = filter.reshape((n_readouts, -1), order='F')
         else:
             # keep all shots
-            filter = np.ones((n_readouts, n_shots), dtype=bool)
+            filter = np.ones((n_readouts, n_shots//n_readouts), dtype=bool)
 
         table = np.zeros((n_readouts, len(observables)))
 
