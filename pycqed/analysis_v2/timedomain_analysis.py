@@ -5212,8 +5212,12 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                          dtype=np.float64)
         y = amps[1::2]
         y_err = amps_errs[1::2]
-        population_loss_stderrs = np.sqrt(np.array(
-            ((y*x_err)**2 + (x*y_err)**2)/(y**4), dtype=np.float64))
+        try:
+            population_loss_stderrs = np.sqrt(np.array(
+                ((y * x_err) ** 2 + (x * y_err) ** 2) / (y ** 4),
+                dtype=np.float64))
+        except:
+            population_loss_stderrs = float("nan")
         self.proc_data_dict['analysis_params_dict'][
             'population_loss'] = {'val': population_loss,
                                   'stderr': population_loss_stderrs}
