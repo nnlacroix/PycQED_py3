@@ -15,6 +15,7 @@ import time
 import h5py
 import numpy as np
 import logging
+log = logging.getLogger(__name__)
 
 
 class DateTimeGenerator:
@@ -144,12 +145,14 @@ def write_dict_to_hdf5(data_dict: dict, entry_point, overwrite=False):
         # Basic types
         if isinstance(item, (str, float, int, bool, np.number,
                              np.float_, np.int_, np.bool_)):
+            if not hasattr(key, "encode"):
+                key = repr(key)
             try:
                 entry_point.attrs[key] = item
             except Exception as e:
-                print('Exception occurred while writing'
+                log.error(e)
+                log.error('Exception occurred while writing'
                       ' {}:{} of type {}'.format(key, item, type(item)))
-                logging.warning(e)
         elif isinstance(item, np.ndarray):
             try:
                 entry_point.create_dataset(key, data=item)
@@ -217,7 +220,7 @@ def write_dict_to_hdf5(data_dict: dict, entry_point, overwrite=False):
                         ds.attrs['list_type'] = 'str'
                         ds[:] = data
                     else:
-                        logging.warning(
+                        log.warning(
                             'List of type "{}" for "{}":"{}" not '
                             'supported, storing as string'.format(
                                 elt_type, key, item))
@@ -250,7 +253,7 @@ def write_dict_to_hdf5(data_dict: dict, entry_point, overwrite=False):
                 entry_point.attrs[key] = 'NoneType:__emptylist__'
 
         else:
-            logging.warning(
+            log.warning(
                 'Type "{}" for "{}" (key): "{}" (item) at location {} '
                 'not supported, '
                 'storing as string'.format(type(item), key, item,

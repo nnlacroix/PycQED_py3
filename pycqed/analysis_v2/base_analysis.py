@@ -216,7 +216,7 @@ class BaseDataAnalysis(object):
                 'close_figs', False))
 
     @staticmethod
-    def get_hdf_param_value(group, param_name):
+    def get_hdf_datafile_param_value(group, param_name):
         '''
         Returns an attribute "key" of the group "Experimental Data"
         in the hdf5 datafile.
@@ -229,6 +229,32 @@ class BaseDataAnalysis(object):
         if type(s) == np.ndarray:
             s = [s.decode('utf-8') for s in s]
         return s
+
+    def get_hdf_param_value(self, path_to_group, attribute, hdf_file_index=0):
+        """
+        Gets the attribute (i.e. parameter) of a given group in the hdf file.
+        Args:
+            path_to_group (str): path to group. e.g. "Instrument settings/qb1"
+            attribute: attribute name. e.g. "T1"
+            hdf_file_index: index of the file to use in case of
+                multiple timestamps.
+
+        Returns:
+
+        """
+        h5mode = self.options_dict.get('h5mode', 'r+')
+        folder = a_tools.get_folder(self.timestamps[hdf_file_index])
+        h5filepath = a_tools.measurement_filename(folder)
+        data_file = h5py.File(h5filepath, h5mode)
+
+        try:
+            value = self.get_hdf_datafile_param_value(data_file[path_to_group],
+                                                      attribute)
+            data_file.close()
+            return value
+        except Exception as e:
+            data_file.close()
+            raise e
 
     def get_param_value(self, param_name, default_value=None, metadata_index=0):
         # no stored metadata
@@ -271,7 +297,7 @@ class BaseDataAnalysis(object):
                         for group_name in data_file.keys():
                             if par_name in list(data_file[group_name].attrs):
                                 raw_data_dict_ts[save_par] = \
-                                    self.get_hdf_param_value(
+                                    self.get_hdf_datafile_param_value(
                                         data_file[group_name], par_name)
                     else:
                         group_name = '/'.join(file_par.split('.')[:-1])
@@ -279,7 +305,7 @@ class BaseDataAnalysis(object):
                         if group_name in data_file:
                             if par_name in list(data_file[group_name].attrs):
                                 raw_data_dict_ts[save_par] = \
-                                    self.get_hdf_param_value(
+                                    self.get_hdf_datafile_param_value(
                                         data_file[group_name], par_name)
                             elif par_name in list(data_file[group_name].keys()):
                                 raw_data_dict_ts[save_par] = \
@@ -408,12 +434,12 @@ class BaseDataAnalysis(object):
                              rd in self.raw_data_dict]
 
             for i, rd_dict in enumerate(self.raw_data_dict):
+                if len(rd_dict['exp_metadata']) == 0:
+                    self.metadata[i] = {}
                 temp_dict_list.append(
                     self.add_measured_data(
                         rd_dict,
                         self.get_param_value('compression_factor', 1, i)))
-                if len(rd_dict['exp_metadata']) == 0:
-                    rd_dict['exp_metadata'] = {}
             self.raw_data_dict = tuple(temp_dict_list)
 
 
