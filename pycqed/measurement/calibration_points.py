@@ -46,13 +46,23 @@ class CalibrationPoints:
                         pulse['name'] = f"{seg_states[j]}_{pulse_name + qbn}_" \
                                         f"{cal_pt_idx}"
                     pulse_list.append(pulse)
+            state_prep_pulse_names = [p['name'] for p in pulse_list]
             pulse_list = add_preparation_pulses(pulse_list,
                                                 operation_dict,
                                                 [qbn for qbn in self.qb_names],
                                                 **prep_params)
 
-            pulse_list += generate_mux_ro_pulse_list(self.qb_names,
+            ro_pulses = generate_mux_ro_pulse_list(self.qb_names,
                                                      operation_dict)
+            # reference all readout pulses to all pulses of the pulse list, to ensure
+            # readout happens after the last pulse (e.g. if doing "f" on some qubits
+            # and "e" on others). In the future we could use the circuitBuilder
+            # and Block here
+            [rp.update({'ref_pulse': state_prep_pulse_names, "ref_point":'end'})
+             for rp in ro_pulses]
+
+            pulse_list += ro_pulses
+
             seg = segment.Segment(segment_prefix + f'{i}', pulse_list)
             segments.append(seg)
 
