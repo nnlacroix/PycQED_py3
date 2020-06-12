@@ -152,18 +152,22 @@ class Device(Instrument):
         """
         return self._operations
 
-    def get_operation_dict(self, operation_dict=None):
+    def get_operation_dict(self, operation_dict=None, qubits="all"):
         """
         Returns the operations dictionary of the device and qubits, combined with the input
         operation_dict.
 
         Args:
             operation_dict (dict): input dictionary the operations should be added to
+            qubits (list, str): set of qubits to which the operation dictionary should be
+                restricted to.
 
         Returns:
             operation_dict (dict): dictionary containing both qubit and device operations
 
         """
+        qubits = self.get_qubits(qubits, "str")
+
         if operation_dict is None:
             operation_dict = dict()
 
@@ -172,7 +176,8 @@ class Device(Instrument):
         for op_tag, op in self.operations().items():
             # op_tag is the tuple (gate_name, qb1, qb2) and op the dictionary of the
             # operation
-
+            if op_tag[1] not in qubits or op_tag[2] not in qubits:
+                continue
             # Add both qubit combinations to operations dict
             # Still return a string instead of tuple as keys to be consistent
             # with QudevTransmon class
@@ -188,7 +193,7 @@ class Device(Instrument):
         operation_dict.update(two_qb_operation_dict)
 
         # add sqb operations
-        for qb in self.qubits():
+        for qb in self.get_qubits(qubits):
             operation_dict.update(qb.get_operation_dict())
 
         return operation_dict
@@ -204,6 +209,59 @@ class Device(Instrument):
 
         """
         return self.find_instrument(qb_name)
+
+    def get_qubits(self, qubits='all', return_type="obj"):
+        """
+        Wrapper to get qubits as object or str (names), from different
+        specification methods. Checks whether qubits are on device.
+
+        or list of qubits objects, checking they are in self.qubits
+        :param qubits (str, list): Accepts the following formats:
+            - "all" returns all qubits on device, default behavior
+            - single qubit string, e.g. "qb1",
+            - list of qubit strings, e.g. ['qb1', 'qb2']
+            - list of qubit objects, e.g. [qb1, qb2]
+            - list of integers specifying the index, e.g. [0, 1] for qb1, qb2
+        :param return_type (str): "obj" --> qubit objects are returned.
+            "str": --> qubit names are returned.
+        :return: list of qb_names or qb objects. Note that a list is
+            returned in all cases
+        """
+        qb_names = [qb.name for qb in self.qubits()]
+        if qubits == 'all':
+            return self.qubits() if return_type == "obj" else qb_names
+
+        elif not isinstance(qubits, (list, tuple)):
+            qubits = [qubits]
+
+        # test if qubit indices were provided instead of names
+        try:
+            ind = [int(i) for i in qubits]
+            qubits = [qb_names[i] for i in ind]
+        except (ValueError, TypeError):
+            pass
+
+        # check whether qubit is on device
+        for qb in qubits:
+            if not isinstance(qb, (str)): # then should be a qubit object
+                qb = qb.name
+            assert qb in qb_names, \
+                f"{qb} not found on device with qubits: {qb_names}"
+
+        # return subset of qubits
+        qubits_to_return = []
+        for qb in qubits:
+            if not isinstance(qb, str):  # then should be a qubit object
+                qb = qb.name
+            qubits_to_return.append(qb)
+
+        if return_type == "str":
+            return qubits_to_return
+        elif return_type == "obj":
+            return [self.qubits()[qb_names.index(qbn)]
+                    for qbn in qubits_to_return]
+        else:
+            raise ValueError(f'Return type: {return_type} not understood')
 
     def get_pulse_par(self, gate_name, qb1, qb2, param):
         """
@@ -249,9 +307,7 @@ class Device(Instrument):
             dictionary of preparation parameters
         """
 
-        for i, qb in enumerate(qb_list):
-            if isinstance(qb, str):
-                qb_list[i] = self.get_qb(qb)
+        qb_list = self.get_qubits(qb_list)
 
         # threshold_map has to be updated for all qubits
         thresh_map = {}

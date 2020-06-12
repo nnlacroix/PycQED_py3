@@ -4,18 +4,28 @@ from numpy.linalg import inv
 import scipy as sp
 import itertools
 import matplotlib as mpl
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+
+from sklearn.mixture import GaussianMixture as GM
+from sklearn.tree import DecisionTreeClassifier as DTC
+
 from pycqed.analysis import fitting_models as fit_mods
 from pycqed.analysis import analysis_toolbox as a_tools
 import pycqed.analysis_v2.base_analysis as ba
 import pycqed.analysis_v2.readout_analysis as roa
+from pycqed.analysis_v2.readout_analysis import \
+    Singleshot_Readout_Analysis_Qutrit as SSROQutrit
 import pycqed.analysis_v2.tomography_qudev as tomo
 import re
 from pycqed.analysis.tools.plotting import SI_val_to_msg_str
 from copy import deepcopy
 from pycqed.measurement.calibration_points import CalibrationPoints
+import matplotlib.pyplot as plt
 from pycqed.analysis.three_state_rotation import predict_proba_avg_ro
 import logging
+
+from pycqed.utilities import math
+
 log = logging.getLogger(__name__)
 try:
     import qutip as qtp
@@ -328,6 +338,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 reset_reps = prep_params.get('reset_reps', 1)
                 self.data_filter = lambda x: x[reset_reps::reset_reps+1]
                 self.data_with_reset = True
+            elif "preselection" in prep_params.get('preparation_type', 'wait'):
+                self.data_filter = lambda x: x[1::2]  # filter preselection RO
         if self.data_filter is None:
             self.data_filter = lambda x: x
 
@@ -371,7 +383,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                                          default_value={})
 
         # create projected_data_dict
-        self.data_to_fit = self.get_param_value('data_to_fit')
+        self.data_to_fit = self.get_param_value('data_to_fit', {})
         global_PCA = self.get_param_value('global_PCA', default_value=False)
         if self.cal_states_rotations is not None or global_PCA:
             self.cal_states_analysis()
@@ -5556,3 +5568,601 @@ class CZDynamicPhaseAnalysis(MultiCZgate_Analysis):
         self.phase_key = 'dynamic_phase'
         self.legend_label_func = lambda qbn, row: 'no FP' \
             if row % 2 != 0 else 'with FP'
+
+class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
+    """
+    Analysis class for timetraces, in particular use to compute
+    Optimal SNR integration weights.
+    """
+    def __init__(self, qb_names=None, auto=True, **kwargs):
+        """
+        Initializes the timetrace analysis class.
+        Args:
+            qb_names (list): name of the qubits to analyze (can be a subset
+                of the measured qubits)
+            auto (bool): Start analysis automatically
+            **kwargs:
+                t_start: timestamp of the first timetrace
+                t_stop: timestamp of the last timetrace to analyze
+                options_dict (dict): relevant parameters:
+                    acq_weights_basis (list, dict):
+                        list of basis vectors used to compute optimal weight.
+                        e.g. ["ge", 'gf'], the first basis vector will be the
+                        "e" timetrace minus the "g" timetrace and the second basis
+                        vector is f - g. The first letter in each basis state is the
+                        "reference state", i.e. the one of which the timetrace
+                         is substracted. Can also be passed as a dictionary where
+                         keys are the qubit names and the values are lists of basis states
+                         in case different bases should be used for different qubits.
+                    orthonormalize (bool): Whether or not to orthonormalize the
+                        weight basis
+                    tmax (float): time boundary for the plot (not the weights)
+                        in seconds.
+                    scale_weights (bool): scales the weights near unity to avoid
+                        loss of precision on FPGA if weights are too small
+
+        """
+
+        if qb_names is not None:
+            self.params_dict = {}
+            for qbn in qb_names:
+                s = 'Instrument settings.' + qbn
+                for trans_name in ['ge', 'ef']:
+                    self.params_dict[f'ro_mod_freq_' + qbn] = \
+                        s + f'.ro_mod_freq'
+            self.numeric_params = list(self.params_dict)
+
+        self.qb_names = qb_names
+        super().__init__( **kwargs)
+
+        if auto:
+            self.run_analysis()
+
+    def extract_data(self):
+        super().extract_data()
+
+        if self.qb_names is None:
+            # get all qubits from cal_points of first timetrace
+            cp = CalibrationPoints.from_string(
+                self.get_param_value('cal_points', None, 0))
+            self.qb_names = deepcopy(cp.qb_names)
+
+        self.channel_map = self.get_param_value('channel_map', None,
+                                                metadata_index=0)
+        if self.channel_map is None:
+            # assume same channel map for all timetraces (pick 0th)
+            value_names = self.raw_data_dict[0]['value_names']
+            if np.ndim(value_names) > 0:
+                value_names = value_names
+            if 'w' in value_names[0]:
+                self.channel_map = a_tools.get_qb_channel_map_from_hdf(
+                    self.qb_names, value_names=value_names,
+                    file_path=self.raw_data_dict['folder'])
+            else:
+                self.channel_map = {}
+                for qbn in self.qb_names:
+                    self.channel_map[qbn] = value_names
+
+        if len(self.channel_map) == 0:
+            raise ValueError('No qubit RO channels have been found.')
+
+    def process_data(self):
+        super().process_data()
+        pdd = self.proc_data_dict
+
+        pdd['analysis_params_dict'] = dict()
+        ana_params = pdd['analysis_params_dict']
+        ana_params['timetraces'] = defaultdict(dict)
+        ana_params['optimal_weights'] = defaultdict(dict)
+        ana_params['optimal_weights_basis_labels'] = defaultdict(dict)
+        for qbn in self.qb_names:
+            # retrieve time traces
+            for i, rdd in enumerate(self.raw_data_dict):
+                ttrace_per_ro_ch = [rdd["measured_data"][ch]
+                                    for ch in self.channel_map[qbn]]
+                if len(ttrace_per_ro_ch) != 2:
+                    raise NotImplementedError(
+                        'This analysis does not support optimal weight '
+                        f'measurement based on {len(ttrace_per_ro_ch)} ro channels.'
+                        f' Try again with 2 RO channels.')
+                cp = CalibrationPoints.from_string(
+                    self.get_param_value('cal_points', None, i))
+                # get state of qubit. There can be only one cal point per sequence
+                # when using uhf for time traces so it is the 0th state
+                qb_state = cp.states[0][cp.qb_names.index(qbn)]
+                # store all timetraces in same pdd for convenience
+                ana_params['timetraces'][qbn].update(
+                    {qb_state: ttrace_per_ro_ch[0] + 1j *ttrace_per_ro_ch[1]})
+
+            timetraces = ana_params['timetraces'][qbn] # for convenience
+            basis_labels = self.get_param_value('acq_weights_basis', None, 0)
+            if basis_labels is None:
+                # guess basis labels from # states measured
+                basis_labels = ["ge", "gf"] \
+                    if len(ana_params['timetraces'][qbn]) > 2 else ['ge']
+
+            if isinstance(basis_labels, dict):
+                # if different basis for qubits, then select the according one
+                basis_labels = basis_labels[qbn]
+
+            # check that states from the basis are included in mmnt
+            for bs in basis_labels:
+                for qb_s in bs:
+                     assert qb_s in timetraces,\
+                         f'State: {qb_s} on {qbn} was not provided in the given ' \
+                         f'timestamps but was requested as part of the basis' \
+                         f' {basis_labels}. Please choose another weight basis.'
+            basis = np.array([timetraces[b[1]] - timetraces[b[0]]
+                              for b in basis_labels])
+
+            # orthonormalize if required
+            if self.get_param_value("orthonormalize", False):
+                basis = math.gram_schmidt(basis.T).T
+                basis_labels = [bs + "_ortho" if bs != basis_labels[0] else bs
+                                for bs in basis_labels]
+
+            # scale if required
+            if self.get_param_value('scale_weights', True):
+                k = np.amax([(np.max(np.abs(b.real)),
+                              np.max(np.abs(b.imag))) for b in basis])
+                basis /= k
+            ana_params['optimal_weights'][qbn] = basis
+            ana_params['optimal_weights_basis_labels'][qbn] = basis_labels
+
+            self.save_processed_data()
+
+    def prepare_plots(self):
+
+        pdd = self.proc_data_dict
+        rdd = self.raw_data_dict
+        ana_params = self.proc_data_dict['analysis_params_dict']
+        for qbn in self.qb_names:
+            mod_freq = float(
+                rdd[0].get(f'ro_mod_freq_{qbn}',
+                           self.get_hdf_param_value(f"Instrument settings/{qbn}",
+                                                    'ro_mod_freq')))
+            tbase = rdd[0]['hard_sweep_points']
+            basis_labels = pdd["analysis_params_dict"][
+                'optimal_weights_basis_labels'][qbn]
+            title = 'Optimal SNR weights ' + qbn + \
+                    "".join(['\n' + rddi["timestamp"] for rddi in rdd]) \
+                            + f'\nWeight Basis: {basis_labels}'
+            plot_name = f"weights_{qbn}"
+            xlabel = "Time, $t$"
+            modulation = np.exp(2j * np.pi * mod_freq * tbase)
+
+            for ax_id, (state, ttrace) in \
+                enumerate(ana_params["timetraces"][qbn].items()):
+                for func, label in zip((np.real, np.imag), ('I', "Q")):
+                    # plot timetraces for each state, I and Q channels
+                    self.plot_dicts[f"{plot_name}_{state}_{label}"] = {
+                        'fig_id': plot_name,
+                        'ax_id': ax_id,
+                        'plotfn': self.plot_line,
+                        'xvals': tbase,
+                        'xunit': 's',
+                        "marker": "",
+                        'yvals': func(ttrace*modulation),
+                        'ylabel': 'Voltage, $V$',
+                        'yunit': 'V',
+                        "sharex": True,
+                        "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
+                        "setdesc": label + f"_{state}",
+                        "setlabel": "",
+                        "do_legend":True,
+                        "legend_pos": "upper right",
+                        'numplotsx': 1,
+                        'numplotsy': len(rdd) + 1, # #states + 1 for weights
+                        'plotsize': (10,
+                                     (len(rdd) + 1) * 3), # 3 inches per plot
+                        'title': title if ax_id == 0 else ""}
+            ax_id = len(ana_params["timetraces"][qbn]) # id plots for weights
+            for i, weights in enumerate(ana_params['optimal_weights'][qbn]):
+                for func, label in zip((np.real, np.imag), ('I', "Q")):
+                    self.plot_dicts[f"{plot_name}_weights_{label}_{i}"] = {
+                        'fig_id': plot_name,
+                        'ax_id': ax_id,
+                        'plotfn': self.plot_line,
+                        'xvals': tbase,
+                        'xlabel': xlabel,
+                        "setlabel": "",
+                        "marker": "",
+                        'xunit': 's',
+                        'yvals': func(weights * modulation),
+                        'ylabel': 'Voltage, $V$ (arb.u.)',
+                        "sharex": True,
+                        "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
+                        "setdesc": label + f"_{i+1}",
+                        "do_legend": True,
+                        "legend_pos": "upper right",
+                        }
+
+
+class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
+    """
+    Analysis class for parallel SSRO qutrit/qubit calibration. It is a child class
+    from the tda.MultiQubit_Timedomain_Analysis as it uses the same functions to
+    - preprocess the data to remove active reset/preselection
+    - extract the channel map
+    - reorder the data per qubit
+    Note that in the future, it might be useful to transfer these functionalities
+    to the base analysis.
+    """
+
+    def __init__(self,
+                 options_dict: dict = None, auto=True, **kw):
+        '''
+        options dict options:
+            'nr_bins' : number of bins to use for the histograms
+            'post_select' :
+            'post_select_threshold' :
+            'nr_samples' : amount of different samples (e.g. ground and excited = 2)
+            'sample_0' : index of first sample (ground-state)
+            'sample_1' : index of second sample (first excited-state)
+            'max_datapoints' : maximum amount of datapoints for culumative fit
+            'log_hist' : use log scale for the y-axis of the 1D histograms
+            'verbose' : see BaseDataAnalysis
+            'presentation_mode' : see BaseDataAnalysis
+            'classif_method': how to classify the data.
+                'ncc' : default. Nearest Cluster Center
+                'gmm': gaussian mixture model.
+                'threshold': finds optimal vertical and horizontal thresholds.
+            'classif_kw': kw to pass to the classifier
+            see BaseDataAnalysis for more.
+        '''
+        super().__init__(options_dict=options_dict, auto=False,
+                         **kw)
+        self.params_dict = {
+            'measurementstring': 'measurementstring',
+            'measured_data': 'measured_data',
+            'value_names': 'value_names',
+            'value_units': 'value_units'}
+        self.numeric_params = []
+        self.DEFAULT_CLASSIF = "gmm"
+        self.classif_method = self.options_dict.get("classif_method",
+                                                    self.DEFAULT_CLASSIF)
+        if auto:
+            self.run_analysis()
+
+    def extract_data(self):
+        super().extract_data()
+        self.preselection = \
+            self.get_param_value("preparation_params",
+                                 {}).get("preparation_type", "wait") == "preselection"
+        default_states_info = {"g": {"int": 0, # integer repr., needed for classif
+                                     "label": r"|g\rangle"},
+                               "e": {"int": 1,
+                                     "label": r"|e\rangle"},
+                               "f": {"int": 2,
+                                     "label": r"|f\rangle"}
+                               }
+        self.states_info = self.get_param_value("states_info",
+                                                default_states_info)
+
+    def process_data(self):
+        """
+        Create the histograms based on the raw data
+        """
+        ######################################################
+        #  Separating data into shots for each level         #
+        ######################################################
+        super().process_data()
+        del self.proc_data_dict['data_to_fit'] # not used in this analysis
+        n_states = len(self.cp.states)
+
+        # prepare data in convenient format, i.e. arrays per qubit and per state
+        # e.g. {'qb1': {'g': np.array of shape (n_shots, n_ro_ch}, ...}, ...}
+        shots_per_qb = dict()        # store shots per qb and per state
+        presel_shots_per_qb = dict() # store preselection ro
+        means = defaultdict(dict)    # store mean per qb for each ro_ch
+        pdd = self.proc_data_dict    # for convenience of notation
+
+        for qbn in self.qb_names:
+            # shape is (n_shots, n_ro_ch) i.e. one column for each ro_ch
+            shots_per_qb[qbn] = \
+                np.asarray(list(
+                    pdd['meas_results_per_qb'][qbn].values())).T
+            # make 2D array in case only one channel (1D array)
+            if len(shots_per_qb[qbn].shape) == 1:
+                shots_per_qb[qbn] = np.expand_dims(shots_per_qb[qbn],
+                                                   axis=-1)
+            for i, qb_state in enumerate(self.cp.get_states(qbn)[qbn]):
+                means[qbn][qb_state] = np.mean(shots_per_qb[qbn][i::n_states],
+                                               axis=0)
+            if self.preselection:
+                # preselection shots were removed so look at raw data
+                # and look at only the first out of every two readouts
+                presel_shots_per_qb[qbn] = \
+                    np.asarray(list(
+                        pdd['meas_results_per_qb_raw'][qbn].values())).T[::2]
+                # make 2D array in case only one channel (1D array)
+                if len(presel_shots_per_qb[qbn].shape) == 1:
+                    presel_shots_per_qb[qbn] = \
+                        np.expand_dims(presel_shots_per_qb[qbn], axis=-1)
+
+        # create placeholders for analysis data
+        pdd['analysis_params'] = OrderedDict()
+        pdd['data'] = defaultdict(dict)
+        pdd['analysis_params']['state_prob_mtx'] = defaultdict(dict)
+        pdd['analysis_params']['classifier_params'] = defaultdict(dict)
+        pdd['analysis_params']['means'] = defaultdict(dict)
+        pdd['analysis_params']["n_shots"] = len(shots_per_qb[qbn])
+        self.clf_ = defaultdict(dict)
+        # create placeholders for analysis with preselection
+        if self.preselection:
+            pdd['data_masked'] = defaultdict(dict)
+            pdd['analysis_params']['state_prob_mtx_masked'] = defaultdict(dict)
+            pdd['analysis_params']['n_shots_masked'] = defaultdict(dict)
+
+        n_shots = len(shots_per_qb[qbn]) // n_states
+
+        for qbn, qb_shots in shots_per_qb.items():
+            # note that if some states are repeated, they are assigned the same label
+            qb_states_integer_repr = \
+                [self.states_info[s]["int"]
+                 for s in self.cp.get_states(qbn)[qbn]]
+            prep_states = np.tile(qb_states_integer_repr, n_shots)
+
+            pdd['analysis_params']['means'][qbn] = deepcopy(means[qbn])
+            pdd['data'][qbn] = dict(X=deepcopy(qb_shots),
+                                    prep_states=prep_states)
+            # self.proc_data_dict['keyed_data'] = deepcopy(data)
+
+            assert np.ndim(qb_shots) == 2, "Data must be a two D array. " \
+                                    "Received shape {}, ndim {}"\
+                                    .format(qb_shots.shape, np.ndim(qb_shots))
+            pred_states, clf_params, clf = \
+                self._classify(qb_shots, prep_states,
+                               method=self.classif_method, qb_name=qbn,
+                               **self.options_dict.get("classif_kw", dict()))
+            fm = self.fidelity_matrix(prep_states, pred_states)
+
+            # save fidelity matrix and classifier
+            pdd['analysis_params']['state_prob_mtx'][qbn] = fm
+            pdd['analysis_params']['classifier_params'][qbn] = clf_params
+            self.clf_[qbn] = clf
+            if self.preselection:
+                #re do with classification first of preselection and masking
+                pred_presel = self.clf_[qbn].predict(presel_shots_per_qb[qbn])
+                presel_filter = \
+                    pred_presel == self.states_info['g']['int']
+                if np.sum(presel_filter) == 0:
+                    log.warning(f"{qbn}: No data left after preselection! "
+                                f"Skipping preselection data & figures.")
+                    continue
+                qb_shots_masked = qb_shots[presel_filter]
+                prep_states = prep_states[presel_filter]
+                pred_states = self.clf_[qbn].predict(qb_shots_masked)
+                fm = self.fidelity_matrix(prep_states, pred_states)
+
+                pdd['data_masked'][qbn] = dict(X=deepcopy(qb_shots_masked),
+                                          prep_states=deepcopy(prep_states))
+                pdd['analysis_params']['state_prob_mtx_masked'][qbn] = fm
+                pdd['analysis_params']['n_shots_masked'][qbn] = \
+                    qb_shots_masked.shape[0]
+
+        self.save_processed_data()
+
+    def _classify(self, X, prep_state, method, qb_name, **kw):
+        """
+
+        Args:
+            X: measured data to classify
+            prep_state: prepared states (true values)
+            type: classification method
+            qb_name: name of the qubit to classify
+
+        Returns:
+
+        """
+        if np.ndim(X) == 1:
+            X = X.reshape((-1,1))
+        params = dict()
+
+        if method == 'ncc':
+            ncc = SSROQutrit.NCC(
+                self.proc_data_dict['analysis_params']['means'][qb_name])
+            pred_states = ncc.predict(X)
+            # self.clf_ = ncc
+            return pred_states, dict(), ncc
+
+        elif method == 'gmm':
+            cov_type = kw.pop("covariance_type", "tied")
+            # full allows full covariance matrix for each level. Other options
+            # see GM documentation
+            # assumes if repeated state, should be considered of the same component
+            # this classification method should not be used for multiplexed SSRO
+            # analysis
+            n_qb_states = len(np.unique(self.cp.get_states(qb_name)[qb_name]))
+            gm = GM(n_components=n_qb_states,
+                    covariance_type=cov_type,
+                    random_state=0,
+                    means_init=[mu for _, mu in
+                                self.proc_data_dict['analysis_params']
+                                    ['means'][qb_name].items()])
+            gm.fit(X)
+            pred_states = np.argmax(gm.predict_proba(X), axis=1)
+
+            params['means_'] = gm.means_
+            params['covariances_'] = gm.covariances_
+            params['covariance_type'] = gm.covariance_type
+            params['weights_'] = gm.weights_
+            params['precisions_cholesky_'] = gm.precisions_cholesky_
+            return pred_states, params, gm
+
+        elif method == "threshold":
+            tree = DTC(max_depth=kw.pop("max_depth", X.ndim),
+                       random_state=0, **kw)
+            tree.fit(X, prep_state)
+            pred_states = tree.predict(X)
+            params["thresholds"], params["mapping"] = \
+                self._extract_tree_info(tree, self.cp.get_states(qb_name)[qb_name])
+            if len(params["thresholds"]) == 1:
+                msg = "Best 2 thresholds to separate this data lie on axis {}" \
+                    ", most probably because the data is not well separated." \
+                    "The classifier attribute clf_ can still be used for " \
+                    "classification (which was done to obtain the state " \
+                    "assignment probability matrix), but only the threshold" \
+                    " yielding highest gini impurity decrease was returned." \
+                    "\nTo circumvent this problem, you can either choose" \
+                    " a second threshold manually (fidelity will likely be " \
+                    "worse), make the data more separable, or use another " \
+                    "classification method."
+                logging.warning(msg.format(list(params['thresholds'].keys())[0]))
+            return pred_states, params, tree
+        elif method == "threshold_brute":
+            raise NotImplementedError()
+        else:
+            raise NotImplementedError("Classification method: {} is not "
+                                      "implemented. Available methods: {}"
+                                      .format(method, ['ncc', 'gmm',
+                                                       'threshold']))
+    @staticmethod
+    def _get_covariances(gmm, cov_type=None):
+       return SSROQutrit._get_covariances(gmm, cov_type=cov_type)
+
+    @staticmethod
+    def fidelity_matrix(prep_states, pred_states, levels=('g', 'e', 'f'),
+                        plot=False, normalize=True):
+
+        return SSROQutrit.fidelity_matrix(prep_states, pred_states,
+                                          levels=levels, plot=plot,
+                                          normalize=normalize)
+
+    @staticmethod
+    def plot_fidelity_matrix(fm, target_names,
+                             title="State Assignment Probability Matrix",
+                             auto_shot_info=True, ax=None,
+                             cmap=None, normalize=True, show=False):
+        return SSROQutrit.plot_fidelity_matrix(
+            fm, target_names, title=title, ax=ax,
+            auto_shot_info=auto_shot_info,
+            cmap=cmap, normalize=normalize, show=show)
+
+    @staticmethod
+    def _extract_tree_info(tree_clf, class_names=None):
+        return SSROQutrit._extract_tree_info(tree_clf,
+                                             class_names=class_names)
+
+    @staticmethod
+    def _to_codeword_idx(tuple):
+        return SSROQutrit._to_codeword_idx(tuple)
+
+    @staticmethod
+    def plot_scatter_and_marginal_hist(data, y_true=None, plot_fitting=False,
+                                       **kwargs):
+        return SSROQutrit.plot_scatter_and_marginal_hist(
+            data, y_true=y_true, plot_fitting=plot_fitting, **kwargs)
+
+    @staticmethod
+    def plot_clf_boundaries(X, clf, ax=None, cmap=None):
+        return SSROQutrit.plot_clf_boundaries(X, clf, ax=ax, cmap=cmap)
+
+    @staticmethod
+    def plot_std(mean, cov, ax, n_std=1.0, facecolor='none', **kwargs):
+        return SSROQutrit.plot_std(mean, cov, ax,n_std=n_std,
+                                   facecolor=facecolor, **kwargs)
+
+    def prepare_plots(self):
+        if not self.get_param_value("plot", True):
+            return # no plotting if "plot" is False
+        cmap = plt.get_cmap('tab10')
+        show = self.options_dict.get("show", False)
+        pdd = self.proc_data_dict
+        for qbn in self.qb_names:
+            n_qb_states = len(np.unique(self.cp.get_states(qbn)[qbn]))
+            tab_x = a_tools.truncate_colormap(cmap, 0,
+                                              n_qb_states/10)
+
+            kwargs = dict(legend_labels=np.unique(self.cp.get_states(qbn)[qbn]),
+                          xlabel="Integration Unit 1, $u_1$",
+                          ylabel="Integration Unit 2, $u_2$",
+                          scale=self.options_dict.get("hist_scale", "linear"),
+                          cmap=tab_x)
+            data_keys = [k for k in list(pdd.keys()) if
+                            k.startswith("data") and qbn in pdd[k]]
+
+            for dk in data_keys:
+                data = pdd[dk][qbn]
+                title =  self.raw_data_dict['timestamp'] + f" {qbn} " + dk + \
+                    "\n{} classifier".format(self.classif_method)
+                kwargs.update(dict(title=title))
+
+                # plot data and histograms
+                n_shots_to_plot = self.get_param_value('n_shots_to_plot', None)
+                if n_shots_to_plot is not None:
+                    n_shots_to_plot *= n_qb_states
+                fig = self.plot_scatter_and_marginal_hist(
+                    data['X'][:n_shots_to_plot],
+                    data["prep_states"][:n_shots_to_plot],
+                    **kwargs)
+
+                # plot clf_boundaries
+                main_ax = fig.get_axes()[0]
+                self.plot_clf_boundaries(data['X'], self.clf_[qbn], ax=main_ax,
+                                         cmap=tab_x)
+                # plot means and std dev
+                means = pdd['analysis_params']['means'][qbn]
+                try:
+                    covs = self._get_covariances(self.clf_[qbn])
+                except Exception as e: # not a gmm model--> no cov.
+                    covs = []
+
+                for i, mean in enumerate(means.values()):
+                    main_ax.scatter(mean[0], mean[1], color='w', s=80)
+                    if len(covs) != 0:
+                        self.plot_std(mean, covs[i],
+                                      n_std=1, ax=main_ax,
+                                      edgecolor='w', linestyle='--',
+                                      linewidth=1)
+
+                # plot thresholds and mapping
+                plt_fn = {0: main_ax.axvline, 1: main_ax.axhline}
+                thresholds = pdd['analysis_params'][
+                    'classifier_params'][qbn].get("thresholds", dict())
+                mapping = pdd['analysis_params'][
+                    'classifier_params'][qbn].get("mapping", dict())
+                for k, thres in thresholds.items():
+                    plt_fn[k](thres, linewidth=2,
+                              label="threshold i.u. {}: {:.5f}".format(k, thres),
+                              color='k', linestyle="--")
+                    main_ax.legend(loc=[0.2,-0.62])
+
+                ax_frac = {0: (0.07, 0.1), # locations for codewords
+                           1: (0.83, 0.1),
+                           2: (0.07, 0.9),
+                           3: (0.83, 0.9)}
+                for cw, state in mapping.items():
+                    main_ax.annotate("0b{:02b}".format(cw) + f":{state}",
+                                     ax_frac[cw], xycoords='axes fraction')
+
+                self.figs[f'{qbn}_{self.classif_method}_classifier_{dk}'] = fig
+            if show:
+                plt.show()
+
+            title = self.raw_data_dict['timestamp'] + "\n{} State Assignment" \
+                " Probability Matrix\nTotal # shots:{}"\
+                .format(self.classif_method,
+                        self.proc_data_dict['analysis_params']['n_shots'])
+            fig = self.plot_fidelity_matrix(
+                self.proc_data_dict['analysis_params']['state_prob_mtx'][qbn],
+                self.cp.get_states(qbn)[qbn],
+                title=title,
+                show=show,
+                auto_shot_info=False)
+            self.figs[f'{qbn}_state_prob_matrix_{self.classif_method}'] = fig
+
+            if self.preselection:
+                title = self.raw_data_dict['timestamp'] + \
+                    "\n{} State Assignment Probability Matrix Masked"\
+                    "\nTotal # shots:{}".format(
+                        self.classif_method,
+                        self.proc_data_dict['analysis_params']['n_shots_masked'][qbn])
+
+                fig = self.plot_fidelity_matrix(
+                    self.proc_data_dict['analysis_params'] \
+                                       ['state_prob_mtx_masked'][qbn],
+                    self.cp.get_states(qbn)[qbn],
+                    title=title, show=show, auto_shot_info=False)
+                fig_key = f'{qbn}_state_prob_matrix_masked_{self.classif_method}'
+                self.figs[fig_key] = fig
