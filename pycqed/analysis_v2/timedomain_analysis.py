@@ -5100,7 +5100,7 @@ class OverUnderRotationAnalysis(MultiQubit_TimeDomain_Analysis):
                     'colors': 'gray'}
 
 
-class MultiCZgate_Analysis(MultiQubit_TimeDomain_Analysis):
+class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
 
     def __init__(self, *args, **kwargs):
         options_dict = kwargs.pop('options_dict', {})
@@ -5113,10 +5113,17 @@ class MultiCZgate_Analysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):
         super().process_data()
 
+        # Find leakage and ramsey qubit names
+        task_list = self.get_param_value('task_list', default_value=[])
         self.leakage_qbnames = self.get_param_value('leakage_qbnames',
-                                                    default_value=[])
+                                            default_value=[])
+        if len(self.leakage_qbnames) == 0:
+            self.leakage_qbnames = [task['qbl'] for task in task_list]
+
         self.ramsey_qbnames = self.get_param_value('ramsey_qbnames',
                                                    default_value=[])
+        if len(self.ramsey_qbnames ) == 0:
+            self.ramsey_qbnames = [task['qbr'] for task in task_list]
 
         # Make sure data has the right shape (len(hard_sp), len(soft_sp))
         for qbn, data in self.proc_data_dict['data_to_fit'].items():
