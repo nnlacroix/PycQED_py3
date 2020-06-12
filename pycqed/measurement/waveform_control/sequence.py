@@ -17,12 +17,19 @@ class Sequence:
     AWGs sequentially.
     """
 
-    def __init__(self, name):
+    def __init__(self, name, segments=()):
+        """
+        Initializes a Sequence object
+        Args:
+            name: Name of the sequence
+            segments (list, tuple): list of segments to add to the sequence
+        """
         self.name = name
         self.pulsar = ps.Pulsar.get_instance()
         self.segments = odict()
         self.awg_sequence = {}
         self.repeat_patterns = {}
+        self.extend(segments)
 
     def add(self, segment):
         if segment.name in self.segments:
