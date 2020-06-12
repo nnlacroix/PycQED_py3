@@ -32,6 +32,7 @@ from pycqed.analysis_v3 import helper_functions as hlp_mod
 import pycqed.measurement.waveform_control.sequence as sequence
 from pycqed.utilities.general import temporary_value
 from pycqed.analysis_v2 import tomography_qudev as tomo
+import pycqed.analysis.analysis_toolbox as a_tools
 
 
 try:
@@ -179,6 +180,7 @@ def get_multiplexed_readout_detector_functions(qubits, nr_averages=None,
                                                correlations=None,
                                                add_channels=None,
                                                det_get_values_kws=None,
+                                               nr_samples=4096,
                                                **kw):
     if nr_averages is None:
         nr_averages = max(qb.acq_averages() for qb in qubits)
@@ -287,7 +289,7 @@ def get_multiplexed_readout_detector_functions(qubits, nr_averages=None,
                 result_logging_mode='digitized', **kw),
             'inp_avg_det': det.UHFQC_input_average_detector(
                 UHFQC=uhf_instances[uhf], AWG=AWG, nr_averages=nr_averages,
-                nr_samples=4096,
+                nr_samples=nr_samples,
                 **kw),
             'int_corr_det': det.UHFQC_correlation_detector(
                 UHFQC=uhf_instances[uhf], AWG=AWG, channels=channels[uhf],
@@ -447,6 +449,258 @@ def measure_multiplexed_readout(qubits, liveplot=False,
             use_preselection=preselection
         ))
 
+def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
+                 preselection=True, all_states_combinations=False, upload=True,
+                 exp_metadata=None, analyze=True, analysis_kwargs=None, update=True):
+    """
+    Measures in single shot readout the specified states and performs
+    a Gaussian mixture fit to calibrate the state classfier and provide the
+    single shot readout probability assignment matrix
+    Args:
+        dev (Device): device object
+        qubits (list): list of qubits to calibrate in parallel
+        states (tuple, str, list of tuples): if tuple, each entry will be interpreted
+            as a state. if string (e.g. "gef"), each letter will be interpreted
+            as a state. All qubits will be prepared simultaneously in each given state.
+            If list of tuples is given, then each tuple should be of length = qubits
+            and the ith tuple should represent the state that each qubit should have
+            in the ith segment. In the latter case, all_state_combinations is ignored.
+        n_shots (int): number of shots
+        label (str): measurement label
+        preselection (bool, None): If True, force preselection even if not
+            in preparation params. If False, then removes preselection even if in prep_params.
+            if None, then takes prep_param of first qubit.
+
+        all_states_combinations (bool): if False, then all qubits are prepared
+            simultaneously in the first state and then read out, then all qubits
+            are prepared in the second state, etc. If True, then all combinations
+            are measured, which allows to characterize the multiplexed readout of
+            each basis state. e.g. say qubits = [qb1, qb2], states = "ge" and
+            all_states_combinations = False, then the different segments will be "g, g"
+            and "e, e" for "qb1, qb2" respectively. all_states_combinations=True would
+            yield "g,g", "g, e", "e, g" , "e,e".
+        upload (bool): upload waveforms to AWGs
+        exp_metadata (dict): experimental metadata
+        analyze (bool): analyze data
+        analysis_kwargs (dict): arguments for the analysis. Defaults to all qb names
+        update (bool): update readout classifier parameters.
+            Does not update the readout correction matrix (i.e. qb.acq_state_prob_mtx),
+            as we ended up using this a lot less often than the update for readout
+            classifier params. The user can still access the state_prob_mtx through
+            the analysis object and set the corresponding parameter manually if desired.
+
+
+    Returns:
+
+    """
+    # combine operations and preparation dictionaries
+    qubits = dev.get_qubits(qubits)
+    qb_names = dev.get_qubits(qubits, "str")
+    operation_dict = dev.get_operation_dict(qubits=qubits)
+    prep_params = dev.get_prep_params(qubits)
+
+    if preselection is None:
+        pass
+    elif preselection: # force preselection for this measurement if desired by user
+        prep_params['preparation_type'] = "preselection"
+    else:
+        prep_params['preparation_type'] = "wait"
+
+    # create and set sequence
+    if np.ndim(states) == 2: # list of custom states provided
+        if len(qb_names) != len(states[0]):
+            raise ValueError(f"{len(qb_names)} qubits were given but custom "
+                             f"states were "
+                             f"specified for {len(states[0])} qubits.")
+        cp = CalibrationPoints(qb_names, states)
+    else:
+        cp = CalibrationPoints.multi_qubit(qb_names, states, n_per_state=1,
+                                       all_combinations=all_states_combinations)
+    seq = sequence.Sequence("SSRO_calibration",
+                            cp.create_segments(operation_dict, **prep_params))
+
+    # prepare measurement
+    for qb in qubits:
+        qb.prepare(drive='timedomain')
+    label = f"SSRO_calibration_{states}_{qb_names}" if label is None else label
+    channel_map = {qb.name: [vn + ' ' + qb.instr_uhf()
+                             for vn in qb.int_log_det.value_names]
+                   for qb in qubits}
+    if exp_metadata is None:
+        exp_metadata = {}
+    exp_metadata.update({"cal_points": repr(cp),
+                         "preparation_params": prep_params,
+                         "all_states_combinations": all_states_combinations,
+                         "n_shots": n_shots,
+                         "channel_map": channel_map
+                         })
+    df = get_multiplexed_readout_detector_functions(
+            qubits, nr_shots=n_shots)['int_log_det']
+    MC = dev.instr_mc.get_instr()
+    MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq,
+                                                   upload=upload))
+    MC.set_sweep_points(np.arange(seq.n_acq_elements()))
+    MC.set_detector_function(df)
+
+    # run measurement
+    temp_values = [(MC.soft_avg, 1)]
+
+    # required to ensure having original prep_params after mmnt
+    # in case preselection=True
+    temp_values += [(qb.preparation_params, prep_params) for qb in qubits]
+    with temporary_value(*temp_values):
+        MC.run(name=label, exp_metadata=exp_metadata)
+
+    # analyze
+    if analyze:
+        if analysis_kwargs is None:
+            analysis_kwargs = dict()
+        if "qb_names" not in analysis_kwargs:
+            analysis_kwargs["qb_names"] = qb_names # all qubits by default
+        a = tda.MultiQutrit_Singleshot_Readout_Analysis(**analysis_kwargs)
+        for qb in qubits:
+            classifier_params = a.proc_data_dict[
+                'analysis_params']['classifier_params'][qb.name]
+            if update:
+                qb.acq_classifier_params(classifier_params)
+        return a
+
+def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
+                         acq_length=4096/1.8e9, exp_metadata=None,
+                         analyze=True, analysis_kwargs=None,
+                         acq_weights_basis=None, orthonormalize=False,
+                         update=True):
+    """
+    Measures time traces for specified states and
+    Args:
+        dev (Device): quantum device object
+        qubits: qubits on which traces should be measured
+        states (tuple, list, str): if str or tuple of single character strings,
+            then interprets each letter as a state and does it on all qubits
+             simultaneously. e.g. "ge" or ('g', 'e') --> measures all qbs
+             in g then all in e.
+             If list/tuple of tuples, then interprets the list as custom states:
+             each tuple should be of length equal to the number of qubits
+             and each state is calibrated individually. e.g. for 2 qubits:
+             [('g', 'g'), ('e', 'e'), ('f', 'g')] --> qb1=qb2=g then qb1=qb2=e
+             and then qb1 = "f" != qb2 = 'g'
+
+        upload: upload waveforms to AWG
+        acq_length: length of timetrace to record
+        exp_metadata: experimental metadata
+        acq_weights_basis (list): shortcut for analysis parameter.
+            list of basis vectors used for computing the weights.
+            (see Timetrace Analysis). e.g. ["ge", "gf"] yields basis vectors e - g
+            and f - g. If None, defaults to  ["ge", "gf"] when more than 2 traces are
+            passed to the analysis and to ['ge'] if 2 traces are measured.
+        orthonormalize (bool): shortcut for analysis parameter. Whether or not to
+            orthonormalize the optimal weights (see MultiQutrit Timetrace Analysis)
+        update (bool): update weights
+
+
+    Returns:
+
+    """
+    # check whether timetraces can be compute simultaneously
+    qubits = dev.get_qubits(qubits)
+    uhf_names = np.array([qubit.instr_uhf.get_instr().name for qubit in qubits])
+    unique, counts = np.unique(uhf_names, return_counts=True)
+    for u, c in zip(unique, counts):
+        if c != 1:
+            raise ValueError(f"{np.array(qubits)[uhf_names == u]}"
+                             f" share the same UHF ({u}) and therefore"
+                             f" their timetraces cannot be computed "
+                             f"simultaneously.")
+
+    # combine operations and preparation dictionaries
+    operation_dict = dev.get_operation_dict(qubits=qubits)
+    qb_names = dev.get_qubits(qubits, "str")
+    prep_params = dev.get_prep_params(qubits)
+    MC = qubits[0].instr_mc.get_instr()
+
+    if exp_metadata is None:
+        exp_metadata = dict()
+    temp_val = [(qb.acq_length, acq_length) for qb in qubits]
+    with temporary_value(*temp_val):
+        [qb.prepare(drive='timedomain') for qb in qubits]
+        npoints = qubits[0].inp_avg_det.nr_samples # same for all qubits
+        sweep_points = np.linspace(0, npoints / 1.8e9, npoints,
+                                            endpoint=False)
+        channel_map = {qb.name: [vn + ' ' + qb.instr_uhf()
+                        for vn in qb.inp_avg_det.value_names]
+                        for qb in qubits}
+        exp_metadata.update(
+            {'sweep_name': 'time',
+             'sweep_unit': ['s'],
+             'sweep_points': sweep_points,
+             'acq_length': acq_length,
+             'channel_map': channel_map,
+             'orthonormalize': orthonormalize,
+             "acq_weights_basis": acq_weights_basis})
+
+        for state in states:
+            # create sequence
+            name = 'timetrace_{}_{}'.format(state, qb_names)
+            if isinstance(state, str) and len(state) == 1:
+                # same state for all qubits, e.g. "e"
+                cp = CalibrationPoints.multi_qubit(qb_names, state,
+                                                   n_per_state=1)
+            else:
+                # ('g','e','f') as qb1=g, qb2=e, qb3=f
+                if len(qb_names) != len(state):
+                    raise ValueError(f"{len(qb_names)} qubits were given "
+                                     f"but custom states were "
+                                     f"specified for {len(state)} qubits.")
+                cp = CalibrationPoints(qb_names, state)
+            exp_metadata.update({'cal_points': repr(cp)})
+            seq = sequence.Sequence("timetrace",
+                                    cp.create_segments(operation_dict,
+                                                       **prep_params))
+            # set sweep function and run measurement
+            MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq,
+                                                           upload=upload))
+            MC.set_sweep_points(sweep_points)
+            df = get_multiplexed_readout_detector_functions(
+                qubits, nr_samples=npoints)["inp_avg_det"]
+            MC.set_detector_function(df)
+            MC.run(name=name, exp_metadata=exp_metadata)
+
+    if analyze:
+        tps = a_tools.latest_data(n_matches=len(states),
+                                  return_timestamp=True)[0]
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+        if 't_start' not in analysis_kwargs:
+            analysis_kwargs.update({"t_start": tps[0],
+                                    "t_stop": tps[-1]})
+
+        options_dict = dict(orthonormalize=orthonormalize,
+                            acq_weights_basis=acq_weights_basis)
+        options_dict.update(analysis_kwargs.pop("options_dict", {}))
+        a = tda.MultiQutrit_Timetrace_Analysis(options_dict=options_dict,
+                                               **analysis_kwargs)
+
+        if update:
+            for qb in qubits:
+                weights = a.proc_data_dict['analysis_params_dict'
+                    ]['optimal_weights'][qb.name]
+                if np.ndim(weights) == 1:
+                    # single channel
+                    qb.acq_weights_I(weights.real)
+                    qb.acq_weights_Q(weights.imag)
+                elif np.ndim(weights) == 2 and len(weights) == 2:
+                    # two channels
+                    qb.acq_weights_I(weights[0].real)
+                    qb.acq_weights_Q(weights[0].imag)
+                    qb.acq_weights_I2(weights[1].real)
+                    qb.acq_weights_Q2(weights[1].imag)
+                else:
+                    log.warning(f"{qb.name}: Number of weight vectors > 2: "
+                                f"{len(weights)}. Cannot update weights "
+                                f"automatically.")
+                qb.acq_weights_basis(a.proc_data_dict['analysis_params_dict'
+                    ]['optimal_weights_basis_labels'][qb.name])
+        return a
 
 def measure_active_reset(qubits, shots=5000,
                          qutrit=False, upload=True, label=None,
