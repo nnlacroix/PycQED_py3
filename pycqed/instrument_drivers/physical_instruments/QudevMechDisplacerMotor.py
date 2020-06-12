@@ -7,7 +7,8 @@ from qcodes.utils.validators import Enum, Ints, Numbers
 
 log = logging.getLogger(__name__)
 
-class QudevDisplacerSubModule(NanotecSMI33):
+
+class QudevMechDisplacerMotor(NanotecSMI33):
     def __init__(self, name: str, address: str, controller_id: str = '*', **kwargs) -> None:
         super().__init__(name, address, controller_id, **kwargs)
         self._lower_bound = None
@@ -224,8 +225,8 @@ class QudevDisplacerSubModule(NanotecSMI33):
         self._is_initialized = True
 
         self.add_parameter(
-            'position_normalized',
-            label='Normalized Position',
+            'setting_normalized',
+            label='Normalized Setting',
             unit='',
             get_cmd=(lambda: self.position()),
             set_cmd=(lambda x: self.position(x)),
@@ -233,9 +234,11 @@ class QudevDisplacerSubModule(NanotecSMI33):
             set_parser=(lambda x: round(self._upper_bound * x)),
             vals=Numbers(min_value=0.0,
                          max_value=1.0),
-            docstrin=('Normalized position'
-                      'Min value: 0'
-                      'Max value: 1'))
+            docstring=('Normalized setting (position)'
+                       'Min value: 0'
+                       'Max value: 1'
+                       'Automatically mapped between lower and upper'
+                       'bound of limit switch'))
 
     def limit_switch_on(self) -> bool:
         """
