@@ -150,7 +150,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         # self.command_response('Enabled')
         self.save_record_to_eeprom(1)
         self.load_record_from_eeprom(1)
-        self.start()
+        self.start_motor()
         # Wait until motor reaches limit switch
         self.wait_until_status(5)
         self.reset_position_error(0)
