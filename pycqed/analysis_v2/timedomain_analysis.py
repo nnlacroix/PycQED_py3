@@ -6046,12 +6046,17 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             # this classification method should not be used for multiplexed SSRO
             # analysis
             n_qb_states = len(np.unique(self.cp.get_states(qb_name)[qb_name]))
+            # give same weight to each class by default
+            weights_init = kw.pop("weights_init",
+                                  np.ones(n_qb_states)/n_qb_states)
+
             gm = GM(n_components=n_qb_states,
                     covariance_type=cov_type,
                     random_state=0,
+                    weights_init=weights_init,
                     means_init=[mu for _, mu in
                                 self.proc_data_dict['analysis_params']
-                                    ['means'][qb_name].items()])
+                                    ['means'][qb_name].items()], **kw)
             gm.fit(X)
             pred_states = np.argmax(gm.predict_proba(X), axis=1)
 
@@ -6189,13 +6194,14 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                     self.plot_clf_boundaries(data['X'], self.clf_[qbn], ax=main_ax,
                                              cmap=tab_x)
                     # plot means and std dev
-                    means = pdd['analysis_params']['means'][qbn]
+                    means = pdd['analysis_params'][
+                        'classifier_params'][qbn].get('means_', [])
                     try:
                         covs = self._get_covariances(self.clf_[qbn])
                     except Exception as e: # not a gmm model--> no cov.
                         covs = []
 
-                    for i, mean in enumerate(means.values()):
+                    for i, mean in enumerate(means):
                         main_ax.scatter(mean[0], mean[1], color='w', s=80)
                         if len(covs) != 0:
                             self.plot_std(mean, covs[i],
