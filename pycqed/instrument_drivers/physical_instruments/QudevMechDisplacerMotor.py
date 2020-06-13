@@ -150,6 +150,8 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         # self.command_response('Enabled')
         self.save_record_to_eeprom(1)
 
+        self.wait_until_status()
+
         # Prepare second record
         # self.command_response('Disabled')
         self.acceleration(6000)
@@ -177,7 +179,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.wait_until_status(4)
         # Update positions
         self._lower_bound = 0
-        self._upper_bound = self.position()
+        self._upper_bound = -self.position()
 
     def initialize(self, reverse_clearance: int = 0) -> None:
         """
