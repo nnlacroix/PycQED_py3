@@ -180,8 +180,6 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.start_motor()
         # Wait until motor reaches limit switch
         self.wait_until_status(4)
-        # Update positions
-        print(f'Second stage postion {self.position()}')
         self._upper_bound = self.position()
 
     def initialize(self, reverse_clearance: int = 0) -> None:
