@@ -137,7 +137,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.braking(1)
         self.braking_jerk(100000000)
         self.continuation_record(0)
-        self.direction('Left')
+        self.direction('Right')
         self.direction_change_on_repeat(False)
         self.maximum_frequency(250)
         self.maximum_frequency2(250)
@@ -154,9 +154,8 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.start_motor()
         self.wait_until_status(4)
         # Update zero position
-        self.reset_position_error(0)
         print(f'First stage postion {self.position()}')
-        self._lower_bound = 0
+        self._upper_bound = self.position()
 
         # Prepare second record
         # self.command_response('Disabled')
@@ -165,7 +164,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.braking(1)
         self.braking_jerk(100000000)
         self.continuation_record(0)
-        self.direction('Right')
+        self.direction('Left')
         self.direction_change_on_repeat(False)
         self.maximum_frequency(250)
         self.maximum_frequency2(250)
@@ -183,7 +182,9 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         # Wait until motor reaches limit switch
         self.wait_until_status(4)
         # Update positions
-        self._upper_bound = self.position()
+        print(f'Second stage postion {self.position()}')
+        self.reset_position_error(0)
+        self._lower_bound = 0
         print(f'Second stage postion {self.position()}')
 
     def initialize(self, reverse_clearance: int = 0) -> None:
@@ -269,7 +270,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         assert input_6_function == 'ExternalLimitSwitch',\
             'Input 6 not configured for external limit switch'
         assert input_config & 32 == 0,\
-            'Bit 5 of IO output mask not set to 0'
+            'Limit switch triggered'
         assert io_polarity & 32 == 0,\
             'Bit 5 of IO polarity not set to 0'
         assert microsteps in [1, 2, 4, 8], 'Unusual number of microsteps'
@@ -291,7 +292,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.braking(65535)
         self.braking_jerk(100000000)
         self.continuation_record(0)
-        self.direction('Left')
+        self.direction('Right')
         self.direction_change_on_repeat(False)
         self.limit_switch_behavior(0b100010000100010)
         self.maximum_frequency(250)
