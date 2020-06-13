@@ -137,7 +137,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.braking(1)
         self.braking_jerk(100000000)
         self.continuation_record(0)
-        self.direction('Right')
+        self.direction('Left')
         self.direction_change_on_repeat(False)
         self.maximum_frequency(250)
         self.maximum_frequency2(250)
@@ -157,7 +157,6 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.reset_position_error(0)
         print(f'First stage postion {self.position()}')
         self._lower_bound = 0
-        print(f'First stage postion {self.position()}')
 
         # Prepare second record
         # self.command_response('Disabled')
@@ -166,7 +165,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.braking(1)
         self.braking_jerk(100000000)
         self.continuation_record(0)
-        self.direction('Left')
+        self.direction('Right')
         self.direction_change_on_repeat(False)
         self.maximum_frequency(250)
         self.maximum_frequency2(250)
