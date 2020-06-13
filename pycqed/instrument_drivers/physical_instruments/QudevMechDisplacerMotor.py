@@ -207,7 +207,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.acceleration_mode('Jerk-free')
         self.acceleration_jerk(1)
         self.braking_jerk(100000000)
-        self.step_mode(2)
+        self.step_mode(4)
 
         # Escape the limit if we are currently at one
         previous_direction = self.direction()
