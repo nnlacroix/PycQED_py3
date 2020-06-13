@@ -136,7 +136,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.acceleration_jerk(1)
         self.braking(1)
         self.braking_jerk(100000000)
-        self.continuation_record(2)
+        self.continuation_record(0)
         self.direction('Left')
         self.direction_change_on_repeat(False)
         self.maximum_frequency(250)
@@ -284,9 +284,9 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         :return:
         """
         if self.direction() == 'Left':
-            reverse_direction == 'Right'
+            reverse_direction = 'Right'
         else:
-            reverse_direction == 'Left'
+            reverse_direction = 'Left'
         # self.command_response('Disabled')
         self.acceleration(6000)
         self.acceleration_jerk(1)
