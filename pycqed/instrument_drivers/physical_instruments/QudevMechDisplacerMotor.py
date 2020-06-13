@@ -137,7 +137,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.braking(1)
         self.braking_jerk(100000000)
         self.continuation_record(2)
-        self.direction('Right')
+        self.direction('Left')
         self.direction_change_on_repeat(False)
         self.maximum_frequency(250)
         self.maximum_frequency2(250)
@@ -149,7 +149,12 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.travel_distance(100)
         # self.command_response('Enabled')
         self.save_record_to_eeprom(1)
+        self.load_record_from_eeprom(1)
+        self.start()
         # Wait until motor reaches limit switch
+        self.wait_until_status(5)
+        self.reset_position_error(0)
+        self._lower_bound = 0
 
         # Prepare second record
         # self.command_response('Disabled')
@@ -158,7 +163,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.braking(1)
         self.braking_jerk(100000000)
         self.continuation_record(0)
-        self.direction('Left')
+        self.direction('Right')
         self.direction_change_on_repeat(False)
         self.maximum_frequency(250)
         self.maximum_frequency2(250)
@@ -170,6 +175,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.travel_distance(100000000)
         # self.command_response('Enabled')
         self.save_record_to_eeprom(2)
+        self.load_record_from_eeprom(2)
         # Start sequence
         self.start_motor()
         # Wait until motor reaches limit switch
@@ -177,9 +183,6 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         # Update positions
         print(f'Second stage postion {self.position()}')
         self._upper_bound = self.position()
-        self.reset_position_error(0)
-        self._lower_bound = 0
-        print(f'Second stage postion {self.position()}')
 
     def initialize(self, reverse_clearance: int = 0) -> None:
         """
@@ -280,13 +283,17 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         Travel away from the limit after finding the limit
         :return:
         """
+        if self.direction() == 'Left':
+            reverse_direction == 'Right'
+        else:
+            reverse_direction == 'Left'
         # self.command_response('Disabled')
         self.acceleration(6000)
         self.acceleration_jerk(1)
         self.braking(65535)
         self.braking_jerk(100000000)
         self.continuation_record(0)
-        self.direction('Right')
+        self.direction(reverse_direction)
         self.direction_change_on_repeat(False)
         self.limit_switch_behavior(0b100010000100010)
         self.maximum_frequency(250)
