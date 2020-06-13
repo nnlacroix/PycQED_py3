@@ -257,7 +257,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.command_response('Enabled')
         error_correction = self.error_correction()
         input_6_function = self.digital_input_6_function()
-        input_config = self.io_outut_mask()
+        input_config = self.io_output_mask()
         io_polarity = self.io_polarity()
         limit_switch_config = self.limit_switch_behavior()
         microsteps = self.step_mode()
