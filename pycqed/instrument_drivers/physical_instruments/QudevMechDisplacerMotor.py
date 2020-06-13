@@ -73,17 +73,17 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         position = min(position, self._upper_bound - minimum_steps_to_limit)
         if mode == 'Normal':
             if position < self.position():
-                direction = 'Right'
-            else:
                 direction = 'Left'
+            else:
+                direction = 'Right'
             self._drive_abosolute(position, direction, speed)
             # wait until limit is reached or controller is finished
             self.wait_until_status(5)
         elif mode == 'LeftToRight':
             if (position - clearance_steps) < self.position():
-                direction = 'Right'
-            else:
                 direction = 'Left'
+            else:
+                direction = 'Right'
             self._drive_absolute(position - clearance_steps, direction, speed)
             self.wait_until_status(5)
             if direction == 'Left':
