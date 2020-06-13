@@ -225,7 +225,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         # Find the limits by driving to the upper limit in external reference
         # run mode and then driving to lower limit in relative mode until
         # the limit switch is reached and the motor stops
-        print('Finding limits')
+        print(f'Finding {self.name} limits')
         self._find_limits()
         # Travel away from the limit
         self._travel_away_from_limit()
@@ -291,7 +291,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.braking(65535)
         self.braking_jerk(100000000)
         self.continuation_record(0)
-        self.direction('Right')
+        self.direction('Left')
         self.direction_change_on_repeat(False)
         self.limit_switch_behavior(0b100010000100010)
         self.maximum_frequency(250)
