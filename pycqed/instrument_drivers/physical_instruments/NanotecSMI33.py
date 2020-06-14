@@ -29,13 +29,12 @@ class NanotecSMI33(VisaInstrument):
                 between 1 and 254
             kwargs: Additional keyword arguments
         """
-        super().__init__(name, address, terminator='\r', visalib='@py',
-                         **kwargs)
+        super().__init__(name, address, terminator='\r', **kwargs)
 
         # Set correct serial parameters
         self.visa_handle.baud_rate = 115200
-        self.visa_handle.read_termination = '\r'
-        self.visa_handle.write_termination = '\r'
+        # self.visa_handle.read_termination = '\r'
+        # self.visa_handle.write_termination = '\r'
 
         if controller_id not in [str(i) for i in range(1, 255)] + ['*']:
             raise ValueError('Controller_id must be * or a number from'
