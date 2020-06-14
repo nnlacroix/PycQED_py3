@@ -19,7 +19,8 @@ class QudevMechDisplacerMotor(NanotecSMI33):
     def _drive_absolute(self, position: int, direction: str,
                         speed: int = 600) -> None:
         """
-        Drive the motor in absolute mode
+        Drives the motor in absolute mode
+
         :param position:
         :param direction:
         :param speed:
@@ -52,7 +53,8 @@ class QudevMechDisplacerMotor(NanotecSMI33):
                     mode: str = 'Normal',
                     clearance_steps: int = 30) -> None:
         """
-        Drive the motor to a given position (in steps)
+        Drives the motor to a given position (in steps)
+
         Works in either Normal mode where it drives directly to the target
         in terms of number of steps or in LeftToRight mode where it always
         approaches the target position from below
@@ -97,7 +99,8 @@ class QudevMechDisplacerMotor(NanotecSMI33):
 
     def _escape_limit(self, direction: str, steps: int) -> None:
         """
-        Try to escape the region where the limit switch is triggered
+        Drives the motor in relative mode to escape the limit region
+
         :param direction:
         :param steps:
         :return:
@@ -128,6 +131,8 @@ class QudevMechDisplacerMotor(NanotecSMI33):
 
     def _find_limits(self) -> None:
         """
+        Finds limits of motor travel
+
         Drives the motor to the lower limit in referenced mode and then
         commands the motor to drive towards the upper limit until it
         reaches the limit switch
@@ -189,7 +194,8 @@ class QudevMechDisplacerMotor(NanotecSMI33):
 
     def initialize(self, reverse_clearance: int = 0) -> None:
         """
-        Prepare motor for operation
+        Prepares motor for operation
+
         Configure the motor settings and perform mechanical limit seeking
         Digital input 6 is configured as the external limit switch with
         inverted polarity (such that the controller is triggered when
@@ -250,14 +256,16 @@ class QudevMechDisplacerMotor(NanotecSMI33):
 
     def limit_switch_on(self) -> bool:
         """
-        Check whether limit switch is activated
+        Checks whether limit switch is activated
+
         :return:
         """
         return self.io_output_mask() & 32 > 0
 
     def safety_check(self) -> None:
         """
-        Check that all critical parameters are set correctly
+        Checks that all critical parameters are set correctly
+
         :return:
         """
         self.command_response('Enabled')
@@ -288,7 +296,8 @@ class QudevMechDisplacerMotor(NanotecSMI33):
 
     def _travel_away_from_limit(self) -> None:
         """
-        Travel away from the limit after finding the limit
+        Travels away from the limit after finding the limit
+
         :return:
         """
         # self.command_response('Disabled')
@@ -317,7 +326,8 @@ class QudevMechDisplacerMotor(NanotecSMI33):
 
     def wait_until_status(self, mask: int = 5, timeout: int = 30) -> None:
         """
-        Wait until controller has a status given by the mask
+        Waits until controller has a status given by the mask
+
         :param mask:
         :param timeout:
         :return:
