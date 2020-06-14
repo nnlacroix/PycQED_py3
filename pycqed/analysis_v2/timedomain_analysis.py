@@ -5901,15 +5901,16 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         self.preselection = \
             self.get_param_value("preparation_params",
                                  {}).get("preparation_type", "wait") == "preselection"
-        default_states_info = {"g": {"int": 0, # integer repr., needed for classif
-                                     "label": r"|g\rangle"},
-                               "e": {"int": 1,
-                                     "label": r"|e\rangle"},
-                               "f": {"int": 2,
-                                     "label": r"|f\rangle"}
-                               }
-        self.states_info = self.get_param_value("states_info",
-                                                default_states_info)
+        default_states_info = defaultdict(dict)
+        default_states_info.update({"g": {"label": r"$|g\rangle$"},
+                               "e": {"label": r"$|e\rangle$"},
+                               "f": {"label": r"$|f\rangle$"}
+                               })
+
+        self.states_info = \
+            self.get_param_value("states_info",
+                                {qbn: deepcopy(default_states_info)
+                                 for qbn in self.qb_names})
 
     def process_data(self):
         """
@@ -5926,7 +5927,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         # e.g. {'qb1': {'g': np.array of shape (n_shots, n_ro_ch}, ...}, ...}
         shots_per_qb = dict()        # store shots per qb and per state
         presel_shots_per_qb = dict() # store preselection ro
-        means = defaultdict(dict)    # store mean per qb for each ro_ch
+        means = defaultdict(OrderedDict)    # store mean per qb for each ro_ch
         pdd = self.proc_data_dict    # for convenience of notation
 
         for qbn in self.qb_names:
@@ -5953,7 +5954,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                         np.expand_dims(presel_shots_per_qb[qbn], axis=-1)
 
         # create placeholders for analysis data
-        pdd['analysis_params'] = OrderedDict()
+        pdd['analysis_params'] = dict()
         pdd['data'] = defaultdict(dict)
         pdd['analysis_params']['state_prob_mtx'] = defaultdict(dict)
         pdd['analysis_params']['classifier_params'] = defaultdict(dict)
@@ -5969,9 +5970,26 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         n_shots = len(shots_per_qb[qbn]) // n_states
 
         for qbn, qb_shots in shots_per_qb.items():
+            # create mapping to integer following ordering in cal_points.
+            # Notes:
+            # 1) the state_integer should to the order of pdd[qbn]['means'] so that
+            # when passing the init_means to the GMM model, it is ensured that each
+            # gaussian component will predict the state_integer associated to that state
+            # 2) the mapping cannot be preestablished because the GMM predicts labels
+            # in range(n_components). For instance, if a qubit has states "g", "f"
+            # then the model will predicts 0's and 1's, so the typical g=0, e=1, f=2
+            # mapping would fail. The number of different states can be different
+            # for each qubit and therefore the mapping should also be done per qubit.
+            state_integer = 0
+            for state in self.cp.get_states(qbn)[qbn]:
+                if "int" in self.states_info[qbn][state]:
+                    continue # in case state is repeated, no new integer needed
+                self.states_info[qbn][state]["int"] = state_integer
+                state_integer += 1
+
             # note that if some states are repeated, they are assigned the same label
             qb_states_integer_repr = \
-                [self.states_info[s]["int"]
+                [self.states_info[qbn][s]["int"]
                  for s in self.cp.get_states(qbn)[qbn]]
             prep_states = np.tile(qb_states_integer_repr, n_shots)
 
@@ -5997,7 +6015,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 #re do with classification first of preselection and masking
                 pred_presel = self.clf_[qbn].predict(presel_shots_per_qb[qbn])
                 presel_filter = \
-                    pred_presel == self.states_info['g']['int']
+                    pred_presel == self.states_info[qbn]['g']['int']
                 if np.sum(presel_filter) == 0:
                     log.warning(f"{qbn}: No data left after preselection! "
                                 f"Skipping preselection data & figures.")
