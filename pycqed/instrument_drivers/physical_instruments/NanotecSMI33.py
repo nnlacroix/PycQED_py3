@@ -5,7 +5,6 @@ from qcodes.utils.validators import Enum, Ints, Numbers
 
 """
 Requires
-    pyVISA-py
     PySerial
 """
 
@@ -16,7 +15,7 @@ class NanotecSMI33(VisaInstrument):
     """
     This is a driver for the Nanotec SMI33 Motor controller
 
-    Status: not tested
+    Status: tested with physical hardware
 
     Only a subset of all features have been included
     """
@@ -33,8 +32,6 @@ class NanotecSMI33(VisaInstrument):
 
         # Set correct serial parameters
         self.visa_handle.baud_rate = 115200
-        # self.visa_handle.read_termination = '\r'
-        # self.visa_handle.write_termination = '\r'
 
         if controller_id not in [str(i) for i in range(1, 255)] + ['*']:
             raise ValueError('Controller_id must be * or a number from'
@@ -138,179 +135,42 @@ class NanotecSMI33(VisaInstrument):
                        'Note that this disables response to any commands'
                        'including those reading out other settings'))
 
-        self.add_parameter(
-            'digital_input_1_function',
-            label='Digital Input 1 Function',
-            unit='',
-            get_cmd=':port_in_a',
-            set_cmd=':port_in_a={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'StartRecord/ErrorReset': 1,
-                         'RecordSelectBit0': 2,
-                         'RecordSelectBit1': 3,
-                         'RecordSelectBit2': 4,
-                         'RecordSelectBit3': 5,
-                         'RecordSelectBit4': 6,
-                         'ExternalLimitSwitch': 7,
-                         'Trigger': 8,
-                         'Direction': 9,
-                         'Enable': 10,
-                         'Clock': 11,
-                         'ClockDirectionMode1': 12,
-                         'ClockDirectionMode2': 13},
-            docstring='Function of digital input 1')
+        for i in range(1, 7):
+            self.add_parameter(
+                f'digital_input_{i}_function',
+                label=f'Digital Input {i} Function',
+                unit='',
+                get_cmd=f':port_in_{chr(i+96)}',
+                set_cmd=f':port_in_{chr(i+96)}={{}}',
+                max_val_age=0,
+                val_mapping={'UserDefined': 0,
+                             'StartRecord/ErrorReset': 1,
+                             'RecordSelectBit0': 2,
+                             'RecordSelectBit1': 3,
+                             'RecordSelectBit2': 4,
+                             'RecordSelectBit3': 5,
+                             'RecordSelectBit4': 6,
+                             'ExternalLimitSwitch': 7,
+                             'Trigger': 8,
+                             'Direction': 9,
+                             'Enable': 10,
+                             'Clock': 11,
+                             'ClockDirectionMode1': 12,
+                             'ClockDirectionMode2': 13},
+                docstring=f'Function of digital input {i}')
 
-        self.add_parameter(
-            'digital_input_2_function',
-            label='Digital Input 2 Function',
-            unit='',
-            get_cmd=':port_in_b',
-            set_cmd=':port_in_b={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'StartRecord/ErrorReset': 1,
-                         'RecordSelectBit0': 2,
-                         'RecordSelectBit1': 3,
-                         'RecordSelectBit2': 4,
-                         'RecordSelectBit3': 5,
-                         'RecordSelectBit4': 6,
-                         'ExternalLimitSwitch': 7,
-                         'Trigger': 8,
-                         'Direction': 9,
-                         'Enable': 10,
-                         'Clock': 11,
-                         'ClockDirectionMode1': 12,
-                         'ClockDirectionMode2': 13},
-            docstring='Function of digital input 2')
-
-        self.add_parameter(
-            'digital_input_3_function',
-            label='Digital Input 3 Function',
-            unit='',
-            get_cmd=':port_in_c',
-            set_cmd=':port_in_c={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'StartRecord/ErrorReset': 1,
-                         'RecordSelectBit0': 2,
-                         'RecordSelectBit1': 3,
-                         'RecordSelectBit2': 4,
-                         'RecordSelectBit3': 5,
-                         'RecordSelectBit4': 6,
-                         'ExternalLimitSwitch': 7,
-                         'Trigger': 8,
-                         'Direction': 9,
-                         'Enable': 10,
-                         'Clock': 11,
-                         'ClockDirectionMode1': 12,
-                         'ClockDirectionMode2': 13},
-            docstring='Function of digital input 3')
-
-        self.add_parameter(
-            'digital_input_4_function',
-            label='Digital Input 4 Function',
-            unit='',
-            get_cmd=':port_in_d',
-            set_cmd=':port_in_d={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'StartRecord/ErrorReset': 1,
-                         'RecordSelectBit0': 2,
-                         'RecordSelectBit1': 3,
-                         'RecordSelectBit2': 4,
-                         'RecordSelectBit3': 5,
-                         'RecordSelectBit4': 6,
-                         'ExternalLimitSwitch': 7,
-                         'Trigger': 8,
-                         'Direction': 9,
-                         'Enable': 10,
-                         'Clock': 11,
-                         'ClockDirectionMode1': 12,
-                         'ClockDirectionMode2': 13},
-            docstring='Function of digital input 4')
-
-        self.add_parameter(
-            'digital_input_5_function',
-            label='Digital Input 5 Function',
-            unit='',
-            get_cmd=':port_in_e',
-            set_cmd=':port_in_e={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'StartRecord/ErrorReset': 1,
-                         'RecordSelectBit0': 2,
-                         'RecordSelectBit1': 3,
-                         'RecordSelectBit2': 4,
-                         'RecordSelectBit3': 5,
-                         'RecordSelectBit4': 6,
-                         'ExternalLimitSwitch': 7,
-                         'Trigger': 8,
-                         'Direction': 9,
-                         'Enable': 10,
-                         'Clock': 11,
-                         'ClockDirectionMode1': 12,
-                         'ClockDirectionMode2': 13},
-            docstring='Function of digital input 5')
-
-        self.add_parameter(
-            'digital_input_6_function',
-            label='Digital Input 6 Function',
-            unit='',
-            get_cmd=':port_in_f',
-            set_cmd=':port_in_f={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'StartRecord/ErrorReset': 1,
-                         'RecordSelectBit0': 2,
-                         'RecordSelectBit1': 3,
-                         'RecordSelectBit2': 4,
-                         'RecordSelectBit3': 5,
-                         'RecordSelectBit4': 6,
-                         'ExternalLimitSwitch': 7,
-                         'Trigger': 8,
-                         'Direction': 9,
-                         'Enable': 10,
-                         'Clock': 11,
-                         'ClockDirectionMode1': 12,
-                         'ClockDirectionMode2': 13},
-            docstring='Function of digital input 6')
-
-        self.add_parameter(
-            'digital_output_1_function',
-            label='Digital Output 1 Function',
-            unit='',
-            get_cmd=':port_out_a',
-            set_cmd=':port_out_a={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'Ready': 1,
-                         'Running': 2},
-            docstring='Function of digital output 1')
-
-        self.add_parameter(
-            'digital_output_2_function',
-            label='Digital Output 2 Function',
-            unit='',
-            get_cmd=':port_out_b',
-            set_cmd=':port_out_b={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'Ready': 1,
-                         'Running': 2},
-            docstring='Function of digital output 2')
-
-        self.add_parameter(
-            'digital_output_3_function',
-            label='Digital Output 3 Function',
-            unit='',
-            get_cmd=':port_out_c',
-            set_cmd=':port_out_c={}',
-            max_val_age=0,
-            val_mapping={'UserDefined': 0,
-                         'Ready': 1,
-                         'Running': 2},
-            docstring='Function of digital output 3')
+        for i in range(1, 4):
+            self.add_parameter(
+                f'digital_output_{i}_function',
+                label=f'Digital Output {i} Function',
+                unit='',
+                get_cmd=f':port_out_{chr(i+96)}',
+                set_cmd=f':port_out_{chr(i+96)}={{}}',
+                max_val_age=0,
+                val_mapping={'UserDefined': 0,
+                             'Ready': 1,
+                             'Running': 2},
+                docstring=f'Function of digital output {i}')
 
         self.add_parameter(
             'direction',
