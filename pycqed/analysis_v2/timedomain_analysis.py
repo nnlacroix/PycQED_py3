@@ -5685,7 +5685,7 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             self.numeric_params = list(self.params_dict)
 
         self.qb_names = qb_names
-        super().__init__( **kwargs)
+        super().__init__(auto=False, **kwargs)
 
         if auto:
             self.run_analysis()
@@ -5893,6 +5893,9 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         self.DEFAULT_CLASSIF = "gmm"
         self.classif_method = self.options_dict.get("classif_method",
                                                     self.DEFAULT_CLASSIF)
+
+        self.create_job(options_dict=options_dict, auto=auto, **kw)
+
         if auto:
             self.run_analysis()
 
