@@ -6005,7 +6005,10 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 self._classify(qb_shots, prep_states,
                                method=self.classif_method, qb_name=qbn,
                                **self.options_dict.get("classif_kw", dict()))
-            fm = self.fidelity_matrix(prep_states, pred_states)
+            states_label_order = self._get_state_labels_order(
+                np.unique(self.cp.get_states(qbn)[qbn]))
+            fm = self.fidelity_matrix(prep_states, pred_states,
+                                      labels=states_label_order)
 
             # save fidelity matrix and classifier
             pdd['analysis_params']['state_prob_mtx'][qbn] = fm
@@ -6023,7 +6026,8 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 qb_shots_masked = qb_shots[presel_filter]
                 prep_states = prep_states[presel_filter]
                 pred_states = self.clf_[qbn].predict(qb_shots_masked)
-                fm = self.fidelity_matrix(prep_states, pred_states)
+                fm = self.fidelity_matrix(prep_states, pred_states,
+                                          labels=states_label_order)
 
                 pdd['data_masked'][qbn] = dict(X=deepcopy(qb_shots_masked),
                                           prep_states=deepcopy(prep_states))
@@ -6113,11 +6117,11 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
 
     @staticmethod
     def fidelity_matrix(prep_states, pred_states, levels=('g', 'e', 'f'),
-                        plot=False, normalize=True):
+                        plot=False, labels=None, normalize=True):
 
         return SSROQutrit.fidelity_matrix(prep_states, pred_states,
                                           levels=levels, plot=plot,
-                                          normalize=normalize)
+                                          normalize=normalize, labels=labels)
 
     @staticmethod
     def plot_fidelity_matrix(fm, target_names,
@@ -6159,6 +6163,17 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         return SSROQutrit.plot_1D_hist(data, y_true=y_true,
                                        plot_fitting=plot_fitting, **kwargs)
 
+    @staticmethod
+    def _get_state_labels_order(states_labels,
+                                order="gefhabcdijklmnopqrtuvwxyz0123456789"):
+        try:
+            return np.array([order.index(s) for s in states_labels])
+        except Exception as e:
+            log.error(f"Could not find order in state_labels:"
+                      f"{states_labels}. {e}."
+                      f" Returning same as input order")
+            return np.arange(states_labels)
+
     def plot(self, **kwargs):
         if not self.get_param_value("plot", True):
             return # no plotting if "plot" is False
@@ -6170,7 +6185,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             tab_x = a_tools.truncate_colormap(cmap, 0,
                                               n_qb_states/10)
 
-            kwargs = dict(legend_labels=np.unique(self.cp.get_states(qbn)[qbn]),
+            kwargs = dict(states=np.unique(self.cp.get_states(qbn)[qbn]),
                           xlabel="Integration Unit 1, $u_1$",
                           ylabel="Integration Unit 2, $u_2$",
                           scale=self.options_dict.get("hist_scale", "linear"),
@@ -6251,7 +6266,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                         self.proc_data_dict['analysis_params']['n_shots'])
             fig = self.plot_fidelity_matrix(
                 self.proc_data_dict['analysis_params']['state_prob_mtx'][qbn],
-                self.cp.get_states(qbn)[qbn],
+                kwargs['states'][self._get_state_labels_order(kwargs['states'])],
                 title=title,
                 show=show,
                 auto_shot_info=False)
@@ -6268,7 +6283,6 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 fig = self.plot_fidelity_matrix(
                     self.proc_data_dict['analysis_params'] \
                                        ['state_prob_mtx_masked'][qbn],
-                    self.cp.get_states(qbn)[qbn],
-                    title=title, show=show, auto_shot_info=False)
+                    kwargs['states'][self._get_state_labels_order(kwargs['states'])],                  title=title, show=show, auto_shot_info=False)
                 fig_key = f'{qbn}_state_prob_matrix_masked_{self.classif_method}'
                 self.figs[fig_key] = fig
