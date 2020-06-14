@@ -77,17 +77,17 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         position = min(position, self._upper_bound - minimum_steps_to_limit)
         if mode == 'Normal':
             if position < self.position():
-                direction = 'Right'
-            else:
                 direction = 'Left'
-            self._drive_abosolute(position, direction, speed)
+            else:
+                direction = 'Right'
+            self._drive_absolute(position, direction, speed)
             # wait until limit is reached or controller is finished
             self.wait_until_status(5)
         elif mode == 'LeftToRight':
             if (position - clearance_steps) < self.position():
-                direction = 'Right'
-            else:
                 direction = 'Left'
+            else:
+                direction = 'Right'
             self._drive_absolute(position - clearance_steps, direction, speed)
             self.wait_until_status(5)
             if direction == 'Left':
@@ -149,8 +149,8 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.acceleration_jerk(1)
         self.braking(1)
         self.braking_jerk(100000000)
-        self.continuation_record(2)
-        self.direction('Right')
+        self.continuation_record(0)
+        self.direction('Left')
         self.direction_change_on_repeat(False)
         self.maximum_frequency(250)
         self.maximum_frequency2(250)
@@ -162,6 +162,12 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.travel_distance(100)
         # self.command_response('Enabled')
         self.save_record_to_eeprom(1)
+        self.load_record_from_eeprom(1)
+        self.start_motor()
+        # Wait until motor reaches limit switch
+        self.wait_until_status(5)
+        self.reset_position_error(0)
+        self._lower_bound = 0
 
         # Prepare second record
         # self.command_response('Disabled')
@@ -170,7 +176,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.braking(1)
         self.braking_jerk(100000000)
         self.continuation_record(0)
-        self.direction('Left')
+        self.direction('Right')
         self.direction_change_on_repeat(False)
         self.maximum_frequency(250)
         self.maximum_frequency2(250)
@@ -182,14 +188,11 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.travel_distance(100000000)
         # self.command_response('Enabled')
         self.save_record_to_eeprom(2)
-
+        self.load_record_from_eeprom(2)
         # Start sequence
-        self.load_record_from_eeprom(1)
         self.start_motor()
         # Wait until motor reaches limit switch
         self.wait_until_status(4)
-        # Update positions
-        self._lower_bound = 0
         self._upper_bound = self.position()
 
     def initialize(self, reverse_clearance: int = 0) -> None:
@@ -216,7 +219,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.acceleration_mode('Jerk-free')
         self.acceleration_jerk(1)
         self.braking_jerk(100000000)
-        self.step_mode(2)
+        self.step_mode(4)
 
         # Escape the limit if we are currently at one
         previous_direction = self.direction()
@@ -232,6 +235,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         # Find the limits by driving to the upper limit in external reference
         # run mode and then driving to lower limit in relative mode until
         # the limit switch is reached and the motor stops
+        print(f'Finding {self.name} motor travel limits')
         self._find_limits()
         # Travel away from the limit
         self._travel_away_from_limit()
@@ -243,7 +247,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
             label='Normalized Setting',
             unit='',
             get_cmd=(lambda: self.position()),
-            set_cmd=(lambda x: self.position(x)),
+            set_cmd=(lambda x: self.drive_motor(x)),
             get_parser=(lambda x: float(x) / self._upper_bound),
             set_parser=(lambda x: round(self._upper_bound * x)),
             vals=Numbers(min_value=0.0,
@@ -271,12 +275,13 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.command_response('Enabled')
         error_correction = self.error_correction()
         input_6_function = self.digital_input_6_function()
-        input_config = self.io_input_mask()
+        input_config = self.io_output_mask()
         io_polarity = self.io_polarity()
         limit_switch_config = self.limit_switch_behavior()
         microsteps = self.step_mode()
         phase_current = self.phase_current()
         standstill_current = self.phase_current_standstill()
+
         if error_correction != 'Off':
             raise ValueError('Error correction not disabled')
         if input_6_function != 'ExternalLimitSwitch':
@@ -300,13 +305,17 @@ class QudevMechDisplacerMotor(NanotecSMI33):
 
         :return:
         """
+        if self.direction() == 'Left':
+            reverse_direction = 'Right'
+        else:
+            reverse_direction = 'Left'
         # self.command_response('Disabled')
         self.acceleration(6000)
         self.acceleration_jerk(1)
         self.braking(65535)
         self.braking_jerk(100000000)
         self.continuation_record(0)
-        self.direction('Right')
+        self.direction(reverse_direction)
         self.direction_change_on_repeat(False)
         self.limit_switch_behavior(0b100010000100010)
         self.maximum_frequency(250)
@@ -316,7 +325,6 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         self.positioning_mode('Relative')
         self.quickstop(0)
         self.repetitions(1)
-        self.reset_position_error(0)
         self.travel_distance(300)
         # self.command_response('Enabled')
 
