@@ -16,7 +16,7 @@ from pycqed.utilities.get_default_datadir import get_default_datadir
 from scipy.interpolate import griddata
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.optimize import Bounds, LinearConstraint, minimize
-from .tools.plotting import *
+from pycqed.analysis.tools.plotting import *
 from matplotlib import cm
 
 
