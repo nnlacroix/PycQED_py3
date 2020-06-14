@@ -38,7 +38,8 @@ class NanotecSMI33(VisaInstrument):
         self.visa_handle.write_termination = '\r'
 
         if controller_id not in [str(i) for i in range(1, 255)] + ['*']:
-            raise ValueError('controller_id must be * or a number from 1 to 254')
+            raise ValueError('Controller_id must be * or a number from'
+                             '1 to 254')
         self.controller_id = controller_id
         self._start_character = '#'
 

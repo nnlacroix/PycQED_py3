@@ -63,8 +63,10 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         :param clearance_steps:
         :return:
         """
-        assert self._is_initialized, 'Motor is not initialized'
-        assert self.motor_referenced, 'Motor is not referenced. Run init'
+        if not self._is_initialized:
+            raise ValueError('Motor is not initialized. Run initialize')
+        if not self.motor_referenced:
+            raise ValueError('Motor is not referenced. Run initialize')
         self.safety_check()
         if (position < self._lower_bound + minimum_steps_to_limit or
                 position > self._upper_bound - minimum_steps_to_limit):
@@ -94,6 +96,12 @@ class QudevMechDisplacerMotor(NanotecSMI33):
             self.wait_until_status(5)
 
     def _escape_limit(self, direction: str, steps: int) -> None:
+        """
+        Try to escape the region where the limit switch is triggered
+        :param direction:
+        :param steps:
+        :return:
+        """
         # self.command_response('Disabled')
         self.acceleration(65535)
         self.acceleration_jerk(1)
@@ -118,7 +126,7 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         # (LabVIEW code had a hard coded wait of 3s)
         self.wait_until_status(4)
 
-    def _find_limits(self):
+    def _find_limits(self) -> None:
         """
         Drives the motor to the lower limit in referenced mode and then
         commands the motor to drive towards the upper limit until it
@@ -247,7 +255,11 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         """
         return self.io_output_mask() & 32 > 0
 
-    def safety_check(self):
+    def safety_check(self) -> None:
+        """
+        Check that all critical parameters are set correctly
+        :return:
+        """
         self.command_response('Enabled')
         error_correction = self.error_correction()
         input_6_function = self.digital_input_6_function()
@@ -257,20 +269,22 @@ class QudevMechDisplacerMotor(NanotecSMI33):
         microsteps = self.step_mode()
         phase_current = self.phase_current()
         standstill_current = self.phase_current_standstill()
-        assert error_correction == 'Off', f'Error correction not disabled'
-        assert input_6_function == 'ExternalLimitSwitch',\
-            'Input 6 not configured for external limit switch'
-        assert input_config & 32 == 0,\
-            'Bit 5 of IO output mask not set to 0'
-        assert io_polarity & 32 == 0,\
-            'Bit 5 of IO polarity not set to 0'
-        assert microsteps in [1, 2, 4, 8], 'Unusual number of microsteps'
-        assert limit_switch_config == 0b10010000100010, \
-            f'Limit switch not correctly configured (should be {9250:b})'
-        assert 1 <= phase_current <= 20,\
-            f'Phase current not between 0 and 20% ({phase_current}%)'
-        assert 0 <= standstill_current <= 1,\
-            f'Standstill current not between 0 and 1% ({standstill_current}%)'
+        if error_correction != 'Off':
+            raise ValueError('Error correction not disabled')
+        if input_6_function != 'ExternalLimitSwitch':
+            raise ValueError('Input 6 not configured as external limit switch')
+        if input_config & 32 != 0:
+            raise ValueError('Bit 5 of IO input mask not set to 0')
+        if io_polarity & 32 != 0:
+            raise ValueError('Bit 5 of IO polarity not set to 0')
+        if microsteps not in [1, 2, 4, 8]:
+            raise ValueError('Unusual number of microsteps')
+        if limit_switch_config != 0b10010000100010:
+            raise ValueError(f'Limit switch behavior not set to {9250:b}')
+        if not 1 <= phase_current <= 20:
+            raise ValueError('Phase current note between 1 and 20%')
+        if not 0 <= standstill_current <= 1:
+            raise ValueError('Standstill current not between 0 and 1%')
 
     def _travel_away_from_limit(self) -> None:
         """
