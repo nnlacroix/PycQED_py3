@@ -6167,7 +6167,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
     def _get_state_labels_order(states_labels,
                                 order="gefhabcdijklmnopqrtuvwxyz0123456789"):
         try:
-            return np.array([order.index(s) for s in states_labels])
+            return np.argsort([order.index(s) for s in states_labels])
         except Exception as e:
             log.error(f"Could not find order in state_labels:"
                       f"{states_labels}. {e}."
