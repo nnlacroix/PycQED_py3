@@ -5,6 +5,7 @@ from qcodes import Instrument
 from qcodes.instrument.parameter import InstrumentRefParameter
 from qcodes.utils.validators import Enum, Ints, Numbers
 
+
 class QudevDisplacer(Instrument):
     """
     A meta-instrument containing the two sub-modules that make up a
@@ -16,9 +17,9 @@ class QudevDisplacer(Instrument):
         super().__init__(name, **kwargs)
 
         # Add instrument references
-        self.add_parameter('attenuator',
+        self.add_parameter('attenuator_instr',
                            parameter_class=InstrumentRefParameter)
-        self.add_parameter('phase_shifter',
+        self.add_parameter('phase_shifter_instr',
                            parameter_class=InstrumentRefParameter)
 
         # Add displacer board control parameters
@@ -26,8 +27,10 @@ class QudevDisplacer(Instrument):
             'attenuator_setting',
             label='Attenuator Setting',
             unit='',
-            get_cmd=self.attenuator.instrument.setting_normalized,
-            set_cmd=self.attenuator.instrument.setting_normalized,
+            get_cmd=(
+                lambda: self.attenuator.instrument.setting_normalized),
+            set_cmd=(
+                lambda: self.attenuator.instrument.setting_normalized),
             docstring=('Attenuator setting (normalized)'
                        'Min value: 0.0'
                        'Max value: 1.0'))
@@ -36,8 +39,10 @@ class QudevDisplacer(Instrument):
             'phase_shifter_setting',
             label='Phase Shifter Setting',
             unit='',
-            get_cmd=self.phase_shifter.instrument.setting_normalized,
-            set_cmd=self.phase_shifter.instrument.setting_normalized,
+            get_cmd=(
+                lambda: self.phase_shifter.instrument.setting_normalized),
+            set_cmd=(
+                lambda: self.phase_shifter.instrument.setting_normalized),
             docstring=('Phase shifter setting (normalized)'
                        'Min value: 0.0'
                        'Max value: 1.0'))
