@@ -1842,6 +1842,84 @@ def measure_measurement_induced_dephasing(qb_dephased, qb_targeted, phases, amps
 
     tda.MeasurementInducedDephasingAnalysis(qb_names=[qb.name for qb in qb_dephased])
 
+def measure_drive_cancellation(
+        dev, driven_qubit, ramsey_qubits, sweep_points,
+        phases=np.linspace(0, 2*np.pi, 3, endpoint=False), n=1, pulse='X180',
+        n_cal_points_per_state=2, cal_states='auto', prep_params=None,
+        exp_metadata=None, label=None, upload=True, analyze=True):
+        """
+        Sweep pulse cancellation parameters and measure Ramsey on cancelled qubits.
+        The sweep point keys should be of the form `qb.param`, where `qb` is the
+        name of the qubit the cancellation if for and `param` is a parameter in
+        the pulses cancellation_params dict.
+
+        For example to sweep the amplitude of the cancellation pulse on qb1,
+        you could configure the sweep points as `SweepPoints('qb1.amplitude',
+        np.linspace(0, 1, 21))`.
+
+        The second sweep dimension of sweep_points must be called 'phases'.
+        """
+
+        if isinstance(driven_qubit, str):
+            driven_qubit = dev.get_qb(driven_qubit)
+        ramsey_qubits = [dev.get_qb(qb) if isinstance(qb, str) else qb
+                         for qb in ramsey_qubits]
+        ramsey_qubit_names = [qb.name for qb in ramsey_qubits]
+
+        MC = dev.instr_mc.get_instr()
+        if label is None:
+            label = f'drive_{driven_qubit}_cancel_{list(sweep_points[0].keys())}'
+        sweep_points.add_sweep_dimension()
+        sweep_points.add_sweep_parameter('phase', phases, 'rad', 'Phase')
+        if exp_metadata is None:
+            exp_metadata = {}
+
+        for qb in [driven_qubit] + ramsey_qubits:
+            qb.prepare(drive='timedomain')
+
+        cal_states = CalibrationPoints.guess_cal_states(cal_states,
+                                                        for_ef=False)
+        cp = CalibrationPoints.multi_qubit(
+            [qb.name for qb in ramsey_qubits], cal_states,
+            n_per_state=n_cal_points_per_state)
+        operation_dict = dev.get_operation_dict()
+
+        seq, sweep_points = mqs.drive_cancellation_seq(
+            driven_qubit.name, ramsey_qubit_names, operation_dict, sweep_points,
+            pulse=pulse, n=n, prep_params=prep_params, cal_points=cp,
+            upload=False)
+
+        sweep_func = awg_swf.SegmentHardSweep(
+                sequence=seq, upload=upload,
+                parameter_name='segment_index')
+        MC.set_sweep_points(sweep_points)
+        MC.set_sweep_function(sweep_func)
+
+        det_func = get_multiplexed_readout_detector_functions(
+            ramsey_qubits,
+            nr_averages=max([qb.acq_averages() for qb in ramsey_qubits]))\
+            ['int_avg_det']
+        MC.set_detector_function(det_func)
+
+        exp_metadata.update({
+            'ramsey_qubit_names': ramsey_qubit_names,
+            'preparation_params': prep_params,
+            'cal_points': repr(cp),
+            'sweep_points': sweep_points,
+            'meas_obj_sweep_points_map':
+                sweep_points.get_meas_obj_sweep_points_map(ramsey_qubit_names),
+            'meas_obj_value_names_map':
+                get_meas_obj_value_names_map(ramsey_qubits, det_func),
+            'rotate': len(cp.states) != 0,
+            'data_to_fit': {qbn: 'pe' for qbn in ramsey_qubit_names}
+        })
+
+        MC.run(label, exp_metadata=exp_metadata)
+
+        if analyze:
+            return tda.MultiQubit_TimeDomain_Analysis(
+                qb_names=ramsey_qubit_names)
+
 
 def calibrate_n_qubits(qubits, f_LO, sweep_points_dict, sweep_params=None,
                        artificial_detuning=None,
