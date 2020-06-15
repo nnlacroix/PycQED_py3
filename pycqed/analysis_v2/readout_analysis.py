@@ -9,6 +9,9 @@ Originally written by Adriaan, updated/rewritten by Rene May 2018
 """
 import itertools
 import logging
+
+from scipy import stats
+
 log = logging.getLogger(__name__)
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
@@ -908,14 +911,14 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             return pred_states, params
 
         elif method == "threshold":
-            tree = DTC(max_depth=kw.pop("max_depth", X.ndim),
+            tree = DTC(max_depth=kw.pop("max_depth", X.shape[1]),
                        random_state=0, **kw)
             tree.fit(X, prep_state)
             pred_states = tree.predict(X)
             params["thresholds"], params["mapping"] = \
                 self._extract_tree_info(tree, self.levels)
             self.clf_ = tree
-            if len(params["thresholds"]) == 1:
+            if len(params["thresholds"]) != X.shape[1]:
                 msg = "Best 2 thresholds to separate this data lie on axis {}" \
                     ", most probably because the data is not well separated." \
                     "The classifier attribute clf_ can still be used for " \
@@ -1000,7 +1003,7 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
     @staticmethod
     def _extract_tree_info(tree_clf, class_names=None):
         tree_ = tree_clf.tree_
-        feature_name = [np.arange(tree_.n_features)[i]
+        feature_name = [np.arange(tree_.n_features)[i] if i != -2 else -2
                         for i in tree_.feature]
         if class_names is None:
             class_names = np.arange(len(tree_.value[0]))
@@ -1272,10 +1275,51 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
                              .format(cov_type))
         return covs
 
-    def prepare_plots(self):
+    @staticmethod
+    def plot_1D_hist(data, y_true=None, plot_fitting=True,
+                     **kwargs):
+        """
+        Plot 1D histograms
+        Args:
+            data: 1 dimensional array with all points to plot
+            y_true: 1 D array with states labels
+            plot_fitting: whether or not to plot the Gaussian
+                on top of the histograms. If true, kwargs should
+                contain "means" (list of means) and "std"
+                (list of standard deviations) for each component
+            **kwargs:
+
+        Returns:
+
+        """
+        colors = kwargs.get('colors', [None] * len(np.unique(y_true)))
+        if kwargs.get("fig", None) is None:
+            fig, ax = plt.subplots()
+        else:
+            fig, ax = kwargs['fig'], kwargs['fig'].get_axes()[0]
+        binr_range = (data.min(), data.max())
+        for i, (yval, c) in enumerate(zip(np.unique(y_true), colors)):
+            cts, _, _ = ax.hist(data[y_true == yval], bins=50, color=c,
+                                range=binr_range,
+                                orientation='vertical', density=False,
+                                alpha=kwargs.get('alpha', 0.6))
+            if plot_fitting and kwargs.get('means', None) is not None and \
+                    kwargs.get('std', None) is not None:
+                means = list(kwargs['means'].values())
+                fit_plot_values = np.linspace(*binr_range, 200)
+                y = stats.norm.pdf(fit_plot_values, means[i],
+                                   kwargs['std'][i]).flatten()
+                ax.plot(fit_plot_values, y * np.max(cts) / np.max(y),
+                        color=c, linewidth=3)
+        ax.set_xlabel(kwargs.get("xlabel", 'integration unit 1, $u_1$'))
+        ax.set_ylabel('Counts, $n$')
+        ax.set_yscale(kwargs.get('scale', "log"))
+        return fig, ax
+
+    def plot(self, **kw):
         cmap = plt.get_cmap('tab10')
         tab_x = a_tools.truncate_colormap(cmap, 0, len(self.levels)/10)
-
+        pdd = self.proc_data_dict
         show = self.options_dict.get("show", False)
 
         kwargs = dict(legend_labels=self.levels,
@@ -1290,18 +1334,27 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             title =  self.raw_data_dict[0]['timestamp'] + " " + dk + \
                 "\n{} classifier".format(self.classif_method)
             kwargs.update(dict(title=title))
-            # plot data and histograms
-            fig = self.plot_scatter_and_marginal_hist(data['X'],
-                                                      data["prep_states"],
-                                                      **kwargs)
-            # plot means
-            main_ax =  fig.get_axes()[0]
-            for _ , mu in self.proc_data_dict['analysis_params']['mu'].items():
-               main_ax.scatter(mu[0], mu[1], color='r', s=80)
+            if data['X'].shape[1] == 1:
+                if self.classif_method == "gmm":
+                    kwargs['means'] = pdd['analysis_params']['means']
+                    kwargs['std'] = np.sqrt(self._get_covariances(self.clf_))
+                kwargs['colors'] = cmap(np.unique(data['prep_states']))
+                fig, main_ax = self.plot_1D_hist(data['X'],
+                                                 data["prep_states"],
+                                                 **kwargs)
+            else:
+                # plot data and histograms
+                fig = self.plot_scatter_and_marginal_hist(data['X'],
+                                                          data["prep_states"],
+                                                          **kwargs)
+                # plot means
+                main_ax =  fig.get_axes()[0]
+                for _ , mu in self.proc_data_dict['analysis_params']['mu'].items():
+                   main_ax.scatter(mu[0], mu[1], color='r', s=80)
 
-            # plot clf_boundaries
-            self.plot_clf_boundaries(data['X'], self.clf_, ax=main_ax,
-                                     cmap=tab_x)
+                # plot clf_boundaries
+                self.plot_clf_boundaries(data['X'], self.clf_, ax=main_ax,
+                                         cmap=tab_x)
 
             # plot thresholds
             plt_fn = {0: main_ax.axvline, 1: main_ax.axhline}
@@ -1539,6 +1592,10 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
 
         if filter is not None:
             filter = filter.reshape((n_readouts, -1), order='F')
+        else:
+            # keep all shots
+            filter = np.ones((n_readouts, n_shots//n_readouts), dtype=bool)
+
         table = np.zeros((n_readouts, len(observables)))
 
 
