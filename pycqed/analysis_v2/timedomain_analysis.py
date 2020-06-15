@@ -5561,7 +5561,7 @@ class CPhaseLeakageAnalysis(MultiCZgate_Calib_Analysis):
         self.legend_label_func = legend_label_func
 
 
-class CZDynamicPhaseAnalysis(MultiCZgate_Calib_Analysis):
+class DynamicPhaseAnalysis(MultiCZgate_Calib_Analysis):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -5575,6 +5575,138 @@ class CZDynamicPhaseAnalysis(MultiCZgate_Calib_Analysis):
         self.phase_key = 'dynamic_phase'
         self.legend_label_func = lambda qbn, row: 'no FP' \
             if row % 2 != 0 else 'with FP'
+
+
+class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def process_data(self):
+        super().process_data()
+        # convert phases to radians
+        for qbn in self.qb_names:
+            sweep_dict = self.proc_data_dict['sweep_points_dict'][qbn]
+            sweep_dict['sweep_points'] *= np.pi/180
+
+        # get data with flux pulse and w/o flux pulse
+        self.data_with_fp = OrderedDict()
+        self.data_no_fp = OrderedDict()
+        for qbn in self.qb_names:
+            all_data = self.proc_data_dict['data_to_fit'][qbn]
+            if self.num_cal_points != 0:
+                all_data = all_data[:-self.num_cal_points]
+            self.data_with_fp[qbn] = all_data[0: len(all_data)//2]
+            self.data_no_fp[qbn] = all_data[len(all_data)//2:]
+
+    def prepare_fitting(self):
+        self.fit_dicts = OrderedDict()
+        for qbn in self.qb_names:
+            sweep_points = np.unique(
+                self.proc_data_dict['sweep_points_dict'][qbn][
+                    'msmt_sweep_points'])
+            for i, data in enumerate([self.data_with_fp[qbn],
+                                      self.data_no_fp[qbn]]):
+                cos_mod = lmfit.Model(fit_mods.CosFunc)
+                guess_pars = fit_mods.Cos_guess(
+                    model=cos_mod,
+                    t=sweep_points,
+                    data=data)
+                guess_pars['amplitude'].vary = True
+                guess_pars['offset'].vary = True
+                guess_pars['frequency'].value = 1/(2*np.pi)
+                guess_pars['frequency'].vary = False
+                guess_pars['phase'].vary = True
+
+                key = 'cos_fit_{}_{}'.format(qbn, 'wfp' if i == 0 else 'nofp')
+                self.fit_dicts[key] = {
+                    'fit_fn': fit_mods.CosFunc,
+                    'fit_xvals': {'t': sweep_points},
+                    'fit_yvals': {'data': data},
+                    'guess_pars': guess_pars}
+
+    def analyze_fit_results(self):
+        self.proc_data_dict['analysis_params_dict'] = OrderedDict()
+        for qbn in self.qb_names:
+            self.proc_data_dict['analysis_params_dict'][qbn] = OrderedDict()
+            self.proc_data_dict['analysis_params_dict'][qbn][
+                'dynamic_phase'] = {
+                'val': (self.fit_dicts[f'cos_fit_{qbn}_wfp'][
+                            'fit_res'].best_values['phase'] -
+                        self.fit_dicts[f'cos_fit_{qbn}_nofp'][
+                            'fit_res'].best_values['phase']),
+                'stderr': np.sqrt(
+                    self.fit_dicts[f'cos_fit_{qbn}_wfp'][
+                        'fit_res'].params['phase'].stderr**2 +
+                    self.fit_dicts[f'cos_fit_{qbn}_nofp'][
+                        'fit_res'].params['phase'].stderr**2)
+            }
+        self.save_processed_data(key='analysis_params_dict')
+
+    def prepare_plots(self):
+        super().prepare_plots()
+        for qbn in self.qb_names:
+            for i, data in enumerate([self.data_with_fp[qbn],
+                                      self.data_no_fp[qbn]]):
+                fit_key = f'cos_fit_{qbn}_wfp' if i == 0 else \
+                    f'cos_fit_{qbn}_nofp'
+                plot_name_suffix = 'fit_'+'wfp' if i == 0 else 'nofp'
+                cal_pts_data = self.proc_data_dict['data_to_fit'][qbn][
+                               -self.num_cal_points:]
+                base_plot_name = 'Dynamic_phase_' + qbn
+                self.prepare_projected_data_plot(
+                    fig_name=base_plot_name,
+                    data=np.concatenate((data,cal_pts_data)),
+                    sweep_points=np.unique(
+                        self.proc_data_dict['sweep_points_dict'][qbn][
+                            'sweep_points']),
+                    data_label='with flux pulse' if i == 0 else 'no flux pulse',
+                    plot_name_suffix=qbn + plot_name_suffix,
+                    qb_name=qbn,
+                    do_legend_cal_states=(i == 0))
+                if self.do_fitting:
+                    fit_res = self.fit_dicts[fit_key]['fit_res']
+                    self.plot_dicts[plot_name_suffix + '_' + qbn] = {
+                        'fig_id': base_plot_name,
+                        'plotfn': self.plot_fit,
+                        'fit_res': fit_res ,
+                        'setlabel': 'cosine fit',
+                        'color': 'r',
+                        'do_legend': i == 0}
+
+                    textstr = 'Dynamic phase {}:\n\t{:.2f}'.format(
+                        qbn,
+                        self.proc_data_dict['analysis_params_dict'][qbn][
+                            'dynamic_phase']['val']*180/np.pi) + \
+                              r'$^{\circ}$' + \
+                              '$\\pm${:.2f}'.format(
+                                  self.proc_data_dict['analysis_params_dict'][qbn][
+                                      'dynamic_phase']['stderr']*180/np.pi) + \
+                              r'$^{\circ}$'
+
+                    fpl = self.get_param_value('flux_pulse_length')
+                    if fpl is not None:
+                        textstr += '\n length: {:.2f} ns'.format(fpl*1e9)
+                    fpa = self.get_param_value('flux_pulse_amp')
+                    if fpa is not None:
+                        textstr += '\n amp: {:.4f} V'.format(fpa)
+
+                    self.plot_dicts['text_msg_' + qbn] = {
+                        'fig_id': base_plot_name,
+                        'ypos': -0.15,
+                        'xpos': -0.05,
+                        'horizontalalignment': 'left',
+                        'verticalalignment': 'top',
+                        'plotfn': self.plot_text,
+                        'text_string': textstr}
+            for plot_name in list(self.plot_dicts)[::-1]:
+                if self.plot_dicts[plot_name].get('do_legend', False):
+                    break
+            self.plot_dicts[plot_name].update(
+                {'legend_ncol': 2,
+                 'legend_bbox_to_anchor': (1, -0.15),
+                 'legend_pos': 'upper right'})
+
 
 class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
     """
