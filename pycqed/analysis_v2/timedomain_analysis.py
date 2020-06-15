@@ -5529,7 +5529,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                 'do_legend': False}
 
 
-class CPhaseLeakageAnalysis(MultiCZgate_Analysis):
+class CPhaseLeakageAnalysis(MultiCZgate_Calib_Analysis):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -5561,7 +5561,7 @@ class CPhaseLeakageAnalysis(MultiCZgate_Analysis):
         self.legend_label_func = legend_label_func
 
 
-class CZDynamicPhaseAnalysis(MultiCZgate_Analysis):
+class CZDynamicPhaseAnalysis(MultiCZgate_Calib_Analysis):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
