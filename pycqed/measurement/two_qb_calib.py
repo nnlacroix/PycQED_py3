@@ -18,6 +18,9 @@ from pycqed.measurement.multi_qubit_module import \
 import logging
 log = logging.getLogger(__name__)
 
+# TODO: dostrings (list all kw at the highest level with reference to where
+#  they are explained, explain all kw where they are processed)
+# TODO: add some comments that explain the way the code works
 
 class CalibBuilder(CircuitBuilder):
     def __init__(self, dev, **kw):
@@ -162,7 +165,9 @@ class CalibBuilder(CircuitBuilder):
                 params_to_prefix = None
 
             task['sweep_points'] = current_sweep_points
-            new_block = block_func(**task)
+            if not 'block_func' in task:
+                task['block_func'] = block_func
+            new_block = task['block_func'](**task)
 
             if params_to_prefix is not None:
                 new_block.prefix_parametric_values(
@@ -177,6 +182,7 @@ class CalibBuilder(CircuitBuilder):
 
         all_main_blocks = self.simultaneous_blocks('all', parallel_blocks)
         if len(global_sweep_points[1]) == 0:
+            # TODO add a fake soft sweep instead
             global_sweep_points = \
                 SweepPoints(from_dict_list=[global_sweep_points[0]])
         self.sweep_points = global_sweep_points
@@ -281,6 +287,14 @@ class CalibBuilder(CircuitBuilder):
 
 
 class CPhase(CalibBuilder):
+    """
+    Creates a CalibrationPoints object based on the given parameters.
+
+    TODO
+    :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
+    ...
+    """
+
     def __init__(self, dev, task_list, sweep_points=None, **kw):
 
         try:
@@ -297,7 +311,7 @@ class CPhase(CalibBuilder):
             self.cphases = None
             self.population_losses = None
             self.leakage = None
-            self.flux_pulse_tdma = None
+            self.analysis = None
             self.cz_durations = {}
             self.cal_states_rotations = {}
             self.data_to_fit = {}
@@ -344,11 +358,13 @@ class CPhase(CalibBuilder):
 
         pulse_modifs = {'all': {'element_name': 'cphase_initial_rots_el'}}
         ir = self.block_from_ops('initial_rots',
-                                 [f'X180 {qbl}', f'X90s {qbr}'],
+                                 [f'X180 {qbl}', f'X90s {qbr}'] +
+                                 kw.get('spectator_op_codes', []),
                                  pulse_modifs=pulse_modifs)
         ir.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
 
         fp = self.block_from_ops('flux', [f'CZ {qbl} {qbr}'] * num_cz_gates)
+        # TODO here, we could do DD pulses (CH by 2020-06-19)
         # FIXME: currently, this assumes that only flux pulse parameters are
         #  swept in the soft sweep. In fact, channels_to_upload should be
         #  determined based on the sweep_points
@@ -413,20 +429,20 @@ class CPhase(CalibBuilder):
                                      qb.instr_uhf() for vn in
                                      qb.int_avg_det.value_names]
                            for qb in self.qubits}
-        self.flux_pulse_tdma = tda.CPhaseLeakageAnalysis(
+        self.analysis = tda.CPhaseLeakageAnalysis(
             qb_names=[qb.name for qb in self.qubits],
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
                           'plot_all_probs': plot_all_probs,
                           'channel_map': channel_map})
-        self.cphases = self.flux_pulse_tdma.proc_data_dict[
+        self.cphases = self.analysis.proc_data_dict[
             'analysis_params_dict']['cphase']['val']
-        self.population_losses = self.flux_pulse_tdma.proc_data_dict[
+        self.population_losses = self.analysis.proc_data_dict[
             'analysis_params_dict']['population_loss']['val']
-        self.leakage = self.flux_pulse_tdma.proc_data_dict[
+        self.leakage = self.analysis.proc_data_dict[
             'analysis_params_dict']['leakage']['val']
 
         return self.cphases, self.population_losses, self.leakage, \
-               self.flux_pulse_tdma
+               self.analysis
 
 
 class DynamicPhase(CalibBuilder):
