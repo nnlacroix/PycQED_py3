@@ -5236,8 +5236,12 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                          dtype=np.float64)
         y = amps[1::2]
         y_err = amps_errs[1::2]
-        population_loss_stderrs = np.sqrt(np.array(
-            ((y*x_err)**2 + (x*y_err)**2)/(y**4), dtype=np.float64))
+        try:
+            population_loss_stderrs = np.sqrt(np.array(
+                ((y * x_err) ** 2 + (x * y_err) ** 2) / (y ** 4),
+                dtype=np.float64))
+        except:
+            population_loss_stderrs = float("nan")
         self.proc_data_dict['analysis_params_dict'][
             'population_loss'] = {'val': population_loss,
                                   'stderr': population_loss_stderrs}
@@ -6096,13 +6100,13 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             return pred_states, params, gm
 
         elif method == "threshold":
-            tree = DTC(max_depth=kw.pop("max_depth", X.ndim),
+            tree = DTC(max_depth=kw.pop("max_depth", X.shape[1]),
                        random_state=0, **kw)
             tree.fit(X, prep_state)
             pred_states = tree.predict(X)
             params["thresholds"], params["mapping"] = \
                 self._extract_tree_info(tree, self.cp.get_states(qb_name)[qb_name])
-            if len(params["thresholds"]) == 1:
+            if len(params["thresholds"]) != X.shape[1]:
                 msg = "Best 2 thresholds to separate this data lie on axis {}" \
                     ", most probably because the data is not well separated." \
                     "The classifier attribute clf_ can still be used for " \
@@ -6168,7 +6172,13 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         return SSROQutrit.plot_std(mean, cov, ax,n_std=n_std,
                                    facecolor=facecolor, **kwargs)
 
-    def prepare_plots(self):
+    @staticmethod
+    def plot_1D_hist(data, y_true=None, plot_fitting=True,
+                     **kwargs):
+        return SSROQutrit.plot_1D_hist(data, y_true=y_true,
+                                       plot_fitting=plot_fitting, **kwargs)
+
+    def plot(self, **kwargs):
         if not self.get_param_value("plot", True):
             return # no plotting if "plot" is False
         cmap = plt.get_cmap('tab10')
@@ -6197,29 +6207,38 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 n_shots_to_plot = self.get_param_value('n_shots_to_plot', None)
                 if n_shots_to_plot is not None:
                     n_shots_to_plot *= n_qb_states
-                fig = self.plot_scatter_and_marginal_hist(
-                    data['X'][:n_shots_to_plot],
-                    data["prep_states"][:n_shots_to_plot],
-                    **kwargs)
+                if data['X'].shape[1] == 1:
+                    if self.classif_method == "gmm":
+                        kwargs['means'] = pdd['analysis_params']['means'][qbn]
+                        kwargs['std'] = np.sqrt(self._get_covariances(self.clf_[qbn]))
+                    kwargs['colors'] = cmap(np.unique(data['prep_states']))
+                    fig, main_ax = self.plot_1D_hist(data['X'][:n_shots_to_plot],
+                                            data["prep_states"][:n_shots_to_plot],
+                                            **kwargs)
+                else:
+                    fig = self.plot_scatter_and_marginal_hist(
+                        data['X'][:n_shots_to_plot],
+                        data["prep_states"][:n_shots_to_plot],
+                        **kwargs)
 
-                # plot clf_boundaries
-                main_ax = fig.get_axes()[0]
-                self.plot_clf_boundaries(data['X'], self.clf_[qbn], ax=main_ax,
-                                         cmap=tab_x)
-                # plot means and std dev
-                means = pdd['analysis_params']['means'][qbn]
-                try:
-                    covs = self._get_covariances(self.clf_[qbn])
-                except Exception as e: # not a gmm model--> no cov.
-                    covs = []
+                    # plot clf_boundaries
+                    main_ax = fig.get_axes()[0]
+                    self.plot_clf_boundaries(data['X'], self.clf_[qbn], ax=main_ax,
+                                             cmap=tab_x)
+                    # plot means and std dev
+                    means = pdd['analysis_params']['means'][qbn]
+                    try:
+                        covs = self._get_covariances(self.clf_[qbn])
+                    except Exception as e: # not a gmm model--> no cov.
+                        covs = []
 
-                for i, mean in enumerate(means.values()):
-                    main_ax.scatter(mean[0], mean[1], color='w', s=80)
-                    if len(covs) != 0:
-                        self.plot_std(mean, covs[i],
-                                      n_std=1, ax=main_ax,
-                                      edgecolor='w', linestyle='--',
-                                      linewidth=1)
+                    for i, mean in enumerate(means.values()):
+                        main_ax.scatter(mean[0], mean[1], color='w', s=80)
+                        if len(covs) != 0:
+                            self.plot_std(mean, covs[i],
+                                          n_std=1, ax=main_ax,
+                                          edgecolor='w', linestyle='--',
+                                          linewidth=1)
 
                 # plot thresholds and mapping
                 plt_fn = {0: main_ax.axvline, 1: main_ax.axhline}
@@ -6257,7 +6276,8 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 auto_shot_info=False)
             self.figs[f'{qbn}_state_prob_matrix_{self.classif_method}'] = fig
 
-            if self.preselection:
+            if self.preselection and \
+                    len(pdd['analysis_params']['state_prob_mtx_masked'][qbn]) != 0:
                 title = self.raw_data_dict['timestamp'] + \
                     "\n{} State Assignment Probability Matrix Masked"\
                     "\nTotal # shots:{}".format(

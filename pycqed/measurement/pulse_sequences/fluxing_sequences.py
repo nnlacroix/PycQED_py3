@@ -1,5 +1,6 @@
 import numpy as np
 from copy import deepcopy
+from pycqed.measurement.waveform_control.block import Block
 from pycqed.measurement.waveform_control import sequence
 from pycqed.measurement.waveform_control import pulsar as ps
 from pycqed.measurement.pulse_sequences.single_qubit_tek_seq_elts import \
@@ -138,6 +139,21 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
         |X90|  -------------------     |X90|  ---  |RO|
                                      sweep phase
     Optional: prepend n Flux pulses before starting ramsey
+
+    :param qb_names: (list) list of qubit names
+    :param hard_sweep_dict: (dict) specifies the sweep information for
+        the hard sweep. If None, will default to
+            hard_sweep_params['phase'] = {
+                'values': np.tile(np.linspace(0, 2 * np.pi, 6) * 180 / np.pi, 2),
+                'unit': 'deg'}
+    :param operation_dict: (list) list of pulse dictionaries for all qubits
+        in qb_names
+    :param cz_pulse_name: (str) name of the CZ pulse in the operation dict
+    :param cal_points: (CalibrationPoints object)
+    :param upload: (bool) whether to upload to AWGs
+    :param prep_params: (dict) preparation parameters
+    :param prepend_pulse_dicts: (list) list of pulse dictionaries to prepend
+        to each segment
     '''
 
     seq_name = 'Dynamic_phase_seq'
@@ -197,8 +213,14 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
                              [flux_pulse[param_to_set] * np.ones(hsl // 2),
                               np.zeros(hsl // 2)]) for param_to_set in params_to_set
               }
-    params.update({f'pi_half_end.{k}': v['values']
-                   for k, v in hard_sweep_dict.items()})
+
+    if 'aux_channels_dict' in flux_pulse:
+        params.update({'flux.aux_channels_dict': np.concatenate([
+            [flux_pulse['aux_channels_dict']] * (hsl // 2),
+             [{}] * (hsl // 2)])})
+    for qb_name in qb_names:
+        params.update({f'pi_half_end_{qb_name}.{k}': v['values']
+                       for k, v in hard_sweep_dict.items()})
     swept_pulses = sweep_pulse_params(pulse_list, params)
     # for k, p in enumerate(swept_pulses):
     #     for prepended_cz_idx in range(prepend_n_cz):
@@ -207,7 +229,7 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
     #     fp = p[prepend_n_cz + 1]
     #     fp['element_name'] = 'flux_el_{}'.format(k)
     swept_pulses_with_prep = \
-        [add_preparation_pulses(p, operation_dict, [qb_name], **prep_params)
+        [add_preparation_pulses(p, operation_dict, qb_names, **prep_params)
          for p in swept_pulses]
     seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)
 
@@ -222,11 +244,11 @@ def dynamic_phase_seq(qb_name, hard_sweep_dict, operation_dict,
     return seq, np.arange(seq.n_acq_elements())
 
 
-def dynamic_phase_from_spec_seq(qb_name, qbdd_names, hard_sweep_dict,
-                                operation_dict, cz_pulse_name, num_cz_gates=1,
-                                flux1=True, flux2=True,
-                                cal_points=None, prepend_n_cz=0,
-                      qbs_operations=None, upload=False, prep_params=dict()):
+def Ramsey_time_with_flux_seq(qb_name, hard_sweep_dict, operation_dict,
+                            cz_pulse_name,
+                            artificial_detunings=0,
+                            cal_points=None,
+                            upload=False, prep_params=None):
     '''
     Performs a Ramsey with interleaved Flux pulse
     Sequence
@@ -566,6 +588,8 @@ def ramsey_flux_pulse_seq(qb_name, times, operation_dict,
         |X90|  -------------------     |X90|  ---  |RO|
                                      sweep time
     '''
+    if prep_params is None:
+        prep_params = {}
 
     seq_name = 'Ramsey_flux_seq'
 
@@ -647,7 +671,8 @@ def ramsey_flux_pulse_seq(qb_name, times, operation_dict,
 
 
 def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
-                 operation_dict, cz_pulse_name, num_cz_gates=1, prep_params=dict(),
+                 operation_dict, cz_pulse_name, num_cz_gates=1,
+                 prep_params=None,
                  cal_points=None, upload=True):
     '''
     chevron sequence (sweep of the flux pulse length)
@@ -659,6 +684,8 @@ def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
     qb_target:     |X180|  --------------------------------------  |RO|
 
    '''
+    if prep_params is None:
+        prep_params = {}
 
     seq_name = 'Chevron_sequence'
 
@@ -792,7 +819,7 @@ def fluxpulse_amplitude_sequence(amplitudes,
                                  cz_pulse_name,
                                  delay=None,
                                  cal_points=None,
-                                 prep_params=dict(),
+                                 prep_params=None,
                                  upload=True):
     '''
     Performs X180 pulse on top of a fluxpulse
@@ -802,6 +829,8 @@ def fluxpulse_amplitude_sequence(amplitudes,
        |          ----------           |X180|  ------------------------ |RO|
        |          ---    | --------- fluxpulse ---------- |
     '''
+    if prep_params is None:
+        prep_params = {}
 
     seq_name = 'Fluxpulse_amplitude_sequence'
     ge_pulse = deepcopy(operation_dict['X180 ' + qb_name])
@@ -927,7 +956,7 @@ def T1_freq_sweep_seq(amplitudes,
                    flux_lengths,
                    cal_points=None,
                    upload=True,
-                   prep_params=dict()):
+                   prep_params=None):
     '''
     Performs a X180 pulse before changing the qubit frequency with the flux
 
@@ -936,6 +965,8 @@ def T1_freq_sweep_seq(amplitudes,
        |          ---|X180|  ------------------------------|RO|
        |          --------| --------- fluxpulse ---------- |
     '''
+    if prep_params is None:
+        prep_params = {}
 
     len_amp = len(amplitudes)
     amplitudes = np.repeat(amplitudes, len(flux_lengths))
