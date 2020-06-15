@@ -291,6 +291,7 @@ class CPhase(CalibBuilder):
     Creates a CalibrationPoints object based on the given parameters.
 
     TODO
+    :param cz_pulse_name: see CircuitBuilder
     :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
     ...
     """
@@ -350,6 +351,12 @@ class CPhase(CalibBuilder):
     def cphase_block(self, sweep_points,
                      qbl, qbr, num_cz_gates=1, max_flux_length=None,
                      prepend_pulse_dicts=None, **kw):
+        """
+        TODO
+        :param cz_pulse_name: task-specific prefix of CZ gates (overwrites
+            global choice passed to the class init)
+        ...
+        """
 
         hard_sweep_dict, soft_sweep_dict = sweep_points
         assert num_cz_gates % 2 != 0
@@ -363,7 +370,8 @@ class CPhase(CalibBuilder):
                                  pulse_modifs=pulse_modifs)
         ir.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
 
-        fp = self.block_from_ops('flux', [f'CZ {qbl} {qbr}'] * num_cz_gates)
+        fp = self.block_from_ops('flux', [f"{kw.get('cz_pulse_name', 'CZ')} "
+                                          f"{qbl} {qbr}"] * num_cz_gates)
         # TODO here, we could do DD pulses (CH by 2020-06-19)
         # FIXME: currently, this assumes that only flux pulse parameters are
         #  swept in the soft sweep. In fact, channels_to_upload should be
