@@ -24,6 +24,7 @@ import lmfit
 import h5py
 from pycqed.measurement.hdf5_data import write_dict_to_hdf5
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
+from pycqed.measurement.calibration_points import CalibrationPoints
 import copy
 import logging
 log = logging.getLogger(__name__)
@@ -328,7 +329,8 @@ class BaseDataAnalysis(object):
         return raw_data_dict
 
     @staticmethod
-    def add_measured_data(raw_data_dict, compression_factor=1):
+    def add_measured_data(raw_data_dict, compression_factor=1,
+                          sp=None, cp=None):
         """
         Formats measured data based on the raw data dictionary and the
         soft and hard sweep points.
@@ -349,6 +351,10 @@ class BaseDataAnalysis(object):
                 For the decompression, the data will be reshaped to
                 (10/2, 2*2) = (5, 4) to correspond to the initial soft/hard sweep point
                 sizes.
+            sp (SweepPoints class instance): containing the sweep points
+                information for the measurement
+            cp (CalibrationPoints class instance): containing the calibration
+                points information for the measurement
 
         Returns:
 
@@ -363,6 +369,14 @@ class BaseDataAnalysis(object):
                 value_names = [value_names]
 
             sweep_points = measured_data[:-len(value_names)]
+            # sp, cp and hybrid_measurement are needed for a hybrid measurement:
+            # conceptually a 2D measurement that was compressed along the
+            # 1st sweep dimension and the measurement was run in 1D mode
+            # (so only 1 column of sweep points in hdf5 file)
+            # CURRENTLY ONLY WORKS WITH SweepPoints OBJECTS
+            if cp is None:
+                cp = CalibrationPoints('qb', states=[])
+            hybrid_measurement = False
             if sweep_points.shape[0] > 1:
                 hsp = np.unique(sweep_points[0])
                 ssp = np.unique(sweep_points[1:])
@@ -372,7 +386,14 @@ class BaseDataAnalysis(object):
                     ssp = np.arange(len(ssp) * compression_factor)
                 raw_data_dict['hard_sweep_points'] = hsp
                 raw_data_dict['soft_sweep_points'] = ssp
-
+            elif sp is not None:
+                # deal with hybrid measurements
+                if sweep_points.shape[0] == 1 and len(sp) > 1:
+                    hybrid_measurement = True
+                    hsp = np.arange(len(next(iter(sp[0].values()))[0]))
+                    ssp = np.arange(len(next(iter(sp[1].values()))[0]))
+                    raw_data_dict['hard_sweep_points'] = hsp
+                    raw_data_dict['soft_sweep_points'] = ssp
             else:
                 raw_data_dict['hard_sweep_points'] = np.unique(sweep_points[0])
 
@@ -383,7 +404,23 @@ class BaseDataAnalysis(object):
                 if 'soft_sweep_points' in raw_data_dict:
                     hsl = len(raw_data_dict['hard_sweep_points'])
                     ssl = len(raw_data_dict['soft_sweep_points'])
-                    measured_data = np.reshape(data[i], (ssl, hsl)).T
+                    if hybrid_measurement:
+                        # take out CalibrationPoints from the end of each
+                        # segment, and reshape the remaining data based on the
+                        # hard (1st dimension) and soft (1st dimension)
+                        # sweep points
+                        data_no_cp = data[i][:len(data[i])-len(cp.states)]
+                        measured_data = np.reshape(data_no_cp, (ssl, hsl)).T
+                        if len(cp.states) > 0:
+                            # add back ssl number of copies of the cal points
+                            # at the end of each soft sweep slice
+                            cal_pts = data[i][-len(cp.states):]
+                            cal_pts_arr = np.reshape(np.repeat(cal_pts, ssl),
+                                                     (len(cp.states), ssl))
+                            measured_data = np.concatenate([measured_data,
+                                                            cal_pts_arr])
+                    else:
+                        measured_data = np.reshape(data[i], (ssl, hsl)).T
                 else:
                     measured_data = data[i]
                 raw_data_dict['measured_data'][ro_ch] = measured_data
@@ -427,7 +464,10 @@ class BaseDataAnalysis(object):
             self.metadata = self.raw_data_dict['exp_metadata']
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
-                self.get_param_value('compression_factor', 1))
+                self.get_param_value('compression_factor', 1),
+                self.get_param_value('sweep_points'),
+                CalibrationPoints.from_string(
+                    self.get_param_value('cal_points')))
         else:
             temp_dict_list = []
             self.metadata = [rd['exp_metadata'] for
