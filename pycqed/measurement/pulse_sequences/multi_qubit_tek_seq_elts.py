@@ -1788,6 +1788,47 @@ def measurement_induced_dephasing_seq(
         phases, pihalf_spacing=pihalf_spacing, prep_params=prep_params,
         cal_points=cal_points, sequence_name=sequence_name, upload=upload)
 
+
+def drive_cancellation_seq(
+        driven_qubit_name, ramsey_qubit_names, operation_dict,
+        sweep_points, pulse='X180', n=1, pihalf_spacing=None, prep_params=None,
+        cal_points=None, upload=True, sequence_name='drive_cancellation_seq'):
+    """
+    Sweep pulse cancellation parameters and measure Ramsey on cancelled qubits.
+    The sweep point keys should be of the form `qb.param`, where `qb` is the
+    name of the qubit the cancellation if for and `param` is a parameter in
+    the pulses cancellation_params dict.
+
+    For example to sweep the amplitude of the cancellation pulse on qb1,
+    you could configure the sweep points as `SweepPoints('qb1.amplitude',
+    np.linspace(0, 1, 21))`.
+
+    The second sweep dimension of sweep_points must be called 'phase'.
+    """
+
+    len_sweep = len(list(sweep_points[0].values())[0][0])
+    # create len_sweep instances of n pulses, where the n references correspond
+    # to the same dictionary instance
+    interleaved_pulse_list_list = \
+        n*[deepcopy(operation_dict[f'{pulse} {driven_qubit_name}'])
+         for _ in range(len_sweep)]
+    for key, (values, unit, label) in sweep_points[0]:
+        assert len(values) == len_sweep
+        tqb, param = key.split('.')
+        iq = operation_dict[f'X180 {tqb}']['I_channel'], \
+             operation_dict[f'X180 {tqb}']['Q_channel']
+        for pulse_list, value in zip(interleaved_pulse_list_list, values):
+            # since all n pulses in pulse_list are the same dict. we only need
+            # to modify the first element.
+            pulse_list[0]['cancellation_params'][iq][param] = value
+
+    return interleaved_pulse_list_list_equatorial_seq(
+        ramsey_qubit_names, operation_dict, interleaved_pulse_list_list,
+        sweep_points[1]['phase'][0], pihalf_spacing=pihalf_spacing,
+        prep_params=prep_params, cal_points=cal_points,
+        sequence_name=sequence_name, upload=upload)
+
+
 def multi_parity_multi_round_seq(ancilla_qubit_names,
                                  data_qubit_names,
                                  parity_map,
