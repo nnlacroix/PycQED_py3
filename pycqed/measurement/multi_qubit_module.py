@@ -1917,7 +1917,7 @@ def measure_drive_cancellation(
         MC.run(label, exp_metadata=exp_metadata)
 
         if analyze:
-            return tda.MultiQubit_TimeDomain_Analysis(
+            return tda.DriveCrosstalkCancellationAnalysis(
                 qb_names=ramsey_qubit_names)
 
 
