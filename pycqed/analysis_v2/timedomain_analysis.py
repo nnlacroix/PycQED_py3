@@ -5968,15 +5968,16 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         self.preselection = \
             self.get_param_value("preparation_params",
                                  {}).get("preparation_type", "wait") == "preselection"
-        default_states_info = {"g": {"int": 0, # integer repr., needed for classif
-                                     "label": r"|g\rangle"},
-                               "e": {"int": 1,
-                                     "label": r"|e\rangle"},
-                               "f": {"int": 2,
-                                     "label": r"|f\rangle"}
-                               }
-        self.states_info = self.get_param_value("states_info",
-                                                default_states_info)
+        default_states_info = defaultdict(dict)
+        default_states_info.update({"g": {"label": r"$|g\rangle$"},
+                               "e": {"label": r"$|e\rangle$"},
+                               "f": {"label": r"$|f\rangle$"}
+                               })
+
+        self.states_info = \
+            self.get_param_value("states_info",
+                                {qbn: deepcopy(default_states_info)
+                                 for qbn in self.qb_names})
 
     def process_data(self):
         """
@@ -5993,7 +5994,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         # e.g. {'qb1': {'g': np.array of shape (n_shots, n_ro_ch}, ...}, ...}
         shots_per_qb = dict()        # store shots per qb and per state
         presel_shots_per_qb = dict() # store preselection ro
-        means = defaultdict(dict)    # store mean per qb for each ro_ch
+        means = defaultdict(OrderedDict)    # store mean per qb for each ro_ch
         pdd = self.proc_data_dict    # for convenience of notation
 
         for qbn in self.qb_names:
@@ -6020,7 +6021,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                         np.expand_dims(presel_shots_per_qb[qbn], axis=-1)
 
         # create placeholders for analysis data
-        pdd['analysis_params'] = OrderedDict()
+        pdd['analysis_params'] = dict()
         pdd['data'] = defaultdict(dict)
         pdd['analysis_params']['state_prob_mtx'] = defaultdict(dict)
         pdd['analysis_params']['classifier_params'] = defaultdict(dict)
@@ -6036,9 +6037,26 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         n_shots = len(shots_per_qb[qbn]) // n_states
 
         for qbn, qb_shots in shots_per_qb.items():
+            # create mapping to integer following ordering in cal_points.
+            # Notes:
+            # 1) the state_integer should to the order of pdd[qbn]['means'] so that
+            # when passing the init_means to the GMM model, it is ensured that each
+            # gaussian component will predict the state_integer associated to that state
+            # 2) the mapping cannot be preestablished because the GMM predicts labels
+            # in range(n_components). For instance, if a qubit has states "g", "f"
+            # then the model will predicts 0's and 1's, so the typical g=0, e=1, f=2
+            # mapping would fail. The number of different states can be different
+            # for each qubit and therefore the mapping should also be done per qubit.
+            state_integer = 0
+            for state in self.cp.get_states(qbn)[qbn]:
+                if "int" in self.states_info[qbn][state]:
+                    continue # in case state is repeated, no new integer needed
+                self.states_info[qbn][state]["int"] = state_integer
+                state_integer += 1
+
             # note that if some states are repeated, they are assigned the same label
             qb_states_integer_repr = \
-                [self.states_info[s]["int"]
+                [self.states_info[qbn][s]["int"]
                  for s in self.cp.get_states(qbn)[qbn]]
             prep_states = np.tile(qb_states_integer_repr, n_shots)
 
@@ -6054,7 +6072,10 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 self._classify(qb_shots, prep_states,
                                method=self.classif_method, qb_name=qbn,
                                **self.options_dict.get("classif_kw", dict()))
-            fm = self.fidelity_matrix(prep_states, pred_states)
+            states_label_order = self._get_state_labels_order(
+                np.unique(self.cp.get_states(qbn)[qbn]))
+            fm = self.fidelity_matrix(prep_states, pred_states,
+                                      labels=states_label_order)
 
             # save fidelity matrix and classifier
             pdd['analysis_params']['state_prob_mtx'][qbn] = fm
@@ -6064,7 +6085,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 #re do with classification first of preselection and masking
                 pred_presel = self.clf_[qbn].predict(presel_shots_per_qb[qbn])
                 presel_filter = \
-                    pred_presel == self.states_info['g']['int']
+                    pred_presel == self.states_info[qbn]['g']['int']
                 if np.sum(presel_filter) == 0:
                     log.warning(f"{qbn}: No data left after preselection! "
                                 f"Skipping preselection data & figures.")
@@ -6072,7 +6093,8 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 qb_shots_masked = qb_shots[presel_filter]
                 prep_states = prep_states[presel_filter]
                 pred_states = self.clf_[qbn].predict(qb_shots_masked)
-                fm = self.fidelity_matrix(prep_states, pred_states)
+                fm = self.fidelity_matrix(prep_states, pred_states,
+                                          labels=states_label_order)
 
                 pdd['data_masked'][qbn] = dict(X=deepcopy(qb_shots_masked),
                                           prep_states=deepcopy(prep_states))
@@ -6162,11 +6184,11 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
 
     @staticmethod
     def fidelity_matrix(prep_states, pred_states, levels=('g', 'e', 'f'),
-                        plot=False, normalize=True):
+                        plot=False, labels=None, normalize=True):
 
         return SSROQutrit.fidelity_matrix(prep_states, pred_states,
                                           levels=levels, plot=plot,
-                                          normalize=normalize)
+                                          normalize=normalize, labels=labels)
 
     @staticmethod
     def plot_fidelity_matrix(fm, target_names,
@@ -6208,6 +6230,17 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         return SSROQutrit.plot_1D_hist(data, y_true=y_true,
                                        plot_fitting=plot_fitting, **kwargs)
 
+    @staticmethod
+    def _get_state_labels_order(states_labels,
+                                order="gefhabcdijklmnopqrtuvwxyz0123456789"):
+        try:
+            return np.argsort([order.index(s) for s in states_labels])
+        except Exception as e:
+            log.error(f"Could not find order in state_labels:"
+                      f"{states_labels}. {e}."
+                      f" Returning same as input order")
+            return np.arange(states_labels)
+
     def plot(self, **kwargs):
         if not self.get_param_value("plot", True):
             return # no plotting if "plot" is False
@@ -6219,7 +6252,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             tab_x = a_tools.truncate_colormap(cmap, 0,
                                               n_qb_states/10)
 
-            kwargs = dict(legend_labels=np.unique(self.cp.get_states(qbn)[qbn]),
+            kwargs = dict(states=np.unique(self.cp.get_states(qbn)[qbn]),
                           xlabel="Integration Unit 1, $u_1$",
                           ylabel="Integration Unit 2, $u_2$",
                           scale=self.options_dict.get("hist_scale", "linear"),
@@ -6300,7 +6333,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                         self.proc_data_dict['analysis_params']['n_shots'])
             fig = self.plot_fidelity_matrix(
                 self.proc_data_dict['analysis_params']['state_prob_mtx'][qbn],
-                self.cp.get_states(qbn)[qbn],
+                kwargs['states'][self._get_state_labels_order(kwargs['states'])],
                 title=title,
                 show=show,
                 auto_shot_info=False)
@@ -6317,7 +6350,6 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 fig = self.plot_fidelity_matrix(
                     self.proc_data_dict['analysis_params'] \
                                        ['state_prob_mtx_masked'][qbn],
-                    self.cp.get_states(qbn)[qbn],
-                    title=title, show=show, auto_shot_info=False)
+                    kwargs['states'][self._get_state_labels_order(kwargs['states'])],                  title=title, show=show, auto_shot_info=False)
                 fig_key = f'{qbn}_state_prob_matrix_masked_{self.classif_method}'
                 self.figs[fig_key] = fig
