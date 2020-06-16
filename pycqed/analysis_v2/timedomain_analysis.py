@@ -3875,6 +3875,204 @@ class MeasurementInducedDephasingAnalysis(MultiQubit_TimeDomain_Analysis):
                 }
 
 
+class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
+    def process_data(self):
+        super().process_data()
+
+        pdd = self.proc_data_dict
+
+        pdd['ramsey_phases'] = np.unique(
+            self.get_param_value('sweep_points')[0]['phase'][0])
+        pdd['qb_sweep_points'] = {}
+        pdd['qb_sweep_param'] = {}
+        for k, v in self.get_param_value('sweep_points')[0].items():
+            if k == 'phase':
+                continue
+            qb, param = k.split('.')
+            pdd['qb_sweep_points'][qb] = v[0][::len(pdd['ramsey_phases'])]
+            pdd['qb_sweep_param'][qb] = (param, v[1], v[2])
+        pdd['qb_msmt_vals'] = {}
+        pdd['qb_cal_vals'] = {}
+        cp = eval(self.get_param_value('cal_points'))
+        for qb, data_flat in pdd['data_to_fit'].items():
+            pdd['qb_msmt_vals'][qb] = data_flat[:-len(cp.states)].reshape(
+                len(pdd['qb_sweep_points'][qb]), len(pdd['ramsey_phases']))
+            pdd['qb_cal_vals'][qb] = data_flat[-len(cp.states):]
+
+    def prepare_fitting(self):
+        pdd = self.proc_data_dict
+        self.fit_dicts = OrderedDict()
+        cos_mod = lmfit.Model(fit_mods.CosFunc)
+        cos_mod.guess = fit_mods.Cos_guess.__get__(cos_mod, cos_mod.__class__)
+        for qb in self.qb_names:
+            for i, data in enumerate(pdd['qb_msmt_vals'][qb]):
+                self.fit_dicts[f'cos_fit_{qb}_{i}'] = {
+                    'model': cos_mod,
+                    'guess_dict': {'frequency': {'value': 1/360,
+                                                 'vary': False}},
+                    'fit_xvals': {'t': pdd['ramsey_phases']},
+                    'fit_yvals': {'data': data}}
+
+    def analyze_fit_results(self):
+        pdd = self.proc_data_dict
+
+        pdd['phase_contrast'] = {}
+        pdd['phase_offset'] = {}
+
+        for qb in self.qb_names:
+            pdd['phase_contrast'][qb] = np.array([
+                2*self.fit_res[f'cos_fit_{qb}_{i}'].best_values['amplitude']
+                for i, _ in enumerate(pdd['qb_msmt_vals'][qb])])
+            pdd['phase_offset'][qb] = np.array([
+                self.fit_res[f'cos_fit_{qb}_{i}'].best_values['phase']
+                for i, _ in enumerate(pdd['qb_msmt_vals'][qb])])
+            pdd['phase_offset'][qb] *= 180/np.pi
+            pdd['phase_offset'][qb] += 180 * (pdd['phase_contrast'][qb] < 0)
+            pdd['phase_offset'][qb] = (pdd['phase_offset'][qb] + 180) % 360 - 180
+            pdd['phase_contrast'][qb] = np.abs(pdd['phase_contrast'][qb])
+
+            # gauss_mod = lmfit.models.GaussianModel()
+            # self.fit_dicts[f'phase_contrast_fit_{qb}'] = {
+            #     'model': gauss_mod,
+            #     'guess_dict': {'center': {'value': 0, 'vary': False}},
+            #     'fit_xvals': {'x': pdd['amps_reshaped']},
+            #     'fit_yvals': {'data': pdd['phase_contrast'][qb]}}
+            #
+            # quadratic_mod = lmfit.models.QuadraticModel()
+            # self.fit_dicts[f'phase_offset_fit_{qb}'] = {
+            #     'model': quadratic_mod,
+            #     'guess_dict': {'b': {'value': 0, 'vary': False}},
+            #     'fit_xvals': {'x': pdd['amps_reshaped']},
+            #     'fit_yvals': {'data': pdd['phase_offset'][qb]}}
+            #
+            # self.run_fitting()
+            # self.save_fit_results()
+
+    def prepare_plots(self):
+        pdd = self.proc_data_dict
+        rdd = self.raw_data_dict
+
+        for qb in self.qb_names:
+            self.plot_dicts[f'data_2d_{qb}'] = {
+                'title': rdd['measurementstring'] +
+                         '\n' + rdd['timestamp'] + '\n' + qb,
+                'plotfn': self.plot_colorxy,
+                'xvals': pdd['ramsey_phases'],
+                'yvals': pdd['qb_sweep_points'][qb],
+                'zvals': pdd['qb_msmt_vals'][qb],
+                'xlabel': r'Ramsey phase, $\phi$',
+                'xunit': 'deg',
+                'ylabel': pdd['qb_sweep_param'][qb][2],
+                'yunit': pdd['qb_sweep_param'][qb][1],
+                'zlabel': 'Excited state population',
+            }
+
+            colormap = self.options_dict.get('colormap', mpl.cm.plasma)
+            for i, pval in enumerate(pdd['qb_sweep_points'][qb]):
+                if i == len(pdd['qb_sweep_points'][qb]) - 1:
+                    legendlabel='data, ref.'
+                else:
+                    legendlabel = f'data, {pdd["qb_sweep_param"][qb][0]}='\
+                                  f'{pval:.4f}{pdd["qb_sweep_param"][qb][1]}'
+                color = colormap(i/(len(pdd['qb_sweep_points'][qb])-1))
+                label = f'cos_data_{qb}_{i}'
+
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'] + '\n' + qb,
+                    'ax_id': f'param_crossections_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['ramsey_phases'],
+                    'yvals': pdd['qb_msmt_vals'][qb][i],
+                    'xlabel': r'Ramsey phase, $\phi$',
+                    'xunit': 'deg',
+                    'ylabel': 'Excited state population',
+                    'linestyle': '',
+                    'color': color,
+                    'setlabel': legendlabel,
+                    'do_legend': True,
+                    'legend_bbox_to_anchor': (1, 1),
+                    'legend_pos': 'upper left',
+                }
+            if self.do_fitting:
+                for i, pval in enumerate(pdd['qb_sweep_points'][qb]):
+                    if i == len(pdd['qb_sweep_points'][qb]) - 1:
+                        legendlabel = 'fit, ref.'
+                    else:
+                        legendlabel = f'fit, {pdd["qb_sweep_param"][qb][0]}='\
+                                      f'{pval:.4f}{pdd["qb_sweep_param"][qb][1]}'
+                    color = colormap(i/(len(pdd['qb_sweep_points'][qb])-1))
+                    label = f'cos_fit_{qb}_{i}'
+                    self.plot_dicts[label] = {
+                        'ax_id': f'param_crossections_{qb}',
+                        'plotfn': self.plot_fit,
+                        'fit_res': self.fit_res[label],
+                        'plot_init': self.options_dict.get('plot_init', False),
+                        'color': color,
+                        'setlabel': legendlabel
+                    }
+
+                # Phase contrast
+                self.plot_dicts[f'phase_contrast_data_{qb}'] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'] + '\n' + qb,
+                    'ax_id': f'phase_contrast_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['qb_sweep_points'][qb][:-1],
+                    'yvals': pdd['phase_contrast'][qb][:-1] * 100,
+                    'xlabel': pdd['qb_sweep_param'][qb][2],
+                    'xunit': pdd['qb_sweep_param'][qb][1],
+                    'ylabel': 'Phase contrast',
+                    'yunit': '%',
+                    'linestyle': '-',
+                    'marker': 'o',
+                    'color': 'C0',
+                    'setlabel': 'data',
+                    'do_legend': True,
+                }
+                self.plot_dicts[f'phase_contrast_ref_{qb}'] = {
+                    'ax_id': f'phase_contrast_{qb}',
+                    'plotfn': self.plot_hlines,
+                    'xmin': pdd['qb_sweep_points'][qb][:-1].min(),
+                    'xmax': pdd['qb_sweep_points'][qb][:-1].max(),
+                    'y': pdd['phase_contrast'][qb][-1] * 100,
+                    'linestyle': '--',
+                    'colors': '0.6',
+                    'setlabel': 'ref',
+                    'do_legend': True,
+                }
+
+                # Phase offset
+                self.plot_dicts[f'phase_offset_data_{qb}'] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'] + '\n' + qb,
+                    'ax_id': f'phase_offset_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['qb_sweep_points'][qb][:-1],
+                    'yvals': pdd['phase_offset'][qb][:-1],
+                    'xlabel': pdd['qb_sweep_param'][qb][2],
+                    'xunit': pdd['qb_sweep_param'][qb][1],
+                    'ylabel': 'Phase offset',
+                    'yunit': 'deg',
+                    'linestyle': '-',
+                    'marker': 'o',
+                    'color': 'C0',
+                    'setlabel': 'data',
+                    'do_legend': True,
+                }
+                self.plot_dicts[f'phase_offset_ref_{qb}'] = {
+                    'ax_id': f'phase_offset_{qb}',
+                    'plotfn': self.plot_hlines,
+                    'xmin': pdd['qb_sweep_points'][qb][:-1].min(),
+                    'xmax': pdd['qb_sweep_points'][qb][:-1].max(),
+                    'y': pdd['phase_offset'][qb][-1],
+                    'linestyle': '--',
+                    'colors': '0.6',
+                    'setlabel': 'ref',
+                    'do_legend': True,
+                }
+
+
 class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def __init__(self, qb_names, *args, **kwargs):
