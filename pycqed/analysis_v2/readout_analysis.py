@@ -940,8 +940,8 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
 
     @staticmethod
     def fidelity_matrix(prep_states, pred_states, levels=('g', 'e', 'f'),
-                        plot=False, normalize=True):
-        fm = confusion_matrix(prep_states, pred_states)
+                        labels=None, plot=False, normalize=True):
+        fm = confusion_matrix(prep_states, pred_states, labels)
         if plot:
             Singleshot_Readout_Analysis_Qutrit.plot_fidelity_matrix(fm,
                                                                     levels)
