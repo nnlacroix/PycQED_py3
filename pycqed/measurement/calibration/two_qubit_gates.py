@@ -8,7 +8,7 @@ from pycqed.measurement.waveform_control.circuit_builder import CircuitBuilder
 from pycqed.measurement.waveform_control.block import Block, ParametricValue
 from pycqed.measurement.waveform_control.segment import UnresolvedPulse
 from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import pycqed.measurement.awg_sweep_functions as awg_swf
 import pycqed.analysis_v2.timedomain_analysis as tda
 from pycqed.instrument_drivers.meta_instrument.qubit_objects.QuDev_transmon \

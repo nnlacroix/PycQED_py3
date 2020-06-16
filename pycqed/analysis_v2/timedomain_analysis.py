@@ -16,10 +16,9 @@ import pycqed.analysis_v2.readout_analysis as roa
 from pycqed.analysis_v2.readout_analysis import \
     Singleshot_Readout_Analysis_Qutrit as SSROQutrit
 import pycqed.analysis_v2.tomography_qudev as tomo
-import re
 from pycqed.analysis.tools.plotting import SI_val_to_msg_str
 from copy import deepcopy
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import matplotlib.pyplot as plt
 from pycqed.analysis.three_state_rotation import predict_proba_avg_ro
 import logging

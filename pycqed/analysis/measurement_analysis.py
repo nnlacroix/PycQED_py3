@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis import fitting_models as fit_mods
 import pycqed.measurement.hdf5_data as h5d
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import scipy.optimize as optimize
 import lmfit
 import textwrap

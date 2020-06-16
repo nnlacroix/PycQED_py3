@@ -9,7 +9,7 @@ from collections import OrderedDict
 from more_itertools import unique_everseen
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 
 
 def get_hdf_param_value(group, param_name):

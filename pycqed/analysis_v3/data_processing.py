@@ -9,11 +9,10 @@ from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import fitting as fit_module
 from pycqed.analysis_v3 import plotting as plot_module
 from pycqed.analysis_v3 import helper_functions as hlp_mod
-from sklearn.mixture import GaussianMixture as GM
 from copy import deepcopy
 
 from pycqed.analysis import fitting_models as fit_mods
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 
 
 def filter_data(data_dict, keys_in, keys_out=None, **params):
