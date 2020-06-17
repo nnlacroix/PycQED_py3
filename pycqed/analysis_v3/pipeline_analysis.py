@@ -65,8 +65,9 @@ def extract_data_hdf(timestamps=None, data_dict=None,
         data_dict = OrderedDict()
 
     if timestamps is None:
-        timestamps = hlp_mod.get_param('timestamps', data_dict,
-                                       raise_error=True)
+        timestamps = hlp_mod.get_param('timestamps', data_dict)
+    if timestamps is None:
+        hlp_mod.add_param('timestamps', get_timestamps(**params), data_dict)
     if isinstance(timestamps, str):
         timestamps = [timestamps]
         hlp_mod.add_param('timestamps', timestamps, data_dict, replace_value=True)
@@ -153,7 +154,7 @@ def add_measured_data_dict(data_dict):
 
 
 def process_pipeline(data_dict, processing_pipeline=None,
-                     save_processed_data=True, save_figures=True):
+                     save_processed_data=True, save_figures=True, **params):
     """
     Calls all the classes/functions found in processing_pipeline,
     which is a list of dictionaries of the form:
@@ -182,6 +183,13 @@ def process_pipeline(data_dict, processing_pipeline=None,
             if node_params not in proc_pipe_in_dd:
                 hlp_mod.add_param('processing_pipeline', [node_params],
                                   data_dict, append_value=True)
+
+    # resolve pipeline in case it wasn't resolved yet
+    movnm = hlp_mod.get_param('meas_obj_value_names_map', data_dict, **params)
+    if movnm is not None:
+        processing_pipeline(movnm)
+    else:
+        log.warning('Processing pipeline may not have been resolved.')
 
     for node_params in processing_pipeline:
         node = None

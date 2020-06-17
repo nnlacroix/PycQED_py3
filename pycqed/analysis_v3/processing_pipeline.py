@@ -222,6 +222,19 @@ Final pipeline:
      }]                             
 """
 
+def memoize(func):
+    # Function used to decorate the __call__ method of ProcessingPipeline
+    # such that we can execute it more than once without getting an error.
+    # This function stores the pipeline resolved after the first time __call__
+    # is called, such that when we call it another time, it just outputs this
+    # stored pipeline
+    memo = {}
+    def wrapper(*args):
+        if not 'resolved_pipeline' in memo:
+            memo['resolved_pipeline'] = func(*args)
+        return memo['resolved_pipeline']
+    return wrapper
+
 
 class ProcessingPipeline(list):
     """
@@ -233,6 +246,7 @@ class ProcessingPipeline(list):
             node_params['node_name'] = node_name
             self.append(node_params)
 
+    @memoize
     def __call__(self, meas_obj_value_names_map):
         pipeline = deepcopy(self)
         self.clear()
