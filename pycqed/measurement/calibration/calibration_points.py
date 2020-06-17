@@ -136,7 +136,7 @@ class CalibrationPoints:
         return qb_names
 
     def get_rotations(self, last_ge_pulses=False, qb_names=None,
-                      enforce_two_cal_states=False):
+                      enforce_two_cal_states=False, **kw):
         """
         Get rotation dictionaries for each qubit in qb_names,
         as used by the analysis for plotting.
@@ -144,7 +144,8 @@ class CalibrationPoints:
             qb_names (list or string): qubit names. Defaults to all.
             last_ge_pulses (list or bool): one for each qb in the same order as
                 specified in qb_names
-
+            kw: keyword arguments (to allow pass through kw even if it
+                contains entries that are not needed)
         Returns:
              dict where keys are qb_names and values are dict specifying
              rotations.
