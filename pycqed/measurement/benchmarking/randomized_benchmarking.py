@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 
 
 class SingleQubitRandomizedBenchmarking(CalibBuilder):
-    def __init__(self, dev, task_list=None, qubits=None, sweep_points=None,
+    def __init__(self, dev, task_list=None, sweep_points=None, qubits=None,
                  nr_seeds=None, interleaved_gate=None, gate_decomposition='HZ',
                  identical_pulses=True, **kw):
         """
@@ -18,13 +18,13 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         one or several qubits in parallel, using the single-qubit Clifford group
         :param dev: instance of Device class; see CalibBuilder docstring
         :param task_list: list of dicts; see CalibBuilder docstring
-        :param qubits: list of QuDev_transmon class instances;
         :param sweep_points: SweepPoints class instance with first sweep
             dimension describing the seeds and second dimension the cliffords
             Ex: [{'seeds': (array([0, 1, 2, 3]), '', 'Nr. Seeds')},
                  {'cliffords': ([0, 4, 10], '', 'Nr. Cliffords')}]
             If only it contains only one sweep dimension, this must be the
             cliffords. The seeds will be added automatically.
+        :param qubits: list of QuDev_transmon class instances
         :param nr_seeds: int specifying the number of times the Clifford
             group should be sampled for each Clifford sequence length.
             If nr_seeds is specified and it does not exist in the SweepPoints
@@ -45,6 +45,8 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             passed to CalibBuilder; see docstring there.
 
         Assumptions:
+         - assumes there is one task for each qubit. If task_list is None, it
+          will internally create it.
          - in rb_block, it assumes only one parameter is being swept in the
          second sweep dimension (cliffords)
          - interleaved_gate and gate_decomposition should be the same for
@@ -176,11 +178,11 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         if self.label is None:
             if self.interleaved_gate is None:
                 self.label = f'RB_{self.gate_decomposition}' \
-                             f'{self.dev.get_msmt_suffix()}'
+                             f'{self.dev.get_msmt_suffix(self.ro_qubits)}'
             else:
                 self.label = f'IRB_{self.interleaved_gate}_' \
                              f'{self.gate_decomposition}' \
-                             f'{self.dev.get_msmt_suffix()}'
+                             f'{self.dev.get_msmt_suffix(self.ro_qubits)}'
 
     def add_processing_pipeline(self):
         pass

@@ -29,7 +29,7 @@ from pycqed.measurement import optimization as opti
 from pycqed.measurement import mc_parameter_wrapper
 import pycqed.analysis_v2.spectroscopy_analysis as sa
 from pycqed.utilities import math
-import pycqed.analysis.fitting_models as fms
+import pycqed.analysis.fitting_models as fit_mods
 
 try:
     import pycqed.simulations.readout_mode_simulations_for_CLEAR_pulse \
@@ -3521,7 +3521,7 @@ class QuDev_transmon(Qubit):
 
         fit_paras = deepcopy(self.fit_ge_freq_from_flux_pulse_amp())
         if freqs is not None:
-            amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
+            amplitudes = fit_mods.Qubit_freq_to_dac(freqs, **fit_paras)
 
         amplitudes = np.array(amplitudes)
 
@@ -3609,7 +3609,7 @@ class QuDev_transmon(Qubit):
         '''
         fit_paras = deepcopy(self.fit_ge_freq_from_flux_pulse_amp())
         if freqs is not None:
-            amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
+            amplitudes = fit_mods.Qubit_freq_to_dac(freqs, **fit_paras)
 
         amplitudes = np.array(amplitudes)
 
