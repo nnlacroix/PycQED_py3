@@ -12,8 +12,9 @@ log = logging.getLogger(__name__)
 
 
 class SingleQubitRandomizedBenchmarking(CalibBuilder):
-    def __init__(self, dev, task_list=None, qubits=None,
-                 sweep_points=None, **kw):
+    def __init__(self, dev, task_list=None, qubits=None, sweep_points=None,
+                 interleaved_gate=None, gate_decomposition='HZ',
+                 identical_pulses=True, **kw):
         """
 
         :param dev:
@@ -25,6 +26,9 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         Assumptions:
          - in rb_block, it assumes only one parameter is being swept in the
          second sweep dimension (cliffords)
+         - interleaved_gate and gate_decomposition should be the same for
+         all qubits since otherwise the segments will have very different
+         lengths for different qubits
 
         """
         try:
@@ -40,16 +44,24 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             super().__init__(dev, qubits=qubits, **kw)
 
             self.analysis = None
-            # the following 3 parameters should be the same for all qubits
-            # since otherwise the segments will have very different lengths
-            # for different qubits
-            self.interleaved_gate = kw.get('interleaved_gate', None)
-            self.gate_decomposition = kw.get('gate_decomposition', 'HZ')
+            self.interleaved_gate = interleaved_gate
+            self.gate_decomposition = gate_decomposition
             # TODO: there is currently no analysis for non-classified measurement
             self.classified = True
 
             task_list = self.add_seeds_sweep_points(task_list, **kw)
             self.task_list = task_list
+            self.identical_pulses = identical_pulses
+            # Check if we can apply identical pulses on all qubits in task_list
+            # Can only do this if they have the same cliffords array
+            one_clf_set = list(self.task_list[0][
+                                   'sweep_points'][1].values())[0][0]
+            unique_clf_sets = np.unique([
+                list(task['sweep_points'][1].values())[0][0]
+                for task in self.task_list])
+            if len(unique_clf_sets) != len(one_clf_set):
+                self.identical_pulses = False
+
             self.ro_qubits = self.get_ro_qubits()
             self.guess_label(**kw)
             # TODO: there is currently no analysis for RB with cal_points
@@ -109,20 +121,29 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         return task_list
 
     def rb_block(self, sp1d_idx, sp2d_idx, sweep_points, **kw):
-        # all_cliffs = [next(iter(task['sweep_points'][1].values()))[0][sp2d_idx]
-        #               for task in self.task_list]
-        # if len(set(all_cliffs)) == 1:
-        #     # all qubits have the same
-        rb_block_list = []
-        for task in self.task_list:
-            qbn = task['qubits_to_measure']
-            clifford = next(iter(task['sweep_points'][1].values()))[0][sp2d_idx]
+        if self.identical_pulses:
+            # all qubits have the same cliffords array
+            clifford = next(iter(self.task_list[0][
+                                     'sweep_points'][1].values()))[0][sp2d_idx]
             cl_seq = rb.randomized_benchmarking_sequence(
                 clifford, interleaved_gate=self.interleaved_gate)
             pulse_keys = rb.decompose_clifford_seq(
                 cl_seq, gate_decomp=self.gate_decomposition)
-            rb_block_list += [self.block_from_ops(
-                f'rb_{qbn}', [f'{p} {qbn}' for p in pulse_keys])]
+            rb_block_list = [self.block_from_ops(
+                f'rb_{qb.name}', [f'{p} {qb.name}' for p in pulse_keys])
+                for qb in self.ro_qubits]
+        else:
+            rb_block_list = []
+            for task in self.task_list:
+                qbn = task['qubits_to_measure']
+                clifford = next(iter(
+                    task['sweep_points'][1].values()))[0][sp2d_idx]
+                cl_seq = rb.randomized_benchmarking_sequence(
+                    clifford, interleaved_gate=self.interleaved_gate)
+                pulse_keys = rb.decompose_clifford_seq(
+                    cl_seq, gate_decomp=self.gate_decomposition)
+                rb_block_list += [self.block_from_ops(
+                    f'rb_{qbn}', [f'{p} {qbn}' for p in pulse_keys])]
         return self.simultaneous_blocks(f'sim_rb_{clifford}{sp1d_idx}',
                                         rb_block_list)
 
