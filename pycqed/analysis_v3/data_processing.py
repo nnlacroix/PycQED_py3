@@ -393,7 +393,7 @@ def rotate_iq(data_dict, keys_in, keys_out=None, **params):
         meas_obj_value_names_map (dict): {meaj_obj_name: [value_names]}.
 
     Assumptions:
-        - if any keyo in keys_out contains a '.' string, keyo is assumed to
+        - if any keyo in keys_out contains a '.' character, keyo is assumed to
         indicate a path in the data_dict.
         - len(keys_in) == 2 must be True; the 2 entries are I and Q data
         - len(keys_out) == 1 must be True.
@@ -590,10 +590,8 @@ def classify_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
 
 def threshold_data(data_dict, keys_in, threshold_list, keys_out, **params):
     """
-    Thresholds the data in data_dict specified by keys_in according to the
-    threshold_mapping and the threshold values in threshold_list.
-    This node will create nr_states entries in the data_dict, where
-    nr_states = len(set(threshold_mapping.values())).
+    Thresholds the data in data_dict specified by keys_in about the
+    threshold values in threshold_list (one for each keyi in keys_in).
     :param data_dict: OrderedDict containing data to be processed and where
                     processed data is to be stored
     :param keys_in: list of key names or dictionary keys paths in
