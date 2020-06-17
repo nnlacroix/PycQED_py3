@@ -1,6 +1,4 @@
 import numpy as np
-from copy import copy
-from copy import deepcopy
 import traceback
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
 from pycqed.measurement.calibration.two_qubit_gates import CalibBuilder
@@ -13,15 +11,38 @@ log = logging.getLogger(__name__)
 
 class SingleQubitRandomizedBenchmarking(CalibBuilder):
     def __init__(self, dev, task_list=None, qubits=None, sweep_points=None,
-                 interleaved_gate=None, gate_decomposition='HZ',
+                 nr_seeds=None, interleaved_gate=None, gate_decomposition='HZ',
                  identical_pulses=True, **kw):
         """
-
-        :param dev:
-        :param task_list:
-        :param qubits:
-        :param sweep_points:
-        :param kw:
+        Class to run and analyze the randomized benchmarking experiment on
+        one or several qubits in parallel, using the single-qubit Clifford group
+        :param dev: instance of Device class; see CalibBuilder docstring
+        :param task_list: list of dicts; see CalibBuilder docstring
+        :param qubits: list of QuDev_transmon class instances;
+        :param sweep_points: SweepPoints class instance with first sweep
+            dimension describing the seeds and second dimension the cliffords
+            Ex: [{'seeds': (array([0, 1, 2, 3]), '', 'Nr. Seeds')},
+                 {'cliffords': ([0, 4, 10], '', 'Nr. Cliffords')}]
+            If only it contains only one sweep dimension, this must be the
+            cliffords. The seeds will be added automatically.
+        :param nr_seeds: int specifying the number of times the Clifford
+            group should be sampled for each Clifford sequence length.
+            If nr_seeds is specified and it does not exist in the SweepPoints
+            of each task in task_list, then it will be the same for all qubits
+        :param interleaved_gate: string specifying the interleaved gate in
+            pycqed notation (ex: X90, Y180 etc). Gate must be part of the
+            Clifford group.
+        :param gate_decomposition: string specifying what decomposition to use
+            to translate the Clifford elements into applicable pulses.
+            Possible choices are 'HZ' or 'XY'.
+            See HZ_gate_decomposition and XY_gate_decomposition in
+            pycqed\measurement\randomized_benchmarking\clifford_decompositions.py
+        :param identical_pulses: bool that indicates whether to always apply
+            identical pulses on all qubits ie identical Clifford sequence for
+            each qubit (True), or to produce a random Clifford sequence for
+            each qubit (False)
+        :param kw: keyword arguments
+            passed to CalibBuilder; see docstring there.
 
         Assumptions:
          - in rb_block, it assumes only one parameter is being swept in the
@@ -29,7 +50,6 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
          - interleaved_gate and gate_decomposition should be the same for
          all qubits since otherwise the segments will have very different
          lengths for different qubits
-
         """
         try:
             if task_list is None:
@@ -44,12 +64,14 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             super().__init__(dev, qubits=qubits, **kw)
 
             self.analysis = None
+            self.nr_seeds = nr_seeds
             self.interleaved_gate = interleaved_gate
             self.gate_decomposition = gate_decomposition
             # TODO: there is currently no analysis for non-classified measurement
             self.classified = True
 
-            task_list = self.add_seeds_sweep_points(task_list, **kw)
+            task_list = self.add_seeds_sweep_points(task_list,
+                                                    self.nr_seeds, **kw)
             self.task_list = task_list
             self.identical_pulses = identical_pulses
             # Check if we can apply identical pulses on all qubits in task_list
@@ -114,6 +136,9 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             sweep_points = SweepPoints(from_dict_list=sweep_points)
             hard_sweep_dict = SweepPoints()
             if 'seeds' not in sweep_points[0]:
+                if nr_seeds is None:
+                    raise ValueError('Please specify nr_seeds or add it to '
+                                     'the sweep points.')
                 hard_sweep_dict.add_sweep_parameter(
                     'seeds', np.arange(nr_seeds), '', 'Nr. Seeds')
             sweep_points.update(hard_sweep_dict + [{}])
