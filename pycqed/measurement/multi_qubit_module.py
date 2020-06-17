@@ -3600,6 +3600,9 @@ def get_multi_qubit_msmt_suffix(qubits):
     :param qubits: list of QuDev_transmon instances.
     :return: string with the measurement label suffix
     """
+    # TODO: this was also added in Device. Remove from here when all the
+    # functions that call it have been upgraded to use the Device class
+    # (Steph 15.06.2020)
     qubit_names = [qb.name for qb in qubits]
     if len(qubit_names) == 1:
         msmt_suffix = qubits[0].msmt_suffix

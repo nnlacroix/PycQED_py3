@@ -491,17 +491,20 @@ class CircuitBuilder:
             sequential.extend(block.build())
         return sequential
 
-    def sweep_n_dim(self, body_block, sweep_points, cal_points=None,
-                 init_state='0', seq_name='Sequence', ro_kwargs=None,
-                 return_segments=False, **kw):
+    def sweep_n_dim(self, sweep_points, body_block=None, body_block_func=None,
+                    cal_points=None, init_state='0', seq_name='Sequence',
+                    ro_kwargs=None, return_segments=False, **kw):
         """
         Creates a sequence or a list of segments by doing an N-dim sweep
         over the given operations based on the sweep_points.
         Currently, only 1D and 2D sweeps are implemented.
 
+        :param sweep_points: SweepPoints object
         :param body_block: block containing the pulses to be swept (excluding
             initialization and readout)
-        :param sweep_points: SweepPoints object
+        :param body_block_func: a function that creates the body block at each
+            sweep point. Takes as arguments (jth_1d_sweep_point,
+            ith_2d_sweep_point, sweep_points, **kw)
         :param cal_points: CalibrationPoints object
         :param init_state: initialization state (string or list),
             see documentation of initialize().
@@ -509,8 +512,9 @@ class CircuitBuilder:
         :param ro_kwargs: Keyword arguments (dict) for the function
             mux_readout().
         :param return_segments: whether to return segments or the sequence
-        :param kw: keyword arguments (to allow pass through kw even if it
-            contains entries that are not needed)
+        :param kw: keyword arguments
+            body_block_func_kw (dict, default: {}): keyword arguments for the
+                body_block_func
         :return:
             - if return_segments==True:
                 1D: list of segments, number of 1d sweep points or
@@ -524,6 +528,10 @@ class CircuitBuilder:
         if sweep_dims > 2:
             raise NotImplementedError('Only 1D and 2D sweeps are implemented.')
 
+        if body_block is None and body_block_func is None:
+            raise ValueError('Please specify either "body_block" or '
+                             '"body_block_func."')
+
         if ro_kwargs is None:
             ro_kwargs = {}
 
@@ -536,13 +544,20 @@ class CircuitBuilder:
 
         prep = self.initialize(init_state=init_state)
         ro = self.mux_readout(**ro_kwargs)
-        segblock = self.sequential_blocks('segblock', [prep, body_block, ro])
 
         seqs = []
         for i in range(nr_sp_list[1]):
             this_seq_name = seq_name + (f'_{i}' if sweep_dims == 2 else '')
             seq = Sequence(this_seq_name)
             for j in range(nr_sp_list[0]):
+                if body_block is not None:
+                    segblock = self.sequential_blocks('segblock',
+                                                      [prep, body_block, ro])
+                else:
+                    this_body_block = body_block_func(
+                        j, i, sweep_points, **kw.get('body_block_func_kw', {}))
+                    segblock = self.sequential_blocks(
+                        'segblock', [prep, this_body_block, ro])
                 seq.add(Segment(f'seg{j}', segblock.build(
                     sweep_dicts_list=sweep_points, sweep_index_list=[j, i])))
             if cal_points is not None:

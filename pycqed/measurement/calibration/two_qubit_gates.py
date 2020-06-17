@@ -101,6 +101,8 @@ class CalibBuilder(CircuitBuilder):
             'preparation_params': self.get_prep_params(),
             'rotate': len(self.cal_states) != 0 and not self.classified,
             'sweep_points': self.sweep_points,
+            'meas_obj_value_names_map':
+                self.dev.get_meas_obj_value_names_map(self.ro_qubits, det_func),
             'ro_qubits': [qb.name for qb in self.ro_qubits]
         })
         if self.task_list is not None:
@@ -133,16 +135,19 @@ class CalibBuilder(CircuitBuilder):
                                            n_per_state=n_cal_points_per_state)
         return cp
 
-    def parallel_sweep(self, task_list, sweep_points, block_func, **kw):
+    def parallel_sweep(self, sweep_points, task_list=(), block_func=None,
+                       sweep_block_func=None, **kw):
         """
         Calls a block creation function for each task in a task list,
         puts these blocks in parallel and sweeps over the given sweep points.
 
+        :param sweep_points: SweepPoints object (or list of sweep_dicts)
         :param task_list: a list of dictionaries, each containing keyword
             arguments for block_func, plus a key 'prefix' with a unique
             prefix string
-        :param sweep_points: SweepPoints object (or list of sweep_dicts)
         :param block_func: a handle to a function that creates a block
+        :param sweep_block_func: a function that is passed to sweep_n_dim
+            as the argument body_block_func (see docstring there).
         :param kw: keyword arguments are passed to sweep_n_dim
         :return: see sweep_n_dim
         """
@@ -155,7 +160,6 @@ class CalibBuilder(CircuitBuilder):
                 task_qbs = self.find_qubits_in_tasks(self.qubits, [task])
                 prefix = '_'.join([qb.name for qb in task_qbs])
             prefix += ('_' if prefix[-1] != '_' else '')
-            # task.update({'builder': self})
             current_sweep_points = SweepPoints(from_dict_list=sweep_points)
             if 'sweep_points' in task:
                 current_sweep_points.update(
@@ -163,24 +167,28 @@ class CalibBuilder(CircuitBuilder):
                 params_to_prefix = [d.keys() for d in task['sweep_points']]
             else:
                 params_to_prefix = None
-
             task['sweep_points'] = current_sweep_points
-            if not 'block_func' in task:
-                task['block_func'] = block_func
-            new_block = task['block_func'](**task)
 
             if params_to_prefix is not None:
-                new_block.prefix_parametric_values(
-                    prefix, [k for l in params_to_prefix for k in l])
                 for d, u, params in zip(global_sweep_points,
                                         current_sweep_points,
                                         params_to_prefix):
                     for k in params:
                         d[prefix + k] = u[k]
 
-            parallel_blocks.append(new_block)
+            if not 'block_func' in task:
+                task['block_func'] = block_func
+            if task['block_func'] is not None:
+                new_block = task['block_func'](**task)
+                if params_to_prefix is not None:
+                    new_block.prefix_parametric_values(
+                        prefix, [k for l in params_to_prefix for k in l])
+                parallel_blocks.append(new_block)
 
-        all_main_blocks = self.simultaneous_blocks('all', parallel_blocks)
+        if len(parallel_blocks) > 0:
+            all_main_blocks = self.simultaneous_blocks('all', parallel_blocks)
+        else:
+            all_main_blocks = None
         if len(global_sweep_points[1]) == 0:
             # TODO add a fake soft sweep instead
             global_sweep_points = \
@@ -194,7 +202,8 @@ class CalibBuilder(CircuitBuilder):
         else:
             kw.update({'ro_kwargs': {'qb_names': [qb.name for qb in
                                                   self.ro_qubits]}})
-        return self.sweep_n_dim(all_main_blocks, global_sweep_points,
+        return self.sweep_n_dim(global_sweep_points, body_block=all_main_blocks,
+                                body_block_func=sweep_block_func,
                                 cal_points=self.cal_points, **kw)
 
     def max_pulse_length(self, pulse, sweep_points, given_pulse_length=None):
@@ -229,10 +238,13 @@ class CalibBuilder(CircuitBuilder):
     def get_ro_qubits(self, task_list=None):
         if task_list is None:
             task_list = self.task_list
+        if task_list is None:
+            task_list = [{}]
         ro_qubit_names = [task.get('qubits_to_measure', []) for
                           task in task_list]
-        # flatten
-        ro_qubit_names = [i for j in ro_qubit_names for i in j]
+        if any([not isinstance(qbn, str) for qbn in ro_qubit_names]):
+            # flatten
+            ro_qubit_names = [i for j in ro_qubit_names for i in j]
         # sort
         ro_qubit_names.sort()
         ro_qubits = self.get_qubits('all' if len(ro_qubit_names) == 0
@@ -323,7 +335,7 @@ class CPhase(CalibBuilder):
             sweep_points = self.add_default_sweep_points(sweep_points, **kw)
             self.cal_points = self.get_cal_points(**kw)
             self.sequences, sp = \
-                self.parallel_sweep(task_list, sweep_points, self.cphase_block,
+                self.parallel_sweep(sweep_points, task_list, self.cphase_block,
                                     **kw)
             self.hard_sweep_points, self.soft_sweep_points = sp
             self.exp_metadata.update({
@@ -539,7 +551,7 @@ class DynamicPhase(CalibBuilder):
                            self.basis_rot_pars.items()]
                 with temporary_value(*tmpvals):
                     self.sequences, sp = self.parallel_sweep(
-                        task_list, sweep_points, self.dynamic_phase_block, **kw)
+                        sweep_points, task_list, self.dynamic_phase_block, **kw)
                     self.hard_sweep_points = sp[0]
                     if len(sp) > 1:
                         self.soft_sweep_points = sp[1]
