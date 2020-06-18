@@ -57,6 +57,21 @@ class CalibBuilder(CircuitBuilder):
         self.exp_metadata.update(kw)
         self.exp_metadata.update({'classified_ro': self.classified})
 
+    def add_meas_objs_sweep_point(self, meas_objs, sweep_point):
+        if 'meas_obj_sweep_points_map' not in self.exp_metadata:
+            self.exp_metadata['meas_obj_sweep_points_map'] = {}
+        if not isinstance(meas_objs, list):
+            meas_objs = [meas_objs]
+        for mo in meas_objs:
+            if mo not in self.exp_metadata['meas_obj_sweep_points_map']:
+                self.exp_metadata['meas_obj_sweep_points_map'][mo] = []
+            self.exp_metadata['meas_obj_sweep_points_map'][mo].append(
+                sweep_point)
+
+    def get_meas_objs_from_task(self, task):
+        qubits = self.find_qubits_in_tasks(self.qubits, [task])
+        return [qb.name for qb in qubits]
+
     def run_measurement(self, **kw):
         # only measure ro_qubits
         for qb in self.ro_qubits:
@@ -135,7 +150,8 @@ class CalibBuilder(CircuitBuilder):
             n_per_state=n_cal_points_per_state)
         self.exp_metadata.update({'cal_points': repr(self.cal_points)})
 
-    def preprocess_task(self, task, global_sweep_points=None, **kw):
+    def preprocess_task(self, task, global_sweep_points, sweep_points=None,
+                        **kw):
         task = copy(task)  # no deepcopy: might contain qubit objects
         prefix = task.get('prefix', None)
         if prefix is None:  # try to guess one based on contained qubits
@@ -143,24 +159,30 @@ class CalibBuilder(CircuitBuilder):
             prefix = '_'.join([qb.name for qb in task_qbs])
         prefix += ('_' if prefix[-1] != '_' else '')
         task['prefix'] = prefix
+        mo = self.get_meas_objs_from_task(task)
 
-        if global_sweep_points is not None:
-            current_sweep_points = deepcopy(global_sweep_points)
-            if 'sweep_points' in task:
-                current_sweep_points.update(
-                    SweepPoints(from_dict_list=task['sweep_points']))
-                params_to_prefix = [d.keys() for d in task['sweep_points']]
-            else:
-                params_to_prefix = None
-            task['sweep_points'] = current_sweep_points
+        if sweep_points is None:
+            sweep_points = [{}, {}]
 
-            if params_to_prefix is not None:
-                task['params_to_prefix'] = params_to_prefix
-                for d, u, params in zip(global_sweep_points,
-                                        current_sweep_points,
-                                        params_to_prefix):
-                    for k in params:
-                        d[prefix + k] = u[k]
+        current_sweep_points = SweepPoints(from_dict_list=sweep_points)
+        if 'sweep_points' in task:
+            current_sweep_points.update(
+                SweepPoints(from_dict_list=task['sweep_points']))
+            params_to_prefix = [d.keys() for d in task['sweep_points']]
+            task['params_to_prefix'] = params_to_prefix
+        else:
+            params_to_prefix = [[], []]
+        task['sweep_points'] = current_sweep_points
+
+        for gsp, csp, params in zip(global_sweep_points,
+                                current_sweep_points,
+                                params_to_prefix):
+            for k in csp.keys():
+                if k in params:
+                    gsp[prefix + k] = csp[k]
+                    self.add_meas_objs_sweep_point(mo, prefix + k)
+                else:
+                    self.add_meas_objs_sweep_point(mo, k)
         return task
 
     def parallel_sweep(self, sweep_points, task_list=(), block_func=None, **kw):
@@ -179,7 +201,7 @@ class CalibBuilder(CircuitBuilder):
         global_sweep_points = SweepPoints(from_dict_list=sweep_points)
         parallel_blocks = []
         for task in task_list:
-            task = self.preprocess_task(task, global_sweep_points)
+            task = self.preprocess_task(task, global_sweep_points, sweep_points)
             prefix = task.pop('prefix')
             params_to_prefix = task.pop('params_to_prefix', None)
 
@@ -442,6 +464,9 @@ class CPhase(CalibBuilder):
             for t in self.task_list:
                 self.label += f"_{t['qbl']}{t['qbr']}"
 
+    def get_meas_objs_from_task(self, task):
+        return [task['qbl'], task['qbr']]
+
     def run_analysis(self, **kw):
         plot_all_traces = kw.get('plot_all_traces', True)
         plot_all_probs = kw.get('plot_all_probs', True)
@@ -658,6 +683,9 @@ class DynamicPhase(CalibBuilder):
         self.data_to_fit.update({qb: 'pe' for qb in qubits_to_measure})
         return self.sequential_blocks(
             f"dynphase {'_'.join(qubits_to_measure)}", [pb, ir, fp, fr])
+
+    def get_meas_objs_from_task(self, task):
+        return task['qubits_to_measure']
 
     def run_analysis(self, **kw):
         extract_only = kw.pop('extract_only', False)
