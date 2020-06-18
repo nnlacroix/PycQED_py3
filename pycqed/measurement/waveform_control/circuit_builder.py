@@ -532,7 +532,7 @@ class CircuitBuilder:
         if sweep_dims > 2:
             raise NotImplementedError('Only 1D and 2D sweeps are implemented.')
 
-        if body_block is None and body_block_func is None:
+        if sum([x is None for x in [body_block, body_block_func]]) != 1:
             raise ValueError('Please specify either "body_block" or '
                              '"body_block_func."')
 
