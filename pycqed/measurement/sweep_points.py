@@ -82,6 +82,11 @@ class SweepPoints(list):
             returned dictionary. These are the measured object names
         :return: {keys[k]: list(d)[k] for d in self for k in measured_objects}
         """
+        if not isinstance(measured_objects, list):
+            measured_objects = [measured_objects]
+        for i, mobj in enumerate(measured_objects):
+            if hasattr(mobj, 'name'):
+                measured_objects[i] = mobj.name
 
         if len(measured_objects) != len(self[0]):
             raise ValueError('The number of keys and number of sweep '

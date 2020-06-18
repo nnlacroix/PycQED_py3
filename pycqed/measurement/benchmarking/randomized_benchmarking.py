@@ -22,8 +22,9 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             dimension describing the seeds and second dimension the cliffords
             Ex: [{'seeds': (array([0, 1, 2, 3]), '', 'Nr. Seeds')},
                  {'cliffords': ([0, 4, 10], '', 'Nr. Cliffords')}]
-            If only it contains only one sweep dimension, this must be the
+            If it contains only one sweep dimension, this must be the
             cliffords. The seeds will be added automatically.
+            If this parameter is provided it will be used for all qubits.
         :param qubits: list of QuDev_transmon class instances
         :param nr_seeds: int specifying the number of times the Clifford
             group should be sampled for each Clifford sequence length.

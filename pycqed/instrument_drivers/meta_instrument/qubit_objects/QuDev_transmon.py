@@ -3562,14 +3562,19 @@ class QuDev_transmon(Qubit):
         MC.set_detector_function(self.int_avg_det)
         if exp_metadata is None:
             exp_metadata = {}
-        exp_metadata.update({
-                            #  'sweep_points_dict': {self.name: amplitudes if\
-                            #                        freqs is None else freqs},
-                             'amplitudes': amplitudes,
+        # create SweepPoints
+        sp = SweepPoints(f'{self.name}_pulse_length', flux_lengths, 's',
+                         'Flux pulse length')
+        sp.add_sweep_dimension()
+        sp.add_sweep_parameter(f'{self.name}_amplitude', amplitudes, 'V',
+                               'Flux pulse amplitude')
+        if freqs is not None:
+            sp.add_sweep_parameter(f'{self.name}_qubit_freqs', freqs, 'Hz',
+                                   'Qubit frequency')
+        exp_metadata.update({'sweep_points': sp,
+                             'meas_obj_sweep_points_map':
+                                 sp.get_meas_obj_sweep_points_map(self.name),
                              'preparation_params': prep_params,
-                             'frequencies': freqs,
-                             'flux_lengths': flux_lengths,
-                             'use_cal_points': cal_points,
                              'cal_points': repr(cp),
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},

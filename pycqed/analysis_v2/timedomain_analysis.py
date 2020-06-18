@@ -3350,20 +3350,42 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
                     'color': 'red'
                 }
 
+
 class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):
         super().process_data()
 
         pdd = self.proc_data_dict
         nr_cp = self.num_cal_points
-        nr_amps = len(self.metadata['amplitudes'])
-        nr_lengths = len(self.metadata['flux_lengths'])
+        self.lengths = OrderedDict()
+        self.amps = OrderedDict()
+        self.freqs = OrderedDict()
+        for qbn in self.qb_names:
+            len_key = [pn for pn in self.mospm[qbn] if 'pulse_length' in pn]
+            if len(len_key) == 0:
+                raise KeyError('Couldn"t find sweep points corresponding to '
+                               'flux pulse length.')
+            self.lengths[qbn] = self.sp[0][len_key][0]
+
+            amp_key = [pn for pn in self.mospm[qbn] if 'amplitude' in pn]
+            if len(len_key) == 0:
+                raise KeyError('Couldn"t find sweep points corresponding to '
+                               'flux pulse amplitude.')
+            self.amps[qbn] = self.sp[1][amp_key][0]
+
+            freq_key = [pn for pn in self.mospm[qbn] if 'freq' in pn]
+            if len(freq_key) == 0:
+                self.freqs[qbn] = None
+            else:
+                self.freqs[qbn] = self.sp[1][freq_key][0]
+
+        nr_amps = len(self.amps)
+        nr_lengths = len(self.lengths)
 
         # make matrix out of vector
-        data_reshaped_no_cp = {qb: \
-            np.reshape(deepcopy(pdd['data_to_fit'][qb]\
-                [:len(pdd['data_to_fit'][qb])-nr_cp]),(\
-                nr_amps,nr_lengths)) for qb in self.qb_names}
+        data_reshaped_no_cp = {qb: np.reshape(deepcopy(
+                pdd['data_to_fit'][qb][:len(pdd['data_to_fit'][qb])-nr_cp]),
+                (nr_amps, nr_lengths)) for qb in self.qb_names}
 
         pdd['data_reshaped_no_cp'] = data_reshaped_no_cp
 
@@ -3376,7 +3398,7 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
             for i, data in enumerate(pdd['data_reshaped_no_cp'][qb]):
                 self.fit_dicts[f'exp_fit_{qb}_amp_{i}'] = {
                     'model': exp_mod,
-                    'fit_xvals': {'x': self.metadata['flux_lengths']},
+                    'fit_xvals': {'x': self.lengths[qb]},
                     'fit_yvals': {'data': data}}
 
     def analyze_fit_results(self):
@@ -3389,14 +3411,14 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
         for qb in self.qb_names:
             pdd['T1'][qb] = np.array([
                 abs(self.fit_res[f'exp_fit_{qb}_amp_{i}'].best_values['decay'])
-                for i in range(len(self.metadata['amplitudes']))])
+                for i in range(len(self.amps[qb]))])
 
             pdd['T1_err'][qb] = np.array([
                 self.fit_res[f'exp_fit_{qb}_amp_{i}'].params['decay'].stderr
-                for i in range(len(self.metadata['amplitudes']))])
+                for i in range(len(self.amps[qb]))])
 
             pdd['mask'][qb] = []
-            for i in range(len(self.metadata['amplitudes'])):
+            for i in range(len(self.amps[qb])):
                 try:
                     if pdd['T1_err'][qb][i] < 10 * pdd['T1'][qb][i]:
                         pdd['mask'][qb].append(True)
@@ -3414,22 +3436,19 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
             # Plot T1 vs flux pulse amplitude
             mask = pdd['mask'][qb]
             label = f'T1_fit_{qb}'
-            xvals = self.metadata['amplitudes'][mask] if \
-                self.metadata['frequencies'] is None else \
-                self.metadata['frequencies'][mask]
-            xlabel = r'Flux pulse amplitude' if \
-                self.metadata['frequencies'] is None else \
+            xvals = self.amps[qb][mask] if self.freqs[qb] is None else \
+                self.freqs[qb][mask]
+            xlabel = r'Flux pulse amplitude' if self.freqs[qb] is None else \
                 r'Derived qubit frequency'
             self.plot_dicts[label] = {
-                'title': rdd['measurementstring'] +
-                            '\n' + rdd['timestamp'],
+                'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
                 'plotfn': self.plot_line,
                 'linestyle': '-',
                 'xvals': xvals,
                 'yvals': pdd['T1'][qb][mask],
                 'yerr': pdd['T1_err'][qb][mask],
                 'xlabel': xlabel,
-                'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
+                'xunit': 'V' if self.freqs[qb] is None else 'Hz',
                 'ylabel': r'T1',
                 'yunit': 's',
                 'color': 'blue',
@@ -3438,22 +3457,19 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
             # Plot rotated integrated average in dependece of flux pulse
             # amplitude and length
             label = f'T1_color_plot_{qb}'
-            xvals = self.metadata['amplitudes'][mask] if \
-                self.metadata['frequencies'] is None else \
-                self.metadata['frequencies'][mask]
-            xlabel = r'Flux pulse amplitude' if \
-                self.metadata['frequencies'] is None else \
+            xvals = self.amps[qb][mask] if self.freqs[qb] is None else \
+                self.freqs[qb][mask]
+            xlabel = r'Flux pulse amplitude' if self.freqs[qb] is None else \
                 r'Derived qubit frequency'
             self.plot_dicts[label] = {
-                'title': rdd['measurementstring'] +
-                            '\n' + rdd['timestamp'],
+                'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
                 'plotfn': self.plot_colorxy,
                 'linestyle': '-',
                 'xvals': xvals,
-                'yvals': self.metadata['flux_lengths'],
+                'yvals': self.lengths[qb],
                 'zvals': np.transpose(pdd['data_reshaped_no_cp'][qb]),
                 'xlabel': xlabel,
-                'xunit': 'V' if self.metadata['frequencies'] is None else 'Hz',
+                'xunit': 'V' if self.freqs[qb] is None else 'Hz',
                 'ylabel': r'Flux pulse length',
                 'yunit': 's',
                 'zlabel': r'Excited state population'
@@ -3464,15 +3480,14 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 continue
 
             colormap = self.options_dict.get('colormap', mpl.cm.plasma)
-            for i in range(len(self.metadata['amplitudes'])):
-                color = colormap(i/(len(self.metadata['frequencies'])-1))
+            for i in range(len(self.amps[qb])):
+                color = colormap(i/(len(self.amps[qb])-1))
                 label = f'exp_fit_{qb}_amp_{i}'
-                freqs = self.metadata['frequencies'] is not None
-                fitid = self.metadata.get('frequencies',
-                                          self.metadata['amplitudes'])[i]
+                freqs = self.freqs[qb] is not None
+                fitid = (self.amps[qb] if self.freqs[qb] is None
+                         else self.freqs[qb])[i]
                 self.plot_dicts[label] = {
-                    'title': rdd['measurementstring'] +
-                            '\n' + rdd['timestamp'],
+                    'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
                     'ax_id': f'T1_fits_{qb}',
                     'xlabel': r'Flux pulse length',
                     'xunit': 's',
@@ -3492,7 +3507,7 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 self.plot_dicts[label] = {
                     'ax_id': f'T1_fits_{qb}',
                     'plotfn': self.plot_line,
-                    'xvals': self.metadata['flux_lengths'],
+                    'xvals': self.lengths[qb],
                     'linestyle': '',
                     'yvals': pdd['data_reshaped_no_cp'][qb][i,:],
                     'color': color,

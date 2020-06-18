@@ -20,65 +20,89 @@ import logging
 log = logging.getLogger(__name__)
 
 
-class T1FrequencySweep(CalibBuilder):
+class T1FluxPulseSweep(CalibBuilder):
     def __init__(self, dev, task_list=None, sweep_points=None,
                  qubits=None, **kw):
         """
 
-        :param dev:
-        :param task_list:
-        :param sweep_points:
-        :param qubits:
-        :param kw:
+        :param dev: instance of Device class; see CalibBuilder docstring
+        :param task_list: list of dicts; see CalibBuilder docstring
+        :param sweep_points: SweepPoints class instance with first sweep
+            dimension describing the flux pulse lengths and second dimension
+            either the flux pulse amplitudes, qubit frequencies, or both.
+            !!! If both amplitudes and frequencies are provided, they must be
+            be specified in the order amplitudes, frequencies as shown:
+            [{'pulse_length': (lengths, 's', 'Flux pulse length')},
+             {'flux_pulse_amp': (amps, 'V', 'Flux pulse amplitude'),
+              'qubit_freqs': (freqs, 'Hz', 'Qubit frequency')}]
+            If this parameter is provided it will be used for all qubits.
+        :param qubits: list of QuDev_transmon class instances
+        :param kw: keyword arguments
+            for_ef (bool, default: False): passed to get_cal_points; see
+                docstring there.
+            spectator_op_codes (list, default: []): see t1_flux_pulse_block
+            all_fits (bool, default: True) passed to run_analysis; see
+                docstring there
 
         Assumptions:
          - assumes there is one task for each qubit. If task_list is None, it
           will internally create it.
+         - the entry "qubits_to_measure" in each task should contain one qubit
+         name.
 
         """
-        # try:
-        if task_list is None:
-            if sweep_points is None or qubits is None:
-                raise ValueError('Please provide either "sweep_points" '
-                                 'and "qubits," or "task_list" containing '
-                                 'this information.')
-            task_list = [{'qubits_to_measure': qb.name,
-                          'sweep_points': sweep_points} for qb in qubits]
-        if qubits is None:
-            qubits = self.find_qubits_in_tasks(dev.qubits(), task_list)
-        super().__init__(dev, qubits=qubits, **kw)
+        try:
+            if task_list is None:
+                if sweep_points is None or qubits is None:
+                    raise ValueError('Please provide either "sweep_points" '
+                                     'and "qubits," or "task_list" containing '
+                                     'this information.')
+                task_list = [{'qubits_to_measure': qb.name,
+                              'sweep_points': sweep_points} for qb in qubits]
+            if qubits is None:
+                qubits = self.find_qubits_in_tasks(dev.qubits(), task_list)
+            super().__init__(dev, qubits=qubits, **kw)
 
-        self.analysis = None
-        task_list = self.add_amplitude_sweep_points(task_list)
-        self.task_list = task_list
-        self.ro_qubits = self.get_ro_qubits()
-        self.guess_label(**kw)
-        self.data_to_fit = {qb.name: 'pe' for qb in self.ro_qubits}
-        for_ef = kw.get('for_ef', False)
-        kw['for_ef'] = for_ef
-        self.cal_points = self.get_cal_points(**kw)
-        sweep_points = SweepPoints(from_dict_list=[{}, {}])
-        self.sequences, sp = \
-            self.parallel_sweep(sweep_points, self.task_list,
-                                self.t1_flux_pulse_block, **kw)
-        self.hard_sweep_points, self.soft_sweep_points = sp
-        self.exp_metadata.update({
-            'data_to_fit': self.data_to_fit,
-            'global_PCA': len(self.cal_points.states) == 0
-        })
+            self.analysis = None
+            task_list = self.add_amplitude_sweep_points(task_list)
+            self.task_list = task_list
+            self.ro_qubits = self.get_ro_qubits()
+            self.guess_label(**kw)
+            self.data_to_fit = {qb.name: 'pe' for qb in self.ro_qubits}
+            for_ef = kw.get('for_ef', False)
+            kw['for_ef'] = for_ef
+            self.cal_points = self.get_cal_points(**kw)
+            sweep_points = SweepPoints(from_dict_list=[{}, {}])
+            self.sequences, sp = \
+                self.parallel_sweep(sweep_points, self.task_list,
+                                    self.t1_flux_pulse_block, **kw)
+            self.hard_sweep_points, self.soft_sweep_points = sp
+            self.exp_metadata.update({
+                'data_to_fit': self.data_to_fit,
+                'global_PCA': len(self.cal_points.states) == 0
+            })
 
-        if self.measure:
-            # compress the 2nd sweep dimension completely onto the first
-            self.run_measurement(
-                compression_seg_lim=np.product([len(s) for s in sp]) +
-                                    len(self.cal_points.states), **kw)
-        if self.analyze:
-            self.run_analysis(**kw)
-        # except Exception as x:
-        #     self.exception = x
-        #     traceback.print_exc()
+            if self.measure:
+                # compress the 2nd sweep dimension completely onto the first
+                self.run_measurement(
+                    compression_seg_lim=np.product([len(s) for s in sp]) +
+                                        len(self.cal_points.states), **kw)
+            if self.analyze:
+                self.run_analysis(**kw)
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
 
     def add_amplitude_sweep_points(self, task_list):
+        """
+        If flux pulse amplitudes are not in the sweep_points in each task, but
+        qubit frequencies are, then amplitudes will be calculated based on
+        the frequencies and the fit_ge_freq_from_flux_pulse_amp qubit parameter.
+        sweep_points entry in each task_list will be updated.
+        :param task_list: list of dictionaries describing the the measurement
+            for each qubit.
+        :return: updated task list
+        """
         for task in task_list:
             this_qb = self.get_qubits(task['qubits_to_measure'])[0][0]
             sweep_points = task['sweep_points']
@@ -112,24 +136,21 @@ class T1FrequencySweep(CalibBuilder):
             task['sweep_points'] = sweep_points
         return task_list
 
-    def add_default_sweep_points(self, sweep_points, **kw):
-        sweep_points = self.add_default_ramsey_sweep_points(sweep_points, **kw)
-        nr_phases = len(list(sweep_points[0].values())[0][0]) // 2
-        hard_sweep_dict = SweepPoints(
-            'pi_pulse_off', [0] * nr_phases + [1] * nr_phases)
-        sweep_points.update(hard_sweep_dict + [{}])
-        return sweep_points
-
     def t1_flux_pulse_block(self, qubits_to_measure, sweep_points,
                             prepend_pulse_dicts=None, **kw):
         """
-        TODO
-        :param cz_pulse_name: task-specific prefix of CZ gates (overwrites
-            global choice passed to the class init)
-        ...
+        Function that constructs the experiment block for one qubit
+        :param qubits_to_measure: name or list with the name of the qubit
+            to measure. This function expect only one qubit to measure!
+        :param sweep_points: SweepPoints class instance
+        :param prepend_pulse_dicts: dictionary of pulses to prepend
+        :param kw: keyword arguments
+            spectator_op_codes: list of op_codes for spectator qubits
+        :return: precompiled block
         """
 
-        qubit_name = qubits_to_measure
+        if isinstance(qubits_to_measure, list):
+            qubit_name = qubits_to_measure[0]
         hard_sweep_dict, soft_sweep_dict = sweep_points
         pb = self.prepend_pulses_block(prepend_pulse_dicts)
 
@@ -159,11 +180,22 @@ class T1FrequencySweep(CalibBuilder):
                                       [pb, pp, fp])
 
     def guess_label(self, **kw):
+        """
+        Default measurement label.
+        :param kw: keyword arguments (to allow pass through kw even if it
+            contains entries that are not needed)
+        """
         if self.label is None:
             self.label = f'T1_frequency_sweep' \
                          f'{self.dev.get_msmt_suffix(self.ro_qubits)}'
 
     def run_analysis(self, **kw):
+        """
+        Runs analysis and stores analysis instance in self.analysis.
+        :param kw:
+            all_fits (bool, default: True): whether to do all fits
+        """
+
         self.all_fits = kw.get('all_fits', True)
         self.analysis = tda.T1FrequencySweepAnalysis(
             qb_names=[qb.name for qb in self.ro_qubits],
