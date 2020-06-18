@@ -193,16 +193,17 @@ class CalibBuilder(CircuitBuilder):
 
         all_main_blocks = self.simultaneous_blocks('all', parallel_blocks)
         if len(global_sweep_points[1]) == 0:
-            # TODO add a fake soft sweep instead
-            global_sweep_points = \
-                SweepPoints(from_dict_list=[global_sweep_points[0]])
+            # with this dummy soft sweep, exactly one sequence will be created
+            # and the data format will be the same as for a true soft sweep
+            global_sweep_points.add_sweep_parameter('dummy_sweep_param', [0])
         self.sweep_points = global_sweep_points
         # only measure ro_qubits
         kw.update({'ro_qubits': [qb.name for qb in self.ro_qubits]})
         return self.sweep_n_dim(global_sweep_points, body_block=all_main_blocks,
                                 cal_points=self.cal_points, **kw)
 
-    def max_pulse_length(self, pulse, sweep_points, given_pulse_length=None):
+    def max_pulse_length(self, pulse, sweep_points=None,
+                         given_pulse_length=None):
         pulse = copy(pulse)
         pulse['element_name'] = 'tmp'
 
@@ -212,6 +213,15 @@ class CalibBuilder(CircuitBuilder):
             return p.pulse_obj.length
 
         b = Block('tmp', [pulse])
+        sweep_points = deepcopy(sweep_points)
+        if sweep_points is None:
+            sweep_points = SweepPoints(from_dict_list=[{}, {}])
+        if len(sweep_points) == 1:
+            sweep_points.add_sweep_dimension()
+        for i in range(len(sweep_points)):
+            if len(sweep_points[i]) == 0:
+                sweep_points[i].update({'dummy': ([0], '', 'dummy')})
+
         nr_sp_list = [len(list(d.values())[0][0]) for d in sweep_points]
         max_length = 0
         for i in range(nr_sp_list[1]):
