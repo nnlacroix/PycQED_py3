@@ -61,7 +61,6 @@ class T1FrequencySweep(CalibBuilder):
         self.sequences, sp = \
             self.parallel_sweep(sweep_points, self.task_list,
                                 self.t1_flux_pulse_block, **kw)
-        # self.append_qubit_freq_sweep_points()
         self.hard_sweep_points, self.soft_sweep_points = sp
         self.exp_metadata.update({
             'data_to_fit': self.data_to_fit,
@@ -78,15 +77,6 @@ class T1FrequencySweep(CalibBuilder):
         # except Exception as x:
         #     self.exception = x
         #     traceback.print_exc()
-    #
-    # def append_qubit_freq_sweep_points(self):
-    #     for task in self.task_list:
-    #         if 'freq_sweep_dict' in task:
-    #             param_name = next(iter(task['freq_sweep_dict']))
-    #             freq_sweep_dict = SweepPoints(
-    #                 task['prefix'] + param_name,
-    #                 *list(task['freq_sweep_dict'][param_name]))
-    #             self.sweep_points.update([{}] + freq_sweep_dict)
 
     def add_amplitude_sweep_points(self, task_list):
         for task in task_list:
@@ -118,8 +108,6 @@ class T1FrequencySweep(CalibBuilder):
                                      'amplitude. Check frequency range!')
                 amp_sweep_points = SweepPoints('amplitude', amplitudes,
                                                'V', 'Flux pulse amplitude')
-                # sweep_points = SweepPoints(from_dict_list=[sweep_points[0]] +
-                #                                           amp_sweep_points)
                 sweep_points.update([{}] + amp_sweep_points)
             task['sweep_points'] = sweep_points
         return task_list
@@ -158,10 +146,14 @@ class T1FrequencySweep(CalibBuilder):
             if k in fp.pulses[0]:
                 if fp.pulses[0][k] not in self.channels_to_upload:
                     self.channels_to_upload.append(fp.pulses[0][k])
-        for hk, sk in zip(hard_sweep_dict, soft_sweep_dict):
+        for k in hard_sweep_dict:
             for p in fp.pulses:
-                p[hk] = ParametricValue(hk)
-                p[sk] = ParametricValue(sk)
+                if k in p:
+                    p[k] = ParametricValue(k)
+        for k in soft_sweep_dict:
+            for p in fp.pulses:
+                if k in p:
+                    p[k] = ParametricValue(k)
 
         return self.sequential_blocks(f't1 flux pulse {qubit_name}',
                                       [pb, pp, fp])
