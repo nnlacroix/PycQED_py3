@@ -19,13 +19,11 @@ class CalibrationPoints:
         self.states = states
         default_map = dict(g=['I '], e=["X180 "], f=['X180 ', "X180_ef "])
         self.pulse_label_map = kwargs.get("pulse_label_map", default_map)
-        self.prep_params = None
 
     def create_segments(self, operation_dict, pulse_modifs=dict(),
                         segment_prefix='calibration_',
                         **prep_params):
         segments = []
-        self.prep_params = prep_params
 
         for i, seg_states in enumerate(self.states):
             pulse_list = []

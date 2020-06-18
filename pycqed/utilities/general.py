@@ -128,7 +128,7 @@ def mopen(filename, mode='w'):
 
 
 def dict_to_ordered_tuples(dic):
-    # Convert a dictionary to a list of tuples, sorted by key.
+    '''Convert a dictionary to a list of tuples, sorted by key.'''
     if dic is None:
         return []
     keys = dic.keys()
