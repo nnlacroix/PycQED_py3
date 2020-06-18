@@ -135,32 +135,17 @@ class CalibBuilder(CircuitBuilder):
             n_per_state=n_cal_points_per_state)
         self.exp_metadata.update({'cal_points': repr(self.cal_points)})
 
-    def parallel_sweep(self, sweep_points, task_list=(), block_func=None,
-                       sweep_block_func=None, **kw):
-        """
-        Calls a block creation function for each task in a task list,
-        puts these blocks in parallel and sweeps over the given sweep points.
+    def preprocess_task(self, task, global_sweep_points=None, **kw):
+        task = copy(task)  # no deepcopy: might contain qubit objects
+        prefix = task.get('prefix', None)
+        if prefix is None:  # try to guess one based on contained qubits
+            task_qbs = self.find_qubits_in_tasks(self.qubits, [task])
+            prefix = '_'.join([qb.name for qb in task_qbs])
+        prefix += ('_' if prefix[-1] != '_' else '')
+        task['prefix'] = prefix
 
-        :param sweep_points: SweepPoints object (or list of sweep_dicts)
-        :param task_list: a list of dictionaries, each containing keyword
-            arguments for block_func, plus a key 'prefix' with a unique
-            prefix string
-        :param block_func: a handle to a function that creates a block
-        :param sweep_block_func: a function that is passed to sweep_n_dim
-            as the argument body_block_func (see docstring there).
-        :param kw: keyword arguments are passed to sweep_n_dim
-        :return: see sweep_n_dim
-        """
-        global_sweep_points = SweepPoints(from_dict_list=sweep_points)
-        parallel_blocks = []
-        for this_task in task_list:
-            task = copy(this_task)  # no deepcopy: might qubit objects
-            prefix = task.pop('prefix', None)
-            if prefix is None:  # try to guess one based on contained qubits
-                task_qbs = self.find_qubits_in_tasks(self.qubits, [task])
-                prefix = '_'.join([qb.name for qb in task_qbs])
-            prefix += ('_' if prefix[-1] != '_' else '')
-            current_sweep_points = SweepPoints(from_dict_list=sweep_points)
+        if global_sweep_points is not None:
+            current_sweep_points = deepcopy(global_sweep_points)
             if 'sweep_points' in task:
                 current_sweep_points.update(
                     SweepPoints(from_dict_list=task['sweep_points']))
@@ -170,25 +155,43 @@ class CalibBuilder(CircuitBuilder):
             task['sweep_points'] = current_sweep_points
 
             if params_to_prefix is not None:
+                task['params_to_prefix'] = params_to_prefix
                 for d, u, params in zip(global_sweep_points,
                                         current_sweep_points,
                                         params_to_prefix):
                     for k in params:
                         d[prefix + k] = u[k]
+        return task
+
+    def parallel_sweep(self, sweep_points, task_list=(), block_func=None, **kw):
+        """
+        Calls a block creation function for each task in a task list,
+        puts these blocks in parallel and sweeps over the given sweep points.
+
+        :param sweep_points: SweepPoints object (or list of sweep_dicts)
+        :param task_list: a list of dictionaries, each containing keyword
+            arguments for block_func, plus a key 'prefix' with a unique
+            prefix string
+        :param block_func: a handle to a function that creates a block
+        :param kw: keyword arguments are passed to sweep_n_dim
+        :return: see sweep_n_dim
+        """
+        global_sweep_points = SweepPoints(from_dict_list=sweep_points)
+        parallel_blocks = []
+        for task in task_list:
+            task = self.preprocess_task(task, global_sweep_points)
+            prefix = task.pop('prefix')
+            params_to_prefix = task.pop('params_to_prefix', None)
 
             if not 'block_func' in task:
                 task['block_func'] = block_func
-            if task['block_func'] is not None:
-                new_block = task['block_func'](**task)
-                if params_to_prefix is not None:
-                    new_block.prefix_parametric_values(
-                        prefix, [k for l in params_to_prefix for k in l])
-                parallel_blocks.append(new_block)
+            new_block = task['block_func'](**task)
+            if params_to_prefix is not None:
+                new_block.prefix_parametric_values(
+                    prefix, [k for l in params_to_prefix for k in l])
+            parallel_blocks.append(new_block)
 
-        if len(parallel_blocks) > 0:
-            all_main_blocks = self.simultaneous_blocks('all', parallel_blocks)
-        else:
-            all_main_blocks = None
+        all_main_blocks = self.simultaneous_blocks('all', parallel_blocks)
         if len(global_sweep_points[1]) == 0:
             # TODO add a fake soft sweep instead
             global_sweep_points = \
@@ -197,7 +200,6 @@ class CalibBuilder(CircuitBuilder):
         # only measure ro_qubits
         kw.update({'ro_qubits': [qb.name for qb in self.ro_qubits]})
         return self.sweep_n_dim(global_sweep_points, body_block=all_main_blocks,
-                                body_block_func=sweep_block_func,
                                 cal_points=self.cal_points, **kw)
 
     def max_pulse_length(self, pulse, sweep_points, given_pulse_length=None):

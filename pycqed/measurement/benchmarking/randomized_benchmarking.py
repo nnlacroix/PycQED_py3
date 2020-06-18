@@ -95,10 +95,14 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             cal_states = kw.get('cal_states', '')
             kw['cal_states'] = cal_states
             self.create_cal_points(**kw)
-            sweep_points = SweepPoints(from_dict_list=[{}, {}])
-            self.sequences, sp = \
-                self.parallel_sweep(sweep_points, task_list=self.task_list,
-                                    sweep_block_func=self.rb_block, **kw)
+            self.sweep_points = SweepPoints(from_dict_list=[{}, {}])
+            for task in task_list:
+                self.preprocess_task(task, self.sweep_points)
+            kw.update({'ro_qubits': [qb.name for qb in self.ro_qubits]})
+            self.sequences, sp = self.sweep_n_dim(
+                self.sweep_points, body_block=None,
+                body_block_func=self.rb_block, cal_points=self.cal_points,
+                **kw)
             self.hard_sweep_points, self.soft_sweep_points = sp
             self.exp_metadata.update({
                 'meas_obj_sweep_points_map':
