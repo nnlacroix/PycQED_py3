@@ -20,10 +20,18 @@ import logging
 log = logging.getLogger(__name__)
 
 
-class T1FluxPulseSweep(CalibBuilder):
+class T1FrequencySweep(CalibBuilder):
     def __init__(self, dev, task_list=None, sweep_points=None,
                  qubits=None, **kw):
         """
+        Flux pulse amplitude measurement used to determine the qubits energy in
+        dependence of flux pulse amplitude.
+
+        Timings of sequence
+
+       |          ---|X180|  ------------------------------|RO|
+       |          --------| --------- fluxpulse ---------- |
+
 
         :param dev: instance of Device class; see CalibBuilder docstring
         :param task_list: list of dicts; see CalibBuilder docstring
