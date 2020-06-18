@@ -196,12 +196,7 @@ class CalibBuilder(CircuitBuilder):
         self.sweep_points = global_sweep_points
         self.exp_metadata.update({'cal_points': repr(self.cal_points)})
         # only measure ro_qubits
-        if 'ro_kwargs' in kw:
-            kw['ro_kwargs'].update({'qb_names': [qb.name for qb in
-                                                 self.ro_qubits]})
-        else:
-            kw.update({'ro_kwargs': {'qb_names': [qb.name for qb in
-                                                  self.ro_qubits]}})
+        kw.update({'ro_qubits': [qb.name for qb in self.ro_qubits]})
         return self.sweep_n_dim(global_sweep_points, body_block=all_main_blocks,
                                 body_block_func=sweep_block_func,
                                 cal_points=self.cal_points, **kw)
