@@ -113,8 +113,8 @@ class CalibBuilder(CircuitBuilder):
         else:
             self.MC.run(self.label, exp_metadata=self.exp_metadata)
 
-    def get_cal_points(self, n_cal_points_per_state=1, cal_states='auto',
-                       for_ef=True, **kw):
+    def create_cal_points(self, n_cal_points_per_state=1, cal_states='auto',
+                          for_ef=True, **kw):
         """
         Creates a CalibrationPoints object based on the given parameters.
 
@@ -130,10 +130,10 @@ class CalibBuilder(CircuitBuilder):
         """
         self.cal_states = CalibrationPoints.guess_cal_states(cal_states,
                                                         for_ef=for_ef)
-        cp = CalibrationPoints.multi_qubit([qb.name for qb in self.ro_qubits],
-                                           self.cal_states,
-                                           n_per_state=n_cal_points_per_state)
-        return cp
+        self.cal_points = CalibrationPoints.multi_qubit(
+            [qb.name for qb in self.ro_qubits], self.cal_states,
+            n_per_state=n_cal_points_per_state)
+        self.exp_metadata.update({'cal_points': repr(self.cal_points)})
 
     def parallel_sweep(self, sweep_points, task_list=(), block_func=None,
                        sweep_block_func=None, **kw):
@@ -194,7 +194,6 @@ class CalibBuilder(CircuitBuilder):
             global_sweep_points = \
                 SweepPoints(from_dict_list=[global_sweep_points[0]])
         self.sweep_points = global_sweep_points
-        self.exp_metadata.update({'cal_points': repr(self.cal_points)})
         # only measure ro_qubits
         kw.update({'ro_qubits': [qb.name for qb in self.ro_qubits]})
         return self.sweep_n_dim(global_sweep_points, body_block=all_main_blocks,
@@ -328,7 +327,7 @@ class CPhase(CalibBuilder):
             self.ro_qubits = self.get_ro_qubits()
             self.guess_label(**kw)
             sweep_points = self.add_default_sweep_points(sweep_points, **kw)
-            self.cal_points = self.get_cal_points(**kw)
+            self.create_cal_points(**kw)
             self.sequences, sp = \
                 self.parallel_sweep(sweep_points, task_list, self.cphase_block,
                                     **kw)
@@ -524,7 +523,7 @@ class DynamicPhase(CalibBuilder):
                 sweep_points = self.add_default_sweep_points(sweep_points, **kw)
                 if 'for_ef' not in kw:
                     kw['for_ef'] = False
-                self.cal_points = self.get_cal_points(**kw)
+                self.create_cal_points(**kw)
                 self.basis_rot_pars = {}
 
                 for task in task_list:

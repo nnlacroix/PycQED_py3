@@ -79,7 +79,7 @@ class T1FrequencySweep(CalibBuilder):
             self.data_to_fit = {qb.name: 'pe' for qb in self.ro_qubits}
             for_ef = kw.get('for_ef', False)
             kw['for_ef'] = for_ef
-            self.cal_points = self.get_cal_points(**kw)
+            self.create_cal_points(**kw)
             sweep_points = SweepPoints(from_dict_list=[{}, {}])
             self.sequences, sp = \
                 self.parallel_sweep(sweep_points, self.task_list,
