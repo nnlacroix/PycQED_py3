@@ -157,8 +157,9 @@ class T1FrequencySweep(CalibBuilder):
         :return: precompiled block
         """
 
-        if isinstance(qubits_to_measure, list):
-            qubit_name = qubits_to_measure[0]
+        qubit_name = qubits_to_measure
+        if isinstance(qubit_name, list):
+            qubit_name = qubit_name[0]
         hard_sweep_dict, soft_sweep_dict = sweep_points
         pb = self.prepend_pulses_block(prepend_pulse_dicts)
 
