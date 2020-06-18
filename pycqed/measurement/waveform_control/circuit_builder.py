@@ -493,7 +493,8 @@ class CircuitBuilder:
 
     def sweep_n_dim(self, sweep_points, body_block=None, body_block_func=None,
                     cal_points=None, init_state='0', seq_name='Sequence',
-                    ro_kwargs=None, return_segments=False, **kw):
+                    ro_kwargs=None, return_segments=False, ro_qubits='all',
+                    **kw):
         """
         Creates a sequence or a list of segments by doing an N-dim sweep
         over the given operations based on the sweep_points.
@@ -512,6 +513,9 @@ class CircuitBuilder:
         :param ro_kwargs: Keyword arguments (dict) for the function
             mux_readout().
         :param return_segments: whether to return segments or the sequence
+        :param ro_qubits: is passed as argument qb_names to self.initialize()
+            and self.mux_ro() to specify that only subset of qubits should
+            be prepared and read out (default: 'all')
         :param kw: keyword arguments
             body_block_func_kw (dict, default: {}): keyword arguments for the
                 body_block_func
@@ -542,8 +546,8 @@ class CircuitBuilder:
             sweep_points.add_sweep_dimension()
             nr_sp_list.append(1)
 
-        prep = self.initialize(init_state=init_state)
-        ro = self.mux_readout(**ro_kwargs)
+        prep = self.initialize(init_state=init_state, qb_names=ro_qubits)
+        ro = self.mux_readout(**ro_kwargs, qb_names=ro_qubits)
 
         seqs = []
         for i in range(nr_sp_list[1]):
