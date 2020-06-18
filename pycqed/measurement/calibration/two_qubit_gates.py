@@ -482,16 +482,12 @@ class DynamicPhase(CalibBuilder):
                 else:
                     task['qubits_to_measure'] = copy(task['qubits_to_measure'])
 
-                for k in ['qbc', 'qbt']:
-                    if not isinstance(task[k], str):
-                        task[k] = task[k].name
-
                 for k, v in enumerate(task['qubits_to_measure']):
                     if not isinstance(v, str):
                         task['qubits_to_measure'][k] = v.name
 
                 if 'prefix' not in task:
-                    task['prefix'] = f"{task['qbc']}{task['qbt']}_"
+                    task['prefix'] = task['op_code'].replace(' ', '')
                 self.dyn_phases[task['prefix']] = {}
                 self.old_dyn_phases[task['prefix']] = {}
 
@@ -537,8 +533,9 @@ class DynamicPhase(CalibBuilder):
                 self.basis_rot_pars = {}
 
                 for task in task_list:
-                    op_split = self.get_cz_operation_name(
-                        task['qbc'], task['qbt']).split(' ')
+                    op_split = task['op_code'].split(' ')
+                    if op_split[0] == 'CZ':
+                        op_split[0] = self.cz_pulse_name
                     self.basis_rot_pars[task['prefix']] = dev.get_pulse_par(
                         *op_split, param='basis_rotation')
                     if self.reset_phases_before_measurement:
@@ -604,17 +601,17 @@ class DynamicPhase(CalibBuilder):
         if self.label is None:
             self.label = f'Dynamic_phase_measurement'
             for task in self.task_list:
-                self.label += "_" + ''.join(self.get_cz_operation_name(
-                    task['qbc'], task['qbt']).split(' ')) + "_"
+                self.label += "_" + task['prefix'] + "_"
                 for qb_name in task['qubits_to_measure']:
                     self.label += f"{qb_name}"
 
-    def dynamic_phase_block(self, sweep_points, qbc, qbt, qubits_to_measure,
+    def dynamic_phase_block(self, sweep_points, op_code, qubits_to_measure,
                             prepend_pulse_dicts=None, **kw):
 
-        assert (sum([qb in [qbc, qbt] for qb in qubits_to_measure]) <= 1), \
+        assert (sum([qb in op_code.split(' ')[1:] for qb in qubits_to_measure])
+                <= 1), \
             f"Dynamic phases of control and target qubit cannot be " \
-            f"measured simultaneously ({qbc}, {qbt})."
+            f"measured simultaneously ({op_code})."
 
         hard_sweep_dict, soft_sweep_dict = sweep_points
 
@@ -626,7 +623,7 @@ class DynamicPhase(CalibBuilder):
                                  [f'X90 {qb}' for qb in qubits_to_measure],
                                  pulse_modifs=pulse_modifs)
 
-        fp = self.block_from_ops('flux', f'CZ {qbc} {qbt}')
+        fp = self.block_from_ops('flux', op_code)
         fp.pulses[0]['pulse_off'] = ParametricValue('flux_pulse_off')
         # FIXME: currently, this assumes that only flux pulse parameters are
         #  swept in the soft sweep. In fact, channels_to_upload should be
@@ -659,8 +656,9 @@ class DynamicPhase(CalibBuilder):
     def run_analysis(self, **kw):
         extract_only = kw.pop('extract_only', False)
         for task in self.task_list:
-            op_split = self.get_cz_operation_name(
-                task['qbc'], task['qbt']).split(' ')
+            op_split = task['op_code'].split(' ')
+            if op_split[0] == 'CZ':
+                op_split[0] = self.cz_pulse_name
             self.dynamic_phase_analysis[task['prefix']] = \
                 tda.CZDynamicPhaseAnalysis(
                     qb_names=task['qubits_to_measure'],
