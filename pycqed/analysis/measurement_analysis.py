@@ -6589,7 +6589,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                  sign_of_peaks=None,
                  label='',
                  auto=True,
-                 plot=True,
+                 plot=True, ghost=False,
                   **kw):
         '''
         analysis class to analyse data taken in flux pulse scope measurements
@@ -6610,6 +6610,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         self.qb_name = qb_name
         self.data_rotated = np.array([])
         self.fitted_volts = np.array([])
+        self.ghost = ghost
 
         super().__init__(TwoD=True, auto=False,qb_name=self.qb_name, **kw)
         if auto:
@@ -6671,17 +6672,14 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         else:
             plt.close()
 
-    def fit_single_slice(self, data_slice, sigma_guess=10e6,
+    def fit_single_slice(self, data_slice, mu_guess, sigma_guess=10e6,
                          sign_of_peaks=None,
                          plot=False, print_res=False):
 
         GaussianModel = fit_mods.GaussianModel
-
-        mu_guess = self.sweep_points_2D[np.argmax(data_slice*sign_of_peaks)]
         ampl_guess = (data_slice.max() - data_slice.min())/0.4*sign_of_peaks*sigma_guess
         offset_guess = data_slice[0]
-
-        GaussianModel.set_param_hint('sigma',value=sigma_guess,vary=True)
+        GaussianModel.set_param_hint('sigma',value=sigma_guess,vary=False)
         GaussianModel.set_param_hint('mu',value=mu_guess,vary=True)
         GaussianModel.set_param_hint('ampl',value=ampl_guess,vary=True)
         GaussianModel.set_param_hint('offset',value=offset_guess,vary=True)
@@ -6700,21 +6698,32 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
             sign_of_peaks = self.sign_of_peaks
 
         delays = self.sweep_points
-
-        fitted_freqs = np.zeros(len(delays))
+        deep = False
+        self.fitted_freqs = np.zeros(len(delays))
         fitted_stds = np.zeros(len(delays))
-
         for i,delay in enumerate(delays):
             data_slice = self.data_rotated[:,i]
-            fit_res = self.fit_single_slice(data_slice,
+            mu_guess = self.sweep_points_2D[np.argmax(data_slice * sign_of_peaks)]
+            fit_res = self.fit_single_slice(data_slice, mu_guess=mu_guess,
                                             sign_of_peaks=sign_of_peaks,
                                             plot=False, print_res=False)
             self.fit_res = fit_res
-            fitted_freqs[i] = fit_res.best_values['mu']
-            if fit_res.covar is not None:
-                fitted_stds[i] = np.sqrt(fit_res.covar[2, 2])
-            else:
-                fitted_stds[i] = 0
+            self.fitted_freqs[i] = fit_res.best_values['mu']
+            if self.ghost:
+                if (self.fitted_freqs[i - 1] - fit_res.best_values['mu']) / self.fitted_freqs[i - 1] > -0.05 and i > len(self.sweep_points)-4:
+                    deep = False
+                if (self.fitted_freqs[i-1]-fit_res.best_values['mu'])/self.fitted_freqs[i-1]>0.015 and i>1:
+                    if deep:
+                        mu_guess = self.fitted_freqs[i-1]
+                        fit_res = self.fit_single_slice(data_slice, mu_guess=mu_guess,
+                                                        sign_of_peaks=sign_of_peaks,
+                                                        plot=False, print_res=False)
+                        self.fit_res = fit_res
+                        self.fitted_freqs[i] = fit_res.best_values['mu']
+                    deep = True
+    
+            self.fit_res = fit_res
+            self.fitted_freqs[i] = fit_res.best_values['mu']
 
         if plot:
             fig, ax = plt.subplots()
@@ -6726,13 +6735,12 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
             ax.set_ylabel(r'fitted qubit frequency, $f_q$ (MHz)')
             plt.show()
 
-        self.fitted_freqs = fitted_freqs
         self.fitted_stds = fitted_stds
 
         if return_stds:
-            return fitted_freqs, fitted_stds
+            return self.fitted_freqs, fitted_stds
         else:
-            return fitted_freqs
+            return self.fitted_freqs
 
     def freq_to_volt(self, freq, f_sweet_spot, f_parking, f_pulsed, pulse_amp):
         '''
