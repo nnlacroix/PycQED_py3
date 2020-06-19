@@ -2101,7 +2101,9 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
                                compared to when calculating fidelity.
     """
     def __init__(self, *args, **kwargs):
+        auto = kwargs.pop('auto', True)
         super().__init__(*args, **kwargs)
+        kwargs['auto'] = auto
         self.single_timestamp = True
         self.params_dict = {'exp_metadata': 'exp_metadata'}
         self.numeric_params = []
@@ -2139,7 +2141,10 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             Omega = np.diag(np.ones(len(Fs)))
         elif len(Omega.shape) == 1:
             Omega = np.diag(Omega)
-        metadata = self.raw_data_dict.get('exp_metadata', {})
+
+        metadata = self.raw_data_dict.get('exp_metadata',
+                                          self.options_dict.get(
+                                              'exp_metadata', {}))
         if metadata is None:
             metadata = {}
         self.raw_data_dict['exp_metadata'] = metadata
