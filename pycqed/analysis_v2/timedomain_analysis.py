@@ -2135,11 +2135,14 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             Omega = np.diag(np.ones(len(Fs)))
         elif len(Omega.shape) == 1:
             Omega = np.diag(Omega)
-        self.metadata = self.raw_data_dict.get('exp_metadata', {})
-        if self.metadata is None:
-            self.metadata = {}
-        self.raw_data_dict['exp_metadata'] = self.metadata
-        basis_rots_str = self.metadata.get('basis_rots_str', None)
+
+        metadata = self.raw_data_dict.get('exp_metadata',
+                                          self.options_dict.get(
+                                              'exp_metadata', {}))
+        if metadata is None:
+            metadata = {}
+        self.raw_data_dict['exp_metadata'] = metadata
+        basis_rots_str = metadata.get('basis_rots_str', None)
         basis_rots_str = self.options_dict.get('basis_rots_str', basis_rots_str)
         if basis_rots_str is not None:
             nr_qubits = int(np.round(np.log2(d)))
