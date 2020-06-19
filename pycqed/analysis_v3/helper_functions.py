@@ -103,6 +103,7 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
         update_value (bool, default: False): whether to replace an
             already-existing key
         h5mode (str, default: 'r+'): reading mode of the HDF file
+        close_file (bool, default: True): whether to close the HDF file(s)
     """
     if params_dict is None:
         params_dict = get_param('params_dict', data_dict, raise_error=True,
@@ -212,6 +213,13 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
             else:
                 data_dict[par_name] = np.float(data_dict[par_name])
 
+    if get_param('close_file', data_dict, default_value=True, **params):
+        data_file.close()
+    else:
+        if 'data_files' in data_dict:
+            data_dict['data_files'] += [data_file]
+        else:
+            data_dict['data_files'] = [data_file]
     return data_dict
 
 
@@ -411,11 +419,21 @@ def add_param(name, value, data_dict, update_value=False, append_value=False,
         dd[all_keys[-1]] = value
 
 
-def get_measurement_properties(data_dict, props_to_extract='all', **params):
+def get_measurement_properties(data_dict, props_to_extract='all',
+                               raise_error=True, **params):
     """
-    Extracts cal_points, sweep_points, meas_obj_sweep_points_map and
-    meas_obj_names from experiment metadata or from params.
+    Extracts the items listed in props_to_extract from experiment metadata
+    or from params.
     :param data_dict: OrderedDict containing experiment metadata (exp_metadata)
+    :param: props_to_extract: list of items to extract. Can be
+        'cp' for CalibrationPoints object
+        'sp' for SweepPoints object
+        'mospm' for meas_obj_sweep_points_map = {mobjn: [sp_names]}
+        'movnm' for meas_obj_value_names_map = {mobjn: [value_names]}
+        'rev_movnm' for the reversed_meas_obj_value_names_map =
+            {value_name: mobjn}
+        'mobjn' for meas_obj_names = the measured objects names
+        If 'all', then all of the above are extracted.
     :param params: keyword arguments
         enforce_one_meas_obj (default True): checks if meas_obj_names contains
             more than one element. If True, raises an error, else returns
@@ -427,30 +445,47 @@ def get_measurement_properties(data_dict, props_to_extract='all', **params):
         - if cp or sp are strings, then it assumes they can be evaluated
     """
     if props_to_extract == 'all':
-        props_to_extract = ['cp', 'sp', 'mospm', 'movnm', 'mobjn']
+        props_to_extract = ['cp', 'sp', 'mospm', 'movnm', 'rev_movnm', 'mobjn']
 
     props_to_return = []
     if 'cp' in props_to_extract:
-        cp = get_param('cal_points', data_dict, raise_error=True, **params)
+        cp = get_param('cal_points', data_dict, raise_error=raise_error,
+                       **params)
         if isinstance(cp, str):
             cp = CalibrationPoints.from_string(cp)
         props_to_return += [cp]
+
     if 'sp' in props_to_extract:
-        sp = get_param('sweep_points', data_dict, raise_error=True, **params)
+        sp = get_param('sweep_points', data_dict, raise_error=raise_error,
+                       **params)
         if isinstance(sp, str):
             sp = eval(sp)
         props_to_return += [sp]
+
     if 'mospm' in props_to_extract:
         meas_obj_sweep_points_map = get_param(
-            'meas_obj_sweep_points_map', data_dict, raise_error=True, **params)
+            'meas_obj_sweep_points_map', data_dict, raise_error=raise_error,
+            **params)
         props_to_return += [meas_obj_sweep_points_map]
+
     if 'movnm' in props_to_extract:
         meas_obj_value_names_map = get_param(
-            'meas_obj_value_names_map', data_dict, raise_error=True, **params)
+            'meas_obj_value_names_map', data_dict, raise_error=raise_error,
+            **params)
         props_to_return += [meas_obj_value_names_map]
+
+    if 'rev_movnm' in props_to_extract:
+        meas_obj_value_names_map = get_param(
+            'meas_obj_value_names_map', data_dict, raise_error=raise_error,
+            **params)
+        rev_movnm = OrderedDict()
+        for mobjn, value_names in meas_obj_value_names_map.items():
+            rev_movnm.update({vn: mobjn for vn in value_names})
+        props_to_return += [rev_movnm]
+
     if 'mobjn' in props_to_extract:
         mobjn = get_param('meas_obj_names', data_dict,
-                          raise_error=True, **params)
+                          raise_error=raise_error, **params)
         if params.get('enforce_one_meas_obj', True):
             if isinstance(mobjn, list):
                 if len(mobjn) > 1:
@@ -459,8 +494,10 @@ def get_measurement_properties(data_dict, props_to_extract='all', **params):
                 else:
                     mobjn = mobjn[0]
         props_to_return += [mobjn]
+
     if len(props_to_return) == 1:
         props_to_return = props_to_return[0]
+
     return props_to_return
 
 
