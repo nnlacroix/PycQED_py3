@@ -6588,7 +6588,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
     def __init__(self, qb_name=None,
                  sign_of_peaks=None,
                  label='',
-                 auto=True,
+                 auto=True, from_lower = False,
                  plot=True, ghost=False,
                   **kw):
         '''
@@ -6611,6 +6611,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         self.data_rotated = np.array([])
         self.fitted_volts = np.array([])
         self.ghost = ghost
+        self.from_lower = from_lower
 
         super().__init__(TwoD=True, auto=False,qb_name=self.qb_name, **kw)
         if auto:
@@ -6709,18 +6710,40 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                                             plot=False, print_res=False)
             self.fit_res = fit_res
             self.fitted_freqs[i] = fit_res.best_values['mu']
-            if self.ghost:
-                if (self.fitted_freqs[i - 1] - fit_res.best_values['mu']) / self.fitted_freqs[i - 1] > -0.05 and i > len(self.sweep_points)-4:
-                    deep = False
-                if (self.fitted_freqs[i-1]-fit_res.best_values['mu'])/self.fitted_freqs[i-1]>0.015 and i>1:
-                    if deep:
-                        mu_guess = self.fitted_freqs[i-1]
-                        fit_res = self.fit_single_slice(data_slice, mu_guess=mu_guess,
-                                                        sign_of_peaks=sign_of_peaks,
-                                                        plot=False, print_res=False)
-                        self.fit_res = fit_res
-                        self.fitted_freqs[i] = fit_res.best_values['mu']
-                    deep = True
+            if self.from_lower:
+                if self.ghost:
+                    if (self.fitted_freqs[i - 1] - fit_res.best_values['mu']) / \
+                            self.fitted_freqs[i - 1] > 0.05 and i > len(
+                        self.sweep_points)-4:
+                        deep = False
+                    if (self.fitted_freqs[i-1]-fit_res.best_values[
+                        'mu'])/self.fitted_freqs[i-1]<-0.015 and i>1:
+                        if deep:
+                            mu_guess = self.fitted_freqs[i-1]
+                            fit_res = self.fit_single_slice(data_slice, mu_guess=mu_guess,
+                                                            sign_of_peaks=sign_of_peaks,
+                                                            plot=False, print_res=False)
+                            self.fit_res = fit_res
+                            self.fitted_freqs[i] = fit_res.best_values['mu']
+                        deep = True
+            else:
+                if self.ghost:
+                    if (self.fitted_freqs[i - 1] - fit_res.best_values['mu']) / \
+                            self.fitted_freqs[i - 1] > -0.05 and i > len(
+                        self.sweep_points) - 4:
+                        deep = False
+                    if (self.fitted_freqs[i - 1] - fit_res.best_values['mu']) / \
+                            self.fitted_freqs[i - 1] > 0.015 and i > 1:
+                        if deep:
+                            mu_guess = self.fitted_freqs[i - 1]
+                            fit_res = self.fit_single_slice(data_slice,
+                                                            mu_guess=mu_guess,
+                                                            sign_of_peaks=sign_of_peaks,
+                                                            plot=False,
+                                                            print_res=False)
+                            self.fit_res = fit_res
+                            self.fitted_freqs[i] = fit_res.best_values['mu']
+                        deep = True
     
             self.fit_res = fit_res
             self.fitted_freqs[i] = fit_res.best_values['mu']
