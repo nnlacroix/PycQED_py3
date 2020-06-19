@@ -5,6 +5,7 @@ from pycqed.measurement.calibration.two_qubit_gates import CalibBuilder
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.measurement.randomized_benchmarking import \
     randomized_benchmarking as rb
+from pycqed.analysis_v3 import pipeline_analysis as pla
 import logging
 log = logging.getLogger(__name__)
 
@@ -187,22 +188,21 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         """
         Creates and adds the analysis processing pipeline to exp_metadata.
         """
-        pass
-        # pp = ProcessingPipeline()
-        # for task in self.task_list:
-        #     cliffords = next(iter(task['sweep_points'][1].values()))[0]
-        #     seeds = next(iter(task['sweep_points'][0].values()))[0]
-        #     pp.add_node('average_data', keys_in='raw',
-        #                 shape=(len(cliffords), len(seeds)),
-        #                 meas_obj_names=task['qubits_to_measure'])
-        #     pp.add_node('get_std_deviation', keys_in='raw',
-        #                 shape=(len(cliffords), len(seeds)),
-        #                 meas_obj_names=task['qubits_to_measure'])
-        #     pp.add_node('rb_analysis', meas_obj_names=task['qubits_to_measure'],
-        #                 keys_out=None, d=2,
-        #                 keys_in=f'previous average_data',
-        #                 keys_in_std=f'previous get_std_deviation')
-        # self.exp_metadata.update({'processing_pipe': pp})
+        pp = ProcessingPipeline()
+        for task in self.task_list:
+            cliffords = next(iter(task['sweep_points'][1].values()))[0]
+            seeds = next(iter(task['sweep_points'][0].values()))[0]
+            pp.add_node('average_data', keys_in='raw',
+                        shape=(len(cliffords), len(seeds)),
+                        meas_obj_names=task['qubits_to_measure'])
+            pp.add_node('get_std_deviation', keys_in='raw',
+                        shape=(len(cliffords), len(seeds)),
+                        meas_obj_names=task['qubits_to_measure'])
+            pp.add_node('rb_analysis', meas_obj_names=task['qubits_to_measure'],
+                        keys_out=None, d=2,
+                        keys_in=f'previous average_data',
+                        keys_in_std=f'previous get_std_deviation')
+        self.exp_metadata.update({'processing_pipe': pp})
 
     def run_analysis(self, **kw):
         """
@@ -210,6 +210,5 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         :param kw: keyword_arguments passed to analysis functions;
             see docstrings there
         """
-        pass
-        # self.analysis = pla.extract_data_hdf(**kw) # returns a dict
-        # pla.process_pipeline(self.analysis, **kw)
+        self.analysis = pla.extract_data_hdf(**kw) # returns a dict
+        pla.process_pipeline(self.analysis, **kw)
