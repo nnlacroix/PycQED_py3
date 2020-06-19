@@ -73,12 +73,11 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             # TODO: there is currently no analysis for non-classified measurement
             self.classified = True
 
-            task_list = self.add_seeds_sweep_points(task_list,
-                                                    self.nr_seeds, **kw)
+            task_list = self.add_seeds_sweep_points(task_list, self.nr_seeds)
             self.task_list = task_list
             self.identical_pulses = identical_pulses
             # Check if we can apply identical pulses on all qubits in task_list
-            # Can only do this if they have the same cliffords array
+            # Can only do this if they have identical cliffords array
             one_clf_set = list(self.task_list[0][
                                    'sweep_points'][1].values())[0][0]
             unique_clf_sets = np.unique([
@@ -88,7 +87,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
                 self.identical_pulses = False
 
             self.ro_qubits = self.get_ro_qubits()
-            self.guess_label(**kw)
+            self.guess_label()
             # TODO: there is currently no analysis for RB with cal_points
             for_ef = kw.get('for_ef', False)
             kw['for_ef'] = for_ef
@@ -104,10 +103,6 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
                 body_block_func=self.rb_block, cal_points=self.cal_points,
                 **kw)
             self.hard_sweep_points, self.soft_sweep_points = sp
-            self.exp_metadata.update({
-                'meas_obj_sweep_points_map':
-                    self.sweep_points.get_meas_obj_sweep_points_map(
-                        [qb.name for qb in self.ro_qubits])})
             self.add_processing_pipeline()
 
             if self.measure:
@@ -119,22 +114,18 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             self.exception = x
             traceback.print_exc()
 
-    # @staticmethod
-    # def add_seeds_sweep_points(sweep_points, nr_seeds, **kw):
-    #     if sweep_points is None:
-    #         sweep_points = [{}, {}]
-    #     elif len(sweep_points) == 1:
-    #         # it must be the 2nd sweep dimension, over cliffords
-    #         sweep_points = [{}, sweep_points[0]]
-    #     sweep_points = SweepPoints(from_dict_list=sweep_points)
-    #     hard_sweep_dict = SweepPoints()
-    #     if 'seeds' not in sweep_points[0]:
-    #         hard_sweep_dict.add_sweep_parameter(
-    #             'seeds', np.arange(nr_seeds), '', 'Nr. Seeds')
-    #     sweep_points.update(hard_sweep_dict + [{}])
-    #     return sweep_points
     @staticmethod
-    def add_seeds_sweep_points(task_list, nr_seeds, **kw):
+    def add_seeds_sweep_points(task_list, nr_seeds):
+        """
+        If seeds are not in the sweep_points in each task, but cliffords are,
+        then seeds will be added to the sweep_points entry in each task_list.
+        :param task_list: list of dictionaries describing the the measurement
+            for each qubit.
+        :param nr_seeds: int specifying the number of repetitions of each
+            Clifford sequence. This function will add np.arange(nr_seeds).
+        :return: updated task list
+
+        """
         for task in task_list:
             sweep_points = task['sweep_points']
             if len(sweep_points) == 1:
@@ -179,7 +170,10 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         return self.simultaneous_blocks(f'sim_rb_{clifford}{sp1d_idx}',
                                         rb_block_list)
 
-    def guess_label(self, **kw):
+    def guess_label(self):
+        """
+        Default measurement label.
+        """
         if self.label is None:
             if self.interleaved_gate is None:
                 self.label = f'RB_{self.gate_decomposition}' \
@@ -190,6 +184,9 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
                              f'{self.dev.get_msmt_suffix(self.ro_qubits)}'
 
     def add_processing_pipeline(self):
+        """
+        Creates and adds the analysis processing pipeline to exp_metadata.
+        """
         pass
         # pp = ProcessingPipeline()
         # for task in self.task_list:
@@ -208,6 +205,11 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         # self.exp_metadata.update({'processing_pipe': pp})
 
     def run_analysis(self, **kw):
+        """
+        Runs analysis and stores analysis instance in self.analysis.
+        :param kw: keyword_arguments passed to analysis functions;
+            see docstrings there
+        """
         pass
         # self.analysis = pla.extract_data_hdf(**kw) # returns a dict
         # pla.process_pipeline(self.analysis, **kw)

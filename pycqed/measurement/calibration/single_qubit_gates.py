@@ -75,7 +75,7 @@ class T1FrequencySweep(CalibBuilder):
             task_list = self.add_amplitude_sweep_points(task_list)
             self.task_list = task_list
             self.ro_qubits = self.get_ro_qubits()
-            self.guess_label(**kw)
+            self.guess_label()
             self.data_to_fit = {qb.name: 'pe' for qb in self.ro_qubits}
             for_ef = kw.get('for_ef', False)
             kw['for_ef'] = for_ef
@@ -119,6 +119,8 @@ class T1FrequencySweep(CalibBuilder):
                                           ' with dim 1 over flux pulse lengths,'
                                           ' and dim 2 over qubit frequencies'
                                           ' or flux pulse amplitudes.')
+                # add the commented out code below when we know a good default
+                # for the sweep points
                 # # it must be the 1st sweep dimension, over flux pulse lengths
                 # sweep_points = [sweep_points[0], {}]
                 # sweep_points = SweepPoints(from_dict_list=sweep_points)
@@ -188,11 +190,9 @@ class T1FrequencySweep(CalibBuilder):
         return self.sequential_blocks(f't1 flux pulse {qubit_name}',
                                       [pb, pp, fp])
 
-    def guess_label(self, **kw):
+    def guess_label(self):
         """
         Default measurement label.
-        :param kw: keyword arguments (to allow pass through kw even if it
-            contains entries that are not needed)
         """
         if self.label is None:
             self.label = f'T1_frequency_sweep' \

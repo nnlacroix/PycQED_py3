@@ -57,7 +57,7 @@ class CalibBuilder(CircuitBuilder):
         self.exp_metadata.update(kw)
         self.exp_metadata.update({'classified_ro': self.classified})
 
-    def add_meas_objs_sweep_point(self, meas_objs, sweep_point):
+    def add_to_meas_obj_sweep_points_map(self, meas_objs, sweep_point):
         if 'meas_obj_sweep_points_map' not in self.exp_metadata:
             self.exp_metadata['meas_obj_sweep_points_map'] = {}
         if not isinstance(meas_objs, list):
@@ -180,9 +180,9 @@ class CalibBuilder(CircuitBuilder):
             for k in csp.keys():
                 if k in params:
                     gsp[prefix + k] = csp[k]
-                    self.add_meas_objs_sweep_point(mo, prefix + k)
+                    self.add_to_meas_obj_sweep_points_map(mo, prefix + k)
                 else:
-                    self.add_meas_objs_sweep_point(mo, k)
+                    self.add_to_meas_obj_sweep_points_map(mo, k)
         return task
 
     def parallel_sweep(self, sweep_points, task_list=(), block_func=None, **kw):
