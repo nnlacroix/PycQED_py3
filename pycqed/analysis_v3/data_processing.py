@@ -632,7 +632,7 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out, **params):
             update_value=params.get('update_value', False))
 
 
-def probability_table(data_dict, keys_in, keys_out, **params):
+def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
     """
     Creates a general table of counts averaging out all but specified set of
     correlations.
@@ -643,7 +643,7 @@ def probability_table(data_dict, keys_in, keys_out, **params):
 
     Expects:
         data_dict
-        keys_in to specify keys in data_dict that corresponod to the
+        keys_in to specify keys in data_dict that correspond to the
             thresholeded shots for the qubits
         observables: List of observables. Observable is a dictionary with
             name of the qubit as key and boolean value indicating if it is
@@ -676,115 +676,145 @@ def probability_table(data_dict, keys_in, keys_out, **params):
             includes preselection readout results or if there was several
             readouts for a single readout then n_readouts has to include
             them.
+
+         params: keyword arguments: used if get_observables is called
+            preselection_shift (int, default: -1)
+            use_preselection (bool, default: False)
     Returns:
         Saves in data_dict, under keys_out, and np.array of counts with
             dimensions (n_readouts, len(observables))
+
+    Assumptions:
+        - len(keys_out) == 1 -> one probability table is calculated
+        - !!! This function returns the transpose of the the static method
+        probability_table in readout_analysis.py/MultiQubit_SingleShot_Analysis
     """
-    if len(keys_out) != 1:
-        raise ValueError(f'keys_out must have length one. {len(keys_in)} '
-                         f'entries were given.')
 
     # Get shots_of_qubits: Dictionary of np.arrays of thresholded shots for
     # each qubit.
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     n_readouts = hlp_mod.get_param('n_readouts', data_dict, raise_error=True,
                                    **params)
-    observables_dict = hlp_mod.get_param('observables', data_dict,
-                                         raise_error=True, **params)
-    observables = list(observables_dict.values())
+    observables = hlp_mod.get_param('observables', data_dict,
+                                    raise_error=True, **params)
+    # observables = list(observables_dict.values())
+
+    rev_movnm = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['rev_movnm'], **params)
 
     res_e = {}
     res_g = {}
 
     n_shots = next(iter(data_to_proc_dict.values())).shape[0]
-    table = np.zeros((n_readouts, len(observables)))
+    # table = np.zeros((n_readouts, len(observables)))
+    table = OrderedDict({obs: np.zeros(n_readouts) for obs in observables})
 
-    for qubit, results in data_to_proc_dict.items():
-        res_e[qubit] = np.array(results).reshape((n_readouts, -1),
+    for keyi, results in data_to_proc_dict.items():
+        mobjn = rev_movnm[keyi]
+        res_e[mobjn] = np.array(results).reshape((n_readouts, -1),
                                                  order='F')
         # This makes copy, but allows faster AND later
-        res_g[qubit] = np.logical_not(
+        res_g[mobjn] = np.logical_not(
             np.array(results)).reshape((n_readouts, -1), order='F')
 
     for readout_n in range(n_readouts):
         # first result all ground
-        for state_n, states_of_qubits in enumerate(observables):
+        for obs, states_of_mobjs in observables.items():
             mask = np.ones((n_shots//n_readouts), dtype=np.bool)
             # slow qubit is the first in channel_map list
-            for qubit, state in states_of_qubits.items():
-                if isinstance(qubit, tuple):
-                    seg = (readout_n+qubit[1]) % n_readouts
-                    qubit = qubit[0]
+            for mobjn, state in states_of_mobjs.items():
+                if isinstance(mobjn, tuple):
+                    seg = (readout_n+mobjn[1]) % n_readouts
+                    mobjn = mobjn[0]
                 else:
                     seg = readout_n
                 if state:
-                    mask = np.logical_and(mask, res_e[qubit][seg])
+                    mask = np.logical_and(mask, res_e[mobjn][seg])
                 else:
-                    mask = np.logical_and(mask, res_g[qubit][seg])
-            table[readout_n, state_n] = np.count_nonzero(mask)
+                    mask = np.logical_and(mask, res_g[mobjn][seg])
+            # table[readout_n, state_n] = np.count_nonzero(mask)
+            table[obs][readout_n] = np.count_nonzero(mask)*n_readouts/n_shots
+    # table = table.T
 
-    hlp_mod.add_param(keys_out[0], table*n_readouts/n_shots, data_dict,
-                      update_value=params.get('update_value', False))
+    if keys_out is None:
+        keys_out = ['probability_table']
+    if len(keys_out) != 1:
+        raise ValueError(f'keys_out must have length one. {len(keys_out)} '
+                         f'entries were given.')
+    hlp_mod.add_param(keys_out[0], table, data_dict)
 
 
-def measurement_operators_and_results(self, tomography_qubits=None):
+def calculate_meas_ops_and_covariations(
+        data_dict, keys_out=None, observables=None, tomography_qubits=None,
+        **params):
     """
-    Calculates and returns:
-        A tuple of
-            count tables for each data segment for the observables;
-            the measurement operators corresponding to each observable;
-            and the expected covariation matrix between the operators.
+    Calculates and adds to data_dict:
+        - the measurement operators corresponding to each observable;
+        - and the expected covariation matrix between the operators.
 
     If the calibration segments are passed, there must be a calibration
-    segments for each of the computational basis states of the Hilber space.
+    segments for each of the computational basis states of the Hilbert space.
     If there are no calibration segments, perfect readout is assumed.
 
-    The calling class must filter out the relevant data segments by itself!
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_out: list of key names or dictionary keys paths in
+                    data_dict for the processed data to be saved into
+
+    Assumptions:
+     - len(keys_out) == 2
+     - order in keys_out corresponds to [measurement_operators, covar_matrix]
     """
-    try:
-        preselection_obs_idx = list(self.observables.keys()).index('pre')
-    except ValueError:
-        preselection_obs_idx = None
-    observabele_idxs = [i for i in range(len(self.observables))
-                        if i != preselection_obs_idx]
+    if keys_out is None:
+        keys_out = ['measurement_ops', 'cov_matrix_meas_obs']
+    if len(keys_out) != 2:
+        raise ValueError(f'keys_out must have length 2. {len(keys_out)} '
+                         f'entries were given.')
 
-    qubits = list(self.channel_map.keys())
     if tomography_qubits is None:
-        tomography_qubits = qubits
-    d = 2**len(tomography_qubits)
-    data = self.proc_data_dict['probability_table']
-    data = data.T[observabele_idxs]
-    if not 'cal_points' in self.options_dict:
-        Fsingle = {None: np.array([[1, 0], [0, 1]]),
-                   True: np.array([[0, 0], [0, 1]]),
-                   False: np.array([[1, 0], [0, 0]])}
-        Fs = []
-        Omega = []
-        for obs in self.observables.values():
-            F = np.array([[1]])
-            nr_meas = 0
-            for qb in tomography_qubits:
-                # TODO: does not handle conditions on previous readouts
-                Fqb = Fsingle[obs.get(qb, None)]
-                # Kronecker product convention - assumed the same as QuTiP
-                F = np.kron(F, Fqb)
-                if qb in obs:
-                    nr_meas += 1
-            Fs.append(F)
-            # The variation is proportional to the number of qubits we have
-            # a condition on, assuming that all readout errors are small
-            # and equal.
-            Omega.append(nr_meas)
-        Omega = np.array(Omega)
-        return data, Fs, Omega
-    else:
-        means, covars = \
-            self.calibration_point_means_and_channel_covariations()
-        Fs = [np.diag(ms) for ms in means.T]
-        return data, Fs, covars
+        tomography_qubits = hlp_mod.get_measurement_properties(
+            data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+            **params)
+
+    Fs = OrderedDict()
+    Fsingle = {None: np.array([[1, 0], [0, 1]]),
+               True: np.array([[0, 0], [0, 1]]),
+               False: np.array([[1, 0], [0, 0]])}
+    Omega = []
+    for obs in observables.values():
+        F = np.array([[1]])
+        nr_meas = 0
+        for qb in tomography_qubits:
+            # TODO: does not handle conditions on previous readouts
+            Fqb = Fsingle[obs.get(qb, None)]
+            # Kronecker product convention - assumed the same as QuTiP
+            F = np.kron(F, Fqb)
+            if qb in obs:
+                nr_meas += 1
+        Fs[obs] = F
+        # The variation is proportional to the number of qubits we have
+        # a condition on, assuming that all readout errors are small
+        # and equal.
+        Omega.append(nr_meas)
+    Omega = np.array(Omega)
+    hlp_mod.add_param(keys_out[0], Fs, data_dict)
+    hlp_mod.add_param(keys_out[1], Omega, data_dict)
 
 
-def calibration_point_means_and_channel_covariations(self):
+def calculate_meas_ops_and_covariations_cal_points(
+        data_dict, keys_out=None, observables=None, tomography_qubits=None,
+        **params):
+    if keys_out is None:
+        keys_out = ['measurement_ops', 'cov_matrix_meas_obs']
+    if len(keys_out) != 2:
+        raise ValueError(f'keys_out must have length 2. {len(keys_out)} '
+                         f'entries were given.')
+
+    cal_points = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['cp'], raise_error=False, **params)
+
+    observables = hlp_mod.get_param('observables', data_dict,
+                                    raise_error=True, **params)
     observables = [v for k, v in self.observables.items() if k != 'pre']
     try:
         preselection_obs_idx = list(self.observables.keys()).index('pre')
@@ -794,18 +824,7 @@ def calibration_point_means_and_channel_covariations(self):
                         if i != preselection_obs_idx]
 
     # calculate the mean for each reference state and each observable
-    try:
-        cal_points_list = convert_channel_names_to_index(
-            self.options_dict.get('cal_points'), self.n_readouts,
-            self.raw_data_dict['value_names']
-        )
-    except KeyError:
-        cal_points_list = convert_channel_names_to_index(
-            self.options_dict.get('cal_points'), self.n_readouts,
-            list(self.channel_map.keys())
-        )
-    self.proc_data_dict['cal_points_list'] = cal_points_list
-
+    Fs = OrderedDict()
     means = np.zeros((len(cal_points_list), len(observables)))
     cal_readouts = set()
     for i, cal_point in enumerate(cal_points_list):

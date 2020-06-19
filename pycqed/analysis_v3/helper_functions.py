@@ -614,10 +614,8 @@ def get_reset_reps_from_data_dict(data_dict):
     return reset_reps
 
 
-def get_observables(data_dict, keys_out, preselection_shift=-1,
+def get_observables(data_dict, keys_out=None, preselection_shift=-1,
                     use_preselection=False, **params):
-
-    assert len(keys_out) == 1
 
     mobj_names = get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
@@ -642,6 +640,11 @@ def get_observables(data_dict, keys_out, preselection_shift=-1,
         if use_preselection:
             observables[obs_name].update(preselection_condition)
 
+    if keys_out is None:
+        keys_out = ['observables']
+    if len(keys_out) != 1:
+        raise ValueError(f'keys_out must have length one. {len(keys_out)} '
+                         f'entries were given.')
     add_param(keys_out[0], observables, data_dict)
 
 
@@ -662,47 +665,6 @@ def observable_product(*observables):
             else:
                 res_obs[k] = obs[k]
     return res_obs
-
-
-def convert_channel_names_to_index(cal_points, nr_segments, value_names):
-    """
-    Converts the calibration points list from the format
-    cal_points = [{'ch1': [-4, -3], 'ch2': [-4, -3]},
-                  {0: [-2, -1], 1: [-2, -1]}]
-    to the format (for a 100-segment dataset)
-    cal_points_list = [[[96, 97], [96, 97]],
-                       [[98, 99], [98, 99]]]
-
-    Args:
-        cal_points: the list of calibration points to convert
-        nr_segments: number of segments in the dataset to convert negative
-                     indices to positive indices.
-        value_names: a list of channel names that is used to determine the
-                     index of the channels
-    Returns:
-        cal_points_list in the converted format
-    """
-
-    cal_points_list = []
-    for observable in cal_points:
-        if isinstance(observable, (list, np.ndarray)):
-            observable_list = [[]] * len(value_names)
-            for i, idxs in enumerate(observable):
-                observable_list[i] = \
-                    [idx % nr_segments for idx in idxs]
-            cal_points_list.append(observable_list)
-        else:
-            observable_list = [[]] * len(value_names)
-            for channel, idxs in observable.items():
-                if isinstance(channel, int):
-                    observable_list[channel] = \
-                        [idx % nr_segments for idx in idxs]
-                else:  # assume str
-                    ch_idx = value_names.index(channel)
-                    observable_list[ch_idx] = \
-                        [idx % nr_segments for idx in idxs]
-            cal_points_list.append(observable_list)
-    return cal_points_list
 
 
 def get_cal_state_color(cal_state_label):
