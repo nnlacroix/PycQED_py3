@@ -558,6 +558,7 @@ def ramsey_active_reset(times, qb_name, operation_dict, cal_points, n=1,
     for i in range(n):
         idx = (2 if for_ef else 1) + i * 2
         ramsey_pulses[idx]["name"] = f"Ramsey_x2_{i}"
+        # ramsey_pulses[idx]["name"] = f"Ramsey_x2"
         ramsey_pulses[idx]['ref_point'] = 'start'
 
     # compute dphase
@@ -583,7 +584,7 @@ def ramsey_active_reset(times, qb_name, operation_dict, cal_points, n=1,
             if 'name' not in pulse:
                 continue
             if pulse['pulse_delay'] > pulse_length:
-                pulse["element_name"] = f"Ramsey_x2_{i}_element"
+                # pulse["element_name"] = f"Ramsey_x2_{i}_element"
                 i += 1
 
     seq = pulse_list_list_seq(swept_pulses_with_prep, seq_name, upload=False)

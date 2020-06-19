@@ -1810,9 +1810,9 @@ def drive_cancellation_seq(
     # create len_sweep instances of n pulses, where the n references correspond
     # to the same dictionary instance
     interleaved_pulse_list_list = \
-        n*[deepcopy(operation_dict[f'{pulse} {driven_qubit_name}'])
+        [n*[deepcopy(operation_dict[f'{pulse} {driven_qubit_name}'])]
          for _ in range(len_sweep)]
-    for key, (values, unit, label) in sweep_points[0]:
+    for key, (values, unit, label) in sweep_points[0].items():
         assert len(values) == len_sweep
         tqb, param = key.split('.')
         iq = operation_dict[f'X180 {tqb}']['I_channel'], \
@@ -1821,6 +1821,8 @@ def drive_cancellation_seq(
             # since all n pulses in pulse_list are the same dict. we only need
             # to modify the first element.
             pulse_list[0]['cancellation_params'][iq][param] = value
+    # make last segment a calibration segment
+    interleaved_pulse_list_list[-1][0]['amplitude'] = 0
 
     return interleaved_pulse_list_list_equatorial_seq(
         ramsey_qubit_names, operation_dict, interleaved_pulse_list_list,

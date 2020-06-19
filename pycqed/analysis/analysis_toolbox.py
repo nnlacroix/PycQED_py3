@@ -175,7 +175,12 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
                 except:
                     continue
                 timestamp = dstamp+'_'+tstamp
-                if contains in d:
+                # if contains in d:
+                lst_to_search = [''] + ['_'.join(d.split('_')[i:j + 1])
+                                        for i in range(len(d.split('_')))
+                                        for j in range(len(d.split('_')))
+                                        if j >= i]
+                if contains in lst_to_search:
                     if older_than is not None:
                         if not is_older(timestamp, older_than,
                                         or_equal=or_equal):
@@ -389,6 +394,7 @@ def compare_instrument_settings_timestamp(timestamp_a, timestamp_b):
                                             eval(ins_b.attrs[par_key]))
                     pass
                 except:
+                    print(par_key)
                     print('    "%s" has a different value '
                           ' "%s" for %s, "%s" for %s' % (
                               par_key, eval(ins_a.attrs[par_key]), timestamp_a,

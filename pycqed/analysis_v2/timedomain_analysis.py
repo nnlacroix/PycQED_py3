@@ -840,7 +840,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             hard_sweep_params = self.get_param_value('hard_sweep_params')
             sweep_name = self.get_param_value('sweep_name')
             sweep_unit = self.get_param_value('sweep_unit')
-            if hard_sweep_params is not None:
+
+            if self.sp is not None:
+                _, xunit, xlabel  = next(iter(self.sp[0].values()))
+            elif hard_sweep_params is not None:
                 xlabel = list(hard_sweep_params)[0]
                 xunit = list(hard_sweep_params.values())[0][
                     'unit']
@@ -965,7 +968,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         hard_sweep_params = self.get_param_value('hard_sweep_params')
         sweep_name = self.get_param_value('sweep_name')
         sweep_unit = self.get_param_value('sweep_unit')
-        if hard_sweep_params is not None:
+
+        if self.sp is not None:
+            _, xunit, xlabel = next(iter(self.sp[0].values()))
+        elif hard_sweep_params is not None:
             xlabel = list(hard_sweep_params)[0]
             xunit = list(hard_sweep_params.values())[0][
                 'unit']
@@ -6145,6 +6151,8 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 means[qbn][qb_state] = np.mean(shots_per_qb[qbn][i::n_states],
                                                axis=0)
             if self.preselection:
+                # To Nathan: I think we need to redefine shots_per_qb here
+
                 # preselection shots were removed so look at raw data
                 # and look at only the first out of every two readouts
                 presel_shots_per_qb[qbn] = \
@@ -6225,6 +6233,8 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                     log.warning(f"{qbn}: No data left after preselection! "
                                 f"Skipping preselection data & figures.")
                     continue
+                pdd['analysis_params']["presel_filter"] = presel_filter # DEBUG
+                pdd['analysis_params']["presel_data"] = presel_shots_per_qb
                 qb_shots_masked = qb_shots[presel_filter]
                 prep_states = prep_states[presel_filter]
                 pred_states = self.clf_[qbn].predict(qb_shots_masked)
