@@ -3215,7 +3215,6 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
             for qb in self.qb_names}
         nr_sp2d = {qb: len(pdd['sweep_points_2D_dict'][qb][self.raw_data_dict['sweep_parameter_names'][1]])\
             for qb in self.qb_names}
-        print()
         nr_cp = self.num_cal_points
 
         # make matrix out of vector
