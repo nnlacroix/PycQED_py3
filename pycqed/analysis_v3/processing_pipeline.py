@@ -89,10 +89,13 @@ Instructions for use:
         - the analysis framework always expects keys_in to be a list of 
          keys in the data_dict, and most functions expect keys_out
         - to create the pipeline that will be used by the analysis 
-         framework, the user must call: 
+         framework, the user can call: 
          ProcessingPipeline_instance(meas_obj_value_names_map), where 
-         meas_obj_value_names_map is adictionary with measured objects as keys
+         meas_obj_value_names_map is a dictionary with measured objects as keys
          and list of their corresponding readout channels as values.
+         However, the analysis supports an precompiled pipeline as well, in 
+         which case it will call ProcessingPipeline_instance(
+         meas_obj_value_names_map).
         
         The final pipeline corresponding to the"raw" pipeline above:
              meas_obj_value_names_map = {'qb2': ['UHF1_pg w23 UHF1', 
