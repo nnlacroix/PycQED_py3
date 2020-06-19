@@ -9,8 +9,11 @@ Originally written by Adriaan, updated/rewritten by Rene May 2018
 """
 import itertools
 import logging
+
+from scipy import stats
+
 log = logging.getLogger(__name__)
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from pycqed.measurement.calibration_points import CalibrationPoints
 import lmfit
@@ -882,27 +885,7 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
         params = dict()
 
         if method == 'ncc':
-            class NCC:
-                def __init__(self, cluster_centers):
-                    """
-                    cluster_centers is a dict of cluster centers
-                    (name as key, n dimensional array as value)
-
-                    """
-                    self.cluster_centers = cluster_centers
-                def predict(self, X):
-                    pred_states = []
-                    for pt in X:
-                        dist = []
-                        for _, cluster_center in self.cluster_centers.items():
-                            dist.append(np.linalg.norm(pt - cluster_center))
-                        dist = np.asarray(dist)
-                        pred_states.append(np.argmin(dist))
-                    pred_states = np.array(pred_states)
-                    return pred_states
-                def predict_proba(self, X):
-                    raise NotImplementedError("Not implemented for NCC")
-            ncc = NCC(self.proc_data_dict['analysis_params']['mu'])
+            ncc = self.NCC(self.proc_data_dict['analysis_params']['mu'])
             pred_states = ncc.predict(X)
             self.clf_ = ncc
             return pred_states, dict()
@@ -919,27 +902,8 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             gm.fit(X)
             pred_states = np.argmax(gm.predict_proba(X), axis=1)
 
-            if cov_type == "tied":
-                # in case all components share the same cov mtx return a list
-                # of identical cov matrices
-                covs = [gm.covariances_ for _ in range(gm.n_components)]
-            elif cov_type == "full":
-                # already of the right shape (n_comp, n_features, n_features)
-                covs = gm.covariances_
-            elif cov_type == "spherical":
-                # return list of sigma_i^2 * I instead of list of sigma_i^2
-                covs = [np.diag([gm.covariances_[i]
-                                 for _ in range(X.shape[1])])
-                        for i in range(gm.n_components)]
-            elif cov_type == "diag":
-                # make covariance matrices from diagonals
-                covs = [np.diag(gm.covariances_[i])
-                            for i in range(gm.n_components)]
-            else:
-                raise ValueError("covariance type: {} is not supported"
-                                 .format(cov_type))
             params['means_'] = gm.means_
-            params['covariances_'] = gm.covariances_ #covs
+            params['covariances_'] = gm.covariances_
             params['covariance_type'] = gm.covariance_type
             params['weights_'] = gm.weights_
             params['precisions_cholesky_'] = gm.precisions_cholesky_
@@ -947,14 +911,14 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             return pred_states, params
 
         elif method == "threshold":
-            tree = DTC(max_depth=kw.pop("max_depth", X.ndim),
+            tree = DTC(max_depth=kw.pop("max_depth", X.shape[1]),
                        random_state=0, **kw)
             tree.fit(X, prep_state)
             pred_states = tree.predict(X)
             params["thresholds"], params["mapping"] = \
                 self._extract_tree_info(tree, self.levels)
             self.clf_ = tree
-            if len(params["thresholds"]) == 1:
+            if len(params["thresholds"]) != X.shape[1]:
                 msg = "Best 2 thresholds to separate this data lie on axis {}" \
                     ", most probably because the data is not well separated." \
                     "The classifier attribute clf_ can still be used for " \
@@ -975,11 +939,10 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
                                       .format(method, ['ncc', 'gmm',
                                                        'threshold']))
 
-
     @staticmethod
     def fidelity_matrix(prep_states, pred_states, levels=('g', 'e', 'f'),
-                        plot=False, normalize=True):
-        fm = confusion_matrix(prep_states, pred_states)
+                        labels=None, plot=False, normalize=True):
+        fm = confusion_matrix(prep_states, pred_states, labels)
         if plot:
             Singleshot_Readout_Analysis_Qutrit.plot_fidelity_matrix(fm,
                                                                     levels)
@@ -990,7 +953,7 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
     @staticmethod
     def plot_fidelity_matrix(fm, target_names,
                              title="State Assignment Probability Matrix",
-                             auto_shot_info=True,
+                             auto_shot_info=True, ax=None,
                              cmap=None, normalize=True, show=False):
         fidelity_avg = np.trace(fm) / float(np.sum(fm))
         if auto_shot_info:
@@ -998,7 +961,10 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
         if cmap is None:
             cmap = plt.get_cmap('Reds')
 
-        fig, ax = plt.subplots(1, figsize=(8, 6))
+        if ax is None:
+            fig, ax = plt.subplots(1, figsize=(8, 6))
+        else:
+            fig = ax.get_figure()
 
         if normalize:
             fm = fm.astype('float') / fm.sum(axis=1)[:, np.newaxis]
@@ -1006,7 +972,8 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
         im = ax.imshow(fm, interpolation='nearest', cmap=cmap,
                        norm=mc.LogNorm(), vmin=5e-3, vmax=1.)
         ax.set_title(title)
-        fig.colorbar(im)
+        cb = fig.colorbar(im)
+        cb.set_label('Assignment Probability, $P_{ij}$')
 
         if target_names is not None:
             tick_marks = np.arange(len(target_names))
@@ -1033,11 +1000,10 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             plt.show()
         return fig
 
-
     @staticmethod
     def _extract_tree_info(tree_clf, class_names=None):
         tree_ = tree_clf.tree_
-        feature_name = [np.arange(tree_.n_features)[i]
+        feature_name = [np.arange(tree_.n_features)[i] if i != -2 else -2
                         for i in tree_.feature]
         if class_names is None:
             class_names = np.arange(len(tree_.value[0]))
@@ -1122,35 +1088,50 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
         if kwargs.get("fig", None) is None:
             fig, axes = plt.subplots(figsize=(10, 8))
             kwargs['fig'] = fig
-
+        colors = kwargs.get('colors', [None] * len(np.unique(y_true)))
         gs = gridspec.GridSpec(2, 2, width_ratios=[3, 1], height_ratios=[1, 4],
                                figure=kwargs['fig'])
 
         # Create scatter plot
         ax = plt.subplot(gs[1, 0])
-        for yval in np.unique(y_true):
+        for yval, c in zip(np.unique(y_true), colors):
             ax.scatter(data[:, 0][y_true == yval], data[:, 1][y_true == yval],
-                       alpha=kwargs.get('alpha', 0.6), marker='.',
+                       alpha=kwargs.get('alpha', 0.6), marker='.', c=c,
                        label=kwargs.get("legend_labels",
                                         [yval] * len(np.unique(y_true)))[int(yval)])
-        #h, labels = sc.legend_elements()
-        #legend = ax.legend(h, kwargs.get("legend_labels", labels))
-        #ax.add_artist(legend)
+        # h, labels = sc.legend_elements()
+        # legend = ax.legend(h, kwargs.get("legend_labels", labels))
+        # ax.add_artist(legend)
         # Create Y-marginal (right)
-        axr = plt.subplot(gs[1, 1], sharey=ax, frameon=False)
-        for yval in np.unique(y_true):
-            axr.hist(data[:, 1][y_true == yval], bins=50,
+        axr = plt.subplot(gs[1, 1], sharey=ax, frameon=kwargs.get('frameon', True))
+        binr_range = (data[:, 1].min(), data[:, 1].max())
+        for yval, c in zip(np.unique(y_true), colors):
+            axr.hist(data[:, 1][y_true == yval], bins=50, color=c,
+                     range=binr_range,
                      orientation='horizontal', density=False,
                      alpha=kwargs.get('alpha', 0.6))
-        axr.set_xscale(kwargs.get("scale", "log"))
+        axr.set_xscale(kwargs.get("scale", "linear"))
+        axr.set_xlabel("Counts")
+        axr.spines["top"].set_visible(False)
+        axr.spines["right"].set_visible(False)
+        axr.yaxis.set_tick_params(right=False)
+        axr.xaxis.set_tick_params(right=False, top=False)
+
         plt.setp(axr.get_yticklabels(), visible=False)
 
         # Create X-marginal (top)
-        axt = plt.subplot(gs[0, 0], sharex=ax, frameon=False)
+        axt = plt.subplot(gs[0, 0], sharex=ax, frameon=kwargs.get('frameon', True))
+        axt.spines["top"].set_visible(False)
+        axt.spines["right"].set_visible(False)
+        axt.yaxis.set_tick_params(right=False, top=False)
+        axt.xaxis.set_tick_params(right=False, top=False)
+        bint_range = (data[:, 0].min(), data[:, 0].max())
+        axt.set_ylabel("Counts")
         plt.setp(axt.get_xticklabels(), visible=False)
 
-        for yval in np.unique(y_true):
-            axt.hist(data[:, 0][y_true == yval], bins=50,
+        for yval, c in zip(np.unique(y_true), colors):
+            axt.hist(data[:, 0][y_true == yval], bins=50, color=c,
+                     range=bint_range,
                      orientation='vertical', density=False,
                      alpha=kwargs.get('alpha', 0.6))
         axt.set_yscale(kwargs.get("scale", "log"))
@@ -1183,7 +1164,7 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             x_min, x_max = x.min() - margin_x, x.max() + margin_x
             y_min, y_max = y.min() - margin_y, y.max() + margin_y
             if h is None:
-                h = 0.01*(x_max - x_min)
+                h = 0.01 * (x_max - x_min)
             xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
                                  np.arange(y_min, y_max, h))
             return xx, yy
@@ -1231,8 +1212,8 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
         pearson = cov[0, 1] / np.sqrt(cov[0, 0] * cov[1, 1])
         # Using a special case to obtain the eigenvalues of this
         # two-dimensionl dataset.
-        ell_radius_x = 1#np.sqrt(1 + pearson)
-        ell_radius_y = 1# np.sqrt(1 - pearson)
+        ell_radius_x = np.sqrt(1 + pearson)
+        ell_radius_y = np.sqrt(1 - pearson)
 
         ellipse = Ellipse((0, 0),
                           width=ell_radius_x * 2,
@@ -1258,10 +1239,87 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
         ellipse.set_transform(transf + ax.transData)
         return ax.add_patch(ellipse)
 
-    def prepare_plots(self):
+    @staticmethod
+    def _get_covariances(gmm, cov_type=None):
+        """
+        Retrieves covariences matrices of each mixture component of GMM
+        depending on the fitting procedure (cov_type)
+        Args:
+            gmm:
+            cov_type:
+
+        Returns:
+
+        """
+        if cov_type is None:
+            cov_type = gmm.covariance_type
+
+        if cov_type == "tied":
+            # in case all components share the same cov mtx return a list
+            # of identical cov matrices
+            covs = [gmm.covariances_ for _ in range(gmm.n_components)]
+        elif cov_type == "full":
+            # already of the right shape (n_comp, n_features, n_features)
+            covs = gmm.covariances_
+        elif cov_type == "spherical":
+            # return list of sigma_i^2 * I instead of list of sigma_i^2
+            covs = [np.diag([gmm.covariances_[i]
+                             for _ in range(gmm.means_.shape[1])])
+                    for i in range(gmm.n_components)]
+        elif cov_type == "diag":
+            # make covariance matrices from diagonals
+            covs = [np.diag(gmm.covariances_[i])
+                    for i in range(gmm.n_components)]
+        else:
+            raise ValueError("covariance type: {} is not supported"
+                             .format(cov_type))
+        return covs
+
+    @staticmethod
+    def plot_1D_hist(data, y_true=None, plot_fitting=True,
+                     **kwargs):
+        """
+        Plot 1D histograms
+        Args:
+            data: 1 dimensional array with all points to plot
+            y_true: 1 D array with states labels
+            plot_fitting: whether or not to plot the Gaussian
+                on top of the histograms. If true, kwargs should
+                contain "means" (list of means) and "std"
+                (list of standard deviations) for each component
+            **kwargs:
+
+        Returns:
+
+        """
+        colors = kwargs.get('colors', [None] * len(np.unique(y_true)))
+        if kwargs.get("fig", None) is None:
+            fig, ax = plt.subplots()
+        else:
+            fig, ax = kwargs['fig'], kwargs['fig'].get_axes()[0]
+        binr_range = (data.min(), data.max())
+        for i, (yval, c) in enumerate(zip(np.unique(y_true), colors)):
+            cts, _, _ = ax.hist(data[y_true == yval], bins=50, color=c,
+                                range=binr_range,
+                                orientation='vertical', density=False,
+                                alpha=kwargs.get('alpha', 0.6))
+            if plot_fitting and kwargs.get('means', None) is not None and \
+                    kwargs.get('std', None) is not None:
+                means = list(kwargs['means'].values())
+                fit_plot_values = np.linspace(*binr_range, 200)
+                y = stats.norm.pdf(fit_plot_values, means[i],
+                                   kwargs['std'][i]).flatten()
+                ax.plot(fit_plot_values, y * np.max(cts) / np.max(y),
+                        color=c, linewidth=3)
+        ax.set_xlabel(kwargs.get("xlabel", 'integration unit 1, $u_1$'))
+        ax.set_ylabel('Counts, $n$')
+        ax.set_yscale(kwargs.get('scale', "log"))
+        return fig, ax
+
+    def plot(self, **kw):
         cmap = plt.get_cmap('tab10')
         tab_x = a_tools.truncate_colormap(cmap, 0, len(self.levels)/10)
-
+        pdd = self.proc_data_dict
         show = self.options_dict.get("show", False)
 
         kwargs = dict(legend_labels=self.levels,
@@ -1276,29 +1334,47 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             title =  self.raw_data_dict[0]['timestamp'] + " " + dk + \
                 "\n{} classifier".format(self.classif_method)
             kwargs.update(dict(title=title))
-            # plot data and histograms
-            fig = self.plot_scatter_and_marginal_hist(data['X'],
-                                                      data["prep_states"],
-                                                      **kwargs)
-            # plot means
-            main_ax =  fig.get_axes()[0]
-            for _ , mu in self.proc_data_dict['analysis_params']['mu'].items():
-               main_ax.scatter(mu[0], mu[1], color='r', s=80)
+            if data['X'].shape[1] == 1:
+                if self.classif_method == "gmm":
+                    kwargs['means'] = pdd['analysis_params']['means']
+                    kwargs['std'] = np.sqrt(self._get_covariances(self.clf_))
+                kwargs['colors'] = cmap(np.unique(data['prep_states']))
+                fig, main_ax = self.plot_1D_hist(data['X'],
+                                                 data["prep_states"],
+                                                 **kwargs)
+            else:
+                # plot data and histograms
+                fig = self.plot_scatter_and_marginal_hist(data['X'],
+                                                          data["prep_states"],
+                                                          **kwargs)
+                # plot means
+                main_ax =  fig.get_axes()[0]
+                for _ , mu in self.proc_data_dict['analysis_params']['mu'].items():
+                   main_ax.scatter(mu[0], mu[1], color='r', s=80)
 
-            # plot clf_boundaries
-            self.plot_clf_boundaries(data['X'], self.clf_, ax=main_ax,
-                                     cmap=tab_x)
+                # plot clf_boundaries
+                self.plot_clf_boundaries(data['X'], self.clf_, ax=main_ax,
+                                         cmap=tab_x)
 
             # plot thresholds
             plt_fn = {0: main_ax.axvline, 1: main_ax.axhline}
             thresholds = self.proc_data_dict['analysis_params'][
                 'classifier_params'].get("thresholds", dict())
+            mapping = self.proc_data_dict['analysis_params'][
+                'classifier_params'].get("mapping", dict())
             for k, thres in thresholds.items():
                 plt_fn[k](thres, linewidth=2,
                           label="threshold i.u. {}: {:.5f}".format(k, thres),
                           color='k', linestyle="--")
                 main_ax.legend(loc=[0.2,-0.62])
 
+            ax_frac = {0: (0.07, 0.1),  # locations for codewords
+                       1: (0.83, 0.1),
+                       2: (0.07, 0.9),
+                       3: (0.83, 0.9)}
+            for cw, state in mapping.items():
+                main_ax.annotate("0b{:02b}".format(cw) + f":{state}",
+                                 ax_frac[cw], xycoords='axes fraction')
             self.figs['{}_classifier_{}'.format(self.classif_method, dk)] = fig
         if show:
             plt.show()
@@ -1326,6 +1402,28 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
             fig_key = 'state_prob_matrix_masked_{}'.format(self.classif_method)
             self.figs[fig_key] = fig
 
+    class NCC:
+        def __init__(self, cluster_centers):
+            """
+            cluster_centers is a dict of cluster centers
+            (name as key, n dimensional array as value)
+
+            """
+            self.cluster_centers = cluster_centers
+
+        def predict(self, X):
+            pred_states = []
+            for pt in X:
+                dist = []
+                for _, cluster_center in self.cluster_centers.items():
+                    dist.append(np.linalg.norm(pt - cluster_center))
+                dist = np.asarray(dist)
+                pred_states.append(np.argmin(dist))
+            pred_states = np.array(pred_states)
+            return pred_states
+
+        def predict_proba(self, X):
+            raise NotImplementedError("Not implemented for NCC")
 
 class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
     """
@@ -1494,6 +1592,10 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
 
         if filter is not None:
             filter = filter.reshape((n_readouts, -1), order='F')
+        else:
+            # keep all shots
+            filter = np.ones((n_readouts, n_shots//n_readouts), dtype=bool)
+
         table = np.zeros((n_readouts, len(observables)))
 
 
