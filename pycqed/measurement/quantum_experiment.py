@@ -25,6 +25,10 @@ class QuantumExperiment(CircuitBuilder):
                  compression_seg_lim=None, force_2D_sweep=True, **kw):
         super().__init__(dev=dev, qubits=qubits, **kw)
 
+        self.exp_metadata = exp_metadata
+        if self.exp_metadata is None:
+            self.exp_metadata = {}
+
         self.ro_qubits = self.qubits if ro_qubits is None else ro_qubits
         self.MC = dev.instr_mc.get_instr()
 
@@ -58,9 +62,7 @@ class QuantumExperiment(CircuitBuilder):
             self.df_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
 
 
-        self.exp_metadata = exp_metadata
-        if self.exp_metadata is None:
-            self.exp_metadata = {}
+
         self.exp_metadata.update(kw)
         self.exp_metadata.update({'classified_ro': self.classified})
 
@@ -87,7 +89,7 @@ class QuantumExperiment(CircuitBuilder):
 
         # combine preparation dictionaries
         qb_names = self.dev.get_qubits(self.qubits, "str")
-        self.preparation_params = self.get_prep_params(self.qubits)
+        self.preparation_params = self.get_prep_params(qb_names)
 
         # only prepare read out qubits
         for qb in self.ro_qubits:
@@ -291,6 +293,8 @@ class QuantumExperiment(CircuitBuilder):
                 else:
                     self.exp_metadata.update({name: value})
             except Exception as e:
+                log.error(f"Could not add {name} with value {value} to the "
+                          f"metadata")
                 raise e
 
         self.__dict__[name] = value
