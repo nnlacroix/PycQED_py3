@@ -220,13 +220,12 @@ class Sequence:
                 for seg_name, segment in seq.segments.items():
                     try:
                         merged_seqs[-1].add(segment)
-                    except NameError:
-                        # in case segment name exists, create new name
+                    except NameError:  # in case segment name exists, create new name
                         seg_occurences[-1][seg_name] += 1
                         new_name =seg_name + \
                                   f"_copy_from_merge_" \
                                   f"{seg_occurences[-1][seg_name] - 1}"
-                        segment.name = new_name
+                        segment.rename(new_name)
                         merged_seqs[-1].add(segment)
 
                 segment_counter += seq.n_segments()
