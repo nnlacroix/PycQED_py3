@@ -2,165 +2,177 @@ import logging
 log = logging.getLogger(__name__)
 
 import os
-import json
-import lmfit
 import h5py
+import lmfit
+import numpy as np
 from copy import deepcopy
 import matplotlib.pyplot as plt
 from collections import OrderedDict
-from pycqed.utilities.general import NumpyJsonEncoder
+from pycqed.measurement import hdf5_data as h5d
 from pycqed.analysis import analysis_toolbox as a_tools
-from pycqed.measurement.hdf5_data import write_dict_to_hdf5
+from pycqed.analysis_v3 import helper_functions as hlp_mod
 
 
-def save_data(self, data_dict, savedir: str = None, savebase: str = None,
-              tag_tstamp: bool = True, fmt: str = 'json', key_list='auto'):
-    '''
-    Saves the data from data_dict to file.
-
-    Args:
-        savedir (string):
-                Directory where the file is saved. If this is None, the
-                file is saved in self.raw_data_dict['folders'] or the
-                working directory of the console.
-        savebase (string):
-                Base name for the saved file.
-        tag_tstamp (bool):
-                Whether to append the timestamp of the first to the base
-                name.
-        fmt (string):
-                File extension for the format in which the file should
-                be saved.
-        key_list (list or 'auto'):
-                Specifies which keys from self.raw_data_dict are saved.
-                If this is 'auto' or None, all keys-value pairs are
-                saved.
-    '''
-    if savedir is None:
-        savedir = self.raw_data_dict.get('folders', '')
-        if isinstance(savedir, list):
-            savedir = savedir[0]
-    if savebase is None:
-        savebase = ''
-    if tag_tstamp:
-        tstag = '_' + self.raw_data_dict['timestamps'][0]
-    else:
-        tstag = ''
-
-    if key_list == 'auto' or key_list is None:
-        key_list = data_dict.keys()
-
-    save_dict = {}
-    for k in key_list:
-        save_dict[k] = data_dict[k]
-
-    try:
-        os.mkdir(savedir)
-    except FileExistsError:
-        pass
-
-    filepath = os.path.join(savedir, savebase + tstag + '.' + fmt)
-    if self.verbose:
-        log.info('Saving raw data to %s' % filepath)
-    with open(filepath, 'w') as file:
-        json.dump(save_dict, file, cls=NumpyJsonEncoder, indent=4)
-    log.info('Data saved to "{}".'.format(filepath))
-
-
-def save_fit_results(data_dict, fit_res_dict, **params):
+class Save:
     """
-    Saves the fit results
+    Saves figures and creates the HDF5 file
+    measurement_name + "_AnalysisResults.hdf in the last folder in the list
+    data_dict['folders'].
+    The new file will contain everything in data_dict execept values
+    corresponding to the keys "plot_dicts", "axes", "figures", "data_files."
     """
-    timestamp = data_dict['timestamps'][-1]
-    fn = a_tools.measurement_filename(a_tools.get_folder(timestamp))
+    def __init__(self, data_dict, savedir=None, save_processed_data=True,
+                 save_figures=True, filename=None, **save_figs_params):
+        self.data_dict = data_dict
+        if savedir is None:
+            savedir = hlp_mod.get_param('folders', data_dict, raise_error=True)
+            savedir = savedir[-1]
+        self.savedir = savedir
+        if filename is None:
+            filename = 'AnalysisResults'
+        filename = data_dict['folders'][-1].split('\\')[-1] + \
+                   f'_{filename}.hdf'
+        self.filepath = self.savedir + '\\' + filename
+        if save_processed_data:
+            self.save_data_dict()
+        if save_figures:
+            self.save_figures(**save_figs_params)
 
-    try:
-        os.mkdir(os.path.dirname(fn))
-    except FileExistsError:
-        pass
+    def save_data_dict(self):
+        """
+        Saves to the HDF5 file AnalysisResults.hdf everything in data_dict
+        execept values corresponding to the keys "plot_dicts", "axes",
+        "figures", "data_files"
+        :return:
+        """
+        with h5py.File(self.filepath, 'a') as analysis_file:
+            if 'fit_dicts' in self.data_dict:
+                self.save_fit_results(analysis_file)
 
-    if params.get('verbose', False):
-        log.info('Saving fitting results to %s' % fn)
+            # Iterate over all the fit result dicts as not to overwrite
+            # old/other analysis
+            for key, value in self.data_dict.items():
+                if key not in ['fit_dicts', 'plot_dicts', 'axes', 'figures',
+                               'data_files']:
+                    if isinstance(value, np.ndarray):
+                        group_name = 'Raw Data'
+                        try:
+                            group = analysis_file.create_group(group_name)
+                        except ValueError:
+                            group = analysis_file[group_name]
+                        try:
+                            group.create_dataset(key, data=value)
+                        except RuntimeError:
+                            del group[key]
+                            group.create_dataset(key, data=value)
+                    else:
+                        try:
+                            group = analysis_file.create_group(key)
+                        except ValueError:
+                            del analysis_file[key]
+                            group = analysis_file.create_group(key)
 
-    with h5py.File(fn, 'a') as data_file:
+                        if isinstance(value, dict):
+                            h5d.write_dict_to_hdf5(value, entry_point=group)
+                        elif isinstance(value, np.ndarray):
+                            group.create_dataset(key, data=value)
+                        else:
+                            try:
+                                val = repr(value)
+                            except KeyError:
+                                val = ''
+                            group.attrs[key] = val
+
+    def save_fit_results(self, analysis_file):
+        """
+        Saves the fit results from data_dict['fit_dicts']
+        :param analysis_file: HDF5 file object to save to
+        """
         try:
-            analysis_group = data_file.create_group('Analysis')
+            group = analysis_file.create_group('Fit Results')
         except ValueError:
             # If the analysis group already exists.
-            analysis_group = data_file['Analysis']
+            group = analysis_file['Fit Results']
 
         # Iterate over all the fit result dicts as not to overwrite
         # old/other analysis
-        for fr_key, fit_res in fit_res_dict.items():
+        fit_dicts = hlp_mod.get_param('fit_dicts', self.data_dict)
+        for fr_key, fit_dict in fit_dicts.items():
+            fit_res = fit_dict['fit_res']
             try:
-                fr_group = analysis_group.create_group(fr_key)
+                fr_group = group.create_group(fr_key)
             except ValueError:
                 # If the analysis sub group already exists
                 # (each fr_key should be unique)
                 # Delete the old group and create a new group
                 # (overwrite).
-                del analysis_group[fr_key]
-                fr_group = analysis_group.create_group(fr_key)
+                del group[fr_key]
+                fr_group = group.create_group(fr_key)
 
             d = _convert_dict_rec(deepcopy(fit_res))
-            write_dict_to_hdf5(d, entry_point=fr_group)
+            h5d.write_dict_to_hdf5(d, entry_point=fr_group)
 
+    def save_figures(self, **params):
+        """
+        Saves figures from self.data_dict['figures'].
+        :param params: keyword arguments
+            keys_in (list; default 'auto'): list of keys in data_dict['figures']
+                denoting which figures to save. If "auto", all figures will be
+                saved.
+            fmt (str; default: 'png'): figures format
+            dpi (int; default: 300): figures dpi
+            tag_tstamp(bool; default: True): whether to add the last timestamp
+                in data_dict['timestamps'] to the figure title
+            savebase (str; default: None): base of the figure name
+            presentation_mode (bool; default: False): whether to save and 'svg
+                file in addition to the figure
+        """
+        keys_in = params.get('keys_in', 'auto')
+        fmt = params.get('fmt', 'png')
+        dpi = params.get('dpi', 300)
+        tag_tstamp = params.get('tag_tstamp', True)
+        savebase = params.get('savebase', None)
 
-def save_figures(data_dict, figs, **params):
-
-    keys_in = params.get('keys_in', 'auto')
-    fmt = params.get('fmt', 'png')
-    dpi = params.get('dpi', 300)
-    tag_tstamp = params.get('tag_tstamp', True)
-    savebase = params.get('savebase', None)
-    savedir = params.get('savedir', None)
-    if savedir is None:
-        if isinstance(data_dict, tuple):
-            savedir = data_dict[0].get('folders', '')
+        if savebase is None:
+            savebase = ''
+        if tag_tstamp:
+            timestamps = hlp_mod.get_param(
+                'timestamps', self.data_dict, raise_error=True,
+                error_message='"tag_tstamp" == True but "timestamps" not found '
+                              'in data_dict.')
+            tstag = '_' + timestamps[-1]
         else:
-            savedir = data_dict.get('folders', '')
+            tstag = ''
 
-        if isinstance(savedir, list):
-            savedir = savedir[-1]
-        if isinstance(savedir, list):
-            savedir = savedir[-1]
-    if savebase is None:
-        savebase = ''
-    if tag_tstamp:
-        if isinstance(data_dict, tuple):
-            tstag = '_' + data_dict[0]['timestamps'][-1]
+        # get figures from data_dict
+        figs = hlp_mod.get_param('figures', self.data_dict, raise_error=True)
+        if isinstance(figs, list):
+            figs_dicts = OrderedDict()
+            for fig_dict in figs:
+                figs_dicts.update(fig_dict)
         else:
-            tstag = '_' + data_dict['timestamps'][-1]
-    else:
-        tstag = ''
+            figs_dicts = figs
 
-    if keys_in == 'auto' or keys_in is None:
-        keys_in = figs.keys()
+        if keys_in == 'auto' or keys_in is None:
+            keys_in = list(figs_dicts)
 
-    try:
-        os.mkdir(savedir)
-    except FileExistsError:
-        pass
-
-    if params.get('verbose', False):
-        log.info('Saving figures to %s' % savedir)
-
-    for key in keys_in:
-        if params.get('presentation_mode', False):
-            savename = os.path.join(savedir, savebase + key + tstag +
-                                    'presentation' + '.' + fmt)
-            figs[key].savefig(savename, bbox_inches='tight',
-                                   fmt=fmt, dpi=dpi)
-            savename = os.path.join(savedir, savebase + key + tstag +
-                                    'presentation' + '.svg')
-            figs[key].savefig(savename, bbox_inches='tight', fmt='svg')
-        else:
-            savename = os.path.join(savedir, savebase + key + tstag
-                                    + '.' + fmt)
-            figs[key].savefig(savename, bbox_inches='tight',
-                                   fmt=fmt, dpi=dpi)
-        if params.get('close_figs', True):
-            plt.close(figs[key])
+        for key in keys_in:
+            if params.get('presentation_mode', False):
+                savename = os.path.join(self.savedir, savebase + key + tstag +
+                                        'presentation' + '.' + fmt)
+                figs_dicts[key].savefig(savename, bbox_inches='tight',
+                                       fmt=fmt, dpi=dpi)
+                savename = os.path.join(self.savedir, savebase + key + tstag +
+                                        'presentation' + '.svg')
+                figs_dicts[key].savefig(savename, bbox_inches='tight',
+                                        fmt='svg')
+            else:
+                savename = os.path.join(self.savedir, savebase + key + tstag
+                                        + '.' + fmt)
+                figs_dicts[key].savefig(savename, bbox_inches='tight',
+                                       fmt=fmt, dpi=dpi)
+            if params.get('close_figs', True):
+                plt.close(figs_dicts[key])
 
 
 def _convert_dict_rec(obj):
