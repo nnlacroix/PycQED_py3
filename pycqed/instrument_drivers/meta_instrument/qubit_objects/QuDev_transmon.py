@@ -31,6 +31,9 @@ from pycqed.measurement import mc_parameter_wrapper
 import pycqed.analysis_v2.spectroscopy_analysis as sa
 from pycqed.utilities import math
 import pycqed.analysis.fitting_models as fms
+import os
+import \
+    pycqed.measurement.waveform_control.fluxpulse_predistortion as fl_predist
 
 try:
     import pycqed.simulations.readout_mode_simulations_for_CLEAR_pulse \
@@ -3727,6 +3730,63 @@ class QuDev_transmon(Qubit):
         MC.run_2D('Flux_scope_nzcz_alpha' + self.msmt_suffix)
 
         ma.MeasurementAnalysis(TwoD=True)
+
+    def set_distortion_in_pulsar(self, pulsar=None, datadir=None):
+
+        if pulsar is None:
+            pulsar = self.find_instrument('Pulsar')
+        if datadir is None:
+            datadir = self.find_instrument('MC').datadir()
+        DEFAULT_FLUX_DISTORTION = dict(IIR_filter_list=[],
+                                       FIR_filter_list=[],
+                                       scale_IIR=1,
+                                       distortion='off',
+                                       charge_buildup_compensation=True,
+                                       compensation_pulse_delay=100e-9)
+        flux_distortion = deepcopy(DEFAULT_FLUX_DISTORTION)
+        flux_distortion.update(self.flux_distortion())
+
+        filterCoeffs = {}
+        for fclass in 'IIR', 'FIR':
+            filterCoeffs[fclass] = []
+            for f in self.flux_distortion()[f'{fclass}_filter_list']:
+                if f['type'] == 'Gaussian':
+                    coeffs = fl_predist.gaussian_filter_kernel(
+                        f.get('sigma', 1e-9),
+                        f.get('nr_sigma', 40),
+                        f.get('dt', 1 / 2.4e9))
+                elif f['type'] == 'csv':
+                    filename = os.path.join(datadir,
+                                            f['filename'].lstrip('\\'))
+                    if fclass == 'IIR':
+                        coeffs = fl_predist.import_iir(filename)
+                    else:
+                        coeffs = np.loadtxt(filename)
+                else:
+                    raise KeyError(f"Unknown filter type {f['type']}")
+                filterCoeffs[fclass].append(coeffs)
+
+        if len(filterCoeffs['FIR']) > 0:
+            filterCoeffs['FIR'] = [
+                fl_predist.combine_FIR_filters(filterCoeffs['FIR'])]
+        else:
+            del filterCoeffs['FIR']
+        if len(filterCoeffs['IIR']) > 1:
+            log.warning('For now, only one IIR filter can be used. Taking '
+                        'the last one.')
+        if len(filterCoeffs['IIR']) > 0:
+            filterCoeffs['IIR'] = filterCoeffs['IIR'][-1]
+            fl_predist.scale_and_negate_IIR(filterCoeffs['IIR'],
+                                 flux_distortion['scale_IIR'])
+        else:
+            del filterCoeffs['IIR']
+
+        pulsar.set(f'{self.flux_pulse_channel()}_distortion_dict',
+                   filterCoeffs)
+        for param in ['distortion', 'charge_buildup_compensation',
+                      'compensation_pulse_delay']:
+            pulsar.set(f'{self.flux_pulse_channel()}_{param}',
+                       flux_distortion[param])
 
 
 def add_CZ_pulse(qbc, qbt):
