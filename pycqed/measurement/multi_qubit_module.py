@@ -2882,7 +2882,7 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
 
             if exp_metadata is None:
                 exp_metadata = {}
-            exp_metadata.update({'preparation_params': prep_params,
+            exp_metadata.update({'preparation_params': current_prep_params,
                                  'cal_points': repr(cp),
                                  'rotate': False if classified else
                                     len(cp.states) != 0,
