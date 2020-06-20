@@ -7,7 +7,6 @@ from inspect import signature
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from collections import OrderedDict
-from pycqed.analysis_v3 import saving as save_mod
 from copy import deepcopy
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -21,56 +20,119 @@ from pycqed.analysis.tools.plotting import (
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import datetime
 import sys
-this_mod = sys.modules[__name__]
+this_module = sys.modules[__name__]
+
+from pycqed.analysis_v3 import pipeline_analysis as pla
+pla.search_modules.add(this_module)
+
+prx_single_column_width = 3.404
+prx_two_column_width = 7.057
+# Default to PRX style, change these global variables according to journal
+FIGURE_WIDTH_1COL = prx_single_column_width
+FIGURE_WIDTH_2COL = prx_two_column_width
+
+############################################
+### Helper functions related to Plotting ###
+############################################
+def default_figure_height(figure_width):
+    return figure_width*2/(1 + np.sqrt(5))
 
 
-#####################################
-### Functions related to Plotting ###
-#####################################
-def get_default_plot_params(set_pars=True, **kwargs):
-    font_size = kwargs.get('font_size', 18)
-    marker_size = kwargs.get('marker_size', 6)
-    line_width = kwargs.get('line_width', 2.5)
-    axes_line_width = kwargs.get('axes_line_width', 1)
-    tick_length = kwargs.pop('tick_length', 5)
-    tick_width = kwargs.pop('tick_width', 1)
-    tick_color = kwargs.get('tick_color', 'k')
-    ticks_direction = kwargs.get('ticks_direction', 'out')
-    axes_labelcolor = kwargs.get('axes_labelcolor', 'k')
+def get_default_plot_params(set_params=True, figure_width='1col',
+                            figure_height=None, **params):
+    """
+    Generates the rcParams that produce nice paper-style figures.
+    Optionally updates the rcParams if set_pars == True.
+    :param set_pars: whether to update the rcParams with the ones generated here
+    :param figure_width: wight of the figure. Can be a float representing the
+        width in inches, can be the string "2col" for a two column PRX style
+        figure, or can be a string of the form "Xcol" with X a float <= 1
+        representing a fraction of 1 column PRX style.
+    :param figure_height: height of the figure in inches. If None, uses
+        the function default_figure_height defined above.
+    :param params: keyword arguments
+    :return: rcParams dictionary
+    """
+    if hasattr(figure_width, '__iter__'):
+        # assumes figure_width is of the form "Xcol" where X is either a
+        # fraction of a column width, or X = 2.
+        if figure_width == '2col':
+            FIGURE_WIDTH = FIGURE_WIDTH_2COL
+        else:
+            X = float(figure_width[:-3])
+            FIGURE_WIDTH = X*FIGURE_WIDTH_1COL
+    else:
+        FIGURE_WIDTH = figure_width
 
-    fig_size_dim = 10
-    golden_ratio = (1+np.sqrt(5))/2
-    fig_size = kwargs.get('fig_size',
-                          (fig_size_dim, fig_size_dim/golden_ratio))
-    dpi = kwargs.get('dpi', 300)
+    FIGURE_HEIGHT = figure_height
+    if FIGURE_HEIGHT is None:
+        FIGURE_HEIGHT = default_figure_height(FIGURE_WIDTH)
 
-    params = {'figure.figsize': fig_size,
-              'figure.dpi': dpi,
-              'savefig.dpi': dpi,
-              'font.size': font_size,
-              'figure.titlesize': font_size,
-              'legend.fontsize': font_size,
-              'axes.labelsize': font_size,
-              'axes.labelcolor': axes_labelcolor,
-              'axes.titlesize': font_size,
-              'axes.linewidth': axes_line_width,
-              'lines.markersize': marker_size,
-              'lines.linewidth': line_width,
-              'xtick.direction': ticks_direction,
-              'ytick.direction': ticks_direction,
-              'xtick.labelsize': font_size,
-              'ytick.labelsize': font_size,
-              'xtick.color': tick_color,
-              'ytick.color': tick_color,
-              'xtick.major.size': tick_length,
-              'ytick.major.size': tick_length,
-              'xtick.major.width': tick_width,
-              'ytick.major.width': tick_width,
-              'axes.formatter.useoffset': False,
-              }
-    if set_pars:
+    params = {
+        'font.size': 8,
+        'lines.markersize': 2.0,
+        'figure.facecolor': '0.9',
+        'xtick.direction': 'in',
+        'ytick.direction': 'in',
+        'figure.titlesize': 'medium',
+        'axes.titlesize': 'medium',
+        'figure.dpi': 600,
+        'figure.figsize': (FIGURE_WIDTH, FIGURE_HEIGHT)}
+
+    if set_params:
+        plt.rcParams.update(plt.rcParamsDefault)
         plt.rcParams.update(params)
     return params
+
+
+def add_letter_to_subplots(fig, axes, xoffset=0.0, yoffset=0.0,
+                           ha='left', va='top'):
+    """
+    Adds letters to top left corner of subplots corresponding to axes from fig.
+    :param fig: figure object
+    :param axes: subplots axes on fig
+    :param xoffset: the x location of the letter is the left margin of the axis.
+        This might not always work well. xoffset is added to this position.
+    :param yoffset: the y location of the letter is the top margin of the axis.
+        This might not always work well. yoffset is added to this position.
+    :param ha: horizontal alignment of letters
+    :param va: vertical alignment of letters
+    :return: fig, axes
+
+    Attention!
+    Needs to be called after fig.subplots_adjust() or fig.tight_layout()
+
+    """
+    # ax_geom = get_axes_geometry_from_figure(fig)
+    letters = [f'({chr(x+97)})' for x in range(len(np.array(axes).flatten()))]
+    for i, ax in enumerate(np.array(axes).flatten()):
+        letter = letters[i]
+        ax.text(ax.bbox.transformed(fig.transFigure.inverted()).x0 + xoffset,
+                ax.bbox.transformed(fig.transFigure.inverted()).y1 + yoffset,
+                letter,
+                ha=ha, va=va, transform=fig.transFigure)
+    return fig, axes
+
+
+def get_axes_geometry_from_figure(fig):
+    return fig.axes[0].get_subplotspec().get_topmost_subplotspec().\
+        get_gridspec().get_geometry()
+
+
+def default_figure_title(data_dict, meas_obj_name):
+    if len(data_dict['timestamps']) > 1:
+        title = f'{data_dict["timestamps"][0]} - ' \
+                f'{data_dict["timestamps"][-1]}' \
+                f'\n{data_dict["measurementstrings"][-1]}'
+    else:
+        title = f'{data_dict["timestamps"][-1]} ' \
+                f'{data_dict["measurementstrings"][-1]}'
+
+    if len(meas_obj_name.split('_')) > 1:
+        title += f'\n{meas_obj_name}'
+    else:
+        title += f' {meas_obj_name}'
+    return title
 
 
 ## Prepare plot dicts functions ##
@@ -91,12 +153,6 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
         ylabel (str, default: None): y-axis label
         yunit (str, default: ''): y-axis unit
         do_legend (bool, default: True): whether to show the legend
-        plot_name_suffix (str, default: ''): suffix to be added to all the
-            plot names in this function
-        plot_name_suffix (str, default: ''): suffix to be added to all the
-            plot names in this function
-        title_suffix (str, default: ''): suffix to be added to the figure
-            title, which is by default meas_obj_names
         ncols (int, default: 2 if len(data_to_proc_dict) > 2 else 1):
             number of subplots along x
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
@@ -113,66 +169,69 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
         - meas_obj_names is defined in cal_points
     """
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
-    cp, sp, mospm, _, mobjn = \
-        hlp_mod.get_measobj_properties(data_dict, **params)
+    cp, sp, mospm, mobjn = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'],
+        **params)
     if len(cp.states) == 0:
         print(f'There are no cal_states to plot for {mobjn}.')
         return
 
+    # get the sweep points information
     sp_name = params.get('sp_name', mospm[mobjn][0])
     sweep_info = [v for d in sp for k, v in d.items() if sp_name == k]
     if len(sweep_info) == 0:
         raise KeyError(f'{sp_name} not found.')
+    physical_swpts = sweep_info[0][0]
 
+    # get x-axis information
+    xlabel = sweep_info[0][2]
+    xunit = sweep_info[0][1]
+    # xvals needs to be extracted in the for loop below
+
+    # get y-axis information
+    ylabel = params.get('ylabel', None)
+    if ylabel is None:
+        ylabel = r'$|f\rangle$ state population' if 'f,' in cp.states else \
+                 r'$|e\rangle$ state population'
+    yunit = params.get('yunit', '')
+
+    # get more plotting aspect information
+    data_labels = params.get('data_labels', ['Data']*len(data_to_proc_dict))
+    if len(data_labels) != len(data_to_proc_dict):
+        raise ValueError('Lenght of "data_labels" does not equal the number '
+                         'of traces to plot')
+    plotsize = get_default_plot_params(set=False)['figure.figsize']
+    plotsize = (plotsize[0], 1.5*plotsize[1])
+    ncols = hlp_mod.get_param(
+        'ncols', params, default_value=2 if len(data_to_proc_dict) > 2 else 1)
+    nrows = hlp_mod.get_param(
+        'nrows', params, default_value=2 if len(data_to_proc_dict) == 2 else
+        len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
+    axids = np.arange(ncols*nrows)
+    if len(axids) == 1:
+        axids = [None]*len(data_to_proc_dict)
+
+    # get figure name
     if figure_name is None:
         figure_name = 'cal_states'
     if mobjn not in figure_name:
         figure_name += '_' + mobjn
-    plot_name_suffix = params.get('plot_name_suffix', '')
-    title_suffix = mobjn + params.get('title_suffix', '')
-    if len(data_dict['timestamps']) > 1:
-        title = f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
-    else:
-        title = f'{data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
-    if title_suffix is not None:
-        title += '\n' + title_suffix
 
-    xlabel = sweep_info[0][2]
-    xunit = sweep_info[0][1]
-    ylabel = params.get('ylabel', None)
-    if ylabel is None:
-        ylabel = r'$|f\rangle$ state population' if ('f,') in cp.states else \
-            r'$|e\rangle$ state population'
-    yunit = params.get('yunit', '')
-    do_legend = params.get('do_legend', True)
-    plotsize = get_default_plot_params(set=False)['figure.figsize']
-    plotsize = (plotsize[0], plotsize[0]/1.25)
-    ncols = params.get('ncols', 2 if len(data_to_proc_dict) > 2 else 1)
-    nrows = params.get('nrows', 2 if len(data_to_proc_dict) == 2 else
-        len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
-    axids = np.arange(ncols*nrows)
-    if len(axids) == 1:
-        axids = [None]
-
+    # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
     plot_names_cal = []
     for i, keyi in enumerate(data_to_proc_dict):
-        physical_swpts = deepcopy(sweep_info[0][0])
         data = data_to_proc_dict[keyi]
-
         if ylabel is None:
             ylabel = hlp_mod.get_latex_prob_label(keyi)
 
-        cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts,
-                                                       cp, mobjn)
+        cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts, cp, mobjn)
         cal_data = hlp_mod.get_cal_data(data, cp, mobjn)
         qb_cal_indxs = cp.get_indices()[mobjn]
+
         # plot cal points
         for ii, cal_pts_idxs in enumerate(qb_cal_indxs.values()):
-            plot_dict_name_cal = list(qb_cal_indxs)[ii] + \
-                                 '_' + mobjn + keyi + plot_name_suffix
+            plot_dict_name_cal = list(qb_cal_indxs)[ii] + '_' + keyi
             plot_dicts[plot_dict_name_cal+'_line'] = {
                 'fig_id': figure_name,
                 'ax_id': axids[i],
@@ -197,9 +256,8 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
                 'yvals': cal_data[cal_pts_idxs],
                 'ylabel': ylabel,
                 'yunit': yunit,
-                'setlabel': list(qb_cal_indxs)[ii],
-                'title': title,
-                'do_legend': do_legend,
+                'setlabel': f'prep {list(qb_cal_indxs)[ii]}',
+                'title': default_figure_title(data_dict, mobjn),
                 'legend_bbox_to_anchor': (1, 0.5),
                 'legend_pos': 'center left',
                 'linestyle': 'none',
@@ -208,15 +266,23 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
 
             plot_names_cal += [plot_dict_name_cal, plot_dict_name_cal + '_line']
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    # add plot_params to each plot dict
+    plot_params = hlp_mod.get_param('plot_params', params, default_value={})
+    for plt_name in plot_names_cal:
+        plot_dicts[plt_name].update(plot_params)
+
+    # add plot_dicts to the data_dict
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+
     if params.get('do_plotting', False):
+        # do plotting
         plot(data_dict, keys_in=plot_names_cal, **params)
-    return plot_dicts
+    return figure_name
 
 
 def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
     """
-    Prepares plot for 1d data arrays and adds the plot dicts to the
+    Prepares A SINGLE plot for 1d data arrays and adds the plot dicts to the
     data_dict['plot_dicts'].
     :param data_dict: OrderedDict containing data to be processed and where
                     processed data is to be stored
@@ -227,16 +293,12 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
     :param params:
         sp_name (str, default: 'none): name of the sweep parameter in
             sweep_points. To be used on x-axis.
-        xvals (array, default: None): array of points to be plotted on x-axis
+        xvals (array, default: None): array of points to be plotted on x-axis.
+            If None, will be taken from sweep_points
         ylabel (str, default: None): y-axis label
         yunit (str, default: ''): y-axis unit
-        data_label (str, default: 'Data'): legend label corresponding to
-            the data
-        do_legend (bool, default: True): whether to show the legend
-        plot_name_suffix (str, default: ''): suffix to be added to all the
-            plot names in this function
-        title_suffix (str, default: ''): suffix to be added to the figure
-            title, which is by default meas_obj_names
+        data_labels (list of str, default: ['Data']): legend labels
+            corresponding to the each of the keys_in
         ncols (int, default: 2 if len(data_to_proc_dict) > 2 else 1):
             number of subplots along x
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
@@ -244,6 +306,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
             number of subplots along y
 
     Assumptions:
+        - all the data corresponding to keys_in are plotted on the same figure!
         - automatically excludes cal points if len(cp.states) != 0.
         - if len(keys_in) > 1, this function will plot the data corresponding to
         each key_in on a separate subplot. To plot on same axis,
@@ -253,60 +316,57 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
         - expects 1d arrays
         - meas_obj_names is defined in cal_points
     """
-    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict,
-                                                          keys_in=keys_in)
-    sp, mospm, movnm, mobjn = \
-        hlp_mod.get_measobj_properties(
-            data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
-            **params)
-    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
-                                 **params)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in=keys_in)
+    sp, mospm, mobjn = hlp_mod.get_measurement_properties(
+            data_dict, props_to_extract=['sp', 'mospm', 'mobjn'], **params)
+    # we extract cp separately because we do not want to raise an error if cp
+    # is not found; we do not strictly need them here
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False, **params)
     if isinstance(cp, str):
         cp = CalibrationPoints.from_string(cp)
+
+    # get the sweep points information
     sp_name = params.get('sp_name', mospm[mobjn][0])
     sweep_info = [v for d in sp for k, v in d.items() if sp_name == k]
     if len(sweep_info) == 0:
         raise KeyError(f'sp_name={sp_name} not found.')
 
-    if mobjn not in figure_name:
-        figure_name += '_' + mobjn
-    plot_name_suffix = params.get('plot_name_suffix', '')
-    title_suffix = mobjn + params.get('title_suffix', '')
-    if len(data_dict['timestamps']) > 1:
-        title = f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
-    else:
-        title = f'{data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
-    if title_suffix is not None:
-        title += '\n' + title_suffix
-
+    # get x-axis information
     xvals = params.get('xvals', None)
     if xvals is None:
         xvals = deepcopy(sweep_info[0][0])
     xlabel = sweep_info[0][2]
     xunit = sweep_info[0][1]
+
+    # get y-axis information
     ylabel = params.get('ylabel', None)
     if ylabel is None and cp is not None:
         if len(cp.states) != 0:
             ylabel = r'$|f\rangle$ state population' if 'f,' in cp.states else \
-                r'$|e\rangle$ state population'
+                     r'$|e\rangle$ state population'
     yunit = params.get('yunit', '')
 
-    data_labels = params.get('data_label', 'Data')
-    if isinstance(data_labels, list) and \
-            len(data_labels) != len(data_to_proc_dict):
-        data_labels = len(data_to_proc_dict) * [data_labels]
-    do_legend = params.get('do_legend', True)
+    # get more plotting aspect information
+    data_labels = params.get('data_labels', ['data']*len(data_to_proc_dict))
+    if len(data_labels) != len(data_to_proc_dict):
+        raise ValueError('Lenght of "data_labels" does not equal the number '
+                         'of traces to plot')
     plotsize = get_default_plot_params(set=False)['figure.figsize']
-    plotsize = (plotsize[0], plotsize[0]/1.25)
-    ncols = params.get('ncols', 2 if len(data_to_proc_dict) > 2 else 1)
-    nrows = params.get('nrows', 2 if len(data_to_proc_dict) == 2 else
-    len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
+    plotsize = (plotsize[0], 1.5*plotsize[1])
+    ncols = hlp_mod.get_param(
+        'ncols', params, default_value=2 if len(data_to_proc_dict) > 2 else 1)
+    nrows = hlp_mod.get_param(
+        'nrows', params, default_value=2 if len(data_to_proc_dict) == 2 else
+        len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
     axids = np.arange(ncols*nrows)
     if len(axids) == 1:
         axids = [None]*len(data_to_proc_dict)
 
+    # get figure name
+    if mobjn not in figure_name:
+        figure_name += mobjn
+
+    # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
     plot_dict_names = []
     for i, keyi in enumerate(data_to_proc_dict):
@@ -315,7 +375,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
         if ylabel is None:
             ylabel = hlp_mod.get_latex_prob_label(keyi)
 
-        plot_dict_name = figure_name + '_' + keyi + plot_name_suffix
+        plot_dict_name = figure_name + keyi
         plot_dicts[plot_dict_name] = {
             'plotfn': 'plot_line',
             'fig_id': figure_name,
@@ -326,29 +386,34 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
             'xvals': xvals,
             'xlabel': xlabel,
             'xunit': xunit,
-            'xerr': params.get('xerr', None),
             'yvals': yvals,
             'ylabel': ylabel,
             'yunit': yunit,
-            'yerr': params.get('yerr', None),
             'setlabel': data_labels[i],
-            'title': title,
+            'title': default_figure_title(data_dict, mobjn),
             'linestyle': params.get('linestyle', 'none'),
-            'color': params.get('color', None),
-            'do_legend': do_legend,
+            'do_legend': True,
             'legend_bbox_to_anchor': (1, 0.5),
             'legend_pos': 'center left'}
         plot_dict_names += [plot_dict_name]
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    # add plot_params to each plot dict
+    plot_params = hlp_mod.get_param('plot_params', params, default_value={})
+    for plt_name in plot_dict_names:
+        plot_dicts[plt_name].update(plot_params)
+
+    # add plot_dicts to the data_dict
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+
     if params.get('do_plotting', False):
+        # do plotting
         plot(data_dict, keys_in=plot_dict_names, **params)
-    return plot_dicts
+    return figure_name
 
 
 def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
     """
-    Prepares plot for 1d data arrays and adds the plot dicts to the
+    Prepares A SINGLE plot for 1d data arrays and adds the plot dicts to the
     data_dict['plot_dicts'].
     :param data_dict: OrderedDict containing data to be processed and where
                     processed data is to be stored
@@ -362,10 +427,6 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
         xvals (array, default: None): array of points to be plotted on x-axis
         zlabel (str, default: None): z-axis label
         zunit (str, default: ''): z-axis unit
-        plot_name_suffix (str, default: ''): suffix to be added to all the
-            plot names in this function
-        title_suffix (str, default: ''): suffix to be added to the figure
-            title, which is by default meas_obj_names
         ncols (int, default: 2 if len(data_to_proc_dict) > 2 else 1):
             number of subplots along x
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
@@ -373,6 +434,7 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
             number of subplots along y
 
     Assumptions:
+        - all the data corresponding to keys_in are plotted on the same figure!
         - automatically excludes cal points if len(cp.states) != 0.
         - if len(keys_in) > 1, this function will plot the data corresponding to
         each key_in on a separate subplot. To plot on same axis,
@@ -382,56 +444,53 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
         - expects 1d arrays
         - meas_obj_names is defined in cal_points
     """
-    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict,
-                                                          keys_in=keys_in)
-    sp, mospm, movnm, mobjn = \
-        hlp_mod.get_measobj_properties(
-            data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
-            **params)
-    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
-                                 **params)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in=keys_in)
+    sp, mospm, mobjn = hlp_mod.get_measurement_properties(
+            data_dict, props_to_extract=['sp', 'mospm', 'mobjn'], **params)
+    # we extract cp separately because we do not want to raise an error if cp
+    # is not found; we do not strictly need them here
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False, **params)
     if isinstance(cp, str):
         cp = CalibrationPoints.from_string(cp)
 
+    # get the sweep points information
     sp_names = params.get('sp_names', mospm[mobjn])
     sweep_info = [v for d in sp for k, v in d.items() if k in sp_names]
     if len(sweep_info) == 0:
         raise KeyError(f'sp_names={sp_names} not found.')
 
-    if mobjn not in figure_name:
-        figure_name += '_' + mobjn
-    plot_name_suffix = params.get('plot_name_suffix', '')
-    title_suffix = mobjn + params.get('title_suffix', '')
-    if len(data_dict['timestamps']) > 1:
-        title = f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
-    else:
-        title = f'{data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
-    if title_suffix is not None:
-        title += '\n' + title_suffix
-
+    # get x-axis information
     xvals = params.get('xvals', None)
     if xvals is None:
         xvals = deepcopy(sweep_info[0][0])
     xlabel = sweep_info[0][2]
     xunit = sweep_info[0][1]
+
+    # get Z-axis information
     zlabel = params.get('zlabel', None)
     if zlabel is None and cp is not None:
         if len(cp.states) != 0:
             zlabel = r'$|f\rangle$ state population' if 'f,' in cp.states else \
-                r'$|e\rangle$ state population'
+                     r'$|e\rangle$ state population'
     zunit = params.get('zunit', '')
 
+    # get more plotting aspect information
     plotsize = get_default_plot_params(set=False)['figure.figsize']
-    plotsize = (plotsize[0], plotsize[0]/1.25)
-    ncols = params.get('ncols', 2 if len(data_to_proc_dict) > 2 else 1)
-    nrows = params.get('nrows', 2 if len(data_to_proc_dict) == 2 else
-    len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
+    plotsize = (plotsize[0], 1.5*plotsize[1])
+    ncols = hlp_mod.get_param(
+        'ncols', params, default_value=2 if len(data_to_proc_dict) > 2 else 1)
+    nrows = hlp_mod.get_param(
+        'nrows', params, default_value=2 if len(data_to_proc_dict) == 2 else
+        len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
     axids = np.arange(ncols*nrows)
     if len(axids) == 1:
-        axids = [None]
+        axids = [None]*len(data_to_proc_dict)
 
+    # get figure name
+    if mobjn not in figure_name:
+        figure_name += mobjn
+
+    # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
     plot_dict_names = []
     for i, keyi in enumerate(data_to_proc_dict):
@@ -440,7 +499,8 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
         if zlabel is None:
             zlabel = hlp_mod.get_latex_prob_label(keyi)
         zlabel = f'{zlabel} {zunit}'
-        plot_dict_name = f'{figure_name}_{keyi}_{plot_name_suffix}'
+
+        plot_dict_name = figure_name + keyi
         for sp_info in sweep_info:
             plot_dict_name += '_' + sp_info[2]
             plot_dicts[plot_dict_name] = {
@@ -457,20 +517,28 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
                 'xunit': xunit,
                 'ylabel': sp_info[2],
                 'yunit': sp_info[1],
-                'title': title,
+                'title': default_figure_title(data_dict, mobjn),
                 'clabel': zlabel}
             plot_dict_names += [plot_dict_name]
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    # add plot_params to each plot dict
+    plot_params = hlp_mod.get_param('plot_params', params, default_value={})
+    for plt_name in plot_dict_names:
+        plot_dicts[plt_name].update(plot_params)
+
+    # add plot_dicts to the data_dict
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+
     if params.get('do_plotting', False):
+        # do plotting
         plot(data_dict, keys_in=plot_dict_names, **params)
-    return plot_dicts
+    return figure_name
 
 
 def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
                                    **params):
     """
-    Prepares plot for raw data and adds the plot dicts to the
+    Prepares A SINGLE plot for raw data and adds the plot dicts to the
     data_dict['plot_dicts'].
     :param data_dict: OrderedDict containing data to be processed and where
                     processed data is to be stored
@@ -481,13 +549,12 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     :param params:
         sp_name (str, default: 'none): name of the sweep parameter in
             sweep_points. To be used on x-axis.
-        ylabel (str, default: None): y-axis label
-        yunit (str, default: ''): y-axis unit
-        data_label (str, default: 'Data'): legend label corresponding to
-            the data
-        do_legend (bool, default: True): whether to show the legend
-        title_suffix (str, default: ''): suffix to be added to the figure
-            title, which is by default meas_obj_name
+        xvals (array, default: None): array of points to be plotted on x-axis.
+            If None, will be taken from sweep_points
+        yunit (str, default: taken from values_names if they exist else 'arb.'):
+            y-axis unit
+        data_labels (list of str, default: ['Data']): legend labels
+            corresponding to the each of the keys_in
         ncols (int, default: 2 if len(data_to_proc_dict) > 2 else 1):
             number of subplots along x
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
@@ -495,6 +562,7 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             number of subplots along y
 
     Assumptions:
+        - all the data corresponding to keys_in are plotted on the same figure!
         - does NOT exclude cal points if len(cp.states) != 0; instead it extends
         the physical sweep points (if user does not provide xvals)
         - if len(keys_in) > 1, this function will plot the data corresponding to
@@ -505,63 +573,66 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         - expects 1d arrays
         - meas_obj_name is defined in cal_points
     """
-    sp, mospm, movnm, mobjn = \
-        hlp_mod.get_measobj_properties(
-            data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
-            **params)
-    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
-                                 **params)
+    sp, mospm, movnm, mobjn = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
+        **params)
+    # we extract cp separately because we do not want to raise an error if cp
+    # is not found; we do not strictly need them here
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False, **params)
     if isinstance(cp, str):
         cp = CalibrationPoints.from_string(cp)
 
+    # get data_to_proc_dict
     if keys_in is None:
         keys_in = movnm[mobjn]
-    data_to_proc_dict = hlp_mod.get_data_to_process(
-        data_dict, keys_in=keys_in)
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in=keys_in)
+
+    # get the sweep points information
     sp_name = params.get('sp_name', mospm[mobjn][0])
     sweep_info = [v for d in sp for k, v in d.items() if sp_name == k]
     if len(sweep_info) == 0:
         raise KeyError(f'{sp_name} not found.')
 
-    if figure_name is None:
-        figure_name = 'raw_data'
-    if mobjn not in figure_name:
-        figure_name += '_' + mobjn
-    title_suffix = mobjn + params.get('title_suffix', '')
-    if len(data_dict['timestamps']) > 1:
-        title = f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
-    else:
-        title = f'{data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
-    if title_suffix is not None:
-        title += '\n' + title_suffix
-
-    xvals = params.get('xvals', None)
+    # get x-axis information
+    xvals = hlp_mod.get_param('xvals', params)
     xlabel = sweep_info[0][2]
     xunit = sweep_info[0][1]
-    data_label = params.get('data_label', 'Raw data')
-    do_legend = params.get('do_legend', False)
+
+    # get more plotting aspect information
+    data_labels = params.get('data_labels', ['data']*len(data_to_proc_dict))
+    if len(data_labels) != len(data_to_proc_dict):
+        raise ValueError('Lenght of "data_labels" does not equal the number '
+                         'of traces to plot')
     plotsize = get_default_plot_params(set=False)['figure.figsize']
-    ncols = params.get('ncols', 2 if len(data_to_proc_dict) > 2 else 1)
-    nrows = params.get('nrows', 2 if len(data_to_proc_dict) == 2 else
+    ncols = hlp_mod.get_param(
+        'ncols', params, default_value=2 if len(data_to_proc_dict) > 2 else 1)
+    nrows = hlp_mod.get_param(
+        'nrows', params, default_value=2 if len(data_to_proc_dict) == 2 else
         len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
     axids = np.arange(ncols*nrows)
     if len(axids) == 1:
-        axids = [None]
+        axids = [None]*len(data_to_proc_dict)
 
+    # get figure name
+    if figure_name is None:
+        figure_name = 'raw_data'
+    if mobjn not in figure_name:
+        figure_name += mobjn
+
+    # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
     plot_dict_names = []
     for i, keyi in enumerate(data_to_proc_dict):
         if xvals is None:
             physical_swpts = deepcopy(sweep_info[0][0])
-            cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts,
-                                                           cp, mobjn)
+            cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts, cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         yvals = data_to_proc_dict[keyi]
         ylabel = keyi.split('.')[-1]
-        yunit = params.get('yunit', hlp_mod.get_param(
-            'value_units', data_dict, default_value='arb.'))
+        yunit = hlp_mod.get_param('yunit', params,
+                                  default_value=hlp_mod.get_param(
+                                      'value_units', data_dict,
+                                      default_value='arb.'))
         if isinstance(yunit, list):
             yunit = yunit[0]
 
@@ -579,42 +650,46 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             'yvals': yvals,
             'ylabel': ylabel,
             'yunit': yunit,
-            'setlabel': data_label,
-            'title': title,
+            'setlabel': data_labels[i],
+            'title': default_figure_title(data_dict, mobjn),
             'linestyle': params.get('linestyle', '-'),
             'color': params.get('color', None),
-            'do_legend': do_legend,
+            'do_legend': False,
             'legend_bbox_to_anchor': (1, 0.5),
             'legend_pos': 'center left'}
         plot_dict_names += [plot_dict_name]
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_key=True)
+    # add plot_params to each plot dict
+    plot_params = hlp_mod.get_param('plot_params', params, default_value={})
+    for plt_name in plot_dict_names:
+        plot_dicts[plt_name].update(plot_params)
+
+    # add plot_dicts to the data_dict
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+
     if params.get('do_plotting', False):
+        # do plotting
         plot(data_dict, keys_in=plot_dict_names, **params)
-    return plot_dicts
+    return figure_name
 
 
 def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
                                    **params):
     """
-    Prepares plot for raw data and adds the plot dicts to the
+    Prepares A SINGLE plot for raw data and adds the plot dicts to the
     data_dict['plot_dicts'].
     :param data_dict: OrderedDict containing data to be processed and where
                     processed data is to be stored
     :param keys_in: list of key names or dictionary keys paths in
                     data_dict for the data to be processed
     :param figure_name: name of the figure on which all the plot dicts created
-            will be plotted
+                        will be plotted
     :param params:
-        sp_name (str, default: 'none): name of the sweep parameter in
+        sp_name (str, default: mospm[mobjn]): name of the sweep parameter in
             sweep_points. To be used on x-axis.
-        ylabel (str, default: None): y-axis label
-        yunit (str, default: ''): y-axis unit
-        data_label (str, default: 'Data'): legend label corresponding to
-            the data
-        do_legend (bool, default: True): whether to show the legend
-        title_suffix (str, default: ''): suffix to be added to the figure
-            title, which is by default meas_obj_name
+        xvals (numpy array or list, default: None): x values
+        zunit (str, default: 'arb.'): z-axis unit
+        do_plotting (bool, default: False): wheter to plot
         ncols (int, default: 2 if len(data_to_proc_dict) > 2 else 1):
             number of subplots along x
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
@@ -622,6 +697,7 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             number of subplots along y
 
     Assumptions:
+        - all the data corresponding to keys_in are plotted on the same figure!
         - does NOT exclude cal points if len(cp.states) != 0; instead it extends
         the physical sweep points (if user does not provide xvals)
         - if len(keys_in) > 1, this function will plot the data corresponding to
@@ -632,65 +708,65 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         - expects 1d arrays
         - meas_obj_name is defined in cal_points
     """
-    sp, mospm, movnm, mobjn = \
-        hlp_mod.get_measobj_properties(
+    sp, mospm, movnm, mobjn = hlp_mod.get_measurement_properties(
             data_dict, props_to_extract=['sp', 'mospm', 'movnm', 'mobjn'],
             **params)
-    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False,
-                                 **params)
+    # we extract cp separately because we do not want to raise an error if cp
+    # is not found; we do not strictly need them here
+    cp = hlp_mod.get_param('cal_points', data_dict, raise_error=False, **params)
     if isinstance(cp, str):
         cp = CalibrationPoints.from_string(cp)
 
+    # get data_to_proc_dict
     if keys_in is None:
         keys_in = movnm[mobjn]
     data_to_proc_dict = hlp_mod.get_data_to_process(
         data_dict, keys_in=keys_in)
+
+    # get the sweep points information
     sp_names = params.get('sp_names', mospm[mobjn])
     sweep_info = [v for d in sp for k, v in d.items() if k in sp_names]
     if len(sweep_info) == 0:
         raise KeyError(f'sp_names={sp_names} not found.')
 
-    if figure_name is None:
-        figure_name = 'raw_data'
-    if mobjn not in figure_name:
-        figure_name += '_' + mobjn
-    title_suffix = mobjn + params.get('title_suffix', '')
-    if len(data_dict['timestamps']) > 1:
-        title = f'{data_dict["timestamps"][0]} - {data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
-    else:
-        title = f'{data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
-    if title_suffix is not None:
-        title += '\n' + title_suffix
-
+    # get x-axis information
     xvals = params.get('xvals', None)
     xlabel = sweep_info[0][2]
     xunit = sweep_info[0][1]
 
+    # get more plotting aspect information
     plotsize = get_default_plot_params(set=False)['figure.figsize']
-    ncols = params.get('ncols', 2 if len(data_to_proc_dict) > 2 else 1)
-    nrows = params.get('nrows', 2 if len(data_to_proc_dict) == 2 else
-    len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
+    ncols = hlp_mod.get_param(
+        'ncols', params, default_value=2 if len(data_to_proc_dict) > 2 else 1)
+    nrows = hlp_mod.get_param(
+        'nrows', params, default_value=2 if len(data_to_proc_dict) == 2 else
+        len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2)
     axids = np.arange(ncols*nrows)
     if len(axids) == 1:
-        axids = [None]
+        axids = [None]*len(data_to_proc_dict)
 
+    # get figure name
+    if figure_name is None:
+        figure_name = 'raw_data'
+    if mobjn not in figure_name:
+        figure_name += mobjn
+
+    # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
     plot_dict_names = []
     for i, keyi in enumerate(data_to_proc_dict):
         if xvals is None:
             physical_swpts = deepcopy(sweep_info[0][0])
-            cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts,
-                                                           cp, mobjn)
+            cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts, cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         zvals = data_to_proc_dict[keyi]
-        zlabel = keyi.split('.')[-1]
-        zunit = params.get('zunit', hlp_mod.get_param(
-            'value_units', data_dict, default_value='arb.'))
+        zunit = hlp_mod.get_param('zunit', params,
+                                  default_value=hlp_mod.get_param(
+                                      'value_units', data_dict,
+                                      default_value='arb.'))
         if isinstance(zunit, list):
             zunit = zunit[0]
-        zlabel = f'{zlabel} {zunit}'
+        zlabel = f'{keyi.split(".")[-1]} {zunit}'
 
         plot_dict_name = figure_name + '_' + keyi
         for sp_info in sweep_info:
@@ -709,50 +785,75 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
                 'ylabel': sp_info[2],
                 'yunit': sp_info[1],
                 'zvals': zvals.T,
-                'title': title,
+                'title': default_figure_title(data_dict, mobjn),
                 'clabel': zlabel}
             plot_dict_names += [plot_dict_name]
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
-                            update_key=True)
+    # add plot_params to each plot dict
+    plot_params = hlp_mod.get_param('plot_params', params, default_value={})
+    for plt_name in plot_dict_names:
+        plot_dicts[plt_name].update(plot_params)
+
+    # add plot_dicts to the data_dict
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+
     if params.get('do_plotting', False):
+        # do plotting
         plot(data_dict, keys_in=plot_dict_names, **params)
-    return plot_dicts
+    return figure_name
 
 
-def prepare_fit_plot_dicts(data_dict, figure_name, **params):
+def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
     """
-    meas_obj_names must be in params
-    :param data_dict:
-    :param figure_name:
+    Prepares plot dict for from a fit result object. Adds the plot dicts to the
+    data_dict['plot_dicts'].
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param figure_name: name of the figure on which all the plot dicts created
+            will be plotted
+    :param fit_names: list of fit_names that exist in fit_dicts. Can also be
+        'all' in which case it plots all the dictionaries in fit_dicts
     :param params:
-    :return:
+        plot_params (dict, default: {}): dictionary of plot parameters and
+            their values compatible with the plotting framework
+        params_to_print (dict, default: None): list of parameter names that
+            exist in the fit_res object and whose value should be displayed as
+            textbox in the plot.
+
+    Assumptions:
+        - fit_dicts exists in fit_dicts
+        - meas_obj_names exists in either params, data_dict, or exp_metadata
     """
-    mobjn = hlp_mod.get_measobj_properties(
+    mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], **params)
 
-    labels = params.get('labels', 'Fit')
-    figure_name += '_' + mobjn
-    fit_dicts = data_dict['fit_dicts']
+    fit_dicts = hlp_mod.get_param('fit_dicts', data_dict, raise_error=True)
+    if mobjn not in figure_name:
+        figure_name += '_' + mobjn
     plot_dicts = {}
-    for fit_name, fit_dict in fit_dicts.items():
+    if fit_names == 'all':
+        fit_names = list(fit_dicts)
+    for fit_name in fit_names:
+        fit_dict = hlp_mod.get_param(fit_name, fit_dicts, raise_error=True)
         fit_res = fit_dict['fit_res']
-        legend_label = hlp_mod.get_param('legend_label', fit_dict,
-                                               default_value=labels)
-        fit_line_color = hlp_mod.get_param('fit_line_color', fit_dict,
-                                               default_value='C0')
+        plot_params = hlp_mod.get_param('plot_params', fit_dict,
+                                        default_value={})
+        plot_params.update(hlp_mod.get_param('plot_params', params,
+                                             default_value={}))
         plot_dicts[fit_name] = {
             'fig_id': figure_name,
             'plotfn': 'plot_fit',
             'fit_res': fit_res,
-            'setlabel': legend_label,
-            'color': fit_line_color,
+            'setlabel': 'fit',
+            'zorder': 0,
+            'color': 'r',
             'do_legend': True,
             'legend_ncol': 2,
             'legend_bbox_to_anchor': (1, -0.15),
-            'legend_pos': 'upper right', **params}
+            'legend_pos': 'upper right'}
+        plot_dicts[fit_name].update(plot_params)
 
-        pois = hlp_mod.get_param('params_to_print', fit_dict)
+        pois = hlp_mod.get_param('params_to_print', fit_dict, **params)
         if pois is not None:
             textstr = ''
             for i, poi in enumerate(pois):
@@ -773,8 +874,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, **params):
                 'plotfn': 'plot_text',
                 'text_string': textstr}
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
-                            update_key=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=list(plot_dicts), **params)
     return plot_dicts
@@ -793,7 +893,6 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
     axs = OrderedDict()
     figs = OrderedDict()
     plot_dicts = data_dict['plot_dicts']
-    presentation_mode = params.get('presentation_mode', False)
     no_label = params.get('no_label', False)
     if axs_dict is not None:
         for key, val in list(axs_dict.items()):
@@ -836,70 +935,84 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
             # transparent background around axes for presenting data
             figs[pdict['fig_id']].patch.set_alpha(0)
 
-    if presentation_mode:
-        plot_for_presentation(key_list=keys_in, no_label=no_label)
-    else:
-        for key in keys_in:
-            pdict = plot_dicts[key]
-            plot_touching = pdict.get('touching', False)
+    for fig_name in figs:
+        figs[fig_name].tight_layout()
 
-            if type(pdict['plotfn']) is str:
-                plotfn = getattr(this_mod, pdict['plotfn'])
+    for key in keys_in:
+        pdict = plot_dicts[key]
+        plot_touching = pdict.get('touching', False)
+
+        if type(pdict['plotfn']) is str:
+            plotfn = getattr(this_module, pdict['plotfn'])
+        else:
+            plotfn = pdict['plotfn']
+
+        # used to ensure axes are touching
+        if plot_touching:
+            axs[pdict['fig_id']].figure.subplots_adjust(
+                wspace=0, hspace=0)
+
+        pdict['ax_geom'] = get_axes_geometry_from_figure(
+            figs[pdict['fig_id']])
+
+        # Check if pdict is one of the accepted arguments,
+        # these are the plotting functions in this module.
+        if 'pdict' in signature(plotfn).parameters:
+            if pdict['ax_id'] is None:
+                plotfn(pdict=pdict, axs=axs[pdict['fig_id']])
             else:
-                plotfn = pdict['plotfn']
+                plotfn(pdict=pdict,
+                       axs=axs[pdict['fig_id']].flatten()[
+                           pdict['ax_id']])
+                axs[pdict['fig_id']].flatten()[
+                    pdict['ax_id']].figure.subplots_adjust(
+                    hspace=0.4, wspace=0.25)
 
-            # used to ensure axes are touching
-            if plot_touching:
-                axs[pdict['fig_id']].figure.subplots_adjust(
-                    wspace=0, hspace=0)
-
-            # Check if pdict is one of the accepted arguments,
-            # these are the plotting functions in the
-            # analysis base class.
-            if 'pdict' in signature(plotfn).parameters:
-                if pdict['ax_id'] is None:
-                    plotfn(pdict=pdict, axs=axs[pdict['fig_id']])
-                else:
-                    plotfn(pdict=pdict,
-                           axs=axs[pdict['fig_id']].flatten()[
-                               pdict['ax_id']])
-                    axs[pdict['fig_id']].flatten()[
-                        pdict['ax_id']].figure.subplots_adjust(
-                        hspace=0.35)
-
-            # most normal plot functions also work, it is required
-            # that these accept an "ax" argument to plot on and
-            # **kwargs the pdict is passed in as kwargs to such
-            # a function
-            elif 'ax' in signature(plotfn).parameters:
-                # Calling the function passing along anything
-                # defined in the specific plot dict as kwargs
-                if pdict['ax_id'] is None:
-                    plotfn(ax=axs[pdict['fig_id']], **pdict)
-                else:
-                    plotfn(pdict=pdict,
-                           axs=axs[pdict['fig_id']].flatten()[
-                               pdict['ax_id']])
-                    axs[pdict['fig_id']].flatten()[
-                        pdict['ax_id']].figure.subplots_adjust(
-                        hspace=0.35)
+        # most normal plot functions also work, it is required
+        # that these accept an "ax" argument to plot on and
+        # **kwargs the pdict is passed in as kwargs to such
+        # a function
+        elif 'ax' in signature(plotfn).parameters:
+            # Calling the function passing along anything
+            # defined in the specific plot dict as kwargs
+            if pdict['ax_id'] is None:
+                plotfn(ax=axs[pdict['fig_id']], **pdict)
             else:
-                raise ValueError(
-                    f'"{plotfn}" is not a valid plot function')
+                plotfn(pdict=pdict,
+                       axs=axs[pdict['fig_id']].flatten()[
+                           pdict['ax_id']])
+                axs[pdict['fig_id']].flatten()[
+                    pdict['ax_id']].figure.subplots_adjust(
+                    hspace=0.4, wspace=0.25)
+        else:
+            raise ValueError(
+                f'"{plotfn}" is not a valid plot function')
 
-        format_datetime_xaxes(data_dict, keys_in, axs)
-    if params.get('save_figs', True):
-        getattr(save_mod, 'save_figures')(data_dict, figs, keys_in=list(figs),
-                                          **params)
+    format_datetime_xaxes(data_dict, keys_in, axs)
+
+    # add_letter_to_subplots
+    for plot_name, axes in axs.items():
+        if hasattr(axes, '__iter__'):
+            # figs[plot_name].tight_layout()
+            add_letter_to_subplots(figs[plot_name], axes.flatten(),
+                                   xoffset=-0.07, yoffset=0.01, va='bottom')
+
+    # close figures
+    for fig_name in figs:
+        figs[fig_name].align_ylabels()
+        plt.close(figs[fig_name])
+
+    # add figures and axes to data_dict
+    hlp_mod.add_param('figures', figs, data_dict, append_value=True)
+    hlp_mod.add_param('axes', axs, data_dict, append_value=True)
 
 
 def plot_vlines_auto(pdict, axs):
     xs = pdict.get('xdata')
-    for i,x in enumerate(xs):
+    for i, x in enumerate(xs):
         d = {}
         for k in pdict:
             lk = k[:-1]
-            #if lk in signature(axs.axvline).parameters:
             if k not in ['xdata', 'plotfn', 'ax_id', 'do_legend']:
                 try:
                     d[lk] = pdict[k][i]
@@ -1154,6 +1267,9 @@ def plot_line(pdict, axs, tight_fig=True):
     plot_title = pdict.get('title', None)
     plot_xrange = pdict.get('xrange', None)
     plot_yrange = pdict.get('yrange', None)
+    zorder = pdict.get('zorder', None)
+    ax_id = pdict.get('ax_id', None)
+    ax_geom = pdict.get('ax_geom', (1, 1))
 
     if pdict.get('color', False):
         plot_linekws['color'] = pdict.get('color')
@@ -1200,11 +1316,12 @@ def plot_line(pdict, axs, tight_fig=True):
                                    'color', colors[i % len_color_cycle]),
                                label='%s%s' % (
                                    dataset_desc, dataset_label[i]),
+                               zorder=zorder,
                                **plot_linekws))
 
     else:
         pfunc = getattr(axs, pdict.get('func', 'plot'))
-        p_out = pfunc(plot_xvals, plot_yvals,
+        p_out = pfunc(plot_xvals, plot_yvals, zorder=zorder,
                       linestyle=plot_linestyle, marker=plot_marker,
                       label='%s%s' % (dataset_desc, dataset_label),
                       **plot_linekws)
@@ -1216,11 +1333,12 @@ def plot_line(pdict, axs, tight_fig=True):
         axs.set_xlim(xmin, xmax)
 
     if plot_title is not None:
-        axs.figure.text(0.5, 1, plot_title,
-                        horizontalalignment='center',
-                        verticalalignment='bottom',
-                        transform=axs.transAxes)
-        # axs.set_title(plot_title)
+        if ax_geom[1] > 1:
+            axs.figure.text(0.5, 1.02, plot_title,
+                            horizontalalignment='center',
+                            verticalalignment='bottom')
+        elif ax_id in [0, None]:
+            axs.set_title(plot_title)
 
     if do_legend:
         legend_ncol = pdict.get('legend_ncol', 1)
@@ -1228,10 +1346,14 @@ def plot_line(pdict, axs, tight_fig=True):
         legend_pos = pdict.get('legend_pos', 'best')
         legend_frameon = pdict.get('legend_frameon', False)
         legend_bbox_to_anchor = pdict.get('legend_bbox_to_anchor', None)
+        legend_bbox_transform = pdict.get('legend_bbox_transform',
+                                          axs.transAxes)
+
         axs.legend(title=legend_title,
                    loc=legend_pos,
                    ncol=legend_ncol,
                    bbox_to_anchor=legend_bbox_to_anchor,
+                   bbox_transform=legend_bbox_transform,
                    frameon=legend_frameon)
 
     if plot_xlabel is not None:
@@ -1639,14 +1761,14 @@ def plot_text(pdict, axs):
     """
     pfunc = getattr(axs, pdict.get('func', 'text'))
     plot_text_string = pdict['text_string']
-    plot_xpos = pdict.get('xpos', .98)
-    plot_ypos = pdict.get('ypos', .98)
+    plot_xpos = pdict.get('xpos', -0.125)
+    plot_ypos = pdict.get('ypos', -0.225)
     verticalalignment = pdict.get('verticalalignment', 'top')
     horizontalalignment = pdict.get('horizontalalignment', 'right')
     color = pdict.get('color', 'k')
 
     # fancy box props is based on the matplotlib legend
-    box_props = pdict.get('box_props', 'fancy')
+    box_props = pdict.get('box_props', None)
     if box_props == 'fancy':
         box_props = dict(boxstyle='round', pad=.4,
                          facecolor='white', alpha=0.5)
