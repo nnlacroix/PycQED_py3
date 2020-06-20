@@ -379,13 +379,8 @@ class QuDev_transmon(Qubit):
                            parameter_class=ManualParameter)
 
         # ac flux parameters
-        DEFAULT_FLUX_DISTORTION = dict(channel='',
-                                       filter_path='',
-                                       IIR_filter_list=[],
-                                       FIR_filter_list=[dict(type='Gaussian',
-                                                             sigma=2e-9,
-                                                             nr_sigma=40,
-                                                             dt=1 / 2.4e9)],
+        DEFAULT_FLUX_DISTORTION = dict(IIR_filter_list=[],
+                                       FIR_filter_list=[],
                                        scale_IIR=1,
                                        distortion='off',
                                        charge_buildup_compensation=True,
