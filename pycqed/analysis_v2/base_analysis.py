@@ -183,11 +183,6 @@ class BaseDataAnalysis(object):
         self.options_dict['close_figs'] = self.options_dict.get(
             'close_figs', close_figs)
 
-        if not hasattr(self, "job"):
-            self.create_job(t_start=t_start, t_stop=t_stop,
-                 label=label, data_file_path=data_file_path,
-                 close_figs=close_figs, options_dict=options_dict,
-                 extract_only=extract_only, do_fitting=do_fitting)
 
         ####################################################
         # These options relate to what analysis to perform #
@@ -248,9 +243,9 @@ class BaseDataAnalysis(object):
 
         # if timestamp wasn't specified, specify it for the job
         if not "t_start" in kwargs or kwargs["t_start"] is None:
-            kwargs["t_start"] = self.timestamps[0]
+                kwargs["t_start"] = self.timestamps[0]
         if (not "t_stop" in kwargs or kwargs["t_stop"] is None) and \
-            len(self.timestamps) > 1:
+                len(self.timestamps) > 1:
             kwargs['t_stop'] = self.timestamps[-1]
         kwargs_list = [f'{k}={v if not isinstance(v, str) else repr(v)}'
                           for k, v in kwargs.items()]
@@ -737,7 +732,7 @@ class BaseDataAnalysis(object):
                         d = self._convert_dict_rec(copy.deepcopy(fit_res))
                         write_dict_to_hdf5(d, entry_point=fr_group)
                 except Exception as e:
-                    data_file.clsoe()
+                    data_file.close()
                     raise e
 
     def save_processed_data(self, key=None, overwrite=True):
