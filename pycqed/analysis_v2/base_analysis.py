@@ -387,12 +387,9 @@ class BaseDataAnalysis(object):
                 raw_data_dict['hard_sweep_points'] = hsp
                 raw_data_dict['soft_sweep_points'] = ssp
             elif sweep_points is not None:
-                print('here')
                 # deal with hybrid measurements
                 sp = SweepPoints(from_dict_list=sweep_points)
-                print(mc_points.shape[0], len(sp))
                 if mc_points.shape[0] == 1 and len(sp) > 1:
-                    print('here again')
                     hybrid_measurement = True
                     if prep_params is None:
                         prep_params = dict()
