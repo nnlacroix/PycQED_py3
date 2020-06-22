@@ -15,23 +15,33 @@ from pycqed.instrument_drivers.meta_instrument.qubit_objects.QuDev_transmon \
     import QuDev_transmon
 from pycqed.measurement.multi_qubit_module import \
     get_multiplexed_readout_detector_functions
+from pycqed.measurement.multi_qubit_module import \
+    get_meas_obj_value_names_map
 import logging
 log = logging.getLogger(__name__)
 
-# TODO: dostrings (list all kw at the highest level with reference to where
+# TODO: docstrings (list all kw at the highest level with reference to where
 #  they are explained, explain all kw where they are processed)
 # TODO: add some comments that explain the way the code works
 
 class CalibBuilder(CircuitBuilder):
-    def __init__(self, dev, **kw):
-        super().__init__(dev=dev, **kw)
-        self.MC = dev.instr_mc.get_instr()
+    def __init__(self, task_list, dev=None, qubits=None,
+                 operation_dict=None, **kw):
+        # Try to get qubits or at least qb_names
+        _, qb_names = self.extract_qubits(dev, qubits, operation_dict)
+        # Filter to the ones that are needed
+        qb_names = self.find_qubits_in_tasks(qb_names, task_list)
+        # Initialize the CircuitBuilder
+        super().__init__(dev=dev, qubits=qubits,
+                         operation_dict=operation_dict,
+                         filter_qb_names=qb_names, **kw)
 
+        self.MC = None
         self.cal_points = None
         self.sweep_points = None
         self.cal_states = None
-        self.task_list = None
         self.ro_qubits = None
+        self.ro_qb_names = None
 
         self.classified = kw.pop('classified', False)
         self.label = kw.pop('label', None)
@@ -39,11 +49,11 @@ class CalibBuilder(CircuitBuilder):
         self.update = kw.pop('update', False)
         self.measure = kw.pop('measure', True)
         self.analyze = kw.pop('analyze', True)
-        self.exp_metadata = kw.pop('exp_metadata', None)
 
+        self.cal_states_rotations = {}
+        self.data_to_fit = {}
         self.sequences = []
-        self.hard_sweep_points = []
-        self.soft_sweep_points = []
+        self.mc_points = []
         self.channels_to_upload = []
         self.det_get_values_kws = {'classified': self.classified,
                                    'correlated': False,
@@ -53,9 +63,11 @@ class CalibBuilder(CircuitBuilder):
         self.exp_metadata = kw.pop('exp_metadata', None)
         if self.exp_metadata is None:
             self.exp_metadata = {}
-        kw.pop('qubits', None)
         self.exp_metadata.update(kw)
         self.exp_metadata.update({'classified_ro': self.classified})
+        self.task_list = task_list
+        self.create_ro_qubit_list()
+        self.create_cal_points(**kw)
 
     def add_to_meas_obj_sweep_points_map(self, meas_objs, sweep_point):
         if 'meas_obj_sweep_points_map' not in self.exp_metadata:
@@ -69,20 +81,32 @@ class CalibBuilder(CircuitBuilder):
                 sweep_point)
 
     def get_meas_objs_from_task(self, task):
-        qubits = self.find_qubits_in_tasks(self.qubits, [task])
-        return [qb.name for qb in qubits]
+        return self.find_qubits_in_tasks(self.qb_names, [task])
+
+    def guess_label(self, **kw):
+        if self.label is None:
+            self.label = 'Experiment'
+            if self.task_list is not None:
+                for t in self.task_list:
+                    self.label += f"_{t['qbl']}{t['qbr']}"
 
     def run_measurement(self, **kw):
+        if not self.measure:
+            return
+        assert self.qubits is not None, 'Cannot run measurement without ' \
+                                        'qubit objects.'
+        self.MC = self.qubits[0].instr_mc.get_instr()
+        self.guess_label(**kw)
+
         # only measure ro_qubits
         for qb in self.ro_qubits:
-            qb.prepare(drive='timedomain')
+            qb.prepare(drive='timedomain') # FIXME: drive should be a parameter
 
         if len(self.sweep_points) == 2:
             # compress 2D sweep
             compression_seg_lim = kw.pop('compression_seg_lim', None)
             if compression_seg_lim is not None:
-                self.sequences, self.hard_sweep_points, \
-                self.soft_sweep_points, cf = \
+                self.sequences, self.mc_points[0], self.mc_points[1], cf = \
                     self.sequences[0].compress_2D_sweep(self.sequences,
                                                         compression_seg_lim)
                 self.exp_metadata.update({'compression_factor': cf})
@@ -93,7 +117,7 @@ class CalibBuilder(CircuitBuilder):
             unit=list(self.sweep_points[0].values())[0][2])
 
         self.MC.set_sweep_function(hard_sweep_func)
-        self.MC.set_sweep_points(self.hard_sweep_points)
+        self.MC.set_sweep_points(self.mc_points[0])
 
         if len(self.sweep_points) == 2:
             self.channels_to_upload = kw.get('channels_to_upload',
@@ -103,7 +127,7 @@ class CalibBuilder(CircuitBuilder):
                 list(self.sweep_points[1])[0],
                 list(self.sweep_points[1].values())[0][2],
                 channels_to_upload=self.channels_to_upload))
-            self.MC.set_sweep_points_2D(self.soft_sweep_points)
+            self.MC.set_sweep_points_2D(self.mc_points[1])
 
         det_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
         det_func = get_multiplexed_readout_detector_functions(
@@ -112,13 +136,21 @@ class CalibBuilder(CircuitBuilder):
             det_get_values_kws=self.det_get_values_kws)[det_name]
         self.MC.set_detector_function(det_func)
 
+        if self.dev is not None:
+            meas_obj_value_names_map = self.dev.get_meas_obj_value_names_map(
+                self.ro_qubits, det_func)
+        else:
+            meas_obj_value_names_map = get_meas_obj_value_names_map(
+                self.ro_qubits, det_func)
+
         self.exp_metadata.update({
             'preparation_params': self.get_prep_params(),
             'rotate': len(self.cal_states) != 0 and not self.classified,
             'sweep_points': self.sweep_points,
-            'meas_obj_value_names_map':
-                self.dev.get_meas_obj_value_names_map(self.ro_qubits, det_func),
-            'ro_qubits': [qb.name for qb in self.ro_qubits]
+            'meas_obj_value_names_map': meas_obj_value_names_map,
+            'ro_qubits': self.ro_qb_names,
+            'cal_states_rotations': self.cal_states_rotations,
+            'data_to_fit': self.data_to_fit,
         })
         if self.task_list is not None:
             self.exp_metadata.update({'task_list': self.task_list})
@@ -129,7 +161,7 @@ class CalibBuilder(CircuitBuilder):
             self.MC.run(self.label, exp_metadata=self.exp_metadata)
 
     def create_cal_points(self, n_cal_points_per_state=1, cal_states='auto',
-                          for_ef=True, **kw):
+                          for_ef=False, **kw):
         """
         Creates a CalibrationPoints object based on the given parameters.
 
@@ -143,10 +175,10 @@ class CalibBuilder(CircuitBuilder):
             contains entries that are not needed)
         :return: CalibrationPoints object
         """
-        self.cal_states = CalibrationPoints.guess_cal_states(cal_states,
-                                                        for_ef=for_ef)
+        self.cal_states = CalibrationPoints.guess_cal_states(
+            cal_states, for_ef=for_ef)
         self.cal_points = CalibrationPoints.multi_qubit(
-            [qb.name for qb in self.ro_qubits], self.cal_states,
+            self.ro_qb_names, self.cal_states,
             n_per_state=n_cal_points_per_state)
         self.exp_metadata.update({'cal_points': repr(self.cal_points)})
 
@@ -155,8 +187,7 @@ class CalibBuilder(CircuitBuilder):
         task = copy(task)  # no deepcopy: might contain qubit objects
         prefix = task.get('prefix', None)
         if prefix is None:  # try to guess one based on contained qubits
-            task_qbs = self.find_qubits_in_tasks(self.qubits, [task])
-            prefix = '_'.join([qb.name for qb in task_qbs])
+            prefix = '_'.join(self.find_qubits_in_tasks(self.qb_names, [task]))
         prefix += ('_' if prefix[-1] != '_' else '')
         task['prefix'] = prefix
         mo = self.get_meas_objs_from_task(task)
@@ -220,7 +251,7 @@ class CalibBuilder(CircuitBuilder):
             global_sweep_points.add_sweep_parameter('dummy_sweep_param', [0])
         self.sweep_points = global_sweep_points
         # only measure ro_qubits
-        kw.update({'ro_qubits': [qb.name for qb in self.ro_qubits]})
+        kw.update({'ro_qubits': self.ro_qb_names})
         return self.sweep_n_dim(global_sweep_points, body_block=all_main_blocks,
                                 cal_points=self.cal_points, **kw)
 
@@ -263,21 +294,20 @@ class CalibBuilder(CircuitBuilder):
                 prepend_pulses += [prepend_pulse]
         return Block('prepend', prepend_pulses)
 
-    def get_ro_qubits(self, task_list=None):
+    def create_ro_qubit_list(self, task_list=None):
         if task_list is None:
             task_list = self.task_list
         if task_list is None:
             task_list = [{}]
-        ro_qubit_names = [task.get('qubits_to_measure', []) for
+        ro_qb_names = [task.get('qubits_to_measure', []) for
                           task in task_list]
-        if any([not isinstance(qbn, str) for qbn in ro_qubit_names]):
+        if any([isinstance(qbn, list) for qbn in ro_qb_names]):
             # flatten
-            ro_qubit_names = [i for j in ro_qubit_names for i in j]
+            ro_qb_names = [i for j in ro_qb_names for i in j]
         # sort
-        ro_qubit_names.sort()
-        ro_qubits = self.get_qubits('all' if len(ro_qubit_names) == 0
-                                    else ro_qubit_names)[0]
-        return ro_qubits
+        ro_qb_names.sort()
+        self.ro_qubits, self.ro_qb_names = self.get_qubits(
+            'all' if len(ro_qb_names) == 0 else ro_qb_names)
 
     @staticmethod
     def add_default_ramsey_sweep_points(sweep_points, **kw):
@@ -301,7 +331,8 @@ class CalibBuilder(CircuitBuilder):
 
     @staticmethod
     def find_qubits_in_tasks(qubits, task_list, search_in_operations=True):
-        qbs_dict = {qb.name: qb for qb in qubits}
+        qbs_dict = {qb if isinstance(qb, str) else qb.name: qb for qb in
+                    qubits}
         found_qubits = []
 
         def append_qbs(found_qubits, candidate):
@@ -336,8 +367,7 @@ class CPhase(CalibBuilder):
     ...
     """
 
-    def __init__(self, dev, task_list, sweep_points=None, **kw):
-
+    def __init__(self, task_list, sweep_points=None, **kw):
         try:
             for task in task_list:
                 for k in ['qbl', 'qbr']:
@@ -346,36 +376,26 @@ class CPhase(CalibBuilder):
                 if not 'prefix' in task:
                     task['prefix'] = f"{task['qbl']}{task['qbr']}_"
 
-            qubits = self.find_qubits_in_tasks(dev.qubits(), task_list)
-            super().__init__(dev, qubits=qubits, **kw)
+            kw['for_ef'] = kw.get('for_ef', True)
+
+            super().__init__(task_list, **kw)
 
             self.cphases = None
             self.population_losses = None
             self.leakage = None
             self.analysis = None
             self.cz_durations = {}
-            self.cal_states_rotations = {}
-            self.data_to_fit = {}
 
-            self.task_list = task_list
-            self.ro_qubits = self.get_ro_qubits()
-            self.guess_label(**kw)
             sweep_points = self.add_default_sweep_points(sweep_points, **kw)
-            self.create_cal_points(**kw)
-            self.sequences, sp = \
-                self.parallel_sweep(sweep_points, task_list, self.cphase_block,
-                                    **kw)
-            self.hard_sweep_points, self.soft_sweep_points = sp
+            self.sequences, self.mc_points = self.parallel_sweep(
+                sweep_points, task_list, self.cphase_block, **kw)
+
             self.exp_metadata.update({
                 'cz_durations': self.cz_durations,
-                'cal_states_rotations': self.cal_states_rotations,
-                'data_to_fit': self.data_to_fit
             })
 
-            if self.measure:
-                self.run_measurement(**kw)
-            if self.analyze:
-                self.run_analysis(**kw)
+            self.run_measurement(**kw)
+            self.run_analysis(**kw)
         except Exception as x:
             self.exception = x
             traceback.print_exc()
@@ -468,6 +488,9 @@ class CPhase(CalibBuilder):
         return [task['qbl'], task['qbr']]
 
     def run_analysis(self, **kw):
+        if not self.analyze:
+            return
+
         plot_all_traces = kw.get('plot_all_traces', True)
         plot_all_probs = kw.get('plot_all_probs', True)
         if self.classified:
@@ -481,7 +504,7 @@ class CPhase(CalibBuilder):
                                      qb.int_avg_det.value_names]
                            for qb in self.qubits}
         self.analysis = tda.CPhaseLeakageAnalysis(
-            qb_names=[qb.name for qb in self.qubits],
+            qb_names=self.qb_names,
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
                           'plot_all_probs': plot_all_probs,
                           'channel_map': channel_map})
@@ -497,7 +520,7 @@ class CPhase(CalibBuilder):
 
 
 class DynamicPhase(CalibBuilder):
-    def __init__(self, dev, task_list, sweep_points=None, **kw):
+    def __init__(self, task_list, sweep_points=None, **kw):
         try:
             self.simultaneous = kw.get('simultaneous', False)
             self.reset_phases_before_measurement = kw.get(
@@ -508,9 +531,9 @@ class DynamicPhase(CalibBuilder):
             self.old_dyn_phases = {}
             for task in task_list:
                 if task.get('qubits_to_measure', None) is None:
-                    task['qubits_to_measure'] = self.find_qubits_in_tasks(
-                        dev.qubits(), [task])
+                    task['qubits_to_measure'] = task['op_code'].split(' ')[1:]
                 else:
+                    # copy to not modify the caller's list
                     task['qubits_to_measure'] = copy(task['qubits_to_measure'])
 
                 for k, v in enumerate(task['qubits_to_measure']):
@@ -519,13 +542,14 @@ class DynamicPhase(CalibBuilder):
 
                 if 'prefix' not in task:
                     task['prefix'] = task['op_code'].replace(' ', '')
-                self.dyn_phases[task['prefix']] = {}
-                self.old_dyn_phases[task['prefix']] = {}
 
-            qbs_all = [task['qubits_to_measure'] for task in task_list]
-            if not self.simultaneous and max([len(qbs) for qbs in qbs_all]) > 1:
+            qbm_all = [task['qubits_to_measure'] for task in task_list]
+            if not self.simultaneous and max([len(qbs) for qbs in qbm_all]) > 1:
+                # create a child for each measurement
                 task_lists = []
-                for z in zip_longest(*qbs_all):
+                # the number of required children is the length of the
+                # longest qubits_to_measure
+                for z in zip_longest(*qbm_all):
                     new_task_list = []
                     for task, new_qb in zip(task_list, z):
                         if new_qb is not None:
@@ -536,86 +560,61 @@ class DynamicPhase(CalibBuilder):
 
                 # children should not update
                 self.update = kw.pop('update', False)
-                self.measurements = [DynamicPhase(dev, tl, sweep_points, **kw)
+                self.measurements = [DynamicPhase(tl, sweep_points, **kw)
                                      for tl in task_lists]
 
                 if self.measurements[0].analyze:
                     for m in self.measurements:
-                        [d.update(u) for d, u in zip(self.dyn_phases.values(),
-                                                     m.dyn_phases.values())]
-                        [d.update(u) for d, u in zip(
-                            self.old_dyn_phases.values(),
-                            m.old_dyn_phases.values())]
+                        for k, v in m.dyn_phases.items():
+                            if k not in self.dyn_phases:
+                                self.dyn_phases[k] = {}
+                            self.dyn_phases[k].update(v)
             else:
+                # this happens if we are in child or if simultaneous=True or
+                # if only one qubit per task is measured
                 self.measurements = [self]
-                qubits = self.find_qubits_in_tasks(dev.qubits(), task_list)
-                super().__init__(dev, qubits=qubits, **kw)
+                super().__init__(task_list, **kw)
 
-                self.cal_states_rotations = {}
-                self.data_to_fit = {}
-
-                self.task_list = task_list
-                self.ro_qubits = self.get_ro_qubits(task_list)
-                self.guess_label(**kw)
                 sweep_points = self.add_default_sweep_points(sweep_points, **kw)
-                if 'for_ef' not in kw:
-                    kw['for_ef'] = False
-                self.create_cal_points(**kw)
-                self.basis_rot_pars = {}
 
-                for task in task_list:
-                    op_split = task['op_code'].split(' ')
-                    if op_split[0] == 'CZ':
-                        op_split[0] = self.cz_pulse_name
-                    self.basis_rot_pars[task['prefix']] = dev.get_pulse_par(
-                        *op_split, param='basis_rotation')
-                    if self.reset_phases_before_measurement:
-                        self.old_dyn_phases[task['prefix']] = {}
-                    else:
-                        self.old_dyn_phases[task['prefix']] = deepcopy(
-                            self.basis_rot_pars[task['prefix']]())
+                if self.reset_phases_before_measurement:
+                    for task in task_list:
+                        self.operation_dict[self.get_cz_operation_name(
+                            **task)]['basis_rotation'] = {}
 
-                tmpvals = [(v, self.old_dyn_phases[k]) for k, v in
-                           self.basis_rot_pars.items()]
-                with temporary_value(*tmpvals):
-                    self.sequences, sp = self.parallel_sweep(
-                        sweep_points, task_list, self.dynamic_phase_block, **kw)
-                    self.hard_sweep_points = sp[0]
-                    if len(sp) > 1:
-                        self.soft_sweep_points = sp[1]
+                self.sequences, self.mc_points = self.parallel_sweep(
+                    sweep_points, task_list, self.dynamic_phase_block, **kw)
 
-                    self.exp_metadata.update({
-                        'cal_states_rotations': self.cal_states_rotations,
-                        'data_to_fit': self.data_to_fit
-                    })
-
-                    if self.measure:
-                        self.run_measurement(**kw)
+                if self.measure:
+                    self.run_measurement(**kw)
 
                 if self.analyze:
                     self.run_analysis(**kw)
 
             if self.update:
+                assert self.dev is not None, \
+                    "Update only works with device object provided."
                 assert self.measurements[0].analyze, \
                     "Update is only allowed with analyze=True."
-                assert len(self.measurements[0].sweep_points) == 1, \
+                assert len(self.measurements[0].mc_points[1]) == 1, \
                     "Update is only allowed without a soft sweep."
 
                 for op, dp in self.dyn_phases.items():
-                    basis_rot_par = self.measurements[0].basis_rot_pars[op]
+                    op_split = op.split(' ')
+                    basis_rot_par = self.dev.get_pulse_par(
+                        *op_split, param='basis_rotation')
+
                     if self.reset_phases_before_measurement:
                         basis_rot_par(dp)
                     else:
+                        not_updated = {k: v for k, v in basis_rot_par().items()
+                                       if k not in dp}
                         basis_rot_par().update(dp)
-
-                    not_updated = {k: v for k, v in
-                                   self.old_dyn_phases[op].items()
-                                   if k not in dp}
-                    if len(not_updated) > 0:
-                        log.warning(f'Not all basis_rotations stored in the '
-                                    f'pulse settings for {op} have been '
-                                    f'measured. Keeping the following old '
-                                    f'value(s): {not_updated}')
+                        if len(not_updated) > 0:
+                            log.warning(f'Not all basis_rotations stored in the '
+                                        f'pulse settings for {op} have been '
+                                        f'measured. Keeping the following old '
+                                        f'value(s): {not_updated}')
         except Exception as x:
             self.exception = x
             traceback.print_exc()
@@ -654,7 +653,9 @@ class DynamicPhase(CalibBuilder):
                                  [f'X90 {qb}' for qb in qubits_to_measure],
                                  pulse_modifs=pulse_modifs)
 
-        fp = self.block_from_ops('flux', op_code)
+        # calling op_replace_cz() allows to have a custom cz_pulse_name in kw
+        fp = self.block_from_ops(
+            'flux', self.get_cz_operation_name(op_code=op_code, **kw))
         fp.pulses[0]['pulse_off'] = ParametricValue('flux_pulse_off')
         # FIXME: currently, this assumes that only flux pulse parameters are
         #  swept in the soft sweep. In fact, channels_to_upload should be
@@ -690,9 +691,8 @@ class DynamicPhase(CalibBuilder):
     def run_analysis(self, **kw):
         extract_only = kw.pop('extract_only', False)
         for task in self.task_list:
-            op_split = task['op_code'].split(' ')
-            if op_split[0] == 'CZ':
-                op_split[0] = self.cz_pulse_name
+            op = self.get_cz_operation_name(**task)
+            op_split = op.split(' ')
             self.dynamic_phase_analysis[task['prefix']] = \
                 tda.CZDynamicPhaseAnalysis(
                     qb_names=task['qubits_to_measure'],
@@ -706,8 +706,9 @@ class DynamicPhase(CalibBuilder):
                         #  sweep_points
                         'sweep_points': self.sweep_points,
                         'save_figs': ~extract_only}, extract_only=extract_only)
+            self.dyn_phases[op] = {}
             for qb_name in task['qubits_to_measure']:
-                self.dyn_phases[task['prefix']][qb_name] = \
+                self.dyn_phases[op][qb_name] = \
                     self.dynamic_phase_analysis[task['prefix']].proc_data_dict[
                         'analysis_params_dict'][qb_name][
                         'dynamic_phase']['val'] * 180 / np.pi
