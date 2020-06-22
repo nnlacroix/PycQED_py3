@@ -5691,10 +5691,7 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             self.numeric_params = list(self.params_dict)
 
         self.qb_names = qb_names
-        super().__init__(auto=False, **kwargs)
-
-        if auto:
-            self.run_analysis()
+        super().__init__(auto=auto, **kwargs)
 
     def extract_data(self):
         super().extract_data()
