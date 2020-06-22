@@ -23,46 +23,83 @@ class CircuitBuilder:
 
     STD_INIT = {'0': 'I', '1': 'X180', '+': 'Y90', '-': 'mY90'}
 
-    def __init__(self, dev=None, qubits=None, **kw):
-        assert (dev is not None or qubits is not None)
+    def __init__(self, dev=None, qubits=None, operation_dict=None,
+                 filter_qb_names=None, **kw):
+
         self.dev = dev
-        if qubits is None:
-            self.qubits = dev.qubits()
+        self.qubits, self.qb_names = self.extract_qubits(
+            dev, qubits, operation_dict, filter_qb_names)
+
+        if operation_dict is not None:
+            self.operation_dict = deepcopy(operation_dict)
+        elif dev is not None:
+            self.operation_dict = deepcopy(dev.get_operation_dict())
         else:
-            self.qubits = [dev.get_qb(qb) if isinstance(qb, str) else qb
-                           for qb in qubits]
-        if dev is None:  # this is only allowed for backwards compatibility
             self.operation_dict = deepcopy(mqm.get_operation_dict(qubits))
-        else:
-            self.operation_dict = dev.get_operation_dict()
+
         self.cz_pulse_name = kw.get('cz_pulse_name', 'upCZ')
         self.prep_params = kw.get('prep_params', None)
 
-    def get_qubits(self, qb_names='all'):
+    @staticmethod
+    def extract_qubits(dev=None, qubits=None, operation_dict=None,
+                       filter_qb_names=None):
+        assert (dev is not None or qubits is not None or operation_dict is
+                not None), \
+            "Either dev or qubits or operation_dict has to be provided."
+        if dev is None and qubits is None:
+            qb_names = list(np.unique([qb for op in operation_dict.keys()
+                                       for qb in op.split(' ')[1:]]))
+        elif dev is None:
+            qb_names = [qb if isinstance(qb, str) else qb.name for qb in
+                        qubits]
+            if any([isinstance(qb, str) for qb in qubits]):
+                qubits = None
+        else:
+            if qubits is None:
+                qubits = dev.get_qubits()
+            else:
+                # get qubit objects if names have been provided
+                qubits = [dev.get_qb(qb) if isinstance(qb, str) else qb for
+                          qb in qubits]
+            qb_names = [qb.name for qb in qubits]
+        if filter_qb_names is not None:
+            if qubits is not None:
+                qubits = [qb for qb in qubits if qb.name in filter_qb_names]
+            qb_names = [qb for qb in qb_names if qb in filter_qb_names]
+        return qubits, qb_names
+
+    def get_qubits(self, qb_names=None):
         """
         Wrapper to get 'all' qubits, single qubit specified as string
         or list of qubits, checking they are in self.qubits
         :param qb_names: 'all', single qubit name (eg. 'qb1') or list of
             qb names
-        :return: list of qb names
+        :return: list of qubit object and list of qubit names (first return
+            value is None if no qubit objects are stored). The order is
+            according to the order stored in self.qb_names (which can be
+            modified by self.swap_qubit_indices()).
         """
-        stored_qb_names = [qb.name for qb in self.qubits]
-        if qb_names == 'all':
-            return self.qubits, stored_qb_names
+        if qb_names is None or qb_names == 'all':
+            return self.get_qubits(self.qb_names)
         elif not isinstance(qb_names, list):
             qb_names = [qb_names]
 
-        # test if qubit indices were provided instead of names
+        # test if qubit objects have been provided instead of names
+        qb_names = [qb if isinstance(qb, str) else qb.name for qb in qb_names]
+        # test if qubit indices have been provided instead of names
         try:
             ind = [int(i) for i in qb_names]
-            qb_names = [stored_qb_names[i] for i in ind]
+            qb_names = [self.qb_names[i] for i in ind]
         except ValueError:
             pass
 
         for qb in qb_names:
-            assert qb in stored_qb_names, f"{qb} not found in {stored_qb_names}"
-        return [self.qubits[stored_qb_names.index(qb)] for qb in qb_names], \
-               qb_names
+            assert qb in self.qb_names, f"{qb} not found in {self.qb_names}"
+        if self.qubits is None:
+            return None, qb_names
+        else:
+            qb_map = {qb.name: qb for qb in self.qubits}
+            return [qb_map[qb] for qb in qb_names],  qb_names
 
     def get_prep_params(self, qb_names='all'):
         qubits, qb_names = self.get_qubits(qb_names)
@@ -70,30 +107,42 @@ class CircuitBuilder:
             return self.prep_params
         elif self.dev is not None:
             return self.dev.get_prep_params(qubits)
-        else:
+        elif qubits is not None:
             return mqm.get_multi_qubit_prep_params(
                 [qb.preparation_params() for qb in qubits])
+        else:
+            return {'preparation_type': 'wait'}
 
-    def get_cz_operation_name(self, qb1, qb2):
+    def get_cz_operation_name(self, qb1=None, qb2=None, op_code=None, **kw):
         """
-        Finds the name of the CZ gate between qubit1-qubit2 that exists in
+        Finds the name of the CZ gate between qb1-qb2 that exists in
         self.operation_dict.
-        :param qb1: QuDev_transmon instance of one of the gate qubits
-        :param qb2: QuDev_transmon instance of the other gate qubit
+        :param qb1: name of qubit object of one of the gate qubits
+        :param qb2: name of qubit object of the other gate qubit
+        :param op_code: provide an op_code instead of qb1 and qb2
+
+        :param kw: keyword arguments:
+            cz_pulse_name: a custom cz_pulse_name instead of the stored one
+
         :return: the CZ gate name
         """
-        if not isinstance(qb1, str):
-            qb1 = qb1.name
-        if not isinstance(qb2, str):
-            qb2 = qb2.name
+        assert (qb1 is None and qb2 is None and op_code is not None) or \
+               (qb1 is not None and qb2 is not None and op_code is None), \
+            "Provide either qb1&qb2 or op_code!"
+        cz_pulse_name = kw.get('cz_pulse_name', self.cz_pulse_name)
+        if op_code is not None:
+            op_split = op_code.split(' ')
+            qb1, qb2 = op_split[1:]
+            if op_split[0] != 'CZ':
+                cz_pulse_name = op_split[0]
 
-        if f"{self.cz_pulse_name} {qb1} {qb2}" in self.operation_dict:
-            return f"{self.cz_pulse_name} {qb1} {qb2}"
-        elif f"{self.cz_pulse_name} {qb2} {qb1}" in self.operation_dict:
-            return f"{self.cz_pulse_name} {qb2} {qb1}"
+        _, (qb1, qb2) = self.get_qubits([qb1, qb2])
+        if f"{cz_pulse_name} {qb1} {qb2}" in self.operation_dict:
+            return f"{cz_pulse_name} {qb1} {qb2}"
+        elif f"{cz_pulse_name} {qb2} {qb1}" in self.operation_dict:
+            return f"{cz_pulse_name} {qb2} {qb1}"
         else:
-            raise KeyError(f'CZ gate "{self.cz_pulse_name} {qb1} {qb2}" '
-                           f'not found.')
+            raise KeyError(f'CZ gate "{cz_pulse_name} {qb1} {qb2}" not found.')
 
     def get_pulse(self, op, parse_z_gate=False):
         """
@@ -132,7 +181,7 @@ class CircuitBuilder:
 
     def swap_qubit_indices(self, i, j=None):
         """
-        Swaps logical qubit indices by swapping the entries in self.qubits.
+        Swaps logical qubit indices by swapping the entries in self.qb_names.
         :param i: (int or iterable): index of the first qubit to be swapped or
             indices of the two qubits to be swapped (as two ints given in the
             first two elements of the iterable)
@@ -140,7 +189,7 @@ class CircuitBuilder:
         """
         if j is None:
             i, j = i[0], i[1]
-        self.qubits[i], self.qubits[j] = self.qubits[j], self.qubits[i]
+        self.qb_names[i], self.qb_names[j] = self.qb_names[j], self.qb_names[i]
 
     def initialize(self, init_state='0', qb_names='all', prep_params=None,
                    simultaneous=True, block_name=None):
@@ -161,7 +210,7 @@ class CircuitBuilder:
         """
         if block_name is None:
             block_name = f"Initialization_{qb_names}"
-        qubits, qb_names = self.get_qubits(qb_names)
+        _, qb_names = self.get_qubits(qb_names)
         if prep_params is None:
             prep_params = self.get_prep_params(qb_names)
         if len(init_state) == 1:
@@ -214,7 +263,7 @@ class CircuitBuilder:
         """
         if block_name is None:
             block_name = f"Preparation_{qb_names}"
-        qubits, qb_names = self.get_qubits(qb_names)
+        _, qb_names = self.get_qubits(qb_names)
 
         if threshold_mapping is None or len(threshold_mapping) == 0:
             threshold_mapping = {qbn: {0: 'g', 1: 'e'} for qbn in qb_names}
@@ -325,7 +374,7 @@ class CircuitBuilder:
 
     def mux_readout(self, qb_names='all', element_name='RO', **pulse_pars):
         block_name = "Readout"
-        qubits, qb_names = self.get_qubits(qb_names)
+        _, qb_names = self.get_qubits(qb_names)
         ro_pulses = []
         for j, qb_name in enumerate(qb_names):
             ro_pulse = deepcopy(self.operation_dict['RO ' + qb_name])
@@ -351,7 +400,7 @@ class CircuitBuilder:
 
         # if qb_names is the name of a single qb, expects single pulse output
         single_qb_given = not isinstance(qb_names, list)
-        qubits, qb_names = self.get_qubits(qb_names)
+        _, qb_names = self.get_qubits(qb_names)
         pulses = [self.get_pulse(f'Z{theta} {qbn}', True) for qbn in qb_names]
         return pulses[0] if single_qb_given else pulses
 
