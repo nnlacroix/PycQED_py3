@@ -166,7 +166,7 @@ class SSB_DRAG_pulse_with_cancellation(SSB_DRAG_pulse):
         return channels
 
     def chan_wf(self, channel, tvals):
-        if channel is [self.I_channel, self.Q_channel]:
+        if channel in [self.I_channel, self.Q_channel]:
             return super().chan_wf(channel, tvals)
         iq_idx = -1
         for (i, q), p in self.cancellation_params.items():
@@ -210,9 +210,11 @@ class SSB_DRAG_pulse_with_cancellation(SSB_DRAG_pulse):
             phase = self.phase + cpars.get('phase', 0)
             phase += 360 * cpars.get('phaselock', self.phaselock) * \
                      cpars.get('mod_frequency', self.mod_frequency) * (
-                        self.algorithm_time() + self.nr_sigma * self.sigma / 2)
+                        self.algorithm_time() + self.nr_sigma * self.sigma / 2 +
+                        + cpars.get('delay', 0.0))
             hashlist += [cpars.get('alpha', self.alpha)]
             hashlist += [cpars.get('phi_skew', self.phi_skew), phase]
+            hashlist += [cpars.get('delay', 0)]
             return hashlist
         return []
 

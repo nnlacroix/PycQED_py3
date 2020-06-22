@@ -1842,6 +1842,7 @@ def measure_measurement_induced_dephasing(qb_dephased, qb_targeted, phases, amps
 
     tda.MeasurementInducedDephasingAnalysis(qb_names=[qb.name for qb in qb_dephased])
 
+
 def measure_drive_cancellation(
         dev, driven_qubit, ramsey_qubits, sweep_points,
         phases=np.linspace(0, 2*np.pi, 3, endpoint=False), n=1, pulse='X180',
@@ -1868,9 +1869,14 @@ def measure_drive_cancellation(
 
         MC = dev.instr_mc.get_instr()
         if label is None:
-            label = f'drive_{driven_qubit}_cancel_{list(sweep_points[0].keys())}'
+            label = f'drive_{driven_qubit.name}_cancel_'\
+                    f'{list(sweep_points[0].keys())}'
+
+        if prep_params is None:
+            prep_params = dev.get_prep_params(ramsey_qubits)
+
         sweep_points.add_sweep_dimension()
-        sweep_points.add_sweep_parameter('phase', phases, 'rad', 'Phase')
+        sweep_points.add_sweep_parameter('phase', phases, 'deg', 'Ramsey phase')
         if exp_metadata is None:
             exp_metadata = {}
 
@@ -1884,16 +1890,18 @@ def measure_drive_cancellation(
             n_per_state=n_cal_points_per_state)
         operation_dict = dev.get_operation_dict()
 
-        seq, sweep_points = mqs.drive_cancellation_seq(
+        seq, sweep_vals = mqs.drive_cancellation_seq(
             driven_qubit.name, ramsey_qubit_names, operation_dict, sweep_points,
             pulse=pulse, n=n, prep_params=prep_params, cal_points=cp,
             upload=False)
 
+        [seq.repeat_ro(f"RO {qbn}", operation_dict) for qbn in ramsey_qubit_names]
+
         sweep_func = awg_swf.SegmentHardSweep(
                 sequence=seq, upload=upload,
                 parameter_name='segment_index')
-        MC.set_sweep_points(sweep_points)
         MC.set_sweep_function(sweep_func)
+        MC.set_sweep_points(sweep_vals)
 
         det_func = get_multiplexed_readout_detector_functions(
             ramsey_qubits,
@@ -1901,13 +1909,22 @@ def measure_drive_cancellation(
             ['int_avg_det']
         MC.set_detector_function(det_func)
 
+        sweep_points_for_analysis = [
+            {k: (np.repeat(v[0], len(phases)), v[1], v[2])
+             for k, v in sweep_points[0].items()}
+        ]
+        len_sweep = len(list(sweep_points[0].values())[0][0])
+        sweep_points_for_analysis[0]['phase'] = \
+            (np.tile(phases, len_sweep), 'rad', 'Ramsey phase')
+        meas_obj_sweep_points_map = {qbn: ['phase'] for qbn in ramsey_qubit_names}
+
         exp_metadata.update({
             'ramsey_qubit_names': ramsey_qubit_names,
             'preparation_params': prep_params,
             'cal_points': repr(cp),
-            'sweep_points': sweep_points,
+            'sweep_points': sweep_points_for_analysis,
             'meas_obj_sweep_points_map':
-                sweep_points.get_meas_obj_sweep_points_map(ramsey_qubit_names),
+                meas_obj_sweep_points_map,
             'meas_obj_value_names_map':
                 get_meas_obj_value_names_map(ramsey_qubits, det_func),
             'rotate': len(cp.states) != 0,
