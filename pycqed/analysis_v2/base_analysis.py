@@ -243,7 +243,7 @@ class BaseDataAnalysis(object):
 
         # if timestamp wasn't specified, specify it for the job
         if not "t_start" in kwargs or kwargs["t_start"] is None:
-                kwargs["t_start"] = self.timestamps[0]
+            kwargs["t_start"] = self.timestamps[0]
         if (not "t_stop" in kwargs or kwargs["t_stop"] is None) and \
                 len(self.timestamps) > 1:
             kwargs['t_stop'] = self.timestamps[-1]
