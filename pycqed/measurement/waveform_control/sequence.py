@@ -226,7 +226,7 @@ class Sequence:
                         new_name =seg_name + \
                                   f"_copy_from_merge_" \
                                   f"{seg_occurences[-1][seg_name] - 1}"
-                        segment.name = new_name
+                        segment.rename(new_name)
                         merged_seqs[-1].add(segment)
 
                 segment_counter += seq.n_segments()

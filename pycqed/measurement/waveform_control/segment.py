@@ -1153,6 +1153,28 @@ class Segment:
         output += f'\n% {num_single_qb} single-qubit gates, {num_two_qb} two-qubit gates, {num_virtual} virtual gates'
         return output
 
+    def rename(self, new_name):
+        """
+        Renames a segment with the given new name. Hunts down element names in
+        unresolved pulses that might have made use of the old segment_name and renames
+        them too.
+        Args:
+            new_name:
+
+        Returns:
+
+        """
+        old_name = self.name
+
+        # rename element names in unresolved pulses making use of the old name
+        for p in self.unresolved_pulses:
+            if hasattr(p.pulse_obj, "element_name") \
+                and old_name in p.pulse_obj.element_name:
+                p.pulse_obj.element_name = p.pulse_obj.element_name.replace(old_name,
+                                                                            new_name)
+        # rename segment name
+        self.name = new_name
+
     def __deepcopy__(self, memo):
         cls = self.__class__
         new_seg = cls.__new__(cls)

@@ -3361,10 +3361,13 @@ class QuDev_transmon(Qubit):
             cp = None
         if prep_params is None:
             prep_params = self.preparation_params()
+
+        op_dict = kw.pop('operation_dict', self.get_operation_dict())
+
         seq, sweep_points, sweep_points_2D = \
             fsqs.fluxpulse_scope_sequence(
                 delays=delays, freqs=freqs, qb_name=self.name,
-                operation_dict=self.get_operation_dict(),
+                operation_dict=op_dict,
                 cz_pulse_name=cz_pulse_name, cal_points=cp,
                 prep_params=prep_params, upload=False, **kw)
         MC.set_sweep_function(awg_swf.SegmentHardSweep(
