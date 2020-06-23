@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 class SingleQubitRandomizedBenchmarking(CalibBuilder):
     def __init__(self, dev, task_list=None, sweep_points=None, qubits=None,
                  nr_seeds=None, interleaved_gate=None, gate_decomposition='HZ',
-                 identical_pulses=True, **kw):
+                 identical_pulses=False, **kw):
         """
         Class to run and analyze the randomized benchmarking experiment on
         one or several qubits in parallel, using the single-qubit Clifford group
@@ -166,7 +166,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
                     cl_seq, gate_decomp=self.gate_decomposition)
                 rb_block_list += [self.block_from_ops(
                     f'rb_{qbn}', [f'{p} {qbn}' for p in pulse_keys])]
-        return self.simultaneous_blocks(f'sim_rb_{clifford}{sp1d_idx}',
+        return self.simultaneous_blocks_align_end(f'sim_rb_{clifford}{sp1d_idx}',
                                         rb_block_list)
 
     def guess_label(self):
