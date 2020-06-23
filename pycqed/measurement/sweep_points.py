@@ -140,11 +140,12 @@ class SweepPoints(list):
         :param param_names: None, or string or list of strings corresponding to
             keys in the sweep dimension specified by dimension
         :return:
-            if param_names is string: string with the property of each
-                param_names in the sweep dimension dict specified by dimension.
+            if param_names is string: the property of the sweep parameter
+                specified in param_names in the sweep dimension dict specified
+                by dimension.
             if param_names is list: list with the property of each
                 param_names in the sweep dimension dict specified by dimension.
-            if param_names is None: string corresponding to the
+            if param_names is None: property corresponding to the
                 first sweep parameter in the sweep dimension dict
         """
         assert isinstance(dimension, int), 'Dimension must be an integer > 0.'
