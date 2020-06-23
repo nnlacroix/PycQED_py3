@@ -13,10 +13,7 @@ import pycqed.measurement.awg_sweep_functions as awg_swf
 import pycqed.analysis_v2.timedomain_analysis as tda
 from pycqed.instrument_drivers.meta_instrument.qubit_objects.QuDev_transmon \
     import QuDev_transmon
-from pycqed.measurement.multi_qubit_module import \
-    get_multiplexed_readout_detector_functions
-from pycqed.measurement.multi_qubit_module import \
-    get_meas_obj_value_names_map
+from pycqed.measurement import multi_qubit_module as mqm
 import logging
 log = logging.getLogger(__name__)
 
@@ -86,16 +83,16 @@ class CalibBuilder(CircuitBuilder):
     def guess_label(self, **kw):
         if self.label is None:
             self.label = 'Experiment'
-            if self.task_list is not None:
-                for t in self.task_list:
-                    self.label += f"_{t['qbl']}{t['qbr']}"
+            if self.dev is not None:
+                self.label += self.dev.get_msmt_suffix(self.ro_qb_names)
+            else:
+                # guess_label is called from run_measurement -> we have qubits
+                self.label += mqm.get_multi_qubit_msmt_suffix(self.ro_qubits)
 
     def run_measurement(self, **kw):
-        if not self.measure:
-            return
-        assert self.qubits is not None, 'Cannot run measurement without ' \
-                                        'qubit objects.'
-        self.MC = self.qubits[0].instr_mc.get_instr()
+        assert self.ro_qubits is not None, 'Cannot run measurement without ' \
+                                           'qubit objects.'
+        self.MC = self.ro_qubits[0].instr_mc.get_instr()
         self.guess_label(**kw)
 
         # only measure ro_qubits
@@ -130,7 +127,7 @@ class CalibBuilder(CircuitBuilder):
             self.MC.set_sweep_points_2D(self.mc_points[1])
 
         det_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
-        det_func = get_multiplexed_readout_detector_functions(
+        det_func = mqm.get_multiplexed_readout_detector_functions(
             self.ro_qubits, nr_averages=max(qb.acq_averages() for qb in
                                             self.ro_qubits),
             det_get_values_kws=self.det_get_values_kws)[det_name]
@@ -140,7 +137,7 @@ class CalibBuilder(CircuitBuilder):
             meas_obj_value_names_map = self.dev.get_meas_obj_value_names_map(
                 self.ro_qubits, det_func)
         else:
-            meas_obj_value_names_map = get_meas_obj_value_names_map(
+            meas_obj_value_names_map = mqm.get_meas_obj_value_names_map(
                 self.ro_qubits, det_func)
 
         self.exp_metadata.update({
@@ -294,20 +291,21 @@ class CalibBuilder(CircuitBuilder):
                 prepend_pulses += [prepend_pulse]
         return Block('prepend', prepend_pulses)
 
-    def create_ro_qubit_list(self, task_list=None):
+    def create_ro_qubit_list(self, task_list=None, **kw):
         if task_list is None:
             task_list = self.task_list
         if task_list is None:
             task_list = [{}]
-        ro_qb_names = [task.get('qubits_to_measure', []) for
-                          task in task_list]
-        if any([isinstance(qbn, list) for qbn in ro_qb_names]):
+        ro_qubits = [task.get('ro_qubits', []) for task in task_list]
+        ro_qubits.append(kw.get('ro_qubits', []))
+        if any([isinstance(qbn, list) for qbn in ro_qubits]):
             # flatten
-            ro_qb_names = [i for j in ro_qb_names for i in j]
-        # sort
-        ro_qb_names.sort()
+            ro_qubits = [i for j in ro_qubits for i in j]
+        # unique and sort
+        ro_qubits = list(np.unique(ro_qubits))
+        ro_qubits.sort()
         self.ro_qubits, self.ro_qb_names = self.get_qubits(
-            'all' if len(ro_qb_names) == 0 else ro_qb_names)
+            'all' if len(ro_qubits) == 0 else ro_qubits)
 
     @staticmethod
     def add_default_ramsey_sweep_points(sweep_points, **kw):
@@ -394,8 +392,10 @@ class CPhase(CalibBuilder):
                 'cz_durations': self.cz_durations,
             })
 
-            self.run_measurement(**kw)
-            self.run_analysis(**kw)
+            if self.measure:
+                self.run_measurement(**kw)
+            if self.analyze:
+                self.run_analysis(**kw)
         except Exception as x:
             self.exception = x
             traceback.print_exc()
@@ -488,21 +488,18 @@ class CPhase(CalibBuilder):
         return [task['qbl'], task['qbr']]
 
     def run_analysis(self, **kw):
-        if not self.analyze:
-            return
-
         plot_all_traces = kw.get('plot_all_traces', True)
         plot_all_probs = kw.get('plot_all_probs', True)
         if self.classified:
             channel_map = {qb.name: [vn + ' ' +
                                      qb.instr_uhf() for vn in
                                      qb.int_avg_classif_det.value_names]
-                           for qb in self.qubits}
+                           for qb in self.ro_qubits}
         else:
             channel_map = {qb.name: [vn + ' ' +
                                      qb.instr_uhf() for vn in
                                      qb.int_avg_det.value_names]
-                           for qb in self.qubits}
+                           for qb in self.ro_qubits}
         self.analysis = tda.CPhaseLeakageAnalysis(
             qb_names=self.qb_names,
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
@@ -587,7 +584,6 @@ class DynamicPhase(CalibBuilder):
 
                 if self.measure:
                     self.run_measurement(**kw)
-
                 if self.analyze:
                     self.run_analysis(**kw)
 
