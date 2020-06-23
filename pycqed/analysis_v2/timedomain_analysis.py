@@ -18,6 +18,7 @@ from pycqed.analysis_v2.readout_analysis import \
 import pycqed.analysis_v2.tomography_qudev as tomo
 from pycqed.analysis.tools.plotting import SI_val_to_msg_str
 from copy import deepcopy
+from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import matplotlib.pyplot as plt
 from pycqed.analysis.three_state_rotation import predict_proba_avg_ro
@@ -235,10 +236,17 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if len(self.channel_map) == 0:
             raise ValueError('No qubit RO channels have been found.')
 
+        # creates self.sp
+        self.get_sweep_points()
+
+    def get_sweep_points(self):
+        self.sp = self.get_param_value('sweep_points')
+        if self.sp is not None:
+            self.sp = SweepPoints(from_dict_list=self.sp)
+
     def create_sweep_points_dict(self):
         sweep_points_dict = self.get_param_value('sweep_points_dict')
         hard_sweep_params = self.get_param_value('hard_sweep_params')
-        self.sp = self.get_param_value('sweep_points')
         if sweep_points_dict is not None:
             # assumed to be of the form {qbn1: swpts_array1, qbn2: swpts_array2}
             self.proc_data_dict['sweep_points_dict'] = \
@@ -253,7 +261,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             if self.mospm is None:
                 raise ValueError('Please provide "meas_obj_sweep_points_map."')
             self.proc_data_dict['sweep_points_dict'] = \
-                {qbn: {'sweep_points': self.sp[0][self.mospm[qbn][0]][0]}
+                {qbn: {'sweep_points': self.sp.get_sweep_params_property(
+                    'values', 1, self.mospm[qbn])[0]}
                  for qbn in self.qb_names}
         else:
             self.proc_data_dict['sweep_points_dict'] = \
@@ -263,19 +272,20 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     def create_sweep_points_2D_dict(self):
         soft_sweep_params = self.get_param_value('soft_sweep_params')
-        if soft_sweep_params is not None:
-            self.proc_data_dict['sweep_points_2D_dict'] = \
-                {qbn: {pn: soft_sweep_params[pn]['values'] for
-                       pn in soft_sweep_params}
-                 for qbn in self.qb_names}
-        elif self.sp is not None:
+        if self.sp is not None:
             self.proc_data_dict['sweep_points_2D_dict'] = OrderedDict()
             for qbn in self.qb_names:
-                self.proc_data_dict['sweep_points_2D_dict'][qbn] = OrderedDict()
+                self.proc_data_dict['sweep_points_2D_dict'][qbn] = \
+                    OrderedDict()
                 for pn in self.mospm[qbn]:
                     if pn in self.sp[1]:
                         self.proc_data_dict['sweep_points_2D_dict'][qbn][
                             pn] = self.sp[1][pn][0]
+        elif soft_sweep_params is not None:
+            self.proc_data_dict['sweep_points_2D_dict'] = \
+                {qbn: {pn: soft_sweep_params[pn]['values'] for
+                       pn in soft_sweep_params}
+                 for qbn in self.qb_names}
         else:
             if len(self.raw_data_dict['soft_sweep_points'].shape) == 1:
                 self.proc_data_dict['sweep_points_2D_dict'] = \
@@ -843,8 +853,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             sweep_name = self.get_param_value('sweep_name')
             sweep_unit = self.get_param_value('sweep_unit')
             if self.sp is not None:
-                xlabel = self.sp[0]['phase'][2]
-                xunit = self.sp[0]['phase'][1]
+                _, xunit, xlabel = self.sp.get_sweep_params_description(
+                    param_names=self.mospm[qb_name], dimension=1)[0]
             elif hard_sweep_params is not None:
                 xlabel = list(hard_sweep_params)[0]
                 xunit = list(hard_sweep_params.values())[0][
@@ -860,16 +870,21 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
             for ax_id, ro_channel in enumerate(raw_data_dict):
                 if self.get_param_value('TwoD', default_value=False):
-                    soft_sweep_params = self.get_param_value(
-                        'soft_sweep_params')
-                    if soft_sweep_params is not None:
-                        yunit = list(soft_sweep_params.values())[0]['unit']
-                    else:
-                        yunit = self.raw_data_dict['sweep_parameter_units'][1]
-                    if np.ndim(yunit) > 0:
-                        yunit = yunit[0]
+                    if self.sp is None:
+                        soft_sweep_params = self.get_param_value(
+                            'soft_sweep_params')
+                        if soft_sweep_params is not None:
+                            yunit = list(soft_sweep_params.values())[0]['unit']
+                        else:
+                            yunit = self.raw_data_dict[
+                                'sweep_parameter_units'][1]
+                        if np.ndim(yunit) > 0:
+                            yunit = yunit[0]
                     for pn, ssp in self.proc_data_dict['sweep_points_2D_dict'][
                             qb_name].items():
+                        if self.sp is not None:
+                            yunit = self.sp.get_sweep_params_property(
+                                'unit', dimension=2, param_names=pn)
                         self.plot_dicts[f'{plot_name}_{ro_channel}_{pn}'] = {
                             'fig_id': plot_name + '_' + pn,
                             'ax_id': ax_id,
@@ -972,8 +987,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         sweep_name = self.get_param_value('sweep_name')
         sweep_unit = self.get_param_value('sweep_unit')
         if self.sp is not None:
-            xlabel = self.sp[0]['phase'][2]
-            xunit = self.sp[0]['phase'][1]
+            _, xunit, xlabel = self.sp.get_sweep_params_description(
+                param_names=self.mospm[qb_name], dimension=1)[0]
         elif hard_sweep_params is not None:
             xlabel = list(hard_sweep_params)[0]
             xunit = list(hard_sweep_params.values())[0][
@@ -988,16 +1003,20 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             xunit = xunit[0]
 
         if self.get_param_value('TwoD', default_value=False):
-            soft_sweep_params = self.get_param_value(
-                'soft_sweep_params')
-            if soft_sweep_params is not None:
-                yunit = list(soft_sweep_params.values())[0]['unit']
-            else:
-                yunit = self.raw_data_dict['sweep_parameter_units'][1]
-            if np.ndim(yunit) > 0:
-                yunit = yunit[0]
+            if self.sp is None:
+                soft_sweep_params = self.get_param_value(
+                    'soft_sweep_params')
+                if soft_sweep_params is not None:
+                    yunit = list(soft_sweep_params.values())[0]['unit']
+                else:
+                    yunit = self.raw_data_dict['sweep_parameter_units'][1]
+                if np.ndim(yunit) > 0:
+                    yunit = yunit[0]
             for pn, ssp in self.proc_data_dict['sweep_points_2D_dict'][
                     qb_name].items():
+                if self.sp is not None:
+                    yunit = self.sp.get_sweep_params_property(
+                        'unit', dimension=2, param_names=pn)
                 self.plot_dicts[f'{plot_dict_name}_{pn}'] = {
                     'plotfn': self.plot_colorxy,
                     'fig_id': fig_name + '_' + pn,

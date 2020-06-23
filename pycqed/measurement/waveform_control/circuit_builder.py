@@ -404,6 +404,44 @@ class CircuitBuilder:
         pulses = [self.get_pulse(f'Z{theta} {qbn}', True) for qbn in qb_names]
         return pulses[0] if single_qb_given else pulses
 
+    def get_ops_duration(self, operations=None, pulses=None, fill_values=None,
+                         pulse_modifs=None, init_state='0'):
+        """
+        Calculates the total duration of the operations by resolving a dummy
+        segment created from operations.
+        :param operations: list of operations (str), which can be preformatted
+            and later filled with values in the dictionary fill_values
+        :param fill_values: optional fill values for operations (dict),
+            see documentation of block_from_ops().
+        :param pulse_modifs: Modification of pulses parameters (dict),
+            see documentation of block_from_ops().
+        :param init_state: initialization state (string or list),
+            see documentation of initialize().
+        :return: the duration of the operations
+        """
+        if pulses is None:
+            if operations is None:
+                raise ValueError('Please provide either "pulses" or '
+                                 '"operations."')
+            pulses = self.initialize(init_state=init_state).build()
+            pulses += self.block_from_ops("Block1", operations,
+                                          fill_values=fill_values,
+                                          pulse_modifs=pulse_modifs).build()
+
+        seg = Segment('Segment 1', pulses)
+        seg.resolve_segment()
+        wfs = seg.waveforms()
+        duration = 0
+        for i, instr in enumerate(wfs):
+            for elem_name, v in wfs[instr].items():
+                for k, wf_per_ch in v.items():
+                    for n_wf, (ch, wf) in enumerate(wf_per_ch.items()):
+                        tvals = seg.tvals([
+                            f"{instr}_{ch}"], elem_name[1])[f"{instr}_{ch}"]
+                        duration = max(tvals) if max(tvals) > duration \
+                            else duration
+        return duration
+
     def block_from_ops(self, block_name, operations, fill_values=None,
                        pulse_modifs=None):
         """
@@ -524,6 +562,44 @@ class CircuitBuilder:
                               }])
         return simultaneous
 
+    def simultaneous_blocks_align_end(self, block_name, blocks):
+        """
+        Creates a block with name :block_name: that consists of the parallel
+        execution of the given :blocks:. Ensures that any pulse or block
+        following the created block will occur after the longest given block.
+
+        Note that within each of the given blocks, it is assumed that the
+        pulse listed last in the block is the one that occurs last.
+        TODO: We might want to relax this assumption in a future version!
+
+        Args:
+            block_name (string): name of the block that is created
+            blocks (iterable): iterable where each element is a block that has
+            to be executed in parallel to the others.
+        """
+        from pprint import pprint
+        simultaneous = Block(block_name, [])
+        simultaneous_end_pulses = []
+        block_durations = [self.get_ops_duration(pulses=block.build())
+                           for block in blocks]
+        for i, block in enumerate(blocks):
+            resolved_pulses = block.build(ref_pulse=f"start")
+            if i != np.argmax(block_durations):
+                delay = max(block_durations) - block_durations[i]
+                resolved_pulses[0]['pulse_delay'] = delay
+            simultaneous.extend(resolved_pulses)
+            # block_durations += [self.get_ops_duration(pulses=block.build())]
+            simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
+
+        simultaneous.extend([{"name": f"simultaneousP_end_pulse",
+                              "pulse_type": "VirtualPulse",
+                              "pulse_delay": 0,
+                              "ref_pulse": simultaneous_end_pulses,
+                              "ref_point": 'end',
+                              "ref_function": 'max'
+                              }])
+        return simultaneous
+
     def sequential_blocks(self, block_name, blocks):
         """
         Creates a block with name :block_name: that consists of the serial
@@ -635,4 +711,3 @@ class CircuitBuilder:
         else:
             return seqs, [np.arange(seqs[0].n_acq_elements()),
                           np.arange(nr_sp_list[1])]
-

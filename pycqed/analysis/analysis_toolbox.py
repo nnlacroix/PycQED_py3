@@ -387,12 +387,16 @@ def compare_instrument_settings_timestamp(timestamp_a, timestamp_b):
                 try:
                     np.testing.assert_equal(eval(ins_a.attrs[par_key]),
                                             eval(ins_b.attrs[par_key]))
-                    pass
-                except:
+                except AssertionError:
                     print('    "%s" has a different value '
                           ' "%s" for %s, "%s" for %s' % (
                               par_key, eval(ins_a.attrs[par_key]), timestamp_a,
                               eval(ins_b.attrs[par_key]), timestamp_b))
+                    diffs_found = True
+                except Exception:
+                    # This happens if ins_a.attrs[par_key] or
+                    # ins_b.attrs[par_key] cannot be treated by eval.
+                    print('    Could not compare "%s".' % par_key)
                     diffs_found = True
 
             if not diffs_found:

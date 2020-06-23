@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 class SingleQubitRandomizedBenchmarking(CalibBuilder):
     def __init__(self, dev, task_list=None, sweep_points=None, qubits=None,
                  nr_seeds=None, interleaved_gate=None, gate_decomposition='HZ',
-                 identical_pulses=True, **kw):
+                 identical_pulses=False, **kw):
         """
         Class to run and analyze the randomized benchmarking experiment on
         one or several qubits in parallel, using the single-qubit Clifford group
@@ -71,8 +71,6 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             self.nr_seeds = nr_seeds
             self.interleaved_gate = interleaved_gate
             self.gate_decomposition = gate_decomposition
-            # TODO: there is currently no analysis for non-classified measurement
-            self.classified = True
 
             task_list = self.add_seeds_sweep_points(task_list, self.nr_seeds)
             self.task_list = task_list
@@ -168,7 +166,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
                     cl_seq, gate_decomp=self.gate_decomposition)
                 rb_block_list += [self.block_from_ops(
                     f'rb_{qbn}', [f'{p} {qbn}' for p in pulse_keys])]
-        return self.simultaneous_blocks(f'sim_rb_{clifford}{sp1d_idx}',
+        return self.simultaneous_blocks_align_end(f'sim_rb_{clifford}{sp1d_idx}',
                                         rb_block_list)
 
     def guess_label(self):
@@ -192,10 +190,18 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         for task in self.task_list:
             cliffords = next(iter(task['sweep_points'][1].values()))[0]
             seeds = next(iter(task['sweep_points'][0].values()))[0]
-            pp.add_node('average_data', keys_in='raw',
+            if not self.classified:
+                pp.add_node('rotate_iq', keys_in='raw',
+                            meas_obj_names=task['qubits_to_measure'],
+                            num_keys_out=1)
+            pp.add_node('average_data',
+                        keys_in='raw' if not self.classified else
+                            'previous rotate_iq',
                         shape=(len(cliffords), len(seeds)),
                         meas_obj_names=task['qubits_to_measure'])
-            pp.add_node('get_std_deviation', keys_in='raw',
+            pp.add_node('get_std_deviation',
+                        keys_in='raw' if not self.classified else
+                            'previous rotate_iq',
                         shape=(len(cliffords), len(seeds)),
                         meas_obj_names=task['qubits_to_measure'])
             pp.add_node('rb_analysis', meas_obj_names=task['qubits_to_measure'],
