@@ -2,6 +2,7 @@ import numpy as np
 from copy import copy
 from copy import deepcopy
 from pycqed.measurement.waveform_control.block import Block
+from pycqed.measurement.waveform_control.block import ParametricValue
 from pycqed.measurement.waveform_control.sequence import Sequence
 from pycqed.measurement.waveform_control.segment import Segment
 from pycqed.measurement import multi_qubit_module as mqm
@@ -38,6 +39,7 @@ class CircuitBuilder:
             self.operation_dict = deepcopy(mqm.get_operation_dict(qubits))
 
         self.cz_pulse_name = kw.get('cz_pulse_name', 'upCZ')
+        self.decompose_rotation_gates = kw.get('decompose_rotation_gates', {})
         self.prep_params = kw.get('prep_params', None)
 
     @staticmethod
@@ -144,17 +146,22 @@ class CircuitBuilder:
         else:
             raise KeyError(f'CZ gate "{cz_pulse_name} {qb1} {qb2}" not found.')
 
-    def get_pulse(self, op, parse_z_gate=False):
+    def get_pulse(self, op, parse_rotation_gates=False):
         """
         Gets a pulse from the operation dictionary, and possibly parses
         logical indexing as well as arbitrary angle from Z gate operation.
         Examples:
+             >>> get_pulse('CZ 0 2', parse_z_gate=True)
+             will perform a CZ gate (according to cz_pulse_name)
+             between the qubits with logical indices 0 and 2
              >>> get_pulse('Z100 qb1', parse_z_gate=True)
              will perform a 100 degree Z rotation
+             >>> get_pulse('Z:theta qb1', parse_z_gate=True)
+             will perform a parametric Z rotation with parameter name theta
         Args:
             op: operation
-            parse_z_gate: whether or not to look for Zgates with arbitrary
-            angles.
+            parse_rotation_gates: whether or not to look for gates with
+            arbitrary angles.
 
         Returns: deepcopy of the pulse dictionary
 
@@ -163,20 +170,43 @@ class CircuitBuilder:
         # the call to get_qubits resolves qubits indices if needed
         _, op_info[1:] = self.get_qubits(op_info[1:])
         op = op_info[0] + ' ' + ' '.join(op_info[1:])
-        if parse_z_gate and op.startswith("Z"):
-            # assumes operation format of f"Z{angle} qbname"
-            # FIXME: This parsing is format dependent and is far from ideal but
-            #  until we can get parametrized pulses it is helpful to be able to
-            #  parse Z gates
-            angle, qbn = op_info[0][1:], op_info[1]
-            p = self.get_pulse(f"Z180 {qbn}", parse_z_gate=False)
-            p['basis_rotation'] = {qbn: float(angle)}
-        elif op_info[0].startswith('CZ'):
+        op_name = op_info[0][1:] if op_info[0][0] == 's' else op_info[0]
+        if op_name.startswith('CZ'):
             operation = self.get_cz_operation_name(op_info[1], op_info[2])
             p = deepcopy(self.operation_dict[operation])
+        elif parse_rotation_gates and op not in self.operation_dict:
+            # assumes operation format of f" e.g. Z{angle} qbname"
+            # FIXME: This parsing is format dependent and is far from ideal but
+            #  to generate parametrized pulses it is helpful to be able to
+            #  parse Z gates etc.
+            angle, qbn = op_name[1:], op_info[1]
+            if not self.decompose_rotation_gates.get(op_name[0], False):
+                p = self.get_pulse(f"{op_name[0]}180 {qbn}")
+                if op.startswith("Z"):
+                    if angle[0] == ':':
+                        func = lambda x, qbn=op_info[1]: {qbn: x}
+                        p['basis_rotation'] = ParametricValue(angle[1:],
+                                                              func=func)
+                    else:
+                        p['basis_rotation'] = {qbn: float(angle)}
+                else:
+                    if angle[0] == ':':
+                        func = lambda x, a=p['amplitude'] : \
+                            a * ((x % 360) if (x % 360) < 180 else 360 - (
+                                    x % 360)) / 180
+                        p['amplitude'] = ParametricValue(angle[1:], func=func)
+                    else:
+                        angle = float(angle)
+                        p['amplitude'] *= ((angle % 360) if (angle % 360) < 180
+                                           else 360 - (angle % 360)) / 180
+            else:
+                raise NotImplementedError('Decomposed rotations not '
+                                          'implemented yet.')
         else:
             p = deepcopy(self.operation_dict[op])
         p['op_code'] = op
+        if op_info[0][0] == 's':
+            p['ref_point'] = 'start'
         return p
 
     def swap_qubit_indices(self, i, j=None):
