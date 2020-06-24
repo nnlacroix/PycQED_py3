@@ -246,9 +246,9 @@ class CalibBuilder(CircuitBuilder):
             global_sweep_points.add_sweep_parameter('dummy_sweep_param', [0])
         self.sweep_points = global_sweep_points
         # only measure ro_qubits
-        kw.update({'ro_qubits': self.ro_qb_names})
         return self.sweep_n_dim(global_sweep_points, body_block=all_main_blocks,
-                                cal_points=self.cal_points, **kw)
+                                cal_points=self.cal_points,
+                                ro_qubits=self.ro_qb_names, **kw)
 
     def max_pulse_length(self, pulse, sweep_points=None,
                          given_pulse_length=None):
@@ -294,8 +294,8 @@ class CalibBuilder(CircuitBuilder):
             task_list = self.task_list
         if task_list is None:
             task_list = [{}]
-        ro_qubits = [task.get('ro_qubits', []) for task in task_list]
-        ro_qubits.append(kw.get('ro_qubits', []))
+        ro_qubits = [task.pop('ro_qubits', []) for task in task_list]
+        ro_qubits.append(kw.pop('ro_qubits', []))
         if any([isinstance(qbn, list) for qbn in ro_qubits]):
             # flatten
             ro_qubits = [i for j in ro_qubits for i in j]
