@@ -228,7 +228,8 @@ class Block:
                 if isinstance(s, ParametricValue):
                     for sweep_dict, ind in zip(sweep_dicts_list, index_list):
                         if s.param in sweep_dict:
-                            p[attr] = s.resolve(sweep_dict, ind)
+                            p[attr], p['op_code'] = s.resolve(
+                                sweep_dict, ind, p['op_code'])
 
         # resolve pulse modifiers now (they could overwrite parametric values)
         def check_candidate(k, v, p):
@@ -300,7 +301,7 @@ class ParametricValue:
         self.param = param
         self.func = func
 
-    def resolve(self, sweep_dict, ind=None):
+    def resolve(self, sweep_dict, ind=None, op_code=None):
         """
         Returns the resolved value of a pulse attribute for a chosen sweep
         point.
@@ -322,7 +323,8 @@ class ParametricValue:
             v = d['values'][ind]
         else: # convention in SweepPoints class
             v = d[0][ind]
-        if self.func is None:
-            return v
+        v_processed = v if self.func is None else self.func(v)
+        if op_code is not None:
+            return v_processed, op_code.replace(f':{self.param} ', f"{v} ")
         else:
-            return self.func(v)
+            return v_processed
