@@ -125,14 +125,15 @@ class T1FrequencySweep(CalibBuilder):
                 # sweep_points = [sweep_points[0], {}]
                 # sweep_points = SweepPoints(from_dict_list=sweep_points)
 
-            if next(iter(sweep_points[1].values()))[1].lower() == 'hz':
+            if sweep_points.get_sweep_params_property('unit', 2).lower() == 'hz':
                 fit_paras = deepcopy(this_qb.fit_ge_freq_from_flux_pulse_amp())
                 if len(fit_paras) == 0:
                     raise ValueError(f'fit_ge_freq_from_flux_pulse_amp is empty'
                                      f' for {this_qb.name}. Cannot calculate '
                                      f'amplitudes from qubit frequencies.')
                 amplitudes = np.array(fit_mods.Qubit_freq_to_dac(
-                    next(iter(sweep_points[1].values()))[0], **fit_paras))
+                    sweep_points.get_sweep_params_property('values', 2),
+                    **fit_paras))
                 if np.any((amplitudes > abs(fit_paras['V_per_phi0']) / 2)):
                     amplitudes -= fit_paras['V_per_phi0']
                 elif np.any((amplitudes < -abs(fit_paras['V_per_phi0']) / 2)):
