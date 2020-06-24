@@ -188,5 +188,7 @@ class SweepPoints(list):
         return sweep_points_map
 
     def update(self, sweep_points):
+        while len(self) < len(sweep_points):
+            self.add_sweep_dimension()
         for d, u in zip(self, sweep_points):
             d.update(u)
