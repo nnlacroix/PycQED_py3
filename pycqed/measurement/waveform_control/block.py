@@ -285,6 +285,10 @@ class Block:
                     if params is None or s.param in params:
                         s.param = prefix + s.param
 
+    def parametric_values(self):
+        return {(i, attr) : s for i, p in enumerate(self.pulses)
+                for attr, s in p.items() if isinstance(s, ParametricValue)}
+
 
 class ParametricValue:
     """
