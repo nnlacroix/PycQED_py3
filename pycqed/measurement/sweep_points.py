@@ -151,9 +151,15 @@ class SweepPoints(list):
         assert isinstance(dimension, int), 'Dimension must be an integer > 0.'
         properties_dict = {'values': 0, 'unit': 1, 'label': 2}
         if param_names is None:
-            return next(iter(self.get_sweep_dimension(
+            if len(self.get_sweep_dimension(dimension)) == 0:
+                return [] if property == 'values' else ''
+            else:
+                return next(iter(self.get_sweep_dimension(
                 dimension).values()))[properties_dict[property]]
         else:
+            # FIXME: probably we need somethign like the above
+            #   if len(self.get_sweep_dimension(dimension)) == 0:
+            # also here
             if isinstance(param_names, list):
                 return [pnd[properties_dict[property]] for pnd in
                         self.get_sweep_params_description(param_names,
