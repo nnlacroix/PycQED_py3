@@ -23,7 +23,7 @@ def update_cz_amplitude(qbc, qbt, phases, amplitudes, target_phase=np.pi,
 
 
 def get_optimal_amp(qbc, qbt, soft_sweep_points, timestamp=None,
-                    classified_ro=False, tangent_fit=False):
+                    classified_ro=False, tangent_fit=False, **kw):
 
     if classified_ro:
         channel_map = {qb.name: [vn + ' ' +
@@ -58,7 +58,7 @@ def get_optimal_amp(qbc, qbt, soft_sweep_points, timestamp=None,
     plot_and_save_cz_amp_sweep(cphases=cphases, timestamp=timestamp,
                                soft_sweep_params_dict=soft_sweep_points,
                                fit_res=fit_res, save_fig=True, plot_guess=False,
-                               qbc_name=qbc.name, qbt_name=qbt.name)
+                               qbc_name=qbc.name, qbt_name=qbt.name, **kw)
     return fit_res
 
 
