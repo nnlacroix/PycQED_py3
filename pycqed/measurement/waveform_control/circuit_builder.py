@@ -171,6 +171,7 @@ class CircuitBuilder:
         _, op_info[1:] = self.get_qubits(op_info[1:])
         op = op_info[0] + ' ' + ' '.join(op_info[1:])
         op_name = op_info[0][1:] if op_info[0][0] == 's' else op_info[0]
+
         if op_name.startswith('CZ'):
             operation = self.get_cz_operation_name(op_info[1], op_info[2])
             p = deepcopy(self.operation_dict[operation])
@@ -179,26 +180,28 @@ class CircuitBuilder:
             # FIXME: This parsing is format dependent and is far from ideal but
             #  to generate parametrized pulses it is helpful to be able to
             #  parse Z gates etc.
+            factor = -1 if op_name[0] == 'm' else 1
+            if factor == -1:
+                op_name = op_name[1:]
             angle, qbn = op_name[1:], op_info[1]
+
             if not self.decompose_rotation_gates.get(op_name[0], False):
                 p = self.get_pulse(f"{op_name[0]}180 {qbn}")
-                if op.startswith("Z"):
+                if op_name.startswith("Z"):
                     if angle[0] == ':':
-                        func = lambda x, qbn=op_info[1]: {qbn: x}
+                        func = lambda x, qbn=op_info[1], f=factor: {qbn: f * x}
                         p['basis_rotation'] = ParametricValue(angle[1:],
                                                               func=func)
                     else:
-                        p['basis_rotation'] = {qbn: float(angle)}
+                        p['basis_rotation'] = {qbn: factor * float(angle)}
                 else:
                     if angle[0] == ':':
-                        func = lambda x, a=p['amplitude'] : \
-                            a * ((x % 360) if (x % 360) < 180 else 360 - (
-                                    x % 360)) / 180
+                        func = lambda x, a=p['amplitude'], f=factor: \
+                            a * ((f * x + 180) % 360 - 180)
                         p['amplitude'] = ParametricValue(angle[1:], func=func)
                     else:
-                        angle = float(angle)
-                        p['amplitude'] *= ((angle % 360) if (angle % 360) < 180
-                                           else 360 - (angle % 360)) / 180
+                        angle = factor * float(angle)
+                        p['amplitude'] *= ((angle + 180) % 360 - 180)
             else:
                 raise NotImplementedError('Decomposed rotations not '
                                           'implemented yet.')
@@ -207,6 +210,7 @@ class CircuitBuilder:
         p['op_code'] = op
         if op_info[0][0] == 's':
             p['ref_point'] = 'start'
+
         return p
 
     def swap_qubit_indices(self, i, j=None):
