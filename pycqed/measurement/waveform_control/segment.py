@@ -27,6 +27,7 @@ class Segment:
     def __init__(self, name, pulse_pars_list=[]):
         self.name = name
         self.pulsar = ps.Pulsar.get_instance()
+        self.unresolved_pulses_raw = []
         self.unresolved_pulses = []
         self.previous_pulse = None
         self.elements = odict()
@@ -59,7 +60,7 @@ class Segment:
                              f'{pars_copy.get("name")}')
         if pars_copy.get('name', None) is None:
             pars_copy['name'] = pulse_pars['pulse_type'] + '_' + str(
-                len(self.unresolved_pulses))
+                len(self.unresolved_pulses_raw))
         self._pulse_names.add(pars_copy['name'])
 
         # Makes sure that element name is unique within sequence of
@@ -92,17 +93,18 @@ class Segment:
             # if the first pulse added to the segment has no ref_pulse
             # it is reference to segment_start by default
             elif self.previous_pulse == None and \
-                 len(self.unresolved_pulses) == 0:
+                 len(self.unresolved_pulses_raw) == 0:
                 new_pulse.ref_pulse = 'segment_start'
             else:
                 raise ValueError('No previous pulse has been added!')
 
-        self.unresolved_pulses.append(new_pulse)
+        self.unresolved_pulses_raw.append(new_pulse)
 
         self.previous_pulse = new_pulse
         # if self.elements is odict(), the resolve_timing function has to be
         # called prior to generating the waveforms
         self.elements = odict()
+        self.unresolved_pulses = []
 
     def extend(self, pulses):
         """
@@ -116,15 +118,27 @@ class Segment:
     def resolve_segment(self):
         """
         Top layer method of Segment class. After having addded all pulses,
+            * pulse elements are updated to enforce single element per segment
+                for the that AWGs configured this way.
             * the timing is resolved
             * the virtual Z gates are resolved
             * the trigger pulses are generated
             * the charge compensation pulses are added
         """
+        self.enforce_single_element()
         self.resolve_timing()
         self.resolve_Z_gates()
         self.gen_trigger_el()
         self.add_charge_compensation()
+
+    def enforce_single_element(self):
+        self.unresolved_pulses = deepcopy(self.unresolved_pulses_raw)
+        for p in self.unresolved_pulses:
+            for ch in p.pulse_obj.channels:
+                ch_awg = self.pulsar.get(f'{ch}_awg')
+                if self.pulsar.get(f'{ch_awg}_enforce_single_element'):
+                    p.pulse_obj.element_name = f'default_{self.name}'
+                    break
 
     def resolve_timing(self):
         """
@@ -138,6 +152,8 @@ class Segment:
         """
 
         self.elements = odict()
+        if self.unresolved_pulses == []:
+            self.enforce_single_element()
 
         visited_pulses = []
         ref_pulses_dict = {}
@@ -448,7 +464,7 @@ class Segment:
         For each element:
             For each AWG the element is played on, this method:
                 * adds the element to the elements_on_AWG dictionary
-                * instatiates a trigger pulse on the triggering channel of the 
+                * instatiates a trigger pulse on the triggering channel of the
                   AWG, placed in a suitable element on the triggering AWG,
                   taking AWG delay into account.
                 * adds the trigger pulse to the elements list 
