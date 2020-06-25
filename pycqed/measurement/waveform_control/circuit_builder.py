@@ -99,7 +99,7 @@ class CircuitBuilder:
             return None, qb_names
         else:
             qb_map = {qb.name: qb for qb in self.qubits}
-            return [qb_map[qb] for qb in qb_names],  qb_names
+            return [qb_map[qb] for qb in qb_names], qb_names
 
     def get_prep_params(self, qb_names='all'):
         qubits, qb_names = self.get_qubits(qb_names)
@@ -342,17 +342,18 @@ class CircuitBuilder:
 
                 rp_list = deepcopy(reset_pulses)
                 for j, pulse in enumerate(rp_list):
-                    pulse['element_name'] = 'reset_pulse_element_{}'.format(rep)
-                    pulse['ref_pulse'] = 'refpulse_reset_element_{}'.format(rep)
+                    pulse['element_name'] = f'reset_pulse_element_{rep}'
+                    pulse['ref_pulse'] = f'refpulse_reset_element_{rep}'
                 prep_pulse_list += ro_list
                 prep_pulse_list += rp_list
 
             # manually add block_end with delay referenced to last readout
             # as if it was an additional readout pulse
             # otherwise next pulse will overlap with codeword padding.
-            block_end = dict(name='end', pulse_type="VirtualPulse",
-                             ref_pulse=f'refpulse_reset_element_{reset_reps-1}',
-                             pulse_delay=ro_separation)
+            block_end = dict(
+                name='end', pulse_type="VirtualPulse",
+                ref_pulse=f'refpulse_reset_element_{reset_reps - 1}',
+                pulse_delay=ro_separation)
             prep_pulse_list += [block_end]
             return Block(block_name, prep_pulse_list)
 
@@ -506,7 +507,7 @@ class CircuitBuilder:
         pulses += self.mux_readout(**ro_kwargs).build()
         return Segment(seg_name, pulses)
 
-    def seq_from_ops(self, operations, fill_values=None,  pulse_modifs=None,
+    def seq_from_ops(self, operations, fill_values=None, pulse_modifs=None,
                      init_state='0', seq_name='Sequence', ro_kwargs=None):
         """
         Returns a sequence with the given operations using the function
