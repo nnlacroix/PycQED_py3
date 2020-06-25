@@ -138,7 +138,7 @@ class GaussianFilteredPiecewiseConstPulse(pulse.Pulse):
     """
 
     def __init__(self, name, element_name, channels, lengths, amplitudes,
-                 gaussian_filter_sigma, codeword='no_codeword', **kw):
+                 gaussian_filter_sigma=0, codeword='no_codeword', **kw):
         self.name = name
         self.element_name = element_name
         self.codeword = codeword
@@ -171,7 +171,12 @@ class GaussianFilteredPiecewiseConstPulse(pulse.Pulse):
         t0 = self.algorithm_time()
         idx = self.channels.index(channel)
         wave = np.zeros_like(t)
-        timescale = 1 / (np.sqrt(2) * self.gaussian_filter_sigma)
+
+        if self.gaussian_filter_sigma > 0:
+            timescale = 1 / (np.sqrt(2) * self.gaussian_filter_sigma)
+        else:
+            timescale = 0
+
         for seg_len, seg_amp in zip(self.lengths[idx], self.amplitudes[idx]):
             t1 = t0 + seg_len
             if self.gaussian_filter_sigma > 0:
@@ -202,39 +207,87 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
     transitioning from the first pulse half to the second pulse half, by having
     an additional, low-amplitude segment between the two main pulse-halves.
 
-    The zero area is achieved by adjusting the amplitudes for the intermediate
+    The zero area is achieved by adjusting the lengths for the intermediate
     pulses.
-
-
     """
 
-    def __init__(self, name, element_name, channels, main_lens, main_amps,
-                 trans_lens, trans_amps, gaussian_filter_sigma, amp_offsets,
-                 buffer_start=0, buffer_end=0, codeword='no_codeword', **kw):
-        if not isinstance(main_lens, list):
-            main_lens = len(channels)*[main_lens]
-        if not isinstance(main_amps, list):
-            main_amps = len(channels)*[main_amps]
-        if not isinstance(trans_lens, list):
-            trans_lens = len(channels) * [trans_lens]
-        if not isinstance(trans_amps, list):
-            trans_amps = len(channels) * [trans_amps]
-        if not isinstance(amp_offsets, list):
-            amp_offsets = len(channels) * [amp_offsets]
+    def __init__(self, name, element_name, **kw):
+        GaussianFilteredPiecewiseConstPulse.__init__(
+            self, name, element_name, [], [], [], **kw)
+        pulse.Pulse.__init__(self, name, element_name, **kw)
 
-        lengths = []
-        amplitudes = []
-        for ml, ma, tl, ta, ao in zip(main_lens, main_amps, trans_lens,
-                                      trans_amps, amp_offsets):
-            amplitudes.append([0, ma+ao, ta, -ta, -ma+ao, 0])
-            # ensure that the amplitude offset can be compensated for by
-            # adjusting the lengths of the middle part
-            assert abs(ml * ao) < abs(tl * ta)
-            lengths.append([buffer_start, ml/2, (tl - ml*ao/ta)/2,
-                            (tl + ml*ao/ta)/2, ml/2, buffer_end])
+        for par in ['amplitude', 'amplitude2', 'amplitude_offset',
+                    'amplitude_offset2', 'pulse_length', 'trans_amplitude',
+                    'trans_amplitude2', 'trans_length', 'buffer_length_start',
+                    'buffer_length_end', 'channel_relative_delay']:
+            self.add_value_change_callback(par, self._update_lengths_amps)
+        for par in ['channel', 'channel2']:
+            self.add_value_change_callback(par, self._update_channels)
 
-        super().__init__(name, element_name, channels, lengths, amplitudes,
-                         gaussian_filter_sigma, codeword)
+        self._update_lengths_amps()
+        self._update_channels()
+
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values.
+        These parameters are set upon calling the
+        super().__init__ method.
+        """
+        params = {
+            'pulse_type': 'NZTransitionControlledPulse',
+            'channel': None,
+            'channel2': None,
+            'amplitude': 0,
+            'amplitude2': 0,
+            'amplitude_offset': 0,
+            'amplitude_offset2': 0,
+            'pulse_length': 0,
+            'trans_amplitude': 0,
+            'trans_amplitude2': 0,
+            'trans_length': 0,
+            'buffer_length_start': 30e-9,
+            'buffer_length_end': 30e-9,
+            'channel_relative_delay': 0,
+            'gaussian_filter_sigma': 1e-9,
+        }
+        return params
+
+    def _update_channels(self):
+        self.channels = [self.channel, self.channel2]
+
+    def _update_lengths_amps(self):
+        self.lengths = []
+        self.amplitudes = []
+
+        for ma, ta, ao, d in [
+            (self.amplitude, self.trans_amplitude, self.amplitude_offset,
+             -self.channel_relative_delay/2),
+            (self.amplitude2, self.trans_amplitude2, self.amplitude_offset2,
+             self.channel_relative_delay/2),
+        ]:
+            ml = self.pulse_length
+            tl = self.trans_length
+            bs = self.buffer_length_start
+            be = self.buffer_length_end
+            self.amplitudes.append([0, ma + ao, ta, -ta, -ma + ao, 0])
+            if ta == 0:
+                self.lengths.append([bs + d, ml / 2, tl / 2,
+                                     tl / 2, ml / 2, be - d])
+            else:
+                self.lengths.append([bs + d, ml / 2, (tl - ml * ao / ta) / 2,
+                                     (tl + ml * ao / ta) / 2, ml / 2, be - d])
+
+    def add_value_change_callback(self, param, callback):
+        def getter(self):
+            return getattr(self, '_' + param)
+
+        def setter(self, value):
+            setattr(self, '_' + param, value)
+            callback()
+
+        setattr(self, '_' + param, getattr(self, param))
+        setattr(self.__class__, param, property(getter, setter))
 
 
 class BufferedSquarePulse(pulse.Pulse):
@@ -260,7 +313,8 @@ class BufferedSquarePulse(pulse.Pulse):
     @classmethod
     def pulse_params(cls):
         """
-        Returns a dictionary of pulse parameters and initial values. These parameters are set upon calling the
+        Returns a dictionary of pulse parameters and initial values. These
+        parameters are set upon calling the
         super().__init__ method.
         """
         params = {
