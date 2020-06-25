@@ -535,7 +535,7 @@ class HDAWG8Pulsar:
         
         chids = [f'ch{i+1}{m}' for i in range(8) for m in ['','m']]
         divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
-        
+
         waves_to_upload = {h: divisor[chid]*waveforms[h][::divisor[chid]]
                                for codewords in awg_sequence.values() 
                                    if codewords is not None 
@@ -1356,37 +1356,48 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         w1, w2 = self._zi_waves_to_wavenames(wave)
         if not codeword:
             if w1 is None and w2 is not None:
-                # This hack is needed due to a bug on the HDAWG. 
+                # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 if not acq:
                     playback_string.append(
-                        f'prefetch(zeros(1) + marker(1, 0), {w2});')
+                        f'prefetch(0*{w2}, {w2});')
+            elif w1 is not None and w2 is None:
+                if not acq:
+                    playback_string.append(
+                        f'prefetch({w1}, 0*{w1});')
             elif w1 is not None or w2 is not None:
                 if not acq:
                     playback_string.append('prefetch({});'.format(', '.join(
-                            [wn for wn in [w1, w2] if wn is not None])))
-        
+                        [wn for wn in [w1, w2] if wn is not None])))
+
         trig_source = self.get('{}_trigger_source'.format(name))
         if trig_source == 'Dig1':
             playback_string.append(
                 'waitDigTrigger(1{});'.format(', 1' if device == 'uhf' else ''))
         elif trig_source == 'Dig2':
             if device == 'hdawg':
-                raise ValueError('ZI HDAWG does not support having Dig2 as trigger source.')
+                raise ValueError(
+                    'ZI HDAWG does not support having Dig2 as trigger source.')
             playback_string.append('waitDigTrigger(2,1);')
         elif trig_source == 'DIO':
             playback_string.append('waitDIOTrigger();')
         else:
-            raise ValueError('Trigger source for {} has to be "Dig1", "Dig2" or "DIO"!')
-        
+            raise ValueError(
+                'Trigger source for {} has to be "Dig1", "Dig2" or "DIO"!')
+
         if codeword:
             playback_string.append('playWaveDIO();')
         else:
             if w1 is None and w2 is not None:
-                # This hack is needed due to a bug on the HDAWG. 
+                # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(
-                    f'playWave(zeros(1) + marker(1, 0), {w2});')
+                    f'playWave(0*{w2}, {w2});')
+            elif w1 is not None and w2 is None:
+                # This hack is needed due to a bug on the HDAWG.
+                # Remove this if case once the bug is fixed.
+                playback_string.append(
+                    f'playWave({w1}, 0*{w1});')
             elif w1 is not None or w2 is not None:
                 playback_string.append('playWave({});'.format(
                     _zi_wavename_pair_to_argument(w1, w2)))

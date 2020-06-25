@@ -421,6 +421,11 @@ def fluxpulse_scope_sequence(
     ro_pulse['ref_pulse'] = 'FPS_Pi'
     ro_pulse['ref_point'] = 'end'
     ro_pulse['pulse_delay'] = ro_pulse_delay
+    if ro_pulse_delay == 'auto':
+        ro_pulse['ref_point'] = 'middle'
+        ro_pulse['pulse_delay'] = flux_pulse['pulse_length'] - np.min(delays) + \
+                                  flux_pulse.get('buffer_length_end', 0)
+
 
     pulses = [ge_pulse, flux_pulse, ro_pulse]
     swept_pulses = sweep_pulse_params(
