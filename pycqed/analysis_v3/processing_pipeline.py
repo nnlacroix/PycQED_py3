@@ -225,25 +225,15 @@ Final pipeline:
      }]                             
 """
 
-def memoize(func):
-    # Function used to decorate the __call__ method of ProcessingPipeline
-    # such that we can execute it more than once without getting an error.
-    # This function stores the pipeline resolved after the first time __call__
-    # is called, such that when we call it another time, it just outputs this
-    # stored pipeline
-    memo = {}
-    def wrapper(*args):
-        if not 'resolved_pipeline' in memo:
-            memo['resolved_pipeline'] = func(*args)
-        return memo['resolved_pipeline']
-    return wrapper
+
 
 
 class ProcessingPipeline(list):
     """
     Creates a processing pipeline for analysis_v3.
     """
-    def __init__(self, node_name=None, from_dict_list=None, **node_params):
+    def __init__(self, node_name=None, from_dict_list=None, from_string=None,
+                 was_resolved=False, **node_params):
         super().__init__()
         if node_name is not None:
             node_params['node_name'] = node_name
@@ -256,47 +246,58 @@ class ProcessingPipeline(list):
                 else:
                     raise ValueError('Entries in list must be dicts.')
 
-    @memoize
     def __call__(self, meas_obj_value_names_map):
+        fallback_pipeline = deepcopy(self)
         pipeline = deepcopy(self)
         self.clear()
         for i, node_params in enumerate(pipeline):
-            if 'keys_in' not in node_params:
-                raise KeyError('Each node dictionary must contain the key '
-                               '"keys_in".')
+            if node_params.get('was_resolved', False):
+                # if node was already resolved, just add it
+                self.append(node_params)
+                return
 
-            meas_obj_names_raw = node_params['meas_obj_names']
-            if isinstance(meas_obj_names_raw, str):
-                meas_obj_names_raw = [meas_obj_names_raw]
-            joint_processing = node_params.pop('joint_processing', False)
-            if joint_processing:
-                meas_obj_names = [','.join(meas_obj_names_raw)]
-                mobj_value_names = hlp_mod.flatten_list(
-                    meas_obj_value_names_map.values())
-            else:
-                meas_obj_names = meas_obj_names_raw
+            try:
+                if 'keys_in' not in node_params:
+                    raise KeyError('Each node dictionary must contain the key '
+                                   '"keys_in".')
+                meas_obj_names_raw = node_params['meas_obj_names']
+                if isinstance(meas_obj_names_raw, str):
+                    meas_obj_names_raw = [meas_obj_names_raw]
+                joint_processing = node_params.pop('joint_processing', False)
+                if joint_processing:
+                    meas_obj_names = [','.join(meas_obj_names_raw)]
+                    mobj_value_names = hlp_mod.flatten_list(
+                        meas_obj_value_names_map.values())
+                else:
+                    meas_obj_names = meas_obj_names_raw
 
-            for mobj_name in meas_obj_names:
-                # mobjn is a string!
-                new_node_params = deepcopy(node_params)
-                new_node_params['meas_obj_names'] = mobj_name
-                # get the value names corresponding to the measued object name
-                if not joint_processing:
-                    mobj_value_names = meas_obj_value_names_map[mobj_name]
-                # get keys_in and any other key in node_params that
-                # contains keys_in
-                for k, v in new_node_params.items():
-                    if 'keys_in' in k:
-                        keys = self.process_keys_in(
-                            v, mobj_name, mobj_value_names, node_idx=i)
-                        new_node_params[k] = keys
-                # get keys_out
-                keys_out = self.process_keys_out(keys_out_container=mobj_name,
-                                                 **new_node_params)
-                if keys_out is not None:
-                    new_node_params['keys_out'] = keys_out
-
-                self.append(new_node_params)
+                for mobj_name in meas_obj_names:
+                    # mobjn is a string!
+                    new_node_params = deepcopy(node_params)
+                    new_node_params['meas_obj_names'] = mobj_name
+                    # get the value names corresponding to the measued object name
+                    if not joint_processing:
+                        mobj_value_names = meas_obj_value_names_map[mobj_name]
+                    # get keys_in and any other key in node_params that
+                    # contains keys_in
+                    for k, v in new_node_params.items():
+                        if 'keys_in' in k:
+                            keys = self.process_keys_in(
+                                v, mobj_name, mobj_value_names, node_idx=i)
+                            new_node_params[k] = keys
+                    # get keys_out
+                    keys_out = self.process_keys_out(keys_out_container=mobj_name,
+                                                     **new_node_params)
+                    if keys_out is not None:
+                        new_node_params['keys_out'] = keys_out
+                    # add flag that this node has been resolved
+                    new_node_params['was_resolved'] = True
+                    self.append(new_node_params)
+            except Exception as e:
+                # return unresolved pipeline
+                self.clear()
+                [self.append(node) for node in fallback_pipeline]
+                raise e
 
     def add_node(self, node_name, **node_params):
         node_params['node_name'] = node_name
@@ -318,7 +319,9 @@ class ProcessingPipeline(list):
 
         keys_in = []
         for keyi in keys_in_temp:
-            if keyi == 'raw':
+            if keyi in mobj_value_names or keyi in prev_keys_out:
+                keys_in += [keyi]
+            elif keyi == 'raw':
                 keys_in += mobj_value_names
             elif 'previous' in keyi:
                 if len(self) > 0:
@@ -345,15 +348,17 @@ class ProcessingPipeline(list):
                             lst_to_search=self[node_idx-1]['keys_out'],
                             lst_to_match=mobj_value_names)
                 else:
-                    raise ValueError('This is the first node in the pipeline. '
-                                     'keys_in cannot be "previous".')
+                    raise ValueError('The first node in the pipeline cannot '
+                                     'have "keys_in" = "previous".')
         try:
             keys_in.sort()
         except AttributeError:
             pass
 
         if len(keys_in) == 0 or keys_in is None:
-            raise ValueError('No "keys_in" could be determined.')
+            raise ValueError(f'No "keys_in" could be determined '
+                             f'for {mobj_name} in the node with index '
+                             f'{node_idx} and raw "keys_in" {keys_in_temp}.')
         return keys_in
 
     def process_keys_out(self, keys_in, keys_out_container, keys_out=(),

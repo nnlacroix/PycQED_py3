@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 from pycqed.analysis_v3 import saving as save_module
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import helper_functions as hlp_mod
-from pycqed.analysis_v3 import processing_pipeline as pp_mod
+from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
 
 search_modules = set()
 search_modules.add(hlp_mod)
@@ -187,9 +187,9 @@ def process_pipeline(data_dict, processing_pipeline=None,
                 hlp_mod.add_param('processing_pipeline', [node_params],
                                   data_dict, append_value=True)
 
+    # instantiate a ProcessingPipeline instance in case it is an ordinary list
+    processing_pipeline = ProcessingPipeline(from_dict_list=processing_pipeline)
     # resolve pipeline in case it wasn't resolved yet
-    processing_pipeline = pp_mod.ProcessingPipeline(
-        from_dict_list=processing_pipeline)
     movnm = hlp_mod.get_param('meas_obj_value_names_map', data_dict, **params)
     if movnm is not None:
         processing_pipeline(movnm)

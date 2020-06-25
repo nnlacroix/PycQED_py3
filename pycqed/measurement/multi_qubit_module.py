@@ -1213,7 +1213,7 @@ def measure_two_qubit_randomized_benchmarking(
         clifford_decomposition_name='HZ', interleaved_gate=None,
         n_cal_points_per_state=2, cal_states=tuple(),
         label=None, prep_params=None, upload=True, analyze_RB=True,
-        classified=True, correlated=False, thresholded=True,
+        classified=True, correlated=True, thresholded=True,
         averaged=True, **kw):
 
     # check whether qubits are connected
@@ -1303,6 +1303,7 @@ def measure_two_qubit_randomized_benchmarking(
     pp.add_node('rb_analysis', keys_in='previous average_data',
                 keys_in_std='previous get_std_deviation', keys_out=None,
                 meas_obj_names=mobj_names, plot_T1_lim=False, d=4)
+
     # create experimental metadata
     exp_metadata = {'preparation_params': prep_params,
                     'cal_points': repr(cp),
