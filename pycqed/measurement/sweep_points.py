@@ -140,19 +140,26 @@ class SweepPoints(list):
         :param param_names: None, or string or list of strings corresponding to
             keys in the sweep dimension specified by dimension
         :return:
-            if param_names is string: string with the property of each
-                param_names in the sweep dimension dict specified by dimension.
+            if param_names is string: the property of the sweep parameter
+                specified in param_names in the sweep dimension dict specified
+                by dimension.
             if param_names is list: list with the property of each
                 param_names in the sweep dimension dict specified by dimension.
-            if param_names is None: string corresponding to the
+            if param_names is None: property corresponding to the
                 first sweep parameter in the sweep dimension dict
         """
         assert isinstance(dimension, int), 'Dimension must be an integer > 0.'
         properties_dict = {'values': 0, 'unit': 1, 'label': 2}
         if param_names is None:
-            return next(iter(self.get_sweep_dimension(
+            if len(self.get_sweep_dimension(dimension)) == 0:
+                return [] if property == 'values' else ''
+            else:
+                return next(iter(self.get_sweep_dimension(
                 dimension).values()))[properties_dict[property]]
         else:
+            # FIXME: probably we need somethign like the above
+            #   if len(self.get_sweep_dimension(dimension)) == 0:
+            # also here
             if isinstance(param_names, list):
                 return [pnd[properties_dict[property]] for pnd in
                         self.get_sweep_params_description(param_names,
@@ -187,5 +194,7 @@ class SweepPoints(list):
         return sweep_points_map
 
     def update(self, sweep_points):
+        while len(self) < len(sweep_points):
+            self.add_sweep_dimension()
         for d, u in zip(self, sweep_points):
             d.update(u)

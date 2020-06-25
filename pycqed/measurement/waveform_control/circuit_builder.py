@@ -699,12 +699,14 @@ class CircuitBuilder:
         if ro_kwargs is None:
             ro_kwargs = {}
 
-        nr_sp_list = [len(list(d.values())[0][0]) for d in sweep_points]
-
+        nr_sp_list = [len(sweep_points.get_sweep_params_property('values', 1))]
         if sweep_dims == 1:
             sweep_points = copy(sweep_points)
             sweep_points.add_sweep_dimension()
             nr_sp_list.append(1)
+        else:
+            nr_sp_list.append(len(sweep_points.get_sweep_params_property(
+                'values', 2)))
 
         prep = self.initialize(init_state=init_state, qb_names=ro_qubits)
         ro = self.mux_readout(**ro_kwargs, qb_names=ro_qubits)
