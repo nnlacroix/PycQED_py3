@@ -6588,8 +6588,11 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
     def __init__(self, qb_name=None,
                  sign_of_peaks=None,
                  label='',
-                 auto=True, from_lower = False,
-                 plot=True, ghost=False,
+                 auto=True, plot=True,
+                 ghost=False, from_lower=False,
+                 freq_ranges_exclude=None,
+                 delay_ranges_exclude=None,
+                 rectangles_exclude=None,
                   **kw):
         '''
         analysis class to analyse data taken in flux pulse scope measurements
@@ -6601,6 +6604,20 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
             label (str): measurement string
             auto (bool): run default analysis if true
             plot (bool): show plot if true
+            ghost (bool): if True, it enables the heuristic to avoid fitting
+                ghost signals (e.g., f-level, LO leakage). Default False.
+            from_lower (bool): only used if ghost=True. Tells the heuristic
+                that the qubit is fluxed upwards (from lower sweet spot or a
+                position close to lower sweet spot). Default False.
+            freq_ranges_exclude: (list) frequency ranges to exclude as list of
+                tupes [(f1, f2), ...]. Will be excluded from both fitting
+                and plotting.
+            delay_ranges_exclude: (list) delay ranges to exclude as list of
+                tupes [(f1, f2), ...]. Will be excluded from both fitting
+                and plotting.
+            rectangles_exclude: (list) rectangles to exclude as list of
+                tupes [(f1, f2), ...]. Will be excluded from fitting,
+                but not from plotting.
             **kw (dict): keywords passed to the init of the base class
         '''
         kw['label'] = label
@@ -6612,6 +6629,9 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         self.fitted_volts = np.array([])
         self.ghost = ghost
         self.from_lower = from_lower
+        self.freq_ranges_exclude = freq_ranges_exclude
+        self.delay_ranges_exclude = delay_ranges_exclude
+        self.rectangles_exclude = rectangles_exclude
 
         super().__init__(TwoD=True, auto=False,qb_name=self.qb_name, **kw)
         if auto:
@@ -6638,8 +6658,44 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
             self.delays = self.sweep_points
             self.freqs = self.sweep_points_2D
 
+        self.data = self.data[2:]
+        if self.freq_ranges_exclude is not None:
+            for freq_range in self.freq_ranges_exclude:
+                reduction_arr = np.logical_not(
+                    np.logical_and(self.freqs > freq_range[0],
+                                   self.freqs < freq_range[1]))
+                freqs_reshaped = self.freqs[reduction_arr]
+                data_with_exclusion = []
+                for dat_arr in self.data:
+                    dat_arr_reshaped = dat_arr.reshape(
+                        len(self.freqs), len(self.delays))
+                    data_with_exclusion += [dat_arr_reshaped[
+                                                reduction_arr].reshape(
+                        len(freqs_reshaped)*len(self.delays))]
+                self.data = np.array(data_with_exclusion)
+                self.freqs = freqs_reshaped
+                self.sweep_points_2D = self.sweep_points_2D[reduction_arr]
+        # exclude delays
+        if self.delay_ranges_exclude is not None:
+            for delay_range in self.delay_ranges_exclude:
+                reduction_arr = np.logical_not(
+                    np.logical_and(self.delays > delay_range[0],
+                                   self.delays < delay_range[1]))
+                delays_reshaped = self.delays[reduction_arr]
+                data_with_exclusion = []
+                for dat_arr in self.data:
+                    dat_arr_reshaped = dat_arr.reshape(
+                        len(self.freqs), len(self.delays))
+                    data_with_exclusion += [dat_arr_reshaped[
+                        :, reduction_arr].reshape(
+                        len(self.freqs)*len(delays_reshaped))]
+                self.data = np.array(data_with_exclusion)
+                self.delays = delays_reshaped
+                self.sweep_points = self.sweep_points[reduction_arr]
+
         data_rotated = a_tools.rotate_and_normalize_data_no_cal_points(
-            self.data[2:, :])
+            self.data)
+        # data_rotated = self.data[0]
 
         data_rotated = data_rotated.reshape(len(self.freqs), len(self.delays))
         self.data_rotated = data_rotated
@@ -6674,9 +6730,11 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
             plt.close()
 
     def fit_single_slice(self, data_slice, mu_guess, sigma_guess=10e6,
-                         sign_of_peaks=None,
+                         sign_of_peaks=None, freqs=None,
                          plot=False, print_res=False):
 
+        if freqs is None:
+            freqs = self.sweep_points_2D
         GaussianModel = fit_mods.GaussianModel
         ampl_guess = (data_slice.max() - data_slice.min())/0.4*sign_of_peaks*sigma_guess
         offset_guess = data_slice[0]
@@ -6685,7 +6743,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         GaussianModel.set_param_hint('ampl',value=ampl_guess,vary=True)
         GaussianModel.set_param_hint('offset',value=offset_guess,vary=True)
 
-        fit_res = GaussianModel.fit(data_slice, freq=self.sweep_points_2D)
+        fit_res = GaussianModel.fit(data_slice, freq=freqs)
         if plot:
             fit_res.plot()
         if print_res:
@@ -6704,9 +6762,21 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         fitted_stds = np.zeros(len(delays))
         for i,delay in enumerate(delays):
             data_slice = self.data_rotated[:,i]
-            mu_guess = self.sweep_points_2D[np.argmax(data_slice * sign_of_peaks)]
+            freqs = self.sweep_points_2D
+
+            if self.rectangles_exclude is not None:
+                for rectangle in self.rectangles_exclude:
+                    if rectangle[0] < self.delays[i] < rectangle[1]:
+                        reduction_arr = np.logical_not(
+                            np.logical_and(self.freqs > rectangle[2],
+                                           self.freqs < rectangle[3]))
+                        freqs = self.freqs[reduction_arr]
+                        data_slice = data_slice[reduction_arr]
+
+            mu_guess = freqs[np.argmax(data_slice * sign_of_peaks)]
             fit_res = self.fit_single_slice(data_slice, mu_guess=mu_guess,
                                             sign_of_peaks=sign_of_peaks,
+                                            freqs=freqs,
                                             plot=False, print_res=False)
             self.fit_res = fit_res
             self.fitted_freqs[i] = fit_res.best_values['mu']
@@ -6717,11 +6787,14 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                         self.sweep_points)-4:
                         deep = False
                     if (self.fitted_freqs[i-1]-fit_res.best_values[
-                        'mu'])/self.fitted_freqs[i-1]<-0.015 and i>1:
+                        'mu'])/self.fitted_freqs[i-1]<-0.015 and i>1 and i<(len(
+                        self.fitted_freqs)-len(
+                        self.sweep_points)):
                         if deep:
                             mu_guess = self.fitted_freqs[i-1]
                             fit_res = self.fit_single_slice(data_slice, mu_guess=mu_guess,
                                                             sign_of_peaks=sign_of_peaks,
+                                                            freqs=freqs,
                                                             plot=False, print_res=False)
                             self.fit_res = fit_res
                             self.fitted_freqs[i] = fit_res.best_values['mu']
@@ -6739,6 +6812,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                             fit_res = self.fit_single_slice(data_slice,
                                                             mu_guess=mu_guess,
                                                             sign_of_peaks=sign_of_peaks,
+                                                            freqs=freqs,
                                                             plot=False,
                                                             print_res=False)
                             self.fit_res = fit_res
