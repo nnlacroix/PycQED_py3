@@ -232,8 +232,7 @@ class ProcessingPipeline(list):
     """
     Creates a processing pipeline for analysis_v3.
     """
-    def __init__(self, node_name=None, from_dict_list=None, from_string=None,
-                 was_resolved=False, **node_params):
+    def __init__(self, node_name=None, from_dict_list=None, **node_params):
         super().__init__()
         if node_name is not None:
             node_params['node_name'] = node_name
