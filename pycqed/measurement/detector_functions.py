@@ -1204,66 +1204,60 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         return data
 
 
-class UHFQC_classifier_detector(UHFQC_integration_logging_det):
+class UHFQC_classifier_detector(UHFQC_Base):
     """
-    Hybrid detector function to be used for qutrit readout:
-     - only works with 2 readout channels per qutrit!
-     - the UHF is configured to return single shots, but this function can then
-     return either single shots, or averaged sweep points (can average over the
-     shots for each segment)
-     - This class always performs classification of 2-channel single shots data
-     (shot_i_ch0, shot_i_ch1) into a 3 state probability
-     (shot_i_pg, shot_i_pe, shot_i_pf), for all recorded shots. Here
-     shot_i_pg, shot_i_pe, shot_i_pf \in [0, 1] and
-     shot_i_pg + shot_i_pe + shot_i_pf = 1.
-
-    See the UHFQC_integration_logging_det for the full dostring of the accepted
-    input parameters.
-
-    The only additional keyword argument that is used by this class but not by
-    its parent class is get_values_function_kwargs. This parameter is a dict
-    where the user can specify how he wants this detector function to process
-    the shots.
-    get_values_function_kwargs can contain:
-     - classifier_params_list (list or dict): THIS ENTRY MUST EXIST. This class
-        always classifies qutrits and it does so based on this parameter.
-        It is either the QuDev_transmon acq_classifier_params attribute (if only
-        one qubit is measured), or list of these dictionaries (if multiple
-        qubits are measured).
-     - averaged (bool; default: True): decides whether to average over the
-        shots of each segment. If True, this class returns averaged data with
-        size == len(sweep_points). If False, this class returns single shot
-        data with size == len(sweep_points)*nr_shots
-     - thresholded (bool; default: False): decides whether to assign each shot
-        to only one state. This is different from classification, and comes
-        after the classification step.
-        If True, for each classified shot (shot_i_pg, shot_i_pe, shot_i_pf),
-        sets the entry corresponding to the max of the three probabilities to 1
-        and the other two entries to 0.
-        Ex: For (shot_i_pg, shot_i_pe, shot_i_pf) = (0.04, 0.9, 0.06),
-        this options produces (0, 1, 0).
-        FIXME: (Steph 14.05.2020) Should we rename this param to "assigned"?
-     - state_prob_mtx_list (np.ndarray or list or None; default: None)
-        If not None, the data can be corrected with the inverse of these arrays.
-        Either the QuDev_transmon acq_state_prob_mtx attribute (if only
-        one qubit is measured), or list of these arrays (if multiple
-        qubits are measured).
-     - ro_corrected_stored_mtx (bool: default: False): decides whether to
-        correct the data with the inverse of the matrices in state_prob_mtx_list
-     - ro_corrected_seq_cal_mtx (bool: default: False): decides whether to
-        correct the data with the inverse of the calibration state_prob_mtx '
-        extracted from the measurement sequence. THIS CAN ONLY BE DONE IF
-        THE DATA IS AVERAGED FIRST (averaged == True)
+    Args:
+        UHFQC (instrument) : data acquisition device
+        AWG   (instrument) : device responsible for starting and stopping
+                             the experiment, can also be a central controller.
+        integration_length (float): integration length in seconds
+        nr_shots (int)     : nr of shots (max is 4095)
+        channels (list)    : index (channel) of UHFQC weight functions to use
+        result_logging_mode (str):  options are
+            - raw        -> returns raw data in V
+            - lin_trans  -> applies the linear transformation matrix and
+                            subtracts the offsets defined in the UFHQC.
+                            This is typically used for crosstalk suppression
+                            and normalization. Requires optimal weights.
+            - digitized  -> returns fraction of shots based on the threshold
+                            defined in the UFHQC. Requires optimal weights.
+        always_prepare (bool) : when True the acquire/get_values method will
+            first call the prepare statement. This is particularly important
+            when it is both a single_int_avg detector and acquires multiple
+            segments per point.
+        get_values_function_kwargs (dict): looks for the following keys:
+            classified (default: True): whether to classify the shots or not
+            averaged (default: True): whether to average over the shots
+            thresholded (default:True): whether to threshold the shots
+            correlated (default: False): whether to calculate <ZZ...Z>,
+                assuming |f> states are |g> states. This creates and additional
+                data column called "correlation"
+            classifier_params (default: None): this must be provided if
+                classified == True. Parameters for the classifier (or list of
+                parameters for the classifiers if multiple qubits) used to
+                classify the shots.
+            sate_prob_mtx (default: None): state assignment probability matrix
+                (or list of matrices if multiple qubits) used to correct for
+                RO errors. No correction is applied if None.
     """
 
-    def __init__(self, UHFQC, *args, **kw):
+    def __init__(self, UHFQC, AWG=None,
+                 integration_length: float=1e-6,
+                 nr_shots: int=4094,
+                 channels: list=(0, 1),
+                 result_logging_mode: str='raw',
+                 always_prepare: bool=False,
+                 prepare_function=None,
+                 prepare_function_kwargs: dict=None,
+                 get_values_function_kwargs: dict=None, **kw):
 
-        super().__init__(UHFQC, *args)
+        super().__init__(UHFQC)
 
-        self.get_values_function_kwargs = kw.get('get_values_function_kwargs',
-                                                 None)
-        self.name = '{}_UHFQC_classifier_det'.format(self.result_logging_mode)
+        self.name = '{}_UHFQC_classifier_det'.format(
+            result_logging_mode)
         self.state_labels = ['pg', 'pe', 'pf']
+        self.channels = channels
+        self.correlated = get_values_function_kwargs.get('correlated', True)
 
         # Currently doesn't work with single readout channel;
         # assumes 2 channels per data point
@@ -1279,111 +1273,137 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
                     state, ch_pair)
                 idx += 1
 
-    def process_data(self, data_raw):
-        data = super().process_data(data_raw)
+        # if self.correlated:
+        #     self.value_names += ['correlation']
 
+        if result_logging_mode == 'raw':
+            self.value_units = ['']*len(self.value_names)
+            self.scaling_factor = 1  # /(1.8e9*integration_length)
+        else:
+            self.value_units = ['']*len(self.value_names)
+            self.scaling_factor = 1
+
+        self.AWG = AWG
+        self.integration_length = integration_length
+        self.nr_shots = nr_shots
+
+        # 0/1/2 crosstalk supressed /digitized/raw
+        res_logging_indices = {'lin_trans': 0, 'digitized': 1, 'raw': 2}
+        # mode 3 is statistics logging, this is implemented in a
+        # different detector
+        self.result_logging_mode_idx = res_logging_indices[result_logging_mode]
+        self.result_logging_mode = result_logging_mode
+
+        self.always_prepare = always_prepare
+        self.prepare_function = prepare_function
+        self.prepare_function_kwargs = prepare_function_kwargs
+        self.get_values_function_kwargs = get_values_function_kwargs
+
+    def prepare(self, sweep_points):
+        if self.AWG is not None:
+            self.AWG.stop()
+
+        if self.prepare_function_kwargs is not None:
+            if self.prepare_function is not None:
+                self.prepare_function(**self.prepare_function_kwargs)
+        else:
+            if self.prepare_function is not None:
+                self.prepare_function()
+
+        self.nr_sweep_points = len(sweep_points)
+        # The averaging-count is used to specify how many times the AWG program
+        # should run
+        self.UHFQC.awgs_0_single(1)
+        self.UHFQC.qas_0_integration_length(int(self.integration_length*(1.8e9)))
+
+        self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
+        self.UHFQC.qudev_acquisition_initialize(channels=self.channels, 
+                                          samples=self.nr_shots*self.nr_sweep_points,
+                                          averages=1, #for single shot readout
+                                          loop_cnt=int(self.nr_shots),
+                                          mode='rl')
+
+    def get_values(self):
+        if self.always_prepare:
+            self.prepare()
+        data_raw = self.poll_data()
+        processed_data = self.process_data(data_raw[self.UHFQC.name])
+        return processed_data
+
+    def process_data(self, data_raw):
+        data = data_raw * self.scaling_factor
+
+        # Corrects offsets after crosstalk suppression matrix in UFHQC
+        if self.result_logging_mode == 'lin_trans':
+            for i, channel in enumerate(self.channels):
+                data[i] = data[i]-self.UHFQC.get(
+                    'qas_0_trans_offset_weightfunction_{}'.format(channel))
+
+        classified_data = data
         if self.get_values_function_kwargs.get('classified', True):
             # Classify data into qutrit states
             classifier_params_list = self.get_values_function_kwargs.get(
                 'classifier_params', None)
-            if classifier_params_list is None:
-                raise ValueError('Please specify the classifier '
-                                 'parameters list.')
-            else:
-                if not isinstance(classifier_params_list, list):
-                    classifier_params_list = [classifier_params_list]
-                state_prob_mtx_list = self.get_values_function_kwargs.get(
-                    'state_prob_mtx', None)
-
+            if not isinstance(classifier_params_list, list):
+                classifier_params_list = [classifier_params_list]
+            state_prob_mtx_list = self.get_values_function_kwargs.get(
+                'state_prob_mtx', None)
             if state_prob_mtx_list is not None and \
                     not isinstance(state_prob_mtx_list, list):
                 state_prob_mtx_list = [state_prob_mtx_list]
 
+            self.classifier_params_list = classifier_params_list
+            self.state_prob_mtx_list = state_prob_mtx_list
+
             classified_data = self.classify_shots(
-                data, classifier_params_list=classifier_params_list,
-                state_prob_mtx_list=state_prob_mtx_list,
-                **self.get_values_function_kwargs)
-        else:
-            classified_data = data
+                data, self.classifier_params_list, self.state_prob_mtx_list,
+                self.get_values_function_kwargs.get('averaged', True),
+                self.get_values_function_kwargs.get('thresholded', True))
 
         return classified_data.T
 
     def classify_shots(self, data, classifier_params_list,
-                       averaged=True, thresholded=False,
-                       ro_corrected_stored_mtx=False,
-                       ro_corrected_seq_cal_mtx=False,
-                       state_prob_mtx_list=None, **kw):
+                       state_prob_mtx_list=None, averaged=False,
+                       thresholded=True):
 
-        if ro_corrected_seq_cal_mtx and ro_corrected_stored_mtx:
-            raise ValueError('"ro_corrected_seq_cal_mtx" and '
-                             '"ro_corrected_stored_mtx" cannot both be True.')
-
-        ro_corrected = ro_corrected_seq_cal_mtx or ro_corrected_stored_mtx
-        if (ro_corrected and thresholded) and not averaged:
-            raise ValueError('It does not make sense to apply readout '
-                             'correction if thresholded==True and '
-                             'averaged==False.')
+        if classifier_params_list is None:
+            raise ValueError('Please specify the classifier parameters list.')
 
         nr_states = len(self.state_labels)
-        nr_avg_sp = self.nr_sweep_points/self.nr_shots
-        classified_data = np.zeros((nr_avg_sp if averaged else
-                                    nr_avg_sp*self.nr_shots,
-                                    nr_states*len(self.channel_str_pairs)))
+        classified_data = np.zeros(
+            (nr_states*len(self.channel_str_pairs),
+             self.nr_sweep_points if averaged else
+             self.nr_sweep_points*self.nr_shots))
+
+        clf_data_all = np.zeros((self.nr_sweep_points*self.nr_shots,
+                                nr_states*len(self.channel_str_pairs)))
 
         for i in range(len(self.channel_str_pairs)):
-            # classify each shot into (pg, pe, pf)
-            # clf_data will have shape (nr_shots * nr_avg_sp, nr_states)
             clf_data = a_tools.predict_gm_proba_from_clf(
                 data[2*i: 2*i+2, :].T, classifier_params_list[i])
-
             if thresholded:
-                # For each shot, set the largest probability entry to 1, and the
-                # other two to 0. I.e. assign to one state.
                 # clf_data must be 2 dimensional, rows are shots*sweep_points,
                 # columns are nr_states
                 clf_data = np.isclose(np.repeat([np.arange(nr_states)],
                                                 clf_data.shape[0], axis=0).T,
                                       np.argmax(clf_data, axis=1)).T
+            clf_data_all[:, nr_states*i: nr_states*i+nr_states] = clf_data
 
             if averaged:
-                # reshape into (nr_shots, nr_avg_sp, nr_data_columns) then
-                # average over nr_shots
+                # reshape into (nr_shots, nr_sweep_points, nr_data_columns)
                 clf_data = np.reshape(
-                    clf_data, (self.nr_shots, nr_avg_sp,
+                    clf_data, (self.nr_shots, self.nr_sweep_points,
                                clf_data.shape[-1]))
                 clf_data = np.mean(clf_data, axis=0)
-
-            if ro_corrected_stored_mtx:
-                # correct data with matrices from state_prob_mtx_list
-                if state_prob_mtx_list is not None:
-                    clf_data = (np.linalg.inv(
-                        state_prob_mtx_list[i]).T @ clf_data.T).T
-                    log.info('Data corrected based on previously-measured '
-                             'state_prob_mtx.')
-                else:
-                    raise ValueError('state_prob_mtx_list is None.')
-            elif ro_corrected_seq_cal_mtx:
-                # correct data with the calibration matrix extracted from
-                # the data array
-                if not averaged:
-                    raise NotImplementedError(
-                        'Data correction based on calibration state_prob_mtx '
-                        'from measurement sequence is currently only '
-                        'implemented for averaged data (averaged==True).')
-                # get cal matrix
-                calibration_matrix = clf_data[-nr_states:, :]
-                # normalize
-                calibration_matrix = calibration_matrix.astype('float') / \
-                                     calibration_matrix.sum(axis=1)[
-                                     :, np.newaxis]
-                # correct data
-                clf_data = (np.linalg.inv(calibration_matrix).T @ clf_data.T).T
-                log.info('Data corrected based on calibration state_prob_mtx '
-                         'from measurement sequence.')
+            if state_prob_mtx_list is not None:
+                clf_data = np.linalg.inv(
+                    state_prob_mtx_list[i]).T @ clf_data.T
+                log.info('Data corrected based on state_prob_mtx.')
             else:
                 log.info('not correcting data')
+                clf_data = clf_data.T
 
-            classified_data[:, nr_states * i: nr_states * i + nr_states] = \
+            classified_data[nr_states * i: nr_states * i + nr_states, :] = \
                 clf_data
 
-        return classified_data
+        return classified_data.T

@@ -3724,7 +3724,7 @@ def get_multi_qubit_msmt_suffix(qubits):
 ## Multi-qubit time-domain measurements ##
 
 def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
-                         prep_params=None, n_cal_points_per_state=1,
+                         prep_params=None, n_cal_points_per_state=2,
                          cal_states='auto', n=1, for_ef=False, last_ge_pulse=False,
                          upload=True, update=False, analyze=True, label=None,
                          exp_metadata=None, det_type='int_avg_det', **kw):
@@ -3848,7 +3848,7 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
 
 def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
                            artificial_detuning=0, prep_params=None,
-                           n_cal_points_per_state=1, cal_states='auto',
+                           n_cal_points_per_state=2, cal_states='auto',
                            for_ef=False, last_ge_pulse=False,
                            upload=True, update=False, analyze=True, label=None,
                            exp_metadata=None, det_type='int_avg_det', **kw):
@@ -3979,7 +3979,7 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
 
 def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
                            prep_params=None, for_ef=False, last_ge_pulse=False,
-                           n_cal_points_per_state=1, cal_states='auto',
+                           n_cal_points_per_state=2, cal_states='auto',
                            upload=True, update=False, analyze=True, label=None,
                            exp_metadata=None, det_type='int_avg_det', **kw):
     """
@@ -4098,7 +4098,7 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
 
 def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
                        prep_params=None, for_ef=False, last_ge_pulse=False,
-                       n_cal_points_per_state=1, cal_states='auto',
+                       n_cal_points_per_state=2, cal_states='auto',
                        upload=True, update=False, analyze=True, label=None,
                        exp_metadata=None, det_type='int_avg_det', **kw):
     """
@@ -4216,7 +4216,7 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
 
 def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
                          artificial_detuning=0, prep_params=None,
-                         n_cal_points_per_state=1, cal_states='auto',
+                         n_cal_points_per_state=2, cal_states='auto',
                          for_ef=False, last_ge_pulse=False,
                          upload=True, update=False, analyze=True, label=None,
                          exp_metadata=None, det_type='int_avg_det', **kw):
