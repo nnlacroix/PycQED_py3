@@ -85,7 +85,8 @@ def get_data_file_from_timestamp(timestamp):
 
 
 def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
-                             folder=None, **params):
+                             append_key=False, update_key=False,
+                             replace_value=False, folder=None, **params):
     """
     Extracts the parameter provided in params_dict from an HDF file
     and saves them in data_dict.
@@ -155,7 +156,9 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                         add_param(all_keys[-1],
                                   get_hdf_param_value(data_file[group_name],
                                                       par_name),
-                                  epd, append_key=append_key, update_key=update_key)
+                                  epd, append_key=append_key,
+                                  update_key=update_key,
+                                  replace_value=replace_value)
             else:
                 group_name = '/'.join(file_par.split('.')[:-1])
                 par_name = file_par.split('.')[-1]
@@ -164,12 +167,16 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                         add_param(all_keys[-1],
                                   get_hdf_param_value(data_file[group_name],
                                                       par_name),
-                                  epd, append_key=append_key, update_key=update_key)
+                                  epd, append_key=append_key,
+                                  update_key=update_key,
+                                  replace_value=replace_value)
                     elif par_name in list(data_file[group_name].keys()):
                         add_param(all_keys[-1],
                                   read_dict_from_hdf5(
                                       {}, data_file[group_name][par_name]),
-                                  epd, append_key=append_key, update_key=update_key)
+                                  epd, append_key=append_key,
+                                  update_key=update_key,
+                                  replace_value=replace_value)
 
         if len(file_par.split('.')) == 1:
             par_name = file_par.split('.')[0]
@@ -179,7 +186,8 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                               get_hdf_param_value(data_file[group_name],
                                                   par_name),
                               epd, append_value=append_value,
-                              update_value=update_value)
+                              update_value=update_value,
+                              replace_value=replace_value)
         else:
             group_name = '/'.join(file_par.split('.')[:-1])
             par_name = file_par.split('.')[-1]
@@ -189,13 +197,15 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                               get_hdf_param_value(data_file[group_name],
                                                   par_name),
                               epd, append_value=append_value,
-                              update_value=update_value)
+                              update_value=update_value,
+                              replace_value=replace_value)
                 elif par_name in list(data_file[group_name].keys()):
                     add_param(all_keys[-1],
                               read_dict_from_hdf5(
                                   {}, data_file[group_name][par_name]),
                               epd, append_value=append_value,
-                              update_value=update_value)
+                              update_value=update_value,
+                              replace_value=replace_value)
             if all_keys[-1] not in epd:
                 log.warning(f'Parameter {file_par} was not found.')
                 epd[all_keys[-1]] = 0
