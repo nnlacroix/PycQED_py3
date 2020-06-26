@@ -1875,6 +1875,7 @@ def measure_drive_cancellation(
 
         sweep_points.add_sweep_dimension()
         sweep_points.add_sweep_parameter('phase', phases, 'deg', 'Ramsey phase')
+
         if exp_metadata is None:
             exp_metadata = {}
 
@@ -1907,22 +1908,16 @@ def measure_drive_cancellation(
             ['int_avg_det']
         MC.set_detector_function(det_func)
 
-        sweep_points_for_analysis = [
-            {k: (np.repeat(v[0], len(phases)), v[1], v[2])
-             for k, v in sweep_points[0].items()}
-        ]
-        len_sweep = len(list(sweep_points[0].values())[0][0])
-        sweep_points_for_analysis[0]['phase'] = \
-            (np.tile(phases, len_sweep), 'rad', 'Ramsey phase')
-        meas_obj_sweep_points_map = {qbn: ['phase'] for qbn in ramsey_qubit_names}
-
+        # !!! Watch out with the call below. See docstring for this function
+        # to see the assumptions it makes !!!
+        meas_obj_sweep_points_map = sweep_points.get_meas_obj_sweep_points_map(
+            [qb.name for qb in ramsey_qubits])
         exp_metadata.update({
             'ramsey_qubit_names': ramsey_qubit_names,
             'preparation_params': prep_params,
             'cal_points': repr(cp),
-            'sweep_points': sweep_points_for_analysis,
-            'meas_obj_sweep_points_map':
-                meas_obj_sweep_points_map,
+            'sweep_points': sweep_points,
+            'meas_obj_sweep_points_map': meas_obj_sweep_points_map,
             'meas_obj_value_names_map':
                 get_meas_obj_value_names_map(ramsey_qubits, det_func),
             'rotate': len(cp.states) != 0,
@@ -1933,7 +1928,7 @@ def measure_drive_cancellation(
 
         if analyze:
             return tda.DriveCrosstalkCancellationAnalysis(
-                qb_names=ramsey_qubit_names)
+                qb_names=ramsey_qubit_names, options_dict={'TwoD': True})
 
 
 def calibrate_n_qubits(qubits, f_LO, sweep_points_dict, sweep_params=None,
