@@ -6177,8 +6177,6 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 means[qbn][qb_state] = np.mean(shots_per_qb[qbn][i::n_states],
                                                axis=0)
             if self.preselection:
-                # To Nathan: I think we need to redefine shots_per_qb here
-
                 # preselection shots were removed so look at raw data
                 # and look at only the first out of every two readouts
                 presel_shots_per_qb[qbn] = \
@@ -6259,8 +6257,6 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                     log.warning(f"{qbn}: No data left after preselection! "
                                 f"Skipping preselection data & figures.")
                     continue
-                pdd['analysis_params']["presel_filter"] = presel_filter # DEBUG
-                pdd['analysis_params']["presel_data"] = presel_shots_per_qb
                 qb_shots_masked = qb_shots[presel_filter]
                 prep_states = prep_states[presel_filter]
                 pred_states = self.clf_[qbn].predict(qb_shots_masked)
