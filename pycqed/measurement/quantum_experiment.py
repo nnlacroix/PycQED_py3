@@ -74,7 +74,7 @@ class QuantumExperiment(CircuitBuilder):
     def _update_parameters(self, overwrite_dicts=True, **kwargs):
         """
         """
-        for param_name, param_value in kwargs:
+        for param_name, param_value in kwargs.items():
             if hasattr(self, param_name):
                 if isinstance(param_value, dict) and not overwrite_dicts:
                     getattr(self, param_name).update(param_value)
@@ -92,27 +92,27 @@ class QuantumExperiment(CircuitBuilder):
         """
         self._update_parameters(**kw)
 
-        # combine preparation dictionaries
-        qb_names = self.dev.get_qubits(self.qubits, "str")
-        self.preparation_params = self.get_prep_params(qb_names)
-
-        # only prepare read out qubits
-        for qb in self.ro_qubits:
-            qb.prepare(drive=self.drive)
-
-        # create/retrieve sequence to run
-        self._prepare_sequences(self.sequences, self.sequence_function,
-                                self.sequence_kwargs)
-
-        # configure measurement control (mc_points, detector functions)
-        self._configure_mc()
-
-        if self.label is None:
-            self.label = f'{self.sequences[0].name}_{",".join(qb_names)}'
-
-        # run measurement
         with temporary_value(*self.temporary_values):
-            self.MC.run(name=self.label, exp_metadata=self.exp_metadata)
+            # combine preparation dictionaries
+            _, qb_names = self.get_qubits(self.qubits)
+
+            # only prepare read out qubits
+            for qb in self.ro_qubits:
+                qb.prepare(drive=self.drive)
+
+            # create/retrieve sequence to run
+            self._prepare_sequences(self.sequences, self.sequence_function,
+                                    self.sequence_kwargs)
+
+            # configure measurement control (mc_points, detector functions)
+            mode = self._configure_mc()
+
+            if self.label is None:
+                self.label = f'{self.sequences[0].name}_{",".join(qb_names)}'
+
+            # run measurement
+            self.MC.run(name=self.label, exp_metadata=self.exp_metadata,
+                        mode=mode)
 
     def run_analysis(self, analysis_class=None, **kwargs):
         """
@@ -172,6 +172,7 @@ class QuantumExperiment(CircuitBuilder):
             # build sequence from function
             if sequence_kwargs is None:
                 sequence_kwargs = {}
+
             seq_info = sequence_function(**sequence_kwargs)
 
             if isinstance(seq_info, list):
@@ -195,7 +196,7 @@ class QuantumExperiment(CircuitBuilder):
             self.sequences = sequences
 
         # check sequence
-        assert len(self.sequences) == 0, "No sequence found."
+        assert len(self.sequences) != 0, "No sequence found."
 
     def _configure_mc(self):
         """
@@ -210,7 +211,7 @@ class QuantumExperiment(CircuitBuilder):
 
         # configure mc_points
         if len(self.mc_points[0]) == 0: # first dimension mc_points not yet set
-            if isinstance(self.sweep_functions[0], awg_swf.SegmentHardSweep):
+            if self.sweep_functions[0] == awg_swf.SegmentHardSweep:
                 # first dimension mc points can be retrieved as
                 # ro_indices from sequence
                 self.mc_points[0] = np.arange(self.sequences[0].n_acq_elements())
@@ -220,7 +221,7 @@ class QuantumExperiment(CircuitBuilder):
                                  "'SegmentHardSweep'.")
 
         if len(self.sequences) > 1 and len(self.mc_points[1]) == 0:
-            if isinstance(self.sweep_functions[1], awg_swf.SegmentSoftSweep):
+            if self.sweep_functions[1] == awg_swf.SegmentSoftSweep:
                 # 2nd dimension mc_points can be retrieved as sequence number
                 self.mc_points[1] = np.arange(len(self.sequences))
             elif self.sweep_points is not None and len(self.sweep_points) > 1:
@@ -251,10 +252,10 @@ class QuantumExperiment(CircuitBuilder):
         try:
             sweep_param_name = list(self.sweep_points[0])[0]
             unit = list(self.sweep_points[0].values())[0][2]
-        except AttributeError:
-            sweep_param_name, unit = "", ""
+        except TypeError:
+            sweep_param_name, unit = "None", ""
         sweep_func_1st_dim = self.sweep_functions[0](
-            sequence=self.sequences[0], upload=upload_1st_dim,
+            sequence=self.sequences[0], upload=self.upload,
             parameter_name=sweep_param_name,  unit=unit)
 
         self.MC.set_sweep_function(sweep_func_1st_dim)
@@ -305,4 +306,4 @@ class QuantumExperiment(CircuitBuilder):
         self.__dict__[name] = value
 
     def __repr__(self):
-        return f"QuantumExperiment(dev='{self.dev.name}')"
+        return f"QuantumExperiment(dev={self.dev}, qubits={self.qubits})"
