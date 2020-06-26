@@ -1315,7 +1315,7 @@ class QuDev_transmon(Qubit):
                     shape=(len(cliffords), nr_seeds),
                     meas_obj_names=[self.name])
         pp.add_node('rb_analysis', keys_in='previous average_data',
-                    std_keys='previous get_std_deviation', keys_out=None,
+                    keys_in_std='previous get_std_deviation', keys_out=None,
                     meas_obj_names=[self.name], plot_T1_lim=True, d=2)
         if exp_metadata is None:
             exp_metadata = {}

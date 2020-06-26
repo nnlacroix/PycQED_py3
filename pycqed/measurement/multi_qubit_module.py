@@ -1306,8 +1306,9 @@ def measure_two_qubit_randomized_benchmarking(
     pp.add_node('get_std_deviation', keys_in='raw',
                 shape=(len(cliffords), nr_seeds), meas_obj_names=mobj_names)
     pp.add_node('rb_analysis', keys_in='previous average_data',
-                std_keys='previous get_std_deviation', keys_out=None,
+                keys_in_std='previous get_std_deviation', keys_out=None,
                 meas_obj_names=mobj_names, plot_T1_lim=False, d=4)
+
     # create experimental metadata
     exp_metadata = {'preparation_params': prep_params,
                     'cal_points': repr(cp),
