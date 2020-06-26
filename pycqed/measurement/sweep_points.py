@@ -62,13 +62,25 @@ class SweepPoints(list):
                                      v.get('label', k))
                                  for k, v in d.items()})
 
-    def add_sweep_parameter(self, param_name, values, unit='', label=None):
+    def add_sweep_parameter(self, param_name, values, unit='', label=None,
+                            dim=-1):
+        """
+        Adds sweep points to a given dimension.
+        :param param_name: (str) parameter name
+        :param values: (list) sweep values
+        :param unit: (optional str) unit of the values (default: '')
+        :param label: (optional str) label e.g. for plots (default: param_name)
+        :dim: the dimension to which the point should be added (default:
+            last dimension)
+        """
         if label is None:
             label = param_name
-        if len(self) == 0:
-            self.append({param_name: (values, unit, label)})
-        else:
-            self[-1].update({param_name: (values, unit, label)})
+        while len(self) == 0 or (dim >= 0 and dim >= len(self)):
+            self.add_sweep_dimension()
+        assert self.length(dim) in [0, len(values)], \
+            'Number of values has to match the length of existing sweep ' \
+            'points.'
+        self[dim].update({param_name: (values, unit, label)})
 
     def add_sweep_dimension(self):
         self.append(dict())
