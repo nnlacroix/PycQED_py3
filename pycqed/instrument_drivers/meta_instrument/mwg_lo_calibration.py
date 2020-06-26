@@ -41,17 +41,4 @@ def mwg_with_lo_calibration_template(mwg_class):
                     fill_value=(min(cal_vals), max(cal_vals)))(val)))
             return val
 
-        # def frequency(self, val=None):
-        #     # note that super() does not work for this class construction
-        #     # (seems to work in __init__, though)
-        #     # This is why we use self.get and self.set here.
-        #     if val is None:
-        #         return self.get('frequency')
-        #     self.set('frequency', val)
-        #
-        #     for par, freqs, cal_vals in self.lo_cal_data().values():
-        #         par(float(sp.interpolate.interp1d(
-        #             freqs, cal_vals, kind=self.lo_cal_interp_kind(),
-        #             fill_value=(min(cal_vals), max(cal_vals)))(val)))
-
     return MWGWithLOCalibration
