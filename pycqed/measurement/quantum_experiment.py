@@ -198,7 +198,7 @@ class QuantumExperiment(CircuitBuilder):
         # check sequence
         assert len(self.sequences) != 0, "No sequence found."
 
-    def _configure_mc(self):
+    def _configure_mc(self, MC=None):
         """
         Configure the measurement control (self.MC) for the measurement.
         This includes setting the sweep points and the detector function.
@@ -207,7 +207,11 @@ class QuantumExperiment(CircuitBuilder):
         dimension. In case other sweepfunctions should be used, self.sweep_functions
         should be modified prior to the call of this function.
 
+        Returns:
+            mmnt_mode (str): "1D" or "2D"
         """
+        # ensure measurement control is set
+        self._set_MC(MC)
 
         # configure mc_points
         if len(self.mc_points[0]) == 0: # first dimension mc_points not yet set
@@ -246,8 +250,6 @@ class QuantumExperiment(CircuitBuilder):
                                                         self.compression_seg_lim)
                 self.exp_metadata.update({'compression_factor': cf})
 
-        # if 2D, then upload is taken care of by second sweep function
-        upload_1st_dim = self.upload if len(self.mc_points[1]) > 0 else False
 
         try:
             sweep_param_name = list(self.sweep_points[0])[0]
@@ -266,17 +268,67 @@ class QuantumExperiment(CircuitBuilder):
             try:
                 sweep_param_name = list(self.sweep_points[1])[0]
                 unit = list(self.sweep_points[1].values())[0][2]
-            except AttributeError:
-                sweep_param_name, unit = "", ""
+            except TypeError:
+                sweep_param_name, unit = "None", ""
+            if len(self.channels_to_upload) == 0:
+                self.channels_to_upload = "all"
+            if self.sweep_functions[1] != awg_swf.SegmentSoftSweep:
+                raise NotImplementedError(
+                    "2D sweeps with sweepfunction different than "
+                    "SegmentSoftsweep are not yet supported (but "
+                    "the framework should allow to implement it "
+                    "quite easily: we should just distinguish which"
+                    "arguments should be passed in which case ("
+                    "for now, different soft sweep functions accept "
+                    "different arguments...) to self.sweep_functions[1]"
+                    ". Feel free to give it a go and make a pull "
+                    "request ;)")
             self.MC.set_sweep_function_2D(self.sweep_functions[1](
-                self.upload, self.sequences, sweep_param_name, unit,
-                channels_to_upload=self.channels_to_upload))
+                sweep_func_1st_dim, self.sequences, sweep_param_name, unit,
+                self.channels_to_upload))
+
             self.MC.set_sweep_points_2D(self.mc_points[1])
 
-        # Set detector function
+        # check whether there is at least one readout qubit
+        if len(self.ro_qubits) == 0:
+            raise ValueError('No readout qubits provided. Cannot '
+                             'configure detector functions')
+
+        # Configure detector function
         df = get_multiplexed_readout_detector_functions(
             self.ro_qubits, **self.df_kwargs)[self.df_name]
         self.MC.set_detector_function(df)
+
+        if len(self.mc_points[1]) > 0:
+            mmnt_mode = "2D"
+        else:
+            mmnt_mode = "1D"
+        return mmnt_mode
+
+    def _set_MC(self, MC=None):
+        """
+        Sets the measurement control and raises an error if no MC
+        could be retrieved from device/qubits objects
+        Args:
+            MC (MeasurementControl):
+
+        Returns:
+
+        """
+        if MC is not None:
+            self.MC = MC
+        elif self.MC is None:
+            try:
+                self.MC = self.dev.instr_mc.get_instr()
+            except AttributeError:
+                try:
+                    self.MC = self.qubits[0].instr_mc.get_instr()
+                except (AttributeError, IndexError):
+                    raise ValueError("The Measurement Control (MC) could not "
+                                     "be retrieved because no Device/qubit "
+                                     "objects were found. Pass the MC to "
+                                     "run_measurement() or set the MC attribute"
+                                     " of the QuantumExperiment instance.")
 
     def __setattr__(self, name, value):
         """
