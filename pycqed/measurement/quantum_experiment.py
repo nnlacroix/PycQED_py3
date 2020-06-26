@@ -15,22 +15,29 @@ class QuantumExperiment(CircuitBuilder):
     _metadata_params = {'cal_points', 'preparation_params', 'sweep_points',
                         'channel_map', 'ro_qubits'}
 
-    def __init__(self, dev, qubits=None, ro_qubits=None, classified=False,
+    def __init__(self, dev=None, qubits=None, operation_dict=None,
+                 ro_qubits=None, classified=False, MC=None,
                  label=None, exp_metadata=None, upload=True, measure=True,
-                 analyze=True, temporary_values=((), ()), drive="timedomain",
+                 analyze=True, temporary_values=(), drive="timedomain",
                  sequences=(), sequence_function=None,
                  sequence_kwargs=None, df_kwargs=None, df_name=None,
-                 mc_points=((), ()), sweep_functions=(awg_swf.SegmentHardSweep,
+                 mc_points=None, sweep_functions=(awg_swf.SegmentHardSweep,
                                                       awg_swf.SegmentSoftSweep),
                  compression_seg_lim=None, force_2D_sweep=True, **kw):
-        super().__init__(dev=dev, qubits=qubits, **kw)
+        super().__init__(dev=dev, qubits=qubits, operation_dict=operation_dict,
+                         **kw)
 
         self.exp_metadata = exp_metadata
         if self.exp_metadata is None:
             self.exp_metadata = {}
 
+        if hasattr(self, "qubits"):
+            # if no qubits were given in init, set to empty list to skip
+            #  iterations over qubit lists
+            if self.qubits is None:
+                self.qubits = []
         self.ro_qubits = self.qubits if ro_qubits is None else ro_qubits
-        self.MC = dev.instr_mc.get_instr()
+        self.MC = MC
 
         self.classified = classified
         self.label = label
@@ -44,7 +51,7 @@ class QuantumExperiment(CircuitBuilder):
         self.sequence_function = sequence_function
         self.sequence_kwargs = {} if sequence_kwargs is None else sequence_kwargs
         self.sweep_points = self.sequence_kwargs.get("sweep_points", None)
-        self.mc_points = mc_points
+        self.mc_points = mc_points if mc_points is not None else [[], []]
         self.sweep_functions = sweep_functions
         self.force_2D_sweep = force_2D_sweep
         self.compression_seg_lim = compression_seg_lim
@@ -60,8 +67,6 @@ class QuantumExperiment(CircuitBuilder):
             self.df_name = df_name
         if self.df_name is None:
             self.df_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
-
-
 
         self.exp_metadata.update(kw)
         self.exp_metadata.update({'classified_ro': self.classified})
