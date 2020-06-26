@@ -169,8 +169,8 @@ class CircuitBuilder:
         op_info = op.split(" ")
         # the call to get_qubits resolves qubits indices if needed
         _, op_info[1:] = self.get_qubits(op_info[1:])
-        op = op_info[0] + ' ' + ' '.join(op_info[1:])
         op_name = op_info[0][1:] if op_info[0][0] == 's' else op_info[0]
+        op = op_name + ' ' + ' '.join(op_info[1:])
 
         if op_name.startswith('CZ'):
             operation = self.get_cz_operation_name(op_info[1], op_info[2])
@@ -183,25 +183,49 @@ class CircuitBuilder:
             factor = -1 if op_name[0] == 'm' else 1
             if factor == -1:
                 op_name = op_name[1:]
+            if op_name[0] not in ['X', 'Y', 'Z']:
+                raise KeyError(f'Gate "{op}" not found.')
             angle, qbn = op_name[1:], op_info[1]
+            param = None
+            if angle[0] == ':':
+                angle = angle[1:]
+                param_start = angle.find('<') + 1
+                if param_start > 0:
+                    param_end = angle.find('>', param_start)
+                    param = angle[param_start:param_end]
+                    angle = angle.replace('<' + param + '>', 'x')
+                    f = eval('lambda x : ' + angle)
+                else:
+                    param = angle
 
             if not self.decompose_rotation_gates.get(op_name[0], False):
                 p = self.get_pulse(f"{op_name[0]}180 {qbn}")
-                if op_name.startswith("Z"):
-                    if angle[0] == ':':
-                        func = lambda x, qbn=op_info[1], f=factor: {qbn: f * x}
-                        p['basis_rotation'] = ParametricValue(angle[1:],
-                                                              func=func)
+                if op_name[0] == 'Z':
+                    if param is not None:
+                        if param_start > 0:
+                            func = (lambda x, qb=op_info[1], f=factor,
+                                          fnc=eval('lambda x : ' + angle):
+                                    {qb: f * fnc(x)})
+                        else:
+                            func = (lambda x, qbn=op_info[1], f=factor:
+                                    {qbn: f * x})
+                        p['basis_rotation'] = ParametricValue(param, func=func)
                     else:
                         p['basis_rotation'] = {qbn: factor * float(angle)}
                 else:
-                    if angle[0] == ':':
-                        func = lambda x, a=p['amplitude'], f=factor: \
-                            a * ((f * x + 180) % 360 - 180)
-                        p['amplitude'] = ParametricValue(angle[1:], func=func)
+                    if param is not None:
+                        if param_start > 0:
+                            func = (
+                                lambda x, a=p['amplitude'], f=factor,
+                                       fnc=eval('lambda x : ' + angle):
+                                a / 180 * ((f * fnc(x) + 180) % (-360) + 180))
+                        else:
+                            func = lambda x, a=p['amplitude'], f=factor: \
+                                a / 180 * ((f * x + 180) % (-360) + 180)
+                        p['amplitude'] = ParametricValue(param, func=func)
                     else:
                         angle = factor * float(angle)
-                        p['amplitude'] *= ((angle + 180) % 360 - 180)
+                        p['amplitude'] *= ((angle + 180) % (-360) + 180) / 180
             else:
                 raise NotImplementedError('Decomposed rotations not '
                                           'implemented yet.')

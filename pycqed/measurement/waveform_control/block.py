@@ -1,4 +1,5 @@
 import logging
+import numpy as np
 from copy import deepcopy
 
 log = logging.getLogger(__name__)
@@ -329,6 +330,15 @@ class ParametricValue:
             v = d[0][ind]
         v_processed = v if self.func is None else self.func(v)
         if op_code is not None:
-            return v_processed, op_code.replace(f':{self.param} ', f"{v} ")
+            if f'<{self.param}>' in op_code:
+                op_split = op_code.split(' ')
+                param_start = op_split[0].find(':')
+                v_code = eval(op_split[0][(param_start + 1):].replace(
+                    f'<{self.param}>', f"{v}"))
+                op_split[0] = f"{op_split[0][:param_start]}{v_code}"
+                op_code = ' '.join(op_split)
+            else:
+                op_code = op_code.replace(f':{self.param} ', f"{v} ")
+            return v_processed, op_code
         else:
             return v_processed
