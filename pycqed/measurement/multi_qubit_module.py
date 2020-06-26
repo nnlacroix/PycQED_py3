@@ -1213,7 +1213,8 @@ def measure_two_qubit_randomized_benchmarking(
         clifford_decomposition_name='HZ', interleaved_gate=None,
         n_cal_points_per_state=2, cal_states=tuple(),
         label=None, prep_params=None, upload=True, analyze_RB=True,
-        classified=True, correlated=False, thresholded=True, averaged=True):
+        classified=True, correlated=True, thresholded=True,
+        averaged=True, **kw):
 
     # check whether qubits are connected
     dev.check_connection(qb1, qb2)
@@ -1294,18 +1295,15 @@ def measure_two_qubit_randomized_benchmarking(
     # create analysis pipeline object
     meas_obj_value_names_map = get_meas_obj_value_names_map(qubits, det_func)
     mobj_names = list(meas_obj_value_names_map)
-    pp = ProcessingPipeline(meas_obj_value_names_map)
-    for i, mobjn in enumerate(mobj_names):
-        pp.add_node(
-            'average_data', keys_in='raw',
-            shape=(len(cliffords), nr_seeds), meas_obj_names=[mobjn])
-        pp.add_node(
-            'get_std_deviation', keys_in='raw',
-            shape=(len(cliffords), nr_seeds), meas_obj_names=[mobjn])
-        pp.add_node(
-            'SingleQubitRBAnalysis', keys_in='previous average_data',
-            std_keys='previous get_std_deviation',
-            meas_obj_names=[mobjn], plot_T1_lim=False, d=4)
+    pp = ProcessingPipeline()
+    pp.add_node('average_data', keys_in='raw',
+                shape=(len(cliffords), nr_seeds), meas_obj_names=mobj_names)
+    pp.add_node('get_std_deviation', keys_in='raw',
+                shape=(len(cliffords), nr_seeds), meas_obj_names=mobj_names)
+    pp.add_node('rb_analysis', keys_in='previous average_data',
+                keys_in_std='previous get_std_deviation', keys_out=None,
+                meas_obj_names=mobj_names, plot_T1_lim=False, d=4)
+
     # create experimental metadata
     exp_metadata = {'preparation_params': prep_params,
                     'cal_points': repr(cp),
@@ -1313,11 +1311,11 @@ def measure_two_qubit_randomized_benchmarking(
                     'meas_obj_sweep_points_map':
                         {qbn: ['nr_seeds', 'cliffords'] for qbn in mobj_names},
                     'meas_obj_value_names_map': meas_obj_value_names_map,
-                    'processing_pipe': pp}
+                    'processing_pipeline': pp}
     MC.run_2D(name=label, exp_metadata=exp_metadata)
 
     if analyze_RB:
-        pla.PipelineDataAnalysis()
+        pla.process_pipeline(pla.extract_data_hdf(**kw), **kw)
 
 
 def measure_n_qubit_simultaneous_randomized_benchmarking(
@@ -2877,7 +2875,7 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
 
             if exp_metadata is None:
                 exp_metadata = {}
-            exp_metadata.update({'preparation_params': prep_params,
+            exp_metadata.update({'preparation_params': current_prep_params,
                                  'cal_points': repr(cp),
                                  'rotate': False if classified else
                                     len(cp.states) != 0,

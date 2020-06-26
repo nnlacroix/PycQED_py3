@@ -1315,21 +1315,20 @@ class QuDev_transmon(Qubit):
         MC.set_detector_function(det_func)
 
         # create sweep points object
-        sp = SweepPoints('nr_seeds', np.arange(nr_seeds), '', 'Nr. Seeds')
+        sp = SweepPoints('seeds', np.arange(nr_seeds), '', 'Nr. Seeds')
         sp.add_sweep_dimension()
         sp.add_sweep_parameter('cliffords', cliffords, '',
                                'Number of applied Cliffords, $m$')
         # create analysis pipeline object
-        meas_obj_value_names_map = {self.name: det_func.value_names}
-        pp = ProcessingPipeline(meas_obj_value_names_map)
+        pp = ProcessingPipeline()
         pp.add_node('average_data', keys_in='raw',
                     shape=(len(cliffords), nr_seeds),
                     meas_obj_names=[self.name])
         pp.add_node('get_std_deviation', keys_in='raw',
                     shape=(len(cliffords), nr_seeds),
                     meas_obj_names=[self.name])
-        pp.add_node('SingleQubitRBAnalysis', keys_in='previous average_data',
-                    std_keys='previous get_std_deviation',
+        pp.add_node('rb_analysis', keys_in='previous average_data',
+                    keys_in_std='previous get_std_deviation', keys_out=None,
                     meas_obj_names=[self.name], plot_T1_lim=True, d=2)
         if exp_metadata is None:
             exp_metadata = {}
@@ -1339,12 +1338,12 @@ class QuDev_transmon(Qubit):
                              'meas_obj_sweep_points_map':
                                  sp.get_meas_obj_sweep_points_map([self.name]),
                              'meas_obj_value_names_map':
-                                 meas_obj_value_names_map,
-                             'processing_pipe': pp})
+                                 {self.name: det_func.value_names},
+                             'processing_pipeline': pp})
         MC.run_2D(label, exp_metadata=exp_metadata)
 
         if analyze:
-            pla.PipelineDataAnalysis()
+            pla.process_pipeline(pla.extract_data_hdf(**kw), **kw)
 
     def measure_transients(self, states=('g', 'e'), upload=True,
                            analyze=True, acq_length=4097/1.8e9,
@@ -3376,10 +3375,13 @@ class QuDev_transmon(Qubit):
             cp = None
         if prep_params is None:
             prep_params = self.preparation_params()
+
+        op_dict = kw.pop('operation_dict', self.get_operation_dict())
+
         seq, sweep_points, sweep_points_2D = \
             fsqs.fluxpulse_scope_sequence(
                 delays=delays, freqs=freqs, qb_name=self.name,
-                operation_dict=self.get_operation_dict(),
+                operation_dict=op_dict,
                 cz_pulse_name=cz_pulse_name, cal_points=cp,
                 prep_params=prep_params, upload=False, **kw)
         MC.set_sweep_function(awg_swf.SegmentHardSweep(
