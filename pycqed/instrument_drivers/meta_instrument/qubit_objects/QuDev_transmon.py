@@ -1629,7 +1629,8 @@ class QuDev_transmon(Qubit):
 
     def calibrate_drive_mixer_carrier(self, update=True, x0=(0., 0.),
                                       initial_stepsize=0.01, trigger_sep=5e-6,
-                                      no_improv_break=50):
+                                      no_improv_break=50, upload=True,
+                                      plot=True):
         MC = self.instr_mc.get_instr()
         ad_func_pars = {'adaptive_function': opti.nelder_mead,
                         'x0': x0,
@@ -1643,14 +1644,15 @@ class QuDev_transmon(Qubit):
             self.ge_Q_channel())]
         MC.set_sweep_functions([chI_par, chQ_par])
         MC.set_adaptive_function_parameters(ad_func_pars)
-        sq.pulse_list_list_seq([[self.get_acq_pars(), dict(
-                            pulse_type='GaussFilteredCosIQPulse',
-                            pulse_length=self.acq_length(),
-                            ref_point='start',
-                            amplitude=0,
-                            I_channel=self.ge_I_channel(),
-                            Q_channel=self.ge_Q_channel(),
-                        )]])
+        if upload:
+            sq.pulse_list_list_seq([[self.get_acq_pars(), dict(
+                                pulse_type='GaussFilteredCosIQPulse',
+                                pulse_length=self.acq_length(),
+                                ref_point='start',
+                                amplitude=0,
+                                I_channel=self.ge_I_channel(),
+                                Q_channel=self.ge_Q_channel(),
+                            )]])
 
         with temporary_value(
             (self.ro_freq, self.ge_freq() - self.ge_mod_freq()),
@@ -1664,9 +1666,12 @@ class QuDev_transmon(Qubit):
             MC.run(name='drive_carrier_calibration' + self.msmt_suffix,
                 mode='adaptive')
 
-        a = ma.OptimizationAnalysis(label='drive_carrier_calibration')
-        # v2 creates a pretty picture of the optimizations
-        ma.OptimizationAnalysis_v2(label='drive_carrier_calibration')
+        if plot:
+            a = ma.OptimizationAnalysis(label='drive_carrier_calibration')
+            # v2 creates a pretty picture of the optimizations
+            ma.OptimizationAnalysis_v2(label='drive_carrier_calibration')
+        else:
+            a = ma.OptimizationAnalysis(label='drive_carrier_calibration', )
 
         ch_1_min = a.optimization_result[0][0]
         ch_2_min = a.optimization_result[0][1]
