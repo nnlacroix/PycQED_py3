@@ -5255,7 +5255,7 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
         if self.leakage_qbname is not None:
             # get leakage
             if self.get_param_value('classified_ro', False):
-                leakage = self.leakage_values[0::2] - self.leakage_values[1::2]
+                leakage = self.leakage_values[0::2]
                 leakage_errs = np.zeros(len(leakage))
             else:
                 keys = [k for k in list(self.fit_dicts.keys()) if
