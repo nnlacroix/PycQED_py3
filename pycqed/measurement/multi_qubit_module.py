@@ -1217,7 +1217,7 @@ def measure_two_qubit_randomized_benchmarking(
         clifford_decomposition_name='HZ', interleaved_gate=None,
         n_cal_points_per_state=2, cal_states=tuple(),
         label=None, prep_params=None, upload=True, analyze_RB=True,
-        classified=True, det_get_values_kws=None):
+        classified=True, correlated=False, thresholded=True, averaged=True):
 
     # check whether qubits are connected
     dev.check_connection(qb1, qb2)
@@ -1274,15 +1274,10 @@ def measure_two_qubit_randomized_benchmarking(
     MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
         hard_sweep_func, sequences, 'Nr. Seeds', ''))
     MC.set_sweep_points_2D(soft_sweep_points)
-    det_get_values_kws_to_set = {'classified': classified,
-                                 'correlated': True,
-                                 'thresholded': True,
-                                 'averaged': True,
-                                 'ro_corrected_stored_mtx': False,
-                                 'ro_corrected_seq_cal_mtx': False}
-    if det_get_values_kws is None:
-        det_get_values_kws = {}
-    det_get_values_kws_to_set.update(det_get_values_kws)
+    det_get_values_kws = {'classified': classified,
+                          'correlated': correlated,
+                          'thresholded': thresholded,
+                          'averaged': averaged}
     if classified:
         det_type = 'int_avg_classif_det'
         nr_shots = max(qb.acq_averages() for qb in qubits)
@@ -1291,8 +1286,7 @@ def measure_two_qubit_randomized_benchmarking(
         nr_shots = max(qb.acq_shots() for qb in qubits)
     det_func = get_multiplexed_readout_detector_functions(
         qubits, nr_averages=max(qb.acq_averages() for qb in qubits),
-        nr_shots=nr_shots,
-        det_get_values_kws=det_get_values_kws_to_set)[det_type]
+        nr_shots=nr_shots, det_get_values_kws=det_get_values_kws)[det_type]
     MC.set_detector_function(det_func)
 
     # create sweep points
@@ -3833,7 +3827,9 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
 
     # Analyze this measurement
     if analyze:
-        rabi_ana = tda.RabiAnalysis(qb_names=qubit_names)
+        rabi_ana = tda.RabiAnalysis(
+            qb_names=qubit_names, options_dict={
+                'channel_map': get_meas_obj_value_names_map(qubits, det_func)})
         if update:
             for qb in qubits:
                 amp180 = rabi_ana.proc_data_dict['analysis_params_dict'][
