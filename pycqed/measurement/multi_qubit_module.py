@@ -1212,7 +1212,7 @@ def measure_tomography(dev, qubits, prep_sequence, state_name,
 
 def measure_two_qubit_randomized_benchmarking(
         dev, qb1, qb2, cliffords,
-        nr_seeds, cz_pulse_name,
+        nr_seeds, cz_pulse_name, cl_seq=None,
         character_rb=False, net_clifford=0,
         clifford_decomposition_name='HZ', interleaved_gate=None,
         n_cal_points_per_state=2, cal_states=tuple(),
@@ -1263,7 +1263,7 @@ def measure_two_qubit_randomized_benchmarking(
             cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}', net_clifford=net_clifford,
             clifford_decomposition_name=clifford_decomposition_name,
             interleaved_gate=interleaved_gate, upload=False,
-            cal_points=cp, prep_params=prep_params)
+            cal_points=cp, prep_params=prep_params, cl_sequence=cl_seq)
 
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,

@@ -92,6 +92,7 @@ def two_qubit_randomized_benchmarking_seqs(
         qb1n, qb2n, operation_dict, cliffords, nr_seeds,
         max_clifford_idx=11520, cz_pulse_name=None, cal_points=None,
         net_clifford=0, clifford_decomposition_name='HZ',
+        cl_sequence=None,
         interleaved_gate=None, upload=True, prep_params=dict()):
 
     """
@@ -139,13 +140,16 @@ def two_qubit_randomized_benchmarking_seqs(
     for nCl in cliffords:
         pulse_list_list_all = []
         for _ in nr_seeds:
-            cl_seq = rb.randomized_benchmarking_sequence_new(
-                nCl,
-                number_of_qubits=2,
-                max_clifford_idx=max_clifford_idx,
-                interleaving_cl=interleaved_gate,
-                desired_net_cl=net_clifford)
-
+            if cl_sequence is None:
+                cl_seq = rb.randomized_benchmarking_sequence_new(
+                    nCl,
+                    number_of_qubits=2,
+                    max_clifford_idx=max_clifford_idx,
+                    interleaving_cl=interleaved_gate,
+                    desired_net_cl=net_clifford)
+            else:
+                cl_seq = cl_sequence
+            print(cl_seq)
             pulse_list = []
             pulsed_qubits = {qb1n, qb2n}
             pulse_tuples_list_all = []
