@@ -193,6 +193,28 @@ class SweepPoints(list):
 
         return sweep_points_map
 
+    def length(self, dim=-1):
+        """
+        Returns the number of sweep points in a given sweep dimension (after a
+        sanity checking).
+
+        :param dim: (int) sweep dimension (default: last dimension).
+
+        :return: (int) number of sweep points in the given dimension
+        """
+
+        if len(self) == 0 or (dim >= 0 and dim >= len(self)):
+            return 0
+        n = 0
+        for p in self[dim].values():
+            if n == 0:
+                n = len(p[0])
+            elif n != len(p[0]):
+                raise ValueError('The lengths of the sweep points are not '
+                                 'consistent.')
+        return n
+
+
     def update(self, sweep_points):
         while len(self) < len(sweep_points):
             self.add_sweep_dimension()
