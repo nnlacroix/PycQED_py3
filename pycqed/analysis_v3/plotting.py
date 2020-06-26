@@ -126,7 +126,7 @@ def default_figure_title(data_dict, meas_obj_name):
                 f'\n{data_dict["measurementstrings"][-1]}'
     else:
         title = f'{data_dict["timestamps"][-1]} ' \
-                f'{data_dict["measurementstrings"][-1]}'
+                f'\n{data_dict["measurementstrings"][-1]}'
 
     if len(meas_obj_name.split('_')) > 1:
         title += f'\n{meas_obj_name}'

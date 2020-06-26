@@ -511,7 +511,8 @@ class Device(Instrument):
         Wrapper function for the multi_qubit_module method measure_cphase.
         '''
 
-        mqm.measure_cphase(self, qbc, qbt, soft_sweep_params, cz_pulse_name, **kwargs)
+        return mqm.measure_cphase(self, qbc, qbt, soft_sweep_params,
+                                  cz_pulse_name, **kwargs)
 
     def measure_dynamic_phases(self, qbc, qbt, cz_pulse_name, **kwargs):
         """
