@@ -110,6 +110,25 @@ def two_qubit_randomized_benchmarking_seqs(
         interleaved_gate (str): pycqed name for a gate
         upload (bool): whether to upload sequence to AWGs
     """
+    import qutip as qtp
+    standard_pulses = {
+        'I': qtp.qeye(2),
+        'Z0': qtp.qeye(2),
+        'X180': qtp.sigmax(),
+        'mX180': qtp.sigmax(),
+        'Y180': qtp.sigmay(),
+        'mY180': qtp.sigmay(),
+        'X90': qtp.rotation(qtp.sigmax(), np.pi / 2),
+        'mX90': qtp.rotation(qtp.sigmax(), -np.pi / 2),
+        'Y90': qtp.rotation(qtp.sigmay(), np.pi / 2),
+        'mY90': qtp.rotation(qtp.sigmay(), -np.pi / 2),
+        'Z90': qtp.rotation(qtp.sigmaz(), np.pi / 2),
+        'mZ90': qtp.rotation(qtp.sigmaz(), -np.pi / 2),
+        'Z180': qtp.sigmaz(),
+        'mZ180': qtp.sigmaz(),
+        'CZ': qtp.gates.cphase(np.pi)
+    }
+
     seq_name = '2Qb_RB_sequence'
 
     # Set Clifford decomposition
@@ -129,8 +148,11 @@ def two_qubit_randomized_benchmarking_seqs(
 
             pulse_list = []
             pulsed_qubits = {qb1n, qb2n}
+            pulse_tuples_list_all = []
             for idx in cl_seq:
                 pulse_tuples_list = tqc.TwoQubitClifford(idx).gate_decomposition
+                pulse_tuples_list_all += pulse_tuples_list
+
                 for j, pulse_tuple in enumerate(pulse_tuples_list):
                     if isinstance(pulse_tuple[1], list):
                         pulse_list += [operation_dict[cz_pulse_name]]
@@ -146,6 +168,19 @@ def two_qubit_randomized_benchmarking_seqs(
                             pulsed_qubits |= {qb_name}
                         pulse_list += [
                             operation_dict[pulse_name + ' ' + qb_name]]
+
+            gproduct = qtp.tensor(qtp.identity(2), qtp.identity(2))
+            for i, cl_tup in enumerate(pulse_tuples_list_all):
+                if cl_tup[0] == 'CZ':
+                    gproduct = standard_pulses[cl_tup[0]] * gproduct
+                else:
+                    eye_2qb = [qtp.identity(2), qtp.identity(2)]
+                    eye_2qb[int(cl_tup[1][-1])] = standard_pulses[cl_tup[0]]
+                    gproduct = qtp.tensor(eye_2qb) * gproduct
+            x = gproduct.full() / gproduct.full()[0][0]
+            assert (np.all((np.allclose(np.real(x), np.eye(4)),
+                            np.allclose(np.imag(x), np.zeros(4)))))
+
             pulse_list += generate_mux_ro_pulse_list(
                 [qb1n, qb2n], operation_dict)
             pulse_list_w_prep = add_preparation_pulses(
