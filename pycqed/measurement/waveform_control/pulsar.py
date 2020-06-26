@@ -1360,11 +1360,11 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 # Remove this if case once the bug is fixed.
                 if not acq:
                     playback_string.append(
-                        f'prefetch(0*{w2}, {w2});')
+                        f'prefetch(marker(1,0)*0*{w2}, {w2});')
             elif w1 is not None and w2 is None:
                 if not acq:
                     playback_string.append(
-                        f'prefetch({w1}, 0*{w1});')
+                        f'prefetch({w1}, marker(1,0)*0*{w1});')
             elif w1 is not None or w2 is not None:
                 if not acq:
                     playback_string.append('prefetch({});'.format(', '.join(
@@ -1392,12 +1392,12 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(
-                    f'playWave(0*{w2}, {w2});')
+                    f'playWave(marker(1,0)*0*{w2}, {w2});')
             elif w1 is not None and w2 is None:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(
-                    f'playWave({w1}, 0*{w1});')
+                    f'playWave({w1}, marker(1,0)*0*{w1});')
             elif w1 is not None or w2 is not None:
                 playback_string.append('playWave({});'.format(
                     _zi_wavename_pair_to_argument(w1, w2)))
