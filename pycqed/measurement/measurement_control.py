@@ -120,8 +120,16 @@ class MeasurementControl(Instrument):
     # Functions used to control the measurements #
     ##############################################
 
-    def create_instrument_settings_file(self):
-        self.set_measurement_name('instrument_settings')
+    def create_instrument_settings_file(self, label=None):
+        '''
+        Saves a snapshot of the current instrument settings without carrying
+        out a measurement.
+
+        :param label: (optional str) a label to be used in the filename
+            (will be appended to the default label Instrument_settings)
+        '''
+        label = '' if label is None else '_' + label
+        self.set_measurement_name('Instrument_settings' + label)
         with h5d.Data(name=self.get_measurement_name(),
                       datadir=self.datadir()) as self.data_object:
             self.save_instrument_settings(self.data_object)

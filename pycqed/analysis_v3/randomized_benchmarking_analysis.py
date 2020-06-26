@@ -239,7 +239,6 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
 def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
     cp, mospm, mobjn = hlp_mod.get_measurement_properties(
             data_dict, props_to_extract=['cp', 'mospm', 'mobjn'], **params)
-
     # prepare raw data plot
     if hlp_mod.get_param('prepare_raw_plot', params,
                          default_value=len(data_dict['timestamps']) == 1):
@@ -267,11 +266,11 @@ def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
         else:
             plot_module.prepare_1d_raw_data_plot_dicts(
                 data_dict, sp_name=mospm[mobjn][1],
-                xvals=np.repeat(cliffords, nr_seeds))
+                xvals=np.repeat(cliffords, nr_seeds), **params)
 
     plot_dicts = OrderedDict()
     keys_in_std = hlp_mod.get_param('keys_in_std', data_dict, raise_error=False,
-                                 **params)
+                                    **params)
     for keyi, keys in zip(keys_in, keys_in_std):
         figure_name = 'RB_' + keyi
         sp_name = mospm[mobjn][1]
