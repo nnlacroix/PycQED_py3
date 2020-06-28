@@ -1845,6 +1845,7 @@ def measure_measurement_induced_dephasing(qb_dephased, qb_targeted, phases, amps
 
     tda.MeasurementInducedDephasingAnalysis(qb_names=[qb.name for qb in qb_dephased])
 
+
 def measure_drive_cancellation(
         dev, driven_qubit, ramsey_qubits, sweep_points,
         phases=np.linspace(0, 2*np.pi, 3, endpoint=False), n=1, pulse='X180',
@@ -2469,8 +2470,7 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
 
 def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
                    hard_sweep_params=None, max_flux_length=None,
-                   num_cz_gates=1, n_cal_points_per_state=1,
-                   cal_states='auto', det_get_values_kws=None,
+                   num_cz_gates=1, n_cal_points_per_state=1, cal_states='auto',
                    prep_params=None, exp_metadata=None, label=None,
                    prepend_pulse_dicts=None,
                    analyze=True, upload=True, for_ef=True, **kw):
@@ -2580,19 +2580,14 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
         channels_to_upload=channels_to_upload))
     MC.set_sweep_points_2D(soft_sweep_points)
 
-    det_get_values_kws_to_set = {'classified': classified,
-                                 'correlated': False,
-                                 'thresholded': True,
-                                 'averaged': True,
-                                 'ro_corrected_stored_mtx': False,
-                                 'ro_corrected_seq_cal_mtx': False}
-    if det_get_values_kws is None:
-        det_get_values_kws = {}
-    det_get_values_kws_to_set.update(det_get_values_kws)
+    det_get_values_kws = {'classified': classified,
+                          'correlated': False,
+                          'thresholded': True,
+                          'averaged': True}
     det_name = 'int_avg{}_det'.format('_classif' if classified else '')
     det_func = get_multiplexed_readout_detector_functions(
         [qbc, qbt], nr_averages=max(qb.acq_averages() for qb in [qbc, qbt]),
-        det_get_values_kws=det_get_values_kws_to_set)[det_name]
+        det_get_values_kws=det_get_values_kws)[det_name]
     MC.set_detector_function(det_func)
 
     exp_metadata.update({'leakage_qbname': qbc.name,
