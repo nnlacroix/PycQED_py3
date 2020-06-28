@@ -1304,7 +1304,7 @@ class QuDev_transmon(Qubit):
             tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name])
 
     def measure_randomized_benchmarking(
-            self, cliffords, nr_seeds,
+            self, cliffords, nr_seeds, cl_seq=None,
             gate_decomp='HZ', interleaved_gate=None,
             n_cal_points_per_state=2, cal_states=(),
             classified_ro=False, thresholded=True, label=None,
@@ -1338,7 +1338,7 @@ class QuDev_transmon(Qubit):
             sq.randomized_renchmarking_seqs(
                 qb_name=self.name, operation_dict=self.get_operation_dict(),
                 cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
-                gate_decomposition=gate_decomp,
+                gate_decomposition=gate_decomp, cl_sequence=cl_seq,
                 interleaved_gate=interleaved_gate, upload=False,
                 cal_points=cp, prep_params=prep_params)
 

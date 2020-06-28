@@ -518,7 +518,8 @@ def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
     # prepare measurement
     for qb in qubits:
         qb.prepare(drive='timedomain')
-    label = f"SSRO_calibration_{states}_{qb_names}" if label is None else label
+    label = f"SSRO_calibration_{states}{get_multi_qubit_msmt_suffix(qubits)}" if \
+        label is None else label
     channel_map = {qb.name: [vn + ' ' + qb.instr_uhf()
                              for vn in qb.int_log_det.value_names]
                    for qb in qubits}

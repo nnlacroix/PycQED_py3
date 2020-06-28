@@ -135,7 +135,12 @@ def two_qubit_randomized_benchmarking_seqs(
     # Set Clifford decomposition
     tqc.gate_decomposition = rb.get_clifford_decomposition(
         clifford_decomposition_name)
-
+    if cl_sequence is not None:
+        if isinstance(cl_sequence[0], list):
+            assert len(nr_seeds) % len(cl_sequence) == 0
+            k = len(nr_seeds) // len(cl_sequence)
+            cl_seq_temp = k * cl_sequence
+            print(cl_seq_temp)
     sequences = []
     for nCl in cliffords:
         pulse_list_list_all = []
@@ -147,6 +152,8 @@ def two_qubit_randomized_benchmarking_seqs(
                     max_clifford_idx=max_clifford_idx,
                     interleaving_cl=interleaved_gate,
                     desired_net_cl=net_clifford)
+            elif isinstance(cl_sequence[0], list):
+                cl_seq = cl_seq_temp[_]
             else:
                 cl_seq = cl_sequence
             print(cl_seq)
