@@ -204,11 +204,11 @@ class CircuitBuilder:
             param = None
             if angle[0] == ':':
                 angle = angle[1:]
-                param_start = angle.find('<') + 1
+                param_start = angle.find('[') + 1
                 if param_start > 0:
-                    param_end = angle.find('>', param_start)
+                    param_end = angle.find(']', param_start)
                     param = angle[param_start:param_end]
-                    angle = angle.replace('<' + param + '>', 'x')
+                    angle = angle.replace('[' + param + ']', 'x')
                     f = eval('lambda x : ' + angle)
                 else:
                     param = angle

@@ -351,11 +351,11 @@ class ParametricValue:
             v = d[0][ind]
         v_processed = v if self.func is None else self.func(v)
         if op_code is not None:
-            if f'<{self.param}>' in op_code:
+            if f'[{self.param}]' in op_code:
                 op_split = op_code.split(' ')
                 param_start = op_split[0].find(':')
                 v_code = eval(op_split[0][(param_start + 1):].replace(
-                    f'<{self.param}>', f"{v}"))
+                    f'[{self.param}]', f"{v}"))
                 op_split[0] = f"{op_split[0][:param_start]}{v_code}"
                 op_code = ' '.join(op_split)
             else:
