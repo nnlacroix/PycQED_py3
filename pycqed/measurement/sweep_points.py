@@ -62,13 +62,25 @@ class SweepPoints(list):
                                      v.get('label', k))
                                  for k, v in d.items()})
 
-    def add_sweep_parameter(self, param_name, values, unit='', label=None):
+    def add_sweep_parameter(self, param_name, values, unit='', label=None,
+                            dim=-1):
+        """
+        Adds sweep points to a given dimension.
+        :param param_name: (str) parameter name
+        :param values: (list) sweep values
+        :param unit: (optional str) unit of the values (default: '')
+        :param label: (optional str) label e.g. for plots (default: param_name)
+        :dim: the dimension to which the point should be added (default:
+            last dimension)
+        """
         if label is None:
             label = param_name
-        if len(self) == 0:
-            self.append({param_name: (values, unit, label)})
-        else:
-            self[-1].update({param_name: (values, unit, label)})
+        while len(self) == 0 or (dim >= 0 and dim >= len(self)):
+            self.add_sweep_dimension()
+        assert self.length(dim) in [0, len(values)], \
+            'Number of values has to match the length of existing sweep ' \
+            'points.'
+        self[dim].update({param_name: (values, unit, label)})
 
     def add_sweep_dimension(self):
         self.append(dict())
@@ -192,6 +204,28 @@ class SweepPoints(list):
             sweep_points_map[key] = [list(d)[i] for d in self]
 
         return sweep_points_map
+
+    def length(self, dim=-1):
+        """
+        Returns the number of sweep points in a given sweep dimension (after a
+        sanity checking).
+
+        :param dim: (int) sweep dimension (default: last dimension).
+
+        :return: (int) number of sweep points in the given dimension
+        """
+
+        if len(self) == 0 or (dim >= 0 and dim >= len(self)):
+            return 0
+        n = 0
+        for p in self[dim].values():
+            if n == 0:
+                n = len(p[0])
+            elif n != len(p[0]):
+                raise ValueError('The lengths of the sweep points are not '
+                                 'consistent.')
+        return n
+
 
     def update(self, sweep_points):
         while len(self) < len(sweep_points):
