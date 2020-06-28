@@ -132,6 +132,8 @@ def two_qubit_randomized_benchmarking_seqs(
 
     seq_name = '2Qb_RB_sequence'
 
+    print(cl_sequence)
+
     # Set Clifford decomposition
     tqc.gate_decomposition = rb.get_clifford_decomposition(
         clifford_decomposition_name)
@@ -156,7 +158,7 @@ def two_qubit_randomized_benchmarking_seqs(
                 cl_seq = cl_seq_temp[_]
             else:
                 cl_seq = cl_sequence
-            print(cl_seq)
+
             pulse_list = []
             pulsed_qubits = {qb1n, qb2n}
             pulse_tuples_list_all = []
@@ -180,6 +182,7 @@ def two_qubit_randomized_benchmarking_seqs(
                         pulse_list += [
                             operation_dict[pulse_name + ' ' + qb_name]]
 
+            # check recovery
             gproduct = qtp.tensor(qtp.identity(2), qtp.identity(2))
             for i, cl_tup in enumerate(pulse_tuples_list_all):
                 if cl_tup[0] == 'CZ':
