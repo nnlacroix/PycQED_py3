@@ -317,8 +317,11 @@ class ParametricValue:
         :param ind: The index of the desired sweep point in sweep_dict.
             None is only allowed in the case where ind is ignored (see
             above).
+        :param op_code: (optional str) the op_code of the pulse to allow
+            resolving a parametric expression in the op_code
 
-        :return:
+        :return: the resolved numerical value. If op_code was provided,
+            the resovled op_code is returned in addition.
         """
         d = sweep_dict[self.param]
         if not hasattr(d, '__iter__'):
