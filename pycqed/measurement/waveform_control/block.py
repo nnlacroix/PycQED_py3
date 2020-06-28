@@ -315,13 +315,17 @@ class ParametricValue:
 
     :param param: a string specifying the name of the parameter.
     :param func: (optional) a function applied to the value of the parameter.
+    :param op_split: (optional) cache a splitted version of the op_code of
+        the pulse to allow for correct op_code resolution in cases of spaces
+        in a mathematical expression in an op_code.
 
     """
     _is_parametric_value = True
 
-    def __init__(self, param, func=None):
+    def __init__(self, param, func=None, op_split=None):
         self.param = param
         self.func = func
+        self.op_split = op_split
 
     def resolve(self, sweep_dict, ind=None, op_code=None):
         """
@@ -352,7 +356,14 @@ class ParametricValue:
         v_processed = v if self.func is None else self.func(v)
         if op_code is not None:
             if f'[{self.param}]' in op_code:
-                op_split = op_code.split(' ')
+                # if the is a cached splitted version, use that one instead
+                # in order to allow for correct op_code resolution in cases
+                # of in a mathematical expression in an op_code.
+                # FIXME: remove op_code caching as soon as a new op_code
+                #  concept (e.g. tuples instead of space-separated strings)
+                #  makes it obsolete
+                op_split = [s for s in self.op_split] if self.op_split is not \
+                            None else op_code.split(' ')
                 param_start = op_split[0].find(':')
                 v_code = eval(op_split[0][(param_start + 1):].replace(
                     f'[{self.param}]', f"{v}"))

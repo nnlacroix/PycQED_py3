@@ -174,14 +174,15 @@ class CircuitBuilder:
         previous pulse.
 
         Args:
-            op: operation
+            op: operation (str in the above format, or iterable
+            corresponding to the splitted string)
             parse_rotation_gates: whether or not to look for gates with
             arbitrary angles.
 
         Returns: deepcopy of the pulse dictionary
 
         """
-        op_info = op.split(" ")
+        op_info = op.split(" ") if isinstance(op, str) else op
         # the call to get_qubits resolves qubits indices if needed
         _, op_info[1:] = self.get_qubits(op_info[1:])
         op_name = op_info[0][1:] if op_info[0][0] == 's' else op_info[0]
@@ -224,7 +225,8 @@ class CircuitBuilder:
                         else:
                             func = (lambda x, qbn=op_info[1], f=factor:
                                     {qbn: f * x})
-                        p['basis_rotation'] = ParametricValue(param, func=func)
+                        p['basis_rotation'] = ParametricValue(
+                            param, func=func, op_split=(op_name, op_info[1]))
                     else:
                         p['basis_rotation'] = {qbn: factor * float(angle)}
                 else:
@@ -237,7 +239,8 @@ class CircuitBuilder:
                         else:
                             func = lambda x, a=p['amplitude'], f=factor: \
                                 a / 180 * ((f * x + 180) % (-360) + 180)
-                        p['amplitude'] = ParametricValue(param, func=func)
+                        p['amplitude'] = ParametricValue(
+                            param, func=func, op_split=(op_name, op_info[1]))
                     else:
                         angle = factor * float(angle)
                         p['amplitude'] *= ((angle + 180) % (-360) + 180) / 180
@@ -555,7 +558,9 @@ class CircuitBuilder:
         >>>                                {'qbt': qb1, 'qbc': qb2})
         :param block_name: Name of the block
         :param operations: list of operations (str), which can be preformatted
-            and later filled with values in the dictionary fill_values
+            and later filled with values in the dictionary fill_values.
+            Instead of a str, each list entry can also be an iterable
+            corresponding to the splitted string.
         :param fill_values (dict): optional fill values for operations.
         :param pulse_modifs (dict): Modification of pulses parameters.
             keys:
@@ -569,6 +574,12 @@ class CircuitBuilder:
             of the first one.
         :return: The created block
         """
+        def op_format(op, **fill_values):
+            if isinstance(op, str):
+                return op.format(**fill_values)
+            else:
+                return [s.format(**fill_values) for s in op]
+
         if fill_values is None:
             fill_values = {}
         if pulse_modifs is None:
@@ -576,7 +587,7 @@ class CircuitBuilder:
         if isinstance(operations, str):
             operations = [operations]
 
-        pulses = [self.get_pulse(op.format(**fill_values), True)
+        pulses = [self.get_pulse(op_format(op, **fill_values), True)
                   for op in operations]
 
         return Block(block_name, pulses, pulse_modifs)
