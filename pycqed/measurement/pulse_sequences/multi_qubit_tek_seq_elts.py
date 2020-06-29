@@ -93,6 +93,7 @@ def two_qubit_randomized_benchmarking_seqs(
         qb1n, qb2n, operation_dict, cliffords, nr_seeds,
         max_clifford_idx=11520, cz_pulse_name=None, cal_points=None,
         net_clifford=0, clifford_decomposition_name='HZ',
+        cl_sequence=None,
         interleaved_gate=None, upload=True, prep_params=dict()):
 
     """
@@ -111,27 +112,61 @@ def two_qubit_randomized_benchmarking_seqs(
         interleaved_gate (str): pycqed name for a gate
         upload (bool): whether to upload sequence to AWGs
     """
+    import qutip as qtp
+    standard_pulses = {
+        'I': qtp.qeye(2),
+        'Z0': qtp.qeye(2),
+        'X180': qtp.sigmax(),
+        'mX180': qtp.sigmax(),
+        'Y180': qtp.sigmay(),
+        'mY180': qtp.sigmay(),
+        'X90': qtp.rotation(qtp.sigmax(), np.pi / 2),
+        'mX90': qtp.rotation(qtp.sigmax(), -np.pi / 2),
+        'Y90': qtp.rotation(qtp.sigmay(), np.pi / 2),
+        'mY90': qtp.rotation(qtp.sigmay(), -np.pi / 2),
+        'Z90': qtp.rotation(qtp.sigmaz(), np.pi / 2),
+        'mZ90': qtp.rotation(qtp.sigmaz(), -np.pi / 2),
+        'Z180': qtp.sigmaz(),
+        'mZ180': qtp.sigmaz(),
+        'CZ': qtp.gates.cphase(np.pi)
+    }
+
     seq_name = '2Qb_RB_sequence'
+
+    print(cl_sequence)
 
     # Set Clifford decomposition
     tqc.gate_decomposition = rb.get_clifford_decomposition(
         clifford_decomposition_name)
-
+    if cl_sequence is not None:
+        if isinstance(cl_sequence[0], list):
+            assert len(nr_seeds) % len(cl_sequence) == 0
+            k = len(nr_seeds) // len(cl_sequence)
+            cl_seq_temp = k * cl_sequence
+            print(cl_seq_temp)
     sequences = []
     for nCl in cliffords:
         pulse_list_list_all = []
         for _ in nr_seeds:
-            cl_seq = rb.randomized_benchmarking_sequence_new(
-                nCl,
-                number_of_qubits=2,
-                max_clifford_idx=max_clifford_idx,
-                interleaving_cl=interleaved_gate,
-                desired_net_cl=net_clifford)
+            if cl_sequence is None:
+                cl_seq = rb.randomized_benchmarking_sequence_new(
+                    nCl,
+                    number_of_qubits=2,
+                    max_clifford_idx=max_clifford_idx,
+                    interleaving_cl=interleaved_gate,
+                    desired_net_cl=net_clifford)
+            elif isinstance(cl_sequence[0], list):
+                cl_seq = cl_seq_temp[_]
+            else:
+                cl_seq = cl_sequence
 
             pulse_list = []
             pulsed_qubits = {qb1n, qb2n}
+            pulse_tuples_list_all = []
             for idx in cl_seq:
                 pulse_tuples_list = tqc.TwoQubitClifford(idx).gate_decomposition
+                pulse_tuples_list_all += pulse_tuples_list
+
                 for j, pulse_tuple in enumerate(pulse_tuples_list):
                     if isinstance(pulse_tuple[1], list):
                         pulse_list += [operation_dict[cz_pulse_name]]
@@ -147,6 +182,20 @@ def two_qubit_randomized_benchmarking_seqs(
                             pulsed_qubits |= {qb_name}
                         pulse_list += [
                             operation_dict[pulse_name + ' ' + qb_name]]
+
+            # check recovery
+            gproduct = qtp.tensor(qtp.identity(2), qtp.identity(2))
+            for i, cl_tup in enumerate(pulse_tuples_list_all):
+                if cl_tup[0] == 'CZ':
+                    gproduct = standard_pulses[cl_tup[0]] * gproduct
+                else:
+                    eye_2qb = [qtp.identity(2), qtp.identity(2)]
+                    eye_2qb[int(cl_tup[1][-1])] = standard_pulses[cl_tup[0]]
+                    gproduct = qtp.tensor(eye_2qb) * gproduct
+            x = gproduct.full() / gproduct.full()[0][0]
+            assert (np.all((np.allclose(np.real(x), np.eye(4)),
+                            np.allclose(np.imag(x), np.zeros(4)))))
+
             pulse_list += generate_mux_ro_pulse_list(
                 [qb1n, qb2n], operation_dict)
             pulse_list_w_prep = add_preparation_pulses(
