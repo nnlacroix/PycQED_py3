@@ -6,10 +6,25 @@ from qcodes.instrument.parameter import ManualParameter
 
 def mwg_with_lo_calibration_template(mwg_class):
     """
+    A class decorator that adds dynamic parameter update functionality to
+    an existing microwave generator class. Useful for example to update the
+    LO-leakage calibration as the frequency is swept.
 
-    Structure of the calibration data:
+    The derived class will have two new parameters: `lo_cal_data` and
+    `lo_cal_interp_kind`. The structure of the `lo_cal_data` should be
+    the following:
         {name: (param, freqs, cal_vals)}
+    Here name is a user-defined label for the parameter, param is a qcodes
+    parameter to be updated, and freqs and cal_cals are lists of frequency and
+    parameter values that will be used for the parameter value interpolation.
+    The parameter `lo_cal_interp_kind` can be used to switch between different
+    interpolation functions.
 
+    Args:
+        mwg_class: A microwave generator driver class that will be updated to
+            change extra parameters whenever the frequency is changed.
+    Returns:
+        A class that inherits from mwg_class with the added functionality.
     """
 
     class MWGWithLOCalibration(mwg_class):
@@ -30,7 +45,7 @@ def mwg_with_lo_calibration_template(mwg_class):
 
             self.frequency.set_parser = \
                 lambda val, lo_cal_data=self.lo_cal_data, \
-                       lo_cal_interp_kind=self.lo_cal_interp_kind : \
+                       lo_cal_interp_kind=self.lo_cal_interp_kind: \
                    self.lo_calib(val, lo_cal_data, lo_cal_interp_kind)
 
         @staticmethod
