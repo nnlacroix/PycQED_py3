@@ -535,6 +535,7 @@ class UHFQC_multi_detector(UHFQC_Base):
             corr_data = self.get_correlations_classif_det(np.concatenate([
                 d for d in raw_data.values()]))
             processed_data = np.concatenate([processed_data, corr_data], axis=0)
+
         return processed_data
 
     def get_correlations_classif_det(self, data):
