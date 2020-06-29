@@ -317,6 +317,10 @@ class BaseDataAnalysis(object):
                             len(raw_data_dict_ts[save_par]) == 1:
                         raw_data_dict_ts[save_par] = \
                             raw_data_dict_ts[save_par][0]
+                for par_name in raw_data_dict_ts:
+                    if par_name in self.numeric_params:
+                        raw_data_dict_ts[par_name] = \
+                            np.double(raw_data_dict_ts[par_name])
             except Exception as e:
                 data_file.close()
                 raise e
@@ -324,9 +328,6 @@ class BaseDataAnalysis(object):
 
         if len(raw_data_dict) == 1:
             raw_data_dict = raw_data_dict[0]
-        for par_name in raw_data_dict:
-            if par_name in self.numeric_params:
-                raw_data_dict[par_name] = np.double(raw_data_dict[par_name])
         return raw_data_dict
 
     @staticmethod
@@ -480,8 +481,7 @@ class BaseDataAnalysis(object):
                 self.raw_data_dict['exp_metadata'] = {}
             self.metadata = self.raw_data_dict['exp_metadata']
             cp = CalibrationPoints.from_string(self.get_param_value(
-                'cal_points', default_value=
-                CalibrationPoints.from_string(repr(CalibrationPoints([], [])))))
+                'cal_points', default_value=repr(CalibrationPoints([], []))))
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
                 self.get_param_value('compression_factor', 1),
@@ -1622,6 +1622,7 @@ class BaseDataAnalysis(object):
             axs.cbar.set_ticklabels(plot_ctick_labels)
         if not plot_nolabel and plot_clabel is not None:
             axs.cbar.set_label(plot_clabel)
+
 
         if self.tight_fig:
             axs.figure.tight_layout()
