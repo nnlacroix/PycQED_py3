@@ -175,9 +175,6 @@ class QuantumExperiment(CircuitBuilder):
         self._update_parameters(**kw)
 
         with temporary_value(*self.temporary_values):
-            # combine preparation dictionaries
-            _, qb_names = self.get_qubits(self.qubits)
-
             # only prepare read out qubits
             for qb in self.ro_qubits:
                 qb.prepare(drive=self.drive)
@@ -189,12 +186,22 @@ class QuantumExperiment(CircuitBuilder):
             # configure measurement control (mc_points, detector functions)
             mode = self._configure_mc()
 
-            if self.label is None:
-                self.label = f'{self.sequences[0].name}_{",".join(qb_names)}'
+            self.guess_label(**kw)
 
             # run measurement
             self.MC.run(name=self.label, exp_metadata=self.exp_metadata,
                         mode=mode)
+
+    def guess_label(self, **kwargs):
+        """
+        Creates a default label.
+
+        Returns:
+
+        """
+        if self.label is None:
+            _, qb_names = self.get_qubits(self.qubits)
+            self.label = f'{self.sequences[0].name}_{",".join(qb_names)}'
 
     def run_analysis(self, analysis_class=None, **kwargs):
         """
