@@ -225,71 +225,78 @@ Final pipeline:
      }]                             
 """
 
-def memoize(func):
-    # Function used to decorate the __call__ method of ProcessingPipeline
-    # such that we can execute it more than once without getting an error.
-    # This function stores the pipeline resolved after the first time __call__
-    # is called, such that when we call it another time, it just outputs this
-    # stored pipeline
-    memo = {}
-    def wrapper(*args):
-        if not 'resolved_pipeline' in memo:
-            memo['resolved_pipeline'] = func(*args)
-        return memo['resolved_pipeline']
-    return wrapper
+
 
 
 class ProcessingPipeline(list):
     """
     Creates a processing pipeline for analysis_v3.
     """
-    def __init__(self, node_name=None, **node_params):
+    def __init__(self, node_name=None, from_dict_list=None, **node_params):
         super().__init__()
         if node_name is not None:
             node_params['node_name'] = node_name
             self.append(node_params)
+        elif from_dict_list is not None:
+            for d in from_dict_list:
+                if isinstance(d, dict):
+                    # assume that dicts have the same format as this class
+                    self.append(d)
+                else:
+                    raise ValueError('Entries in list must be dicts.')
 
-    @memoize
     def __call__(self, meas_obj_value_names_map):
+        fallback_pipeline = deepcopy(self)
         pipeline = deepcopy(self)
         self.clear()
         for i, node_params in enumerate(pipeline):
-            if 'keys_in' not in node_params:
-                raise KeyError('Each node dictionary must contain the key '
-                               '"keys_in".')
+            if node_params.get('was_resolved', False):
+                # if node was already resolved, just add it
+                self.append(node_params)
+                return
 
-            meas_obj_names_raw = node_params['meas_obj_names']
-            if isinstance(meas_obj_names_raw, str):
-                meas_obj_names_raw = [meas_obj_names_raw]
-            joint_processing = node_params.pop('joint_processing', False)
-            if joint_processing:
-                meas_obj_names = [','.join(meas_obj_names_raw)]
-                mobj_value_names = hlp_mod.flatten_list(
-                    meas_obj_value_names_map.values())
-            else:
-                meas_obj_names = meas_obj_names_raw
+            try:
+                if 'keys_in' not in node_params:
+                    raise KeyError('Each node dictionary must contain the key '
+                                   '"keys_in".')
+                meas_obj_names_raw = node_params['meas_obj_names']
+                if isinstance(meas_obj_names_raw, str):
+                    meas_obj_names_raw = [meas_obj_names_raw]
+                joint_processing = node_params.pop('joint_processing', False)
+                if joint_processing:
+                    meas_obj_names = [','.join(meas_obj_names_raw)]
+                    mobj_value_names = hlp_mod.flatten_list(
+                        meas_obj_value_names_map.values())
+                else:
+                    meas_obj_names = meas_obj_names_raw
 
-            for mobj_name in meas_obj_names:
-                # mobjn is a string!
-                new_node_params = deepcopy(node_params)
-                new_node_params['meas_obj_names'] = meas_obj_names_raw
-                # get the value names corresponding to the measued object name
-                if not joint_processing:
-                    mobj_value_names = meas_obj_value_names_map[mobj_name]
-                # get keys_in and any other key in node_params that
-                # contains keys_in
-                for k, v in new_node_params.items():
-                    if 'keys_in' in k:
-                        keys = self.process_keys_in(
-                            v, mobj_name, mobj_value_names, node_idx=i)
-                        new_node_params[k] = keys
-                # get keys_out
-                keys_out = self.process_keys_out(keys_out_container=mobj_name,
-                                                 **new_node_params)
-                if keys_out is not None:
-                    new_node_params['keys_out'] = keys_out
-
-                self.append(new_node_params)
+                for mobj_name in meas_obj_names:
+                    # mobjn is a string!
+                    new_node_params = deepcopy(node_params)
+                    new_node_params['meas_obj_names'] = mobj_name
+                    # get the value names corresponding to the measued object name
+                    if not joint_processing:
+                        mobj_value_names = meas_obj_value_names_map[mobj_name]
+                    # get keys_in and any other key in node_params that
+                    # contains keys_in
+                    for k, v in new_node_params.items():
+                        if 'keys_in' in k:
+                            keys = self.process_keys_in(
+                                v, mobj_name, mobj_value_names, node_idx=i)
+                            new_node_params[k] = keys
+                    # get keys_out
+                    keys_out = self.process_keys_out(keys_out_container=mobj_name,
+                                                     **new_node_params)
+                    if keys_out is not None:
+                        new_node_params['keys_out'] = keys_out
+                    # add flag that this node has been resolved
+                    new_node_params['was_resolved'] = True
+                    self.append(new_node_params)
+            except Exception as e:
+                # return unresolved pipeline
+                self.clear()
+                [self.append(node) for node in fallback_pipeline]
+                raise e
 
     def add_node(self, node_name, **node_params):
         node_params['node_name'] = node_name
@@ -311,7 +318,9 @@ class ProcessingPipeline(list):
 
         keys_in = []
         for keyi in keys_in_temp:
-            if keyi == 'raw':
+            if keyi in mobj_value_names or keyi in prev_keys_out:
+                keys_in += [keyi]
+            elif keyi == 'raw':
                 keys_in += mobj_value_names
             elif 'previous' in keyi:
                 if len(self) > 0:
@@ -338,15 +347,17 @@ class ProcessingPipeline(list):
                             lst_to_search=self[node_idx-1]['keys_out'],
                             lst_to_match=mobj_value_names)
                 else:
-                    raise ValueError('This is the first node in the pipeline. '
-                                     'keys_in cannot be "previous".')
+                    raise ValueError('The first node in the pipeline cannot '
+                                     'have "keys_in" = "previous".')
         try:
             keys_in.sort()
         except AttributeError:
             pass
 
         if len(keys_in) == 0 or keys_in is None:
-            raise ValueError('No "keys_in" could be determined.')
+            raise ValueError(f'No "keys_in" could be determined '
+                             f'for {mobj_name} in the node with index '
+                             f'{node_idx} and raw "keys_in" {keys_in_temp}.')
         return keys_in
 
     def process_keys_out(self, keys_in, keys_out_container, keys_out=(),
@@ -394,384 +405,3 @@ class ProcessingPipeline(list):
                 keys_out += [f'{keys_out_container}.'
                              f'{node_name_to_use} {keyo}']
         return keys_out
-
-    # def check_keys_mobjn(self, meas_obj_value_names_map, keys_in, keys_out=(),
-    #                      meas_obj_names='all', node_idx=None,
-    #                      joint_processing=False, **node_params):
-    #     """
-    #     Returns the explicit list of keys_in, keys_out, and meas_obj_names.
-    #     :param pipeline: a processing pipeline (not raw!)
-    #     :param meas_obj_value_names_map: dictionary with measured objects as keys
-    #         and list of their corresponding readout channels as values
-    #     :param keys_in:
-    #         'raw': takes all channels from self._movnm for meas_obj_names
-    #         'previous': takes the keys_out of the previous node which contain
-    #             the channels of meas_obj_names
-    #         'previous node_name': takes the keys_out of the previous node
-    #             which contain the channels of meas_obj_names and the node_name
-    #     :param keys_out:
-    #         list or tuple of strings (can be empty). Can also be None
-    #         If empty, populates with keys_in. Useful if keys_in have a '.' char,
-    #         because this function will set keys_out to only what comes after '.'
-    #     :param meas_obj_names:
-    #         'all': returns all keys of self._movnm
-    #         list of string containing measurement object names
-    #     :param node_idx: index in self of the current node
-    #     :param joint_processing: relevant if len(meas_obj_names) > 1;
-    #         if False, num_keys_out*len(meas_obj_names) keys_out will be added;
-    #         if True, num_keys_out keys_out will be added.
-    #     :return: keys_in, keys_out, meas_obj_names, mobj_keys
-    #
-    #     Assumptions:
-    #         -   what comes after 'previous' in the keys_in entries is separated by
-    #         a space
-    #     """
-    #     prev_keys_out = []
-    #     for d in self:
-    #         if 'keys_out' in d:
-    #             if d['keys_out'] is not None:
-    #                 prev_keys_out += d['keys_out']
-    #
-    #     # check keys_in
-    #     if meas_obj_names == 'all':
-    #         mobj_keys = hlp_mod.flatten_list(
-    #             list(meas_obj_value_names_map.values()))
-    #         meas_obj_names = list(meas_obj_value_names_map)
-    #     else:
-    #         if isinstance(meas_obj_names, str):
-    #             meas_obj_names = [meas_obj_names]
-    #         mobj_keys = hlp_mod.flatten_list(
-    #             [meas_obj_value_names_map[mo] for mo in meas_obj_names])
-    #
-    #     # convert keys_in to a list if it is a string such that I can iterate
-    #     # over the keys in
-    #     keys_in_temp = deepcopy(keys_in)
-    #     if isinstance(keys_in_temp, str):
-    #         keys_in_temp = [keys_in_temp]
-    #
-    #     keys_in = []
-    #     for keyi in keys_in_temp:
-    #         if keyi == 'raw':
-    #             keys_in += mobj_keys
-    #         elif 'previous' in keyi:
-    #             if len(self) > 0:
-    #                 # assumes that what comes after 'previous' is separated by
-    #                 # a space
-    #                 keys_in_split = keyi.split(' ')
-    #                 if len(keys_in_split) > 1:
-    #                     keys_in0 = hlp_mod.get_sublst_with_all_strings_of_list(
-    #                         lst_to_search=hlp_mod.flatten_list(prev_keys_out),
-    #                         lst_to_match=mobj_keys)
-    #                     keys_in += [ki for ki in keys_in0 if
-    #                                 keys_in_split[-1] in ki]
-    #                 else:
-    #                     if node_idx is None:
-    #                         raise ValueError('Currnet node index ("node_idx") '
-    #                                          'unknown. "keys_in" cannot be '
-    #                                          '"previous".')
-    #                     if 'keys_out' not in self[node_idx-1]:
-    #                         raise KeyError(f'The previous node '
-    #                                        f'{self[node_idx-1]["node_name"]} '
-    #                                        f'does not have the key "keys_out".')
-    #                     keys_in += hlp_mod.get_sublst_with_all_strings_of_list(
-    #                         lst_to_search=self[node_idx-1]['keys_out'],
-    #                         lst_to_match=mobj_keys)
-    #             else:
-    #                 raise ValueError('This is the first node in the pipeline. '
-    #                                  'keys_in cannot be "previous".')
-    #     try:
-    #         keys_in.sort()
-    #     except AttributeError:
-    #         pass
-    #
-    #     if len(keys_in) == 0:
-    #         raise ValueError('No "keys_in" could be determined.')
-    #
-    #     # check keys_out
-    #     if keys_out is not None:
-    #         if len(keys_out) == 0:
-    #             node_name = node_params['node_name']
-    #             num_keys_out = node_params.get('num_keys_out', len(keys_in))
-    #             # ensure all keys_in are used
-    #             assert len(keys_in) % num_keys_out == 0
-    #             n = len(keys_in) // num_keys_out
-    #
-    #             keys_out = []
-    #             for keyis in [keys_in[i*n: i*n + n] for i
-    #                           in range(num_keys_out)]:
-    #                 # check whether node_name is already in keyis
-    #                 node_name_repeated = False
-    #                 keyis_mod = deepcopy(keyis)
-    #                 for i, keyi in enumerate(keyis):
-    #                     if node_name in keyi:
-    #                         node_name_repeated = True
-    #                         # take the substring in keyi that comes after the
-    #                         # already used node_name
-    #                         keyis_mod[i] = keyi[len(keyi.split(' ')[0])+1:]
-    #
-    #                 node_name_to_use = deepcopy(node_name)
-    #                 if node_name_repeated:
-    #                     # find how many times was the node_name used and add
-    #                     # 1 to that
-    #                     num_previously_used = len(
-    #                         hlp_mod.get_sublst_with_all_strings_of_list(
-    #                             lst_to_search=[node_name],
-    #                             lst_to_match=prev_keys_out))
-    #                     node_name_to_use = f'{node_name}{num_previously_used+1}'
-    #
-    #                 if not joint_processing:
-    #                     for mobjn in meas_obj_names:
-    #                         # make preliminary key out by joining together they
-    #                         # keys in keysi
-    #                         keyis_mod_to_use = \
-    #                             hlp_mod.get_sublst_with_all_strings_of_list(
-    #                                 lst_to_search=keyis_mod,
-    #                                 lst_to_match=meas_obj_value_names_map[
-    #                                     mobjn])
-    #                         if len(keyis_mod_to_use) != 0:
-    #                             keyo = ','.join([keyi.split('.')[-1] for keyi in
-    #                                              keyis_mod_to_use])
-    #                             keys_out += [f'{mobjn}.'
-    #                                          f'{node_name_to_use} {keyo}']
-    #                 else:
-    #                     keys_out_container = ','.join(meas_obj_names)
-    #                     keyo = ','.join([keyi.split('.')[-1] for keyi
-    #                                      in keyis_mod])
-    #                     keys_out += [f'{keys_out_container}.'
-    #                                  f'{node_name_to_use} {keyo}']
-    #
-    #     return keys_in, keys_out, meas_obj_names, mobj_keys
-    #
-
-# def add_filter_data_node(pipeline, movnm, data_filter, keys_in='previous',
-#                          meas_obj_names='all', keys_out=(), **params):
-#     keys_in, keys_out, meas_obj_names, mobj_keys = check_keys_mobjn(
-#         pipeline, movnm, keys_in, keys_out, meas_obj_names,
-#         keys_out_container=params.pop('keys_out_container', 'filter_data'),
-#         **params)
-#
-#     return {'node_name': 'filter_data',
-#             'keys_in': keys_in,
-#             'keys_out': keys_out,
-#             'data_filter': data_filter,
-#             **params}
-#
-#
-# def add_average_data_node(pipeline, movnm, shape, averaging_axis=-1,
-#                           keys_in='previous', meas_obj_names='all',
-#                           keys_out=(), **params):
-#     keys_in, keys_out, meas_obj_names, mobj_keys = check_keys_mobjn(
-#         pipeline, movnm, keys_in, keys_out, meas_obj_names,
-#         keys_out_container=params.pop('keys_out_container', 'average_data'),
-#         **params)
-#
-#     return {'node_name': 'average_data',
-#             'keys_in': keys_in,
-#             'keys_out': keys_out,
-#             'shape': shape,
-#             'averaging_axis': averaging_axis,
-#             **params}
-#
-#
-# def add_get_std_deviation_node(pipeline, movnm, shape, averaging_axis=-1,
-#                                keys_in='previous', meas_obj_names='all',
-#                                keys_out=(), **params):
-#     keys_in, keys_out, meas_obj_names, mobj_keys = check_keys_mobjn(
-#         pipeline, movnm, keys_in, keys_out, meas_obj_names,
-#         keys_out_container=params.pop('keys_out_container',
-#                                       'get_std_deviation'),
-#         **params)
-#
-#     return {'node_name': 'get_std_deviation',
-#             'keys_in': keys_in,
-#             'keys_out': keys_out,
-#             'shape': shape,
-#             'averaging_axis': averaging_axis,
-#             **params}
-#
-#
-# def add_rotate_iq_node(pipeline, movnm, keys_in='previous',
-#                        meas_obj_names='all', keys_out=(), **params):
-#
-#     keys_in, keys_out, meas_obj_names, mobj_keys = check_keys_mobjn(
-#         pipeline, movnm, keys_in, keys_out, meas_obj_names, **params)
-#
-#     if keys_out is not None:
-#         keys_out_container = params.pop('keys_out_container', 'rotate_iq')
-#         keys_out = [f'{",".join(meas_obj_names)}.{keys_out_container}_' +
-#                     ','.join([k.split('.')[-1] for k in keys_in])]
-#
-#     return {'node_name': 'rotate_iq',
-#             'keys_in': keys_in,
-#             'keys_out': keys_out,
-#             'meas_obj_names': meas_obj_names,
-#             **params}
-#
-#
-# def add_rotate_1d_array_node(pipeline, movnm, keys_in='previous',
-#                              meas_obj_names='all', keys_out=(), **params):
-#     keys_in, keys_out, meas_obj_names, mobj_keys = check_keys_mobjn(
-#         pipeline, movnm, keys_in, keys_out, meas_obj_names,
-#         keys_out_container=params.pop('keys_out_container',
-#                                       'rotate_1d_array'),
-#         **params)
-#
-#     return {'node_name': 'rotate_1d_array',
-#             'keys_in': keys_in,
-#             'keys_out': keys_out,
-#             'meas_obj_names': meas_obj_names,
-#             **params}
-#
-#
-# def add_threshold_data_node(pipeline, movnm, threshold_list, threshold_map,
-#                             keys_in='previous', meas_obj_names='all',
-#                             keys_out=(), **params):
-#     keys_in, keys_out, meas_obj_names, mobj_keys = check_keys_mobjn(
-#         pipeline, movnm, keys_in, keys_out, meas_obj_names, **params)
-#
-#     if keys_out is not None:
-#         keys_out_container = params.pop('keys_out_container',
-#                                         'threshold_data')
-#         keyo = keys_in[0] if len(keys_in) == 1 else ','.join([
-#             k.split('.')[-1] for k in keys_in])
-#         keys_out = [f'{keys_out_container}.{keyo} state {s}' for s in
-#                     set(threshold_map.values())]
-#     return {'node_name': 'threshold_data',
-#             'keys_in': keys_in,
-#             'keys_out': keys_out,
-#             'threshold_list': threshold_list,
-#             'threshold_map': threshold_map,
-#             **params}
-#
-#
-# def add_transform_data_node(pipeline, movnm, transform_func, keys_in='previous',
-#                             meas_obj_names='all', keys_out=(),
-#                             transform_func_kwargs=dict(), **params):
-#     keys_in, keys_out, meas_obj_names, mobj_keys = check_keys_mobjn(
-#         pipeline, movnm, keys_in, keys_out, meas_obj_names,
-#         keys_out_container=params.pop('keys_out_container',
-#                                       'transform_data'),
-#         **params)
-#
-#     return {'node_name': 'transform_data',
-#             'keys_in': keys_in,
-#             'keys_out': keys_out,
-#             'transform_func': transform_func,
-#             'transform_func_kwargs': transform_func_kwargs,
-#             **params}
-#
-#
-# def add_correct_readout_node(pipeline, movnm, state_prob_mtx, keys_in='previous',
-#                              meas_obj_names='all', keys_out=(), **params):
-#     keys_in, keys_out, meas_obj_names, mobj_keys = check_keys_mobjn(
-#         pipeline, movnm, keys_in, keys_out, meas_obj_names,
-#         keys_out_container=params.pop('keys_out_container',
-#                                       'correct_readout'),
-#         **params)
-#
-#     return {'node_name': 'correct_readout',
-#             'keys_in': keys_in,
-#             'keys_out': keys_out,
-#             'state_prob_mtx': state_prob_mtx,
-#             **params}
-#
-#
-# ######################################
-# #### plot dicts preparation nodes ####
-# ######################################
-#
-# def add_prepare_1d_plot_dicts_node(pipeline, movnm, keys_in='previous',
-#                                    meas_obj_names='all', figure_name='',
-#                                    do_plotting=True, **params):
-#     keys_in, _, meas_obj_names, mobj_keys = check_keys_mobjn(pipeline, movnm,
-#         keys_in, meas_obj_names=meas_obj_names, **params)
-#     return {'node_name': 'prepare_1d_plot_dicts',
-#             'keys_in': keys_in,
-#             'meas_obj_names': meas_obj_names,
-#             'figure_name': figure_name,
-#             'do_plotting': do_plotting,
-#             **params}
-#
-#
-# def add_prepare_2d_plot_dicts_node(pipeline, movnm, keys_in='previous',
-#                                    meas_obj_names='all', figure_name='',
-#                                    do_plotting=True, **params):
-#     keys_in, _, meas_obj_names, mobj_keys = check_keys_mobjn(pipeline, movnm,
-#         keys_in, meas_obj_names=meas_obj_names, **params)
-#     return {'node_name': 'prepare_2d_plot_dicts',
-#             'keys_in': keys_in,
-#             'meas_obj_names': meas_obj_names,
-#             'figure_name': figure_name,
-#             'do_plotting': do_plotting,
-#             **params}
-#
-#
-# def add_prepare_1d_raw_data_plot_dicts_node(pipeline, movnm, keys_in='previous',
-#                                             meas_obj_names='all',
-#                                             figure_name=None, do_plotting=True,
-#                                             **params):
-#     keys_in, _, meas_obj_names, mobj_keys = check_keys_mobjn(pipeline, movnm,
-#         keys_in, meas_obj_names=meas_obj_names, **params)
-#     return {'node_name': 'prepare_1d_raw_data_plot_dicts',
-#             'keys_in': keys_in,
-#             'meas_obj_names': meas_obj_names,
-#             'figure_name': figure_name,
-#             'do_plotting': do_plotting,
-#             **params}
-#
-#
-# def add_prepare_2d_raw_data_plot_dicts_node(pipeline, movnm, keys_in='previous',
-#                                             meas_obj_names='all',
-#                                             figure_name=None, do_plotting=True,
-#                                             **params):
-#     keys_in, _, meas_obj_names, mobj_keys = check_keys_mobjn(pipeline, movnm,
-#         keys_in, meas_obj_names=meas_obj_names, **params)
-#     return {'node_name': 'prepare_2d_raw_data_plot_dicts',
-#             'keys_in': keys_in,
-#             'meas_obj_names': meas_obj_names,
-#             'figure_name': figure_name,
-#             'do_plotting': do_plotting,
-#             **params}
-#
-#
-# def add_prepare_cal_states_plot_dicts_node(pipeline, movnm, keys_in='previous',
-#                                            meas_obj_names='all', figure_name='',
-#                                            do_plotting=True, **params):
-#     keys_in, _, meas_obj_names, mobj_keys = check_keys_mobjn(pipeline, movnm,
-#         keys_in, meas_obj_names=meas_obj_names, **params)
-#     return {'node_name': 'prepare_cal_states_plot_dicts',
-#             'keys_in': keys_in,
-#             'meas_obj_names': meas_obj_names,
-#             'figure_name': figure_name,
-#             'do_plotting': do_plotting,
-#             **params}
-#
-# ################################
-# #### nodes that are classes ####
-# ################################
-#
-# def add_RabiAnalysis_node(pipeline, movnm, meas_obj_names, keys_in='previous',
-#                           **params):
-#     keys_in, _, meas_obj_names, mobj_keys = check_keys_mobjn(pipeline, movnm,
-#         keys_in, meas_obj_names=meas_obj_names, **params)
-#     return {'node_name': 'RabiAnalysis',
-#             'keys_in': keys_in,
-#             'meas_obj_names': meas_obj_names,
-#             **params}
-#
-#
-# def add_SingleQubitRBAnalysis_node(pipeline, movnm, meas_obj_names,
-#                                    keys_in='previous', std_keys=None, **params):
-#     keys_in, _, meas_obj_names, mobj_keys = check_keys_mobjn(pipeline, movnm,
-#         keys_in, meas_obj_names=meas_obj_names, **params)
-#     std_keys, _, meas_obj_names, mobj_keys = check_keys_mobjn(pipeline, movnm,
-#         std_keys, meas_obj_names=meas_obj_names)
-#
-#     return {'node_name': 'SingleQubitRBAnalysis',
-#             'keys_in': keys_in,
-#             'std_keys': std_keys,
-#             'meas_obj_names': meas_obj_names,
-#             **params}
-#
-#
-#
