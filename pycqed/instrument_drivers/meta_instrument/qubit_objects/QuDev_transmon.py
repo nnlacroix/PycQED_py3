@@ -376,6 +376,17 @@ class QuDev_transmon(Qubit):
         self.add_parameter('preparation_params', parameter_class=ManualParameter,
                             initial_value=DEFAULT_PREP_PARAMS, vals=vals.Dict())
 
+        DEFAULT_GE_LO_CALIBRATION_PARAMS = dict(
+            mode='fixed', # or 'freq_dependent'
+            freqs=[],
+            I_offsets=[],
+            Q_offsets=[],
+        )
+        self.add_parameter('ge_lo_leakage_cal',
+                           parameter_class=ManualParameter,
+                           initial_value=DEFAULT_GE_LO_CALIBRATION_PARAMS,
+                           vals=vals.Dict())
+
     def get_idn(self):
         return {'driver': str(self.__class__), 'name': self.name}
 
@@ -441,11 +452,40 @@ class QuDev_transmon(Qubit):
             result_logging_mode='raw', real_imag=False, single_int_avg=True)
 
     def prepare(self, drive='timedomain'):
+        ro_lo = self.instr_ro_lo
+        ge_lo = self.instr_ge_lo
+
+        # set awg channel dc offsets
+        offset_list = [('ro_I_channel', 'ro_I_offset'),
+                       ('ro_Q_channel', 'ro_Q_offset')]
+        if drive == 'timedomain':
+            if self.ge_lo_leakage_cal()['mode'] == 'fixed':
+                offset_list += [('ge_I_channel', 'ge_I_offset'),
+                                ('ge_Q_channel', 'ge_Q_offset')]
+                if 'lo_cal_data' in ge_lo.get_instr().parameters:
+                    ge_lo.get_instr().lo_cal_data().pop(self.name + '_I', None)
+                    ge_lo.get_instr().lo_cal_data().pop(self.name + '_Q', None)
+            else:
+                # FIXME: configure lo.lo_cal_interp_kind based on a new setting in
+                #  the qubit, e.g. self.ge_lo_leakage_cal()['interp_kind']
+                lo_cal = ge_lo.get_instr().lo_cal_data()
+                qb_lo_cal = self.ge_lo_leakage_cal()
+                pulsar = self.instr_pulsar.get_instr()
+                i_par = pulsar.parameters[self.get('ge_I_channel') + '_offset']
+                q_par = pulsar.parameters[self.get('ge_Q_channel') + '_offset']
+                lo_cal[self.name + '_I'] = (i_par, qb_lo_cal['freqs'],
+                                            qb_lo_cal['I_offsets'])
+                lo_cal[self.name + '_Q'] = (q_par, qb_lo_cal['freqs'],
+                                            qb_lo_cal['Q_offsets'])
+
+        for channel_par, offset_par in offset_list:
+            self.instr_pulsar.get_instr().set(
+                self.get(channel_par) + '_offset', self.get(offset_par))
+
         # configure readout local oscillators
-        lo = self.instr_ro_lo
-        if lo() is not None:
-            lo.get_instr().pulsemod_state('Off')
-            lo.get_instr().power(self.ro_lo_power())
+        if ro_lo() is not None:
+            ro_lo.get_instr().pulsemod_state('Off')
+            ro_lo.get_instr().power(self.ro_lo_power())
             # in case of multichromatic readout, take first ro freq, else just
             # wrap the frequency in a list and take the first
             if np.ndim(self.ro_freq()) == 0:
@@ -456,44 +496,34 @@ class QuDev_transmon(Qubit):
                 ro_mod_freq = [self.ro_mod_freq()]
             else:
                 ro_mod_freq = self.ro_mod_freq()
-            lo.get_instr().frequency(ro_freq[0] - ro_mod_freq[0])
+            ro_lo.get_instr().frequency(ro_freq[0] - ro_mod_freq[0])
 
-            lo.get_instr().on()
+            ro_lo.get_instr().on()
 
         # configure qubit drive local oscillator
-        lo = self.instr_ge_lo
-        if lo() is not None:
+        if ge_lo() is not None:
             if drive is None:
-                lo.get_instr().off()
+                ge_lo.get_instr().off()
             elif drive == 'continuous_spec':
-                lo.get_instr().pulsemod_state('Off')
-                lo.get_instr().power(self.spec_power())
-                lo.get_instr().frequency(self.ge_freq())
-                lo.get_instr().on()
+                ge_lo.get_instr().pulsemod_state('Off')
+                ge_lo.get_instr().power(self.spec_power())
+                ge_lo.get_instr().frequency(self.ge_freq())
+                ge_lo.get_instr().on()
             elif drive == 'pulsed_spec':
-                lo.get_instr().pulsemod_state('On')
-                lo.get_instr().power(self.spec_power())
-                lo.get_instr().frequency(self.ge_freq())
-                lo.get_instr().on()
+                ge_lo.get_instr().pulsemod_state('On')
+                ge_lo.get_instr().power(self.spec_power())
+                ge_lo.get_instr().frequency(self.ge_freq())
+                ge_lo.get_instr().on()
             elif drive == 'timedomain':
-                lo.get_instr().pulsemod_state('Off')
-                lo.get_instr().power(self.ge_lo_power())
-                lo.get_instr().frequency(self.ge_freq() - self.ge_mod_freq())
-                lo.get_instr().on()
+                ge_lo.get_instr().pulsemod_state('Off')
+                ge_lo.get_instr().power(self.ge_lo_power())
+                ge_lo.get_instr().frequency(self.ge_freq() - self.ge_mod_freq())
+                ge_lo.get_instr().on()
             else:
                 raise ValueError("Invalid drive parameter '{}'".format(drive)
                                  + ". Valid options are None, 'continuous_spec"
                                  + "', 'pulsed_spec' and 'timedomain'.")
 
-        # set awg channel dc offsets
-        offset_list = [('ro_I_channel', 'ro_I_offset'),
-                       ('ro_Q_channel', 'ro_Q_offset')]
-        if drive == 'timedomain':
-            offset_list += [('ge_I_channel', 'ge_I_offset'),
-                            ('ge_Q_channel', 'ge_Q_offset')]
-        for channel_par, offset_par in offset_list:
-            self.instr_pulsar.get_instr().set(
-                self.get(channel_par) + '_offset', self.get(offset_par))
 
         # other preparations
         self.update_detector_functions()
