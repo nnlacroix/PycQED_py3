@@ -6017,9 +6017,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             # mapping would fail. The number of different states can be different
             # for each qubit and therefore the mapping should also be done per qubit.
             state_integer = 0
-            for state in self.cp.get_states(qbn)[qbn]:
-                if "int" in self.states_info[qbn][state]:
-                    continue # in case state is repeated, no new integer needed
+            for state in means[qbn].keys():
                 self.states_info[qbn][state]["int"] = state_integer
                 state_integer += 1
 
@@ -6041,10 +6039,14 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 self._classify(qb_shots, prep_states,
                                method=self.classif_method, qb_name=qbn,
                                **self.options_dict.get("classif_kw", dict()))
-            states_label_order = self._get_state_labels_order(
-                np.unique(self.cp.get_states(qbn)[qbn]))
+            # order "unique" states to have in usual order "gef" etc.
+            state_labels_ordered = self._order_state_labels(
+                list(means[qbn].keys()))
+            # translate to corresponding integers
+            state_labels_ordered_int = [self.states_info[qbn][s]['int'] for s in
+                                        state_labels_ordered]
             fm = self.fidelity_matrix(prep_states, pred_states,
-                                      labels=states_label_order)
+                                      labels=state_labels_ordered_int)
 
             # save fidelity matrix and classifier
             pdd['analysis_params']['state_prob_mtx'][qbn] = fm
@@ -6063,7 +6065,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 prep_states = prep_states[presel_filter]
                 pred_states = self.clf_[qbn].predict(qb_shots_masked)
                 fm = self.fidelity_matrix(prep_states, pred_states,
-                                          labels=states_label_order)
+                                          labels=state_labels_ordered_int)
 
                 pdd['data_masked'][qbn] = dict(X=deepcopy(qb_shots_masked),
                                           prep_states=deepcopy(prep_states))
@@ -6200,15 +6202,30 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                                        plot_fitting=plot_fitting, **kwargs)
 
     @staticmethod
-    def _get_state_labels_order(states_labels,
-                                order="gefhabcdijklmnopqrtuvwxyz0123456789"):
+    def _order_state_labels(states_labels,
+                            order="gefhabcdijklmnopqrtuvwxyz0123456789"):
+        """
+        Orders state labels according to provided ordering. e.g. for default
+        ("f", "e", "g") would become ("g", "e", "f")
+        Args:
+            states_labels (list, tuple): list of states_labels
+            order (str): custom string order
+
+        Returns:
+
+        """
         try:
-            return np.argsort([order.index(s) for s in states_labels])
+            indices = [order.index(s) for s in states_labels]
+            order_for_states = np.argsort(indices).astype(np.int32)
+            return np.array(states_labels)[order_for_states]
+
         except Exception as e:
             log.error(f"Could not find order in state_labels:"
-                      f"{states_labels}. {e}."
+                      f"{states_labels}. Probably because one or several "
+                      f"states are not part of '{order}'. Error: {e}."
                       f" Returning same as input order")
-            return np.arange(states_labels)
+            return states_labels
+
 
     def plot(self, **kwargs):
         if not self.get_param_value("plot", True):
@@ -6221,11 +6238,12 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             tab_x = a_tools.truncate_colormap(cmap, 0,
                                               n_qb_states/10)
 
-            kwargs = dict(states=np.unique(self.cp.get_states(qbn)[qbn]),
-                          xlabel="Integration Unit 1, $u_1$",
-                          ylabel="Integration Unit 2, $u_2$",
-                          scale=self.options_dict.get("hist_scale", "linear"),
-                          cmap=tab_x)
+            kwargs = {
+                "states": list(pdd["analysis_params"]['means'][qbn].keys()),
+                "xlabel": "Integration Unit 1, $u_1$",
+                "ylabel": "Integration Unit 2, $u_2$",
+                "scale":self.options_dict.get("hist_scale", "linear"),
+                "cmap":tab_x}
             data_keys = [k for k in list(pdd.keys()) if
                             k.startswith("data") and qbn in pdd[k]]
 
@@ -6296,13 +6314,14 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             if show:
                 plt.show()
 
+            # state assignment prob matrix
             title = self.raw_data_dict['timestamp'] + "\n{} State Assignment" \
                 " Probability Matrix\nTotal # shots:{}"\
                 .format(self.classif_method,
                         self.proc_data_dict['analysis_params']['n_shots'])
             fig = self.plot_fidelity_matrix(
                 self.proc_data_dict['analysis_params']['state_prob_mtx'][qbn],
-                kwargs['states'][self._get_state_labels_order(kwargs['states'])],
+                self._order_state_labels(kwargs['states']),
                 title=title,
                 show=show,
                 auto_shot_info=False)
@@ -6317,8 +6336,8 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                         self.proc_data_dict['analysis_params']['n_shots_masked'][qbn])
 
                 fig = self.plot_fidelity_matrix(
-                    self.proc_data_dict['analysis_params'] \
-                                       ['state_prob_mtx_masked'][qbn],
-                    kwargs['states'][self._get_state_labels_order(kwargs['states'])],                  title=title, show=show, auto_shot_info=False)
+                    pdd['analysis_params']['state_prob_mtx_masked'][qbn],
+                    self._order_state_labels(kwargs['states']),
+                    title=title, show=show, auto_shot_info=False)
                 fig_key = f'{qbn}_state_prob_matrix_masked_{self.classif_method}'
                 self.figs[fig_key] = fig
