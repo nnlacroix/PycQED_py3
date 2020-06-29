@@ -3768,12 +3768,6 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
 
     MC = dev.instr_mc.get_instr()
 
-    # # check whether any qubits are connected
-    # for q1, q2 in list(itertools.combinations(qubits, 2)):
-    #     if [q1, q2] not in dev.connectivity_graph and \
-    #             [q2, q1] not in dev.connectivity_graph :
-    #         log.warning(f'{q1.name} and {q2.name} are connected.')
-
     if sweep_points is None:
         if amps is None:
             raise ValueError('Both "amps" and "sweep_points" cannot be None.')
@@ -3895,12 +3889,6 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
         qubit_names = [qb.name for qb in qubits]
 
     MC = dev.instr_mc.get_instr()
-
-    # # check whether any qubits are connected
-    # for q1, q2 in list(itertools.combinations(qubits, 2)):
-    #     if [q1, q2] not in dev.connectivity_graph and \
-    #             [q2, q1] not in dev.connectivity_graph:
-    #         log.warning(f'{q1.name} and {q2.name} are connected.')
 
     if sweep_points is None:
         if delays is None:
@@ -4027,12 +4015,6 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
 
     MC = dev.instr_mc.get_instr()
 
-    # # check whether any qubits are connected
-    # for q1, q2 in list(itertools.combinations(qubits, 2)):
-    #     if [q1, q2] not in dev.connectivity_graph and \
-    #             [q2, q1] not in dev.connectivity_graph:
-    #         log.warning(f'{q1.name} and {q2.name} are connected.')
-
     if sweep_points is None:
         if qscales is None:
             raise ValueError('Both "qscales" and "sweep_points" '
@@ -4150,12 +4132,6 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
 
     MC = dev.instr_mc.get_instr()
 
-    # # check whether any qubits are connected
-    # for q1, q2 in list(itertools.combinations(qubits, 2)):
-    #     if [q1, q2] not in dev.connectivity_graph and \
-    #             [q2, q1] not in dev.connectivity_graph:
-    #         log.warning(f'{q1.name} and {q2.name} are connected.')
-
     if sweep_points is None:
         if delays is None:
             raise ValueError('Both "delays" and "sweep_points" cannot be None.')
@@ -4272,12 +4248,6 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
         qubit_names = [qb.name for qb in qubits]
 
     MC = dev.instr_mc.get_instr()
-
-    # # check whether any qubits are connected
-    # for q1, q2 in list(itertools.combinations(qubits, 2)):
-    #     if [q1, q2] not in dev.connectivity_graph and \
-    #             [q2, q1] not in dev.connectivity_graph:
-    #         log.warning(f'{q1.name} and {q2.name} are connected.')
 
     if sweep_points is None:
         if delays is None:
