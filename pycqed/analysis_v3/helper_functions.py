@@ -68,20 +68,30 @@ def get_param_from_metadata_group(param_name, timestamp=None, data_file=None,
     return param_value
 
 
+def get_data_from_hdf_file(timestamp=None, data_file=None,
+                           close_file=True):
+    if data_file is None:
+        if timestamp is None:
+            raise ValueError('Please provide either timestamp or data_file.')
+        folder = a_tools.get_folder(timestamp)
+        h5filepath = a_tools.measurement_filename(folder)
+        data_file = h5py.File(h5filepath, 'r+')
+    group = data_file['Experimental Data']
+
+    if 'Data' in group:
+        dataset = np.array(group['Data'])
+    else:
+        raise KeyError(f'{Data} was not found in Experimental Data.')
+    if close_file:
+        data_file.close()
+    return dataset
+
+
 def get_data_file_from_timestamp(timestamp):
     folder = a_tools.get_folder(timestamp)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, 'r+')
-    try:
-        group = data_file['Experimental Data'][
-            'Experimental Metadata']['sweep_points']
-        sweep_points = OrderedDict()
-        sweep_points = read_dict_from_hdf5(sweep_points, group)
-        data_file.close()
-        return sweep_points
-    except Exception as e:
-        data_file.close()
-        raise e
+    return data_file
 
 
 def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
