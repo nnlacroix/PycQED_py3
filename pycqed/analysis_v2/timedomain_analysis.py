@@ -218,7 +218,15 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     def extract_data(self):
         super().extract_data()
 
-        self.channel_map = self.get_param_value('channel_map')
+        self.data_filter = self.get_param_value('data_filter')
+        self.prep_params = self.get_param_value('preparation_params',
+                                           default_value=dict())
+
+        self.channel_map = \
+            self.get_param_value('channel_map',
+                                 self.get_param_value(
+                                     "meas_obj_value_names_map", None))
+
         if self.channel_map is None:
             value_names = self.raw_data_dict['value_names']
             if np.ndim(value_names) > 0:
@@ -342,11 +350,12 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                            default_value=dict())
         self.data_with_reset = False
         if self.data_filter is None:
-            if 'active' in prep_params.get('preparation_type', 'wait'):
-                reset_reps = prep_params.get('reset_reps', 1)
+            if 'active' in self.prep_params.get('preparation_type', 'wait'):
+                reset_reps = self.prep_params.get('reset_reps', 1)
                 self.data_filter = lambda x: x[reset_reps::reset_reps+1]
                 self.data_with_reset = True
-            elif "preselection" in prep_params.get('preparation_type', 'wait'):
+            elif "preselection" in self.prep_params.get('preparation_type',
+                                                        'wait'):
                 self.data_filter = lambda x: x[1::2]  # filter preselection RO
         if self.data_filter is None:
             self.data_filter = lambda x: x
