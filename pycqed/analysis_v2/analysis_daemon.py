@@ -100,7 +100,7 @@ class AnalysisDaemon:
 
                     job = self.read_job(filename)
                     errl = len(self.job_errs)
-                    self.run_job(job, ts)
+                    self.run_job(job)
                     if errl == len(self.errs):
                         os.rename(filename, filename + '.done')
                     else:
@@ -111,19 +111,20 @@ class AnalysisDaemon:
         if not found_jobs:
             log.info(f"No new job found.")
 
-    def read_job(self, filename):
+    @staticmethod
+    def read_job(filename):
         job_file = open(filename, 'r')
         job = "".join(job_file.readlines())
         job_file.close()
         return job
-
-    def write_to_job(self, filename, new_lines):
+    @staticmethod
+    def write_to_job(filename, new_lines):
         job_file = open(filename, 'r+')
         job_file.write("\n")
         job_file.write("".join(new_lines))
         job_file.close()
 
-    def run_job(self, job, ts):
+    def run_job(self, job):
         try:
             exec(job)
             plt.close('all')
