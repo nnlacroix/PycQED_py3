@@ -373,7 +373,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             self.cp = CalibrationPoints.from_string(cal_points)
             # for now assuming the same for all qubits.
             self.cal_states_dict = self.cp.get_indices(
-                self.qb_names, prep_params)[self.qb_names[0]]
+                self.qb_names)[self.qb_names[0]]
             if rotate:
                 cal_states_rots = self.cp.get_rotations(last_ge_pulses,
                         self.qb_names[0])[self.qb_names[0]] if rotate else None
