@@ -206,11 +206,10 @@ class QuantumExperiment(CircuitBuilder):
         Returns: analysis object
 
         """
-        if self.analyze:
-            if analysis_class is None:
-                analysis_class = ba.BaseDataAnalysis
-            self.analysis = analysis_class(**kwargs)
-            return self.analysis
+        if analysis_class is None:
+            analysis_class = ba.BaseDataAnalysis
+        self.analysis = analysis_class(**kwargs)
+        return self.analysis
 
     def serialize(self, omitted_attrs=('MC', 'device', 'qubits')):
         """
