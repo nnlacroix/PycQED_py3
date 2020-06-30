@@ -1,21 +1,11 @@
 import numpy as np
-from copy import copy
 from copy import deepcopy
-from itertools import zip_longest
 import traceback
-from pycqed.utilities.general import temporary_value
 from pycqed.measurement.calibration.two_qubit_gates import CalibBuilder
 from pycqed.measurement.waveform_control.block import Block, ParametricValue
-from pycqed.measurement.waveform_control.segment import UnresolvedPulse
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.analysis import fitting_models as fit_mods
-from pycqed.measurement.calibration.calibration_points import CalibrationPoints
-import pycqed.measurement.awg_sweep_functions as awg_swf
 import pycqed.analysis_v2.timedomain_analysis as tda
-from pycqed.instrument_drivers.meta_instrument.qubit_objects.QuDev_transmon \
-    import QuDev_transmon
-from pycqed.measurement.multi_qubit_module import \
-    get_multiplexed_readout_detector_functions
 import logging
 log = logging.getLogger(__name__)
 
