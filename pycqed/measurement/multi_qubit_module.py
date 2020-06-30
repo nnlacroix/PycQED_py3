@@ -3683,6 +3683,12 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
+    # determine data type
+    if "log" in det_type or not \
+        kw.get("det_get_values_kws", {}).get('averaged', True):
+        data_type = "singleshot"
+    else:
+        data_type = "averaged"
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
@@ -3699,6 +3705,9 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
+                         'data_type': data_type, # singleshot or averaged
+                         # know whether or not ssro should be classified
+                         'classify': not 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})
