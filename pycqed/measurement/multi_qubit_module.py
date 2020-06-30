@@ -3762,7 +3762,6 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
     """
     qubits = dev.get_qubits(qubits)
     qubit_names = [qb.name for qb in qubits]
-
     MC = dev.instr_mc.get_instr()
 
     if sweep_points is None:
@@ -3881,7 +3880,6 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
     """
     qubits = dev.get_qubits(qubits)
     qubit_names = [qb.name for qb in qubits]
-
     MC = dev.instr_mc.get_instr()
 
     if sweep_points is None:
@@ -3906,7 +3904,6 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
         label += get_multi_qubit_msmt_suffix(qubits)
 
     for qb in qubits:
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
@@ -4003,7 +4000,6 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
     """
     qubits = dev.get_qubits(qubits)
     qubit_names = [qb.name for qb in qubits]
-
     MC = dev.instr_mc.get_instr()
 
     if sweep_points is None:
@@ -4029,7 +4025,6 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
         label += get_multi_qubit_msmt_suffix(qubits)
 
     for qb in qubits:
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
@@ -4117,7 +4112,6 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
     """
     qubits = dev.get_qubits(qubits)
     qubit_names = [qb.name for qb in qubits]
-
     MC = dev.instr_mc.get_instr()
 
     if sweep_points is None:
@@ -4142,7 +4136,6 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
         label += get_multi_qubit_msmt_suffix(qubits)
 
     for qb in qubits:
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
@@ -4231,7 +4224,6 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
     """
     qubits = dev.get_qubits(qubits)
     qubit_names = [qb.name for qb in qubits]
-
     MC = dev.instr_mc.get_instr()
 
     if sweep_points is None:
@@ -4256,7 +4248,6 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
         label += get_multi_qubit_msmt_suffix(qubits)
 
     for qb in qubits:
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
