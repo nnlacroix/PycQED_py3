@@ -60,10 +60,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
                     raise ValueError('Please provide either "sweep_points" '
                                      'and "qubits," or "task_list" containing '
                                      'this information.')
-                task_list = [{'qubit_to_measure': qb.name,
-                              'sweep_points': sweep_points} for qb in qubits]
-                # remove sweep_points since they are in the tasks now
-                sweep_points = None
+                task_list = [{'qubit_to_measure': qb.name} for qb in qubits]
 
             super().__init__(task_list, qubits=qubits, **kw)
 
@@ -140,7 +137,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             # all qubits have the same cliffords array
             current_sweep_points = SweepPoints(from_dict_list=sweep_points)
             current_sweep_points.update(
-                SweepPoints(from_dict_list=task_list[0]['sweep_points']))
+                SweepPoints(from_dict_list=self.task_list[0]['sweep_points']))
             clifford = current_sweep_points[1].get(['clifford'])[0][sp2d_idx]
             cl_seq = rb.randomized_benchmarking_sequence(
                 clifford, interleaved_gate=self.interleaved_gate)
