@@ -447,7 +447,8 @@ def measure_multiplexed_readout(qubits, liveplot=False,
 
 def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
                  preselection=True, all_states_combinations=False, upload=True,
-                 exp_metadata=None, analyze=True, analysis_kwargs=None, update=True):
+                 exp_metadata=None, analyze=True, analysis_kwargs=None,
+                 delegate_plotting=False, update=True):
     """
     Measures in single shot readout the specified states and performs
     a Gaussian mixture fit to calibrate the state classfier and provide the
@@ -479,6 +480,8 @@ def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
         exp_metadata (dict): experimental metadata
         analyze (bool): analyze data
         analysis_kwargs (dict): arguments for the analysis. Defaults to all qb names
+        delegate_plotting (bool): Whether or not to create a job for an analysisDaemon
+            and skip the plotting during the analysis.
         update (bool): update readout classifier parameters.
             Does not update the readout correction matrix (i.e. qb.acq_state_prob_mtx),
             as we ended up using this a lot less often than the update for readout
@@ -554,6 +557,12 @@ def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
             analysis_kwargs = dict()
         if "qb_names" not in analysis_kwargs:
             analysis_kwargs["qb_names"] = qb_names # all qubits by default
+        if "options_dict" not in analysis_kwargs:
+            analysis_kwargs["options_dict"] = \
+                dict(delegate_plotting=delegate_plotting)
+        else:
+            analysis_kwargs["options_dict"].update(
+                                dict(delegate_plotting=delegate_plotting))
         a = tda.MultiQutrit_Singleshot_Readout_Analysis(**analysis_kwargs)
         for qb in qubits:
             classifier_params = a.proc_data_dict[
@@ -3803,6 +3812,7 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
+    delegate_plotting = kw.pop('delegate_plotting', False) # used in analysis
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
@@ -3828,8 +3838,9 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
     # Analyze this measurement
     if analyze:
         rabi_ana = tda.RabiAnalysis(
-            qb_names=qubit_names, options_dict={
-                'channel_map': get_meas_obj_value_names_map(qubits, det_func)})
+            qb_names=qubit_names,
+            options_dict={'delegate_plotting': delegate_plotting,
+                          'channel_map': get_meas_obj_value_names_map(qubits, det_func)})
         if update:
             for qb in qubits:
                 amp180 = rabi_ana.proc_data_dict['analysis_params_dict'][
@@ -3929,6 +3940,7 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
     MC.set_sweep_points(sp)
 
     fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
+    delegate_plotting = kw.pop('delegate_plotting', False)   # used in analysi
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
@@ -3955,7 +3967,8 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
     if analyze:
         ramsey_ana = tda.RamseyAnalysis(
             qb_names=qubit_names, options_dict=dict(
-                fit_gaussian_decay=fit_gaussian_decay))
+                fit_gaussian_decay=fit_gaussian_decay,
+                delegate_plotting=delegate_plotting))
         if update:
             for qb in qubits:
                 new_qubit_freq = ramsey_ana.proc_data_dict[
@@ -4058,6 +4071,7 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
+    delegate_plotting = kw.pop('delegate_plotting', False) # used in analysis
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
@@ -4081,7 +4095,10 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
 
     # Analyze this measurement
     if analyze:
-        qscale_ana = tda.QScaleAnalysis(qb_names=qubit_names)
+        qscale_ana = tda.QScaleAnalysis(qb_names=qubit_names,
+                                        options_dict=dict(
+                                            delegate_plotting=delegate_plotting
+                                        ))
         if update:
             for qb in qubits:
                 qscale = qscale_ana.proc_data_dict['analysis_params_dict'][
@@ -4176,6 +4193,7 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
+    delegate_plotting = kw.pop('delegate_plotting', False) # used in analysis
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
@@ -4199,7 +4217,9 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
 
     # Analyze this measurement
     if analyze:
-        t1_ana = tda.T1Analysis(qb_names=qubit_names)
+        t1_ana = tda.T1Analysis(qb_names=qubit_names,
+                                options_dict=dict(
+                                    delegate_plotting=delegate_plotting))
         if update:
             for qb in qubits:
                 T1 = t1_ana.proc_data_dict['analysis_params_dict'][
@@ -4297,6 +4317,8 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
     MC.set_sweep_points(sp)
 
     fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
+    delegate_plotting = kw.pop('delegate_plotting', False) # used in analysis
+
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
@@ -4323,7 +4345,8 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
         echo_ana = tda.EchoAnalysis(
             qb_names=qubit_names,
             options_dict={'artificial_detuning': artificial_detuning,
-                          'fit_gaussian_decay': fit_gaussian_decay})
+                          'fit_gaussian_decay': fit_gaussian_decay,
+                          'delegate_plotting': delegate_plotting})
         if update:
             for qb in qubits:
                 T2_echo = echo_ana.proc_data_dict[
