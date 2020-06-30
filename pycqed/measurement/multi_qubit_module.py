@@ -685,6 +685,10 @@ def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
                     # single channel
                     qb.acq_weights_I(weights.real)
                     qb.acq_weights_Q(weights.imag)
+                elif np.ndim(weights) == 2 and len(weights) == 1:
+                    # single channels
+                    qb.acq_weights_I(weights[0].real)
+                    qb.acq_weights_Q(weights[0].imag)
                 elif np.ndim(weights) == 2 and len(weights) == 2:
                     # two channels
                     qb.acq_weights_I(weights[0].real)
