@@ -39,6 +39,7 @@ class CalibBuilder(CircuitBuilder):
         self.cal_states = None
         self.ro_qubits = None
         self.ro_qb_names = None
+        self.exception = None
 
         self.classified = kw.pop('classified', False)
         self.label = kw.pop('label', None)
@@ -111,7 +112,7 @@ class CalibBuilder(CircuitBuilder):
         hard_sweep_func = awg_swf.SegmentHardSweep(
             sequence=self.sequences[0], upload=self.upload,
             parameter_name=list(self.sweep_points[0])[0],
-            unit=self.sweep_points.get_sweep_params_property('unit', 1))
+            unit=self.sweep_points.get_sweep_params_property('unit', 0))
 
         self.MC.set_sweep_function(hard_sweep_func)
         self.MC.set_sweep_points(self.mc_points[0])
@@ -122,7 +123,7 @@ class CalibBuilder(CircuitBuilder):
             self.MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
                 hard_sweep_func, self.sequences,
                 list(self.sweep_points[1])[0],
-                self.sweep_points.get_sweep_params_property('unit', 2),
+                self.sweep_points.get_sweep_params_property('unit', 1),
                 channels_to_upload=self.channels_to_upload))
             self.MC.set_sweep_points_2D(self.mc_points[1])
 
@@ -316,7 +317,7 @@ class CalibBuilder(CircuitBuilder):
             sweep_points.add_sweep_dimension()
         if len(sweep_points[0]) > 0:
             nr_phases = len(sweep_points.get_sweep_params_property(
-                'values', 1)) // 2
+                'values', 0)) // 2
         else:
             nr_phases = kw.get('nr_phases', 6)
         hard_sweep_dict = SweepPoints()
@@ -404,7 +405,7 @@ class CPhase(CalibBuilder):
     def add_default_sweep_points(self, sweep_points, **kw):
         sweep_points = self.add_default_ramsey_sweep_points(sweep_points, **kw)
         nr_phases = len(sweep_points.get_sweep_params_property(
-            'values', 1)) // 2
+            'values', 0)) // 2
         hard_sweep_dict = SweepPoints(
             'pi_pulse_off', [0] * nr_phases + [1] * nr_phases)
         sweep_points.update(hard_sweep_dict + [{}])
@@ -620,7 +621,7 @@ class DynamicPhase(CalibBuilder):
     def add_default_sweep_points(self, sweep_points, **kw):
         sweep_points = self.add_default_ramsey_sweep_points(sweep_points, **kw)
         nr_phases = len(sweep_points.get_sweep_params_property(
-            'values', 1)) // 2
+            'values', 0)) // 2
         hard_sweep_dict = SweepPoints(
             'flux_pulse_off', [0] * nr_phases + [1] * nr_phases)
         sweep_points.update(hard_sweep_dict + [{}])

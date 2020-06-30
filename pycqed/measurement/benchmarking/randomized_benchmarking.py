@@ -77,9 +77,9 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             # Check if we can apply identical pulses on all qubits in task_list
             # Can only do this if they have identical cliffords array
             one_clf_set = self.task_list[0][
-                'sweep_points'].get_sweep_params_property('values', 2)
+                'sweep_points'].get_sweep_params_property('values', 1)
             unique_clf_sets = np.unique([
-                task['sweep_points'].get_sweep_params_property('values', 2)
+                task['sweep_points'].get_sweep_params_property('values', 1)
                 for task in self.task_list])
             if len(unique_clf_sets) != len(one_clf_set):
                 self.identical_pulses = False
@@ -188,9 +188,9 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         pp = ProcessingPipeline()
         for task in self.task_list:
             cliffords = task['sweep_points'].get_sweep_params_property(
-                'values', 2)
-            seeds = task['sweep_points'].get_sweep_params_property(
                 'values', 1)
+            seeds = task['sweep_points'].get_sweep_params_property(
+                'values', 0)
             if not self.classified:
                 pp.add_node('rotate_iq', keys_in='raw',
                             meas_obj_names=task['qubit_to_measure'],
