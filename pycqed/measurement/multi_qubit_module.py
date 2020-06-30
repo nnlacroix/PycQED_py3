@@ -518,7 +518,8 @@ def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
     # prepare measurement
     for qb in qubits:
         qb.prepare(drive='timedomain')
-    label = f"SSRO_calibration_{states}_{qb_names}" if label is None else label
+    label = f"SSRO_calibration_{states}{get_multi_qubit_msmt_suffix(qubits)}" if \
+        label is None else label
     channel_map = {qb.name: [vn + ' ' + qb.instr_uhf()
                              for vn in qb.int_log_det.value_names]
                    for qb in qubits}
@@ -684,6 +685,10 @@ def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
                     # single channel
                     qb.acq_weights_I(weights.real)
                     qb.acq_weights_Q(weights.imag)
+                elif np.ndim(weights) == 2 and len(weights) == 1:
+                    # single channels
+                    qb.acq_weights_I(weights[0].real)
+                    qb.acq_weights_Q(weights[0].imag)
                 elif np.ndim(weights) == 2 and len(weights) == 2:
                     # two channels
                     qb.acq_weights_I(weights[0].real)
@@ -2663,10 +2668,6 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                            reset_phases_before_measurement=True,
                            extract_only=False, simultaneous=False,
                            prepend_pulse_dicts=None, **kw):
-    if isinstance(qbc, str):
-        qbc = dev.get_qb(qbc)
-    if isinstance(qbt, str):
-        qbt = dev.get_qb(qbt)
 
     """
     Function to calibrate the dynamic phases for a CZ gate.
@@ -2709,6 +2710,11 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
     :param kw: keyword arguments
 
     """
+    if isinstance(qbc, str):
+        qbc = dev.get_qb(qbc)
+    if isinstance(qbt, str):
+        qbt = dev.get_qb(qbt)
+
     if qubits_to_measure is None:
         qubits_to_measure = [qbc, qbt]
     if hard_sweep_params is None:
