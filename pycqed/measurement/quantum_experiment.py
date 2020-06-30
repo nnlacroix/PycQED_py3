@@ -125,7 +125,7 @@ class QuantumExperiment(CircuitBuilder):
         self.sequence_function = sequence_function
         self.sequence_kwargs = {} if sequence_kwargs is None else sequence_kwargs
         self.sweep_points = self.sequence_kwargs.get("sweep_points", None)
-        self.mc_points = mc_points if mc_points is not None else ([], [])
+        self.mc_points = mc_points if mc_points is not None else [[], []]
         self.sweep_functions = sweep_functions
         self.force_2D_sweep = force_2D_sweep
         self.compression_seg_lim = compression_seg_lim
