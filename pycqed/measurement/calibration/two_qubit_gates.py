@@ -225,6 +225,8 @@ class CalibBuilder(CircuitBuilder):
         :return: see sweep_n_dim
         """
         global_sweep_points = SweepPoints(from_dict_list=sweep_points)
+        if len(global_sweep_points) == 1:
+            global_sweep_points.add_sweep_dimension()
         parallel_blocks = []
         for task in task_list:
             task = self.preprocess_task(task, global_sweep_points, sweep_points)
