@@ -1727,12 +1727,10 @@ class QuDev_transmon(Qubit):
             MC.run(name='drive_carrier_calibration' + self.msmt_suffix,
                 mode='adaptive')
 
+        a = ma.OptimizationAnalysis(label='drive_carrier_calibration')
         if plot:
-            a = ma.OptimizationAnalysis(label='drive_carrier_calibration')
             # v2 creates a pretty picture of the optimizations
             ma.OptimizationAnalysis_v2(label='drive_carrier_calibration')
-        else:
-            a = ma.OptimizationAnalysis(label='drive_carrier_calibration', )
 
         ch_1_min = a.optimization_result[0][0]
         ch_2_min = a.optimization_result[0][1]

@@ -535,7 +535,7 @@ class HDAWG8Pulsar:
         
         chids = [f'ch{i+1}{m}' for i in range(8) for m in ['','m']]
         divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
-
+        
         waves_to_upload = {h: divisor[chid]*waveforms[h][::divisor[chid]]
                                for codewords in awg_sequence.values() 
                                    if codewords is not None 
@@ -1354,21 +1354,18 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
     def _zi_playback_string(self, name, device, wave, acq=False, codeword=False):
         playback_string = []
         w1, w2 = self._zi_waves_to_wavenames(wave)
-        if not codeword:
+        if (not codeword) and (not acq):
             if w1 is None and w2 is not None:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
-                if not acq:
-                    playback_string.append(
-                        f'prefetch(marker(1,0)*0*{w2}, {w2});')
+                playback_string.append(f'prefetch(marker(1,0)*0*{w2}, {w2});')
             elif w1 is not None and w2 is None:
-                if not acq:
-                    playback_string.append(
-                        f'prefetch({w1}, marker(1,0)*0*{w1});')
+                # This hack is needed due to a bug on the HDAWG.
+                # Remove this if case once the bug is fixed.
+                playback_string.append(f'prefetch({w1}, marker(1,0)*0*{w1});')
             elif w1 is not None or w2 is not None:
-                if not acq:
-                    playback_string.append('prefetch({});'.format(', '.join(
-                        [wn for wn in [w1, w2] if wn is not None])))
+                playback_string.append('prefetch({});'.format(', '.join(
+                    [wn for wn in [w1, w2] if wn is not None])))
 
         trig_source = self.get('{}_trigger_source'.format(name))
         if trig_source == 'Dig1':
@@ -1391,13 +1388,11 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             if w1 is None and w2 is not None:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
-                playback_string.append(
-                    f'playWave(marker(1,0)*0*{w2}, {w2});')
+                playback_string.append(f'playWave(marker(1,0)*0*{w2}, {w2});')
             elif w1 is not None and w2 is None:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
-                playback_string.append(
-                    f'playWave({w1}, marker(1,0)*0*{w1});')
+                playback_string.append(f'playWave({w1}, marker(1,0)*0*{w1});')
             elif w1 is not None or w2 is not None:
                 playback_string.append('playWave({});'.format(
                     _zi_wavename_pair_to_argument(w1, w2)))
