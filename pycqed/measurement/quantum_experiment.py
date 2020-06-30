@@ -137,9 +137,9 @@ class QuantumExperiment(CircuitBuilder):
                              'thresholded': True,
                              'averaged': True}
         self.df_kwargs = default_df_kwargs if df_kwargs is None else df_kwargs
-        if df_name is None:
+        if df_name is not None:
             self.df_name = df_name
-        if self.df_name is None:
+        else:
             self.df_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
 
         self.exp_metadata.update(kw)
@@ -387,7 +387,7 @@ class QuantumExperiment(CircuitBuilder):
 
         # Configure detector function
         df = get_multiplexed_readout_detector_functions(
-            self.ro_qubits, **self.df_kwargs)[self.df_name]
+            self.ro_qubits, det_get_values_kws=self.df_kwargs)[self.df_name]
         self.MC.set_detector_function(df)
 
         if len(self.mc_points[1]) > 0:
