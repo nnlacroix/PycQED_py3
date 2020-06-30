@@ -3641,11 +3641,8 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
     :param kw: keyword arguments. Are used in
         get_multiplexed_readout_detector_functions
     """
-    if all([isinstance(qb, str) for qb in qubits]):
-        qubit_names = qubits
-        qubits = [dev.get_qb(qb) for qb in qubits]
-    else:
-        qubit_names = [qb.name for qb in qubits]
+    qubits = dev.get_qubits(qubits)
+    qubit_names = [qb.name for qb in qubits]
 
     MC = dev.instr_mc.get_instr()
 
@@ -3761,11 +3758,8 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
     :param kw: keyword arguments. Are used in
         get_multiplexed_readout_detector_functions
     """
-    if all([isinstance(qb, str) for qb in qubits]):
-        qubit_names = qubits
-        qubits = [dev.get_qb(qb) for qb in qubits]
-    else:
-        qubit_names = [qb.name for qb in qubits]
+    qubits = dev.get_qubits(qubits)
+    qubit_names = [qb.name for qb in qubits]
 
     MC = dev.instr_mc.get_instr()
 
@@ -3884,11 +3878,8 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
     :param kw: keyword arguments. Are used in
         get_multiplexed_readout_detector_functions
     """
-    if all([isinstance(qb, str) for qb in qubits]):
-        qubit_names = qubits
-        qubits = [dev.get_qb(qb) for qb in qubits]
-    else:
-        qubit_names = [qb.name for qb in qubits]
+    qubits = dev.get_qubits(qubits)
+    qubit_names = [qb.name for qb in qubits]
 
     MC = dev.instr_mc.get_instr()
 
@@ -3997,11 +3988,8 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
     :param kw: keyword arguments. Are used in
         get_multiplexed_readout_detector_functions
     """
-    if all([isinstance(qb, str) for qb in qubits]):
-        qubit_names = qubits
-        qubits = [dev.get_qb(qb) for qb in qubits]
-    else:
-        qubit_names = [qb.name for qb in qubits]
+    qubits = dev.get_qubits(qubits)
+    qubit_names = [qb.name for qb in qubits]
 
     MC = dev.instr_mc.get_instr()
 
@@ -4111,11 +4099,8 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
     :param kw: keyword arguments. Are used in
         get_multiplexed_readout_detector_functions
     """
-    if all([isinstance(qb, str) for qb in qubits]):
-        qubit_names = qubits
-        qubits = [dev.get_qb(qb) for qb in qubits]
-    else:
-        qubit_names = [qb.name for qb in qubits]
+    qubits = dev.get_qubits(qubits)
+    qubit_names = [qb.name for qb in qubits]
 
     MC = dev.instr_mc.get_instr()
 
