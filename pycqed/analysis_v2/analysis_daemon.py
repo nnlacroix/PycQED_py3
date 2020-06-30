@@ -47,6 +47,7 @@ class AnalysisDaemon:
         except ValueError as e:
             return  # could not find any timestamps matching criteria
         log.info(f"Searching jobs in: {timestamps[0]} ... {timestamps[-1]}.")
+        found_jobs = False
         for folder, ts in zip(folders, timestamps):
             jobs_in_folder = []
             for file in os.listdir(folder):
@@ -54,8 +55,7 @@ class AnalysisDaemon:
                     jobs_in_folder.append(os.path.join(folder, file))
             if len(jobs_in_folder) > 0:
                 log.info(f"Found {len(jobs_in_folder)} job(s) in {ts}")
-            else:
-                log.info(f"No job found.")
+                found_jobs = True
 
             for filename in jobs_in_folder:
                 if os.path.isfile(filename):
@@ -71,6 +71,8 @@ class AnalysisDaemon:
                         new_errors = self.errs[errl:]
                         self.write_to_job(filename + '.failed', new_errors)
                     self.last_ts = ts
+        if not found_jobs:
+            log.info(f"No new job found.")
 
     def read_job(self, filename):
         job_file = open(filename, 'r')
