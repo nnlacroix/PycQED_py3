@@ -10,7 +10,32 @@ log.setLevel(logging.INFO)
 from pycqed.analysis import analysis_toolbox as a_tools
 
 class AnalysisDaemon:
-    def __init__(self, t_start=None, start=True):
+    """
+    AnalysisDaemon is a class that allow to process analysis in a
+    separate python kernel to allow measurements to run in parallel
+    to the analysis.
+    The Daemon can either be started:
+     - in a separate ipython notebook using: `AnalysisDaemon(start=True)`.
+       Note that the a_tools.datadir should be set before calling the daemon
+       or passed with the watchdir argument
+     - via the commandline by calling `analysis_daemon.py` with possible
+       additional arguments (see `analysis_daemon.py --help`)
+     - with the start_analysis_daemon.bat script located in pycqedscripts/scripts
+       (Windows only)
+
+    """
+
+    def __init__(self, t_start=None, start=True, watchdir=None):
+        """
+        Initialize AnalysisDaemon
+        Args:
+            t_start (str): timestamp from which to start observing the data
+                directory. If None, defaults to now.
+            start (bool): whether or not to start the daemon
+            watchdir (str): directory which the Daemon should look at.
+                Defaults to analusis_toolbox.datadir.
+
+        """
         self.t_start = t_start
         self.last_ts = None
         self.poll_interval = 10  # seconds
@@ -20,6 +45,11 @@ class AnalysisDaemon:
             self.start()
 
     def start(self):
+        """
+        Starts the AnalysisDaemon
+        Returns:
+
+        """
         self.last_ts = a_tools.latest_data(older_than=self.t_start,
                                            return_path=False,
                                            return_timestamp=True, n_matches=1)[0]
@@ -39,6 +69,11 @@ class AnalysisDaemon:
             self.run()
 
     def check_job(self):
+        """
+        Checks whether new jobs have been found and processes them
+        Returns:
+
+        """
         try:
             timestamps, folders = a_tools.latest_data(newer_than=self.last_ts,
                                                       raise_exc=False,
