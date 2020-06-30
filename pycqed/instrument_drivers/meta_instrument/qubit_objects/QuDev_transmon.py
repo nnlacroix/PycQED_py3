@@ -1688,7 +1688,7 @@ class QuDev_transmon(Qubit):
     def calibrate_drive_mixer_carrier(self, update=True, x0=(0., 0.),
                                       initial_stepsize=0.01, trigger_sep=5e-6,
                                       no_improv_break=50, upload=True,
-                                      plot=True):
+                                      plot=True, sideband=1):
         MC = self.instr_mc.get_instr()
         ad_func_pars = {'adaptive_function': opti.nelder_mead,
                         'x0': x0,
@@ -1713,11 +1713,14 @@ class QuDev_transmon(Qubit):
                             )]])
 
         with temporary_value(
-            (self.ro_freq, self.ge_freq() - self.ge_mod_freq()),
+            (self.ge_mod_freq, sideband*self.ge_mod_freq()),
             (self.acq_weights_type, 'SSB'),
             (self.instr_trigger.get_instr().pulse_period, trigger_sep),
         ):
             self.prepare(drive='timedomain')
+            ro_lo = self.instr_ro_lo.get_instr()
+            ro_lo.frequency(self.ge_freq() - self.ge_mod_freq()/sideband),
+
             MC.set_detector_function(det.IndexDetector(
                 self.int_avg_det_spec, 0))
             self.instr_pulsar.get_instr().start(exclude=[self.instr_uhf()])

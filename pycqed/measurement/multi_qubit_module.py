@@ -1204,11 +1204,11 @@ def measure_tomography(dev, qubits, prep_sequence, state_name,
     MC.soft_avg(1)
     MC.set_sweep_function(sf)
     MC.set_sweep_points(np.arange(n_segments))
-    MC.set_sweep_function_2D(swf.None_Sweep())
-    MC.set_sweep_points_2D(np.arange(nreps))
+    # MC.set_sweep_function_2D(swf.None_Sweep())
+    # MC.set_sweep_points_2D(np.arange(nreps))
     MC.set_detector_function(df)
     if run:
-        MC.run_2D(label, exp_metadata=exp_metadata)
+        MC.run(label, exp_metadata=exp_metadata)
 
 
 def measure_two_qubit_randomized_benchmarking(
@@ -2831,6 +2831,7 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
     else:
         old_dyn_phases = deepcopy(basis_rot_par())
 
+    print(old_dyn_phases)
     # check whether qubits are connected
     dev.check_connection(qbc, qbt)
 

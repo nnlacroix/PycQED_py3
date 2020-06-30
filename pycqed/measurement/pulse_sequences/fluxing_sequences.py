@@ -198,6 +198,9 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
         params_to_set = ['dv_dphi']
     elif 'amplitude' in flux_pulse and 'amplitude2' in flux_pulse:
         params_to_set = ['amplitude', 'amplitude2']
+        if 'trans_amplitude' in flux_pulse and 'trans_amplitude2' in flux_pulse:
+            params_to_set += ['trans_amplitude', 'trans_amplitude2',
+                              'amplitude_offset', 'amplitude_offset2']
     else:
         raise ValueError('Unknown flux pulse amplitude control parameter. '
                          'Cannot do measurement without flux pulse.')
