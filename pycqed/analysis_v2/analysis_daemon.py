@@ -41,6 +41,8 @@ class AnalysisDaemon:
         self.poll_interval = 10  # seconds
         self.errs = []
         self.job_errs = []
+        if watchdir is not None:
+            a_tools.datadir = watchdir
         if start:
             self.start()
 
