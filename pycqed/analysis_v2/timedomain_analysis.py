@@ -218,9 +218,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     def extract_data(self):
         super().extract_data()
 
-        self.channel_map = self.get_param_value('meas_obj_value_names_map',
-                                                default_value=dict())
-        if len(self.channel_map) == 0:
+        self.channel_map = self.get_param_value('meas_obj_value_names_map')
+        if self.channel_map is None:
+            # if the new name meas_obj_value_names_map is not found, try with
+            # the old name channel_map
             self.channel_map = self.get_param_value('channel_map')
             if self.channel_map is None:
                 value_names = self.raw_data_dict['value_names']
@@ -460,7 +461,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     def get_cal_data_points(self):
         if len(self.cal_states_rotations) == 0:
-            # this is the case for PCA analysis (no cal points). To use:
+            # "To use PCA (no cal states rotation), the measurement function
+            # has to specify the following in the metadata:
             # - CalibrationPoints with qubit names but empty states
             # - cal_states_rotations = {}
             # - rotate = True
@@ -509,10 +511,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             {qbn: '' for qbn in self.qb_names})
         for qbn in self.qb_names:
             cal_states_dict = self.cal_states_dict_for_rotation[qbn]
-            if len(cal_states_dict) > 3:
+            if len(cal_states_dict) not in [0, 2, 3]:
                 raise NotImplementedError('Calibration states rotation is '
-                                          'currently only implemented for 2 '
-                                          'or 3 cal states per qubit.')
+                                          'currently only implemented for 0, '
+                                          '2, or 3 cal states per qubit.')
 
             if self.get_param_value('TwoD', default_value=False):
                 if len(cal_states_dict) == 3:
@@ -761,6 +763,29 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                 cal_one_points=cal_one_points)
         return rotated_data_dict
 
+    def get_xaxis_label_unit(self, qb_name):
+        # get xunit and label: temporarily with try catch for old
+        # sequences which do not have unit and label in meta data
+        hard_sweep_params = self.get_param_value('hard_sweep_params')
+        sweep_name = self.get_param_value('sweep_name')
+        sweep_unit = self.get_param_value('sweep_unit')
+        if self.sp is not None:
+            _, xunit, xlabel = self.sp.get_sweep_params_description(
+                param_names=self.mospm[qb_name], dimension=1)[0]
+        elif hard_sweep_params is not None:
+            xlabel = list(hard_sweep_params)[0]
+            xunit = list(hard_sweep_params.values())[0][
+                'unit']
+        elif (sweep_name is not None) and (sweep_unit is not None):
+            xlabel = sweep_name
+            xunit = sweep_unit
+        else:
+            xlabel = self.raw_data_dict['sweep_parameter_names']
+            xunit = self.raw_data_dict['sweep_parameter_units']
+        if np.ndim(xunit) > 0:
+            xunit = xunit[0]
+        return xlabel, xunit
+
     @staticmethod
     def get_cal_state_color(cal_state_label):
         if cal_state_label == 'g' or cal_state_label == r'$|g\rangle$':
@@ -854,26 +879,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                          self.raw_data_dict['measurementstring'] +
                          '\nRaw data ' + suffix + ' ' + qb_name)
             plot_name = 'raw_plot_' + qb_name + suffix
-            # get xunit and label: temporarily with try catch for old
-            # sequences which do not have unit and label in meta data
-            hard_sweep_params = self.get_param_value('hard_sweep_params')
-            sweep_name = self.get_param_value('sweep_name')
-            sweep_unit = self.get_param_value('sweep_unit')
-            if self.sp is not None:
-                _, xunit, xlabel = self.sp.get_sweep_params_description(
-                    param_names=self.mospm[qb_name], dimension=1)[0]
-            elif hard_sweep_params is not None:
-                xlabel = list(hard_sweep_params)[0]
-                xunit = list(hard_sweep_params.values())[0][
-                    'unit']
-            elif (sweep_name is not None) and (sweep_unit is not None):
-                xlabel = sweep_name
-                xunit = sweep_unit
-            else:
-                xlabel = self.raw_data_dict['sweep_parameter_names']
-                xunit = self.raw_data_dict['sweep_parameter_units']
-            if np.ndim(xunit) > 0:
-                xunit = xunit[0]
+            xlabel, xunit = self.get_xaxis_label_unit(qb_name)
+
             for ax_id, ro_channel in enumerate(raw_data_dict):
                 if self.get_param_value('TwoD', default_value=False):
                     if self.sp is None:
@@ -988,25 +995,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             title += '\n' + title_suffix
 
         plot_dict_name = fig_name + '_' + plot_name_suffix
-        # get x info (try for old sequences which do not have info in meta
-        hard_sweep_params = self.get_param_value('hard_sweep_params')
-        sweep_name = self.get_param_value('sweep_name')
-        sweep_unit = self.get_param_value('sweep_unit')
-        if self.sp is not None:
-            _, xunit, xlabel = self.sp.get_sweep_params_description(
-                param_names=self.mospm[qb_name], dimension=1)[0]
-        elif hard_sweep_params is not None:
-            xlabel = list(hard_sweep_params)[0]
-            xunit = list(hard_sweep_params.values())[0][
-                'unit']
-        elif (sweep_name is not None) and (sweep_unit is not None):
-            xlabel = sweep_name
-            xunit = sweep_unit
-        else:
-            xlabel = self.raw_data_dict['sweep_parameter_names']
-            xunit = self.raw_data_dict['sweep_parameter_units']
-        if np.ndim(xunit) > 0:
-            xunit = xunit[0]
+        xlabel, xunit = self.get_xaxis_label_unit(qb_name)
 
         if self.get_param_value('TwoD', default_value=False):
             if self.sp is None:
@@ -4393,34 +4382,12 @@ class RamseyAnalysis(MultiQubit_TimeDomain_Analysis):
                 textstr = ''
                 T2_star_str = ''
 
-                # get x info (try for old sequences which do not have info in meta
-                hard_sweep_params = self.get_param_value('hard_sweep_params')
-                sweep_name = self.get_param_value('sweep_name')
-                sweep_unit = self.get_param_value('sweep_unit')
-                if self.sp is not None:
-                    _, xunit, xlabel = self.sp.get_sweep_params_description(
-                        param_names=self.mospm[qbn], dimension=1)[0]
-                elif hard_sweep_params is not None:
-                    xlabel = list(hard_sweep_params)[0]
-                    xunit = list(hard_sweep_params.values())[0][
-                        'unit']
-                elif (sweep_name is not None) and (sweep_unit is not None):
-                    xlabel = sweep_name
-                    xunit = sweep_unit
-                else:
-                    xlabel = self.raw_data_dict['sweep_parameter_names']
-                    xunit = self.raw_data_dict['sweep_parameter_units']
-                if np.ndim(xunit) > 0:
-                    xunit = xunit[0]
-
                 for i, key in enumerate([k + qbn for k in self.fit_keys]):
 
                     fit_res = self.fit_dicts[key]['fit_res']
                     self.plot_dicts['fit_' + key] = {
                         'fig_id': base_plot_name,
                         'plotfn': self.plot_fit,
-                        'xlabel': xlabel,
-                        'xunit': xunit,
                         'fit_res': fit_res,
                         'setlabel': 'exp decay fit' if i == 0 else
                             'gauss decay fit',
@@ -4627,26 +4594,7 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                     plot_name = base_plot_name
                 else:
                     plot_name = 'data' + msmt_label + '_' + qbn
-
-                # get x info (try for old sequences which do not have info in meta
-                hard_sweep_params = self.get_param_value('hard_sweep_params')
-                sweep_name = self.get_param_value('sweep_name')
-                sweep_unit = self.get_param_value('sweep_unit')
-                if self.sp is not None:
-                    _, xunit, xlabel = self.sp.get_sweep_params_description(
-                        param_names=self.mospm[qbn], dimension=1)[0]
-                elif hard_sweep_params is not None:
-                    xlabel = list(hard_sweep_params)[0]
-                    xunit = list(hard_sweep_params.values())[0][
-                        'unit']
-                elif (sweep_name is not None) and (sweep_unit is not None):
-                    xlabel = sweep_name
-                    xunit = sweep_unit
-                else:
-                    xlabel = self.raw_data_dict['sweep_parameter_names']
-                    xunit = self.raw_data_dict['sweep_parameter_units']
-                if np.ndim(xunit) > 0:
-                    xunit = xunit[0]
+                xlabel, xunit = self.get_xaxis_label_unit(qbn)
                 self.plot_dicts[plot_name] = {
                     'plotfn': self.plot_line,
                     'xvals': sweep_points,

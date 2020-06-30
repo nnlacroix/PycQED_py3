@@ -32,6 +32,11 @@ def get_hdf_param_value(group, param_name):
 
 
 def get_value_names_from_timestamp(timestamp):
+    """
+    Returns value_names from the HDF5 file specified by timestamp.
+    :param timestamp: (str) measurement timestamp of form YYYYMMDD_hhmmsss
+    :return: list of value_names
+    """
     folder = a_tools.get_folder(timestamp)
     h5filepath = a_tools.measurement_filename(folder)
     data_file = h5py.File(h5filepath, 'r+')
@@ -45,16 +50,31 @@ def get_value_names_from_timestamp(timestamp):
         raise e
 
 
-def get_param_from_metadata_group(param_name, timestamp=None, data_file=None,
-                                  close_file=True):
+def get_param_from_metadata_group(timestamp=None, param_name=None,
+                                  data_file=None, close_file=True):
+    """
+    Get a parameter with param_name from the Experimental Metadata group in
+    the HDF5 file specified by timestamp, or return the whole group if
+    param_name is None.
+    :param timestamp: (str) measurement timestamp of form YYYYMMDD_hhmmsss
+    :param param_name: (str) name of a key in Experimental Metadata group
+    :param data_file: (HDF file) opened HDF5 file
+    :param close_file: (bool) whether to close the HDF5 file
+    :return: the value of the param_name or the whole experimental metadata
+    dictionary
+    """
     if data_file is None:
         if timestamp is None:
             raise ValueError('Please provide either timestamp or data_file.')
         folder = a_tools.get_folder(timestamp)
         h5filepath = a_tools.measurement_filename(folder)
         data_file = h5py.File(h5filepath, 'r+')
-    group = data_file['Experimental Data']['Experimental Metadata']
 
+    if param_name is None:
+        group = data_file['Experimental Data']
+        return read_dict_from_hdf5({}, group['Experimental Metadata'])
+
+    group = data_file['Experimental Data']['Experimental Metadata']
     if param_name in group:
         group = group[param_name]
         param_value = OrderedDict()
@@ -70,6 +90,14 @@ def get_param_from_metadata_group(param_name, timestamp=None, data_file=None,
 
 def get_data_from_hdf_file(timestamp=None, data_file=None,
                            close_file=True):
+    """
+    Return the measurement data stored in Experimental Data group of the file
+    specified by timestamp.
+    :param timestamp: (str) measurement timestamp of form YYYYMMDD_hhmmsss
+    :param data_file: (HDF file) opened HDF5 file
+    :param close_file: (bool) whether to close the HDF5 file
+    :return: numpy array with measurement data
+    """
     if data_file is None:
         if timestamp is None:
             raise ValueError('Please provide either timestamp or data_file.')
@@ -87,10 +115,17 @@ def get_data_from_hdf_file(timestamp=None, data_file=None,
     return dataset
 
 
-def get_data_file_from_timestamp(timestamp):
+def open_data_file_from_timestamp(timestamp, mode='r+'):
+    """
+    Return the opened HDF5 file specified by timestamp.
+    ! File is not closed !
+    :param timestamp: (str) measurement timestamp of form YYYYMMDD_hhmmsss
+    :param mode: (str) in what mode to open the file
+    :return: open HDF5 file
+    """
     folder = a_tools.get_folder(timestamp)
     h5filepath = a_tools.measurement_filename(folder)
-    data_file = h5py.File(h5filepath, 'r+')
+    data_file = h5py.File(h5filepath, mode)
     return data_file
 
 
