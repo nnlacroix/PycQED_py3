@@ -125,7 +125,7 @@ class QuantumExperiment(CircuitBuilder):
         self.sequence_function = sequence_function
         self.sequence_kwargs = {} if sequence_kwargs is None else sequence_kwargs
         self.sweep_points = self.sequence_kwargs.get("sweep_points", None)
-        self.mc_points = mc_points if mc_points is not None else ([], [])
+        self.mc_points = mc_points if mc_points is not None else [[], []]
         self.sweep_functions = sweep_functions
         self.force_2D_sweep = force_2D_sweep
         self.compression_seg_lim = compression_seg_lim
@@ -137,9 +137,9 @@ class QuantumExperiment(CircuitBuilder):
                              'thresholded': True,
                              'averaged': True}
         self.df_kwargs = default_df_kwargs if df_kwargs is None else df_kwargs
-        if df_name is None:
+        if df_name is not None:
             self.df_name = df_name
-        if self.df_name is None:
+        else:
             self.df_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
 
         self.exp_metadata.update(kw)
@@ -393,7 +393,7 @@ class QuantumExperiment(CircuitBuilder):
 
         # Configure detector function
         df = get_multiplexed_readout_detector_functions(
-            self.ro_qubits, **self.df_kwargs)[self.df_name]
+            self.ro_qubits, det_get_values_kws=self.df_kwargs)[self.df_name]
         self.MC.set_detector_function(df)
 
         if len(self.mc_points[1]) > 0:
