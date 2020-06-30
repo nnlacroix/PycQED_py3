@@ -4506,6 +4506,7 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def prepare_fitting(self):
         self.fit_dicts = OrderedDict()
+
         for qbn in self.qb_names:
             for msmt_label in ['_xx', '_xy', '_xmy']:
                 sweep_points = self.proc_data_dict['qscale_data'][qbn][
@@ -4514,11 +4515,17 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                     'data' + msmt_label]
 
                 if msmt_label == '_xx':
-                    model = lmfit.models.ConstantModel()
+                    model = lmfit.Model(lambda x, c: c)
+                    guess_pars = model.make_params(c=np.mean(data))
                 else:
-                    model = lmfit.models.LinearModel()
+                    model = lmfit.Model(lambda x, slope, intercept:
+                                        slope*x+intercept)
+                    slope = (data[-1] - data[0]) / \
+                            (sweep_points[-1] - sweep_points[0])
+                    intercept = data[-1] - slope*sweep_points[-1]
+                    guess_pars = model.make_params(slope=slope,
+                                                   intercept=intercept)
 
-                guess_pars = model.guess(data=data, x=sweep_points)
                 key = 'fit' + msmt_label + '_' + qbn
                 self.fit_dicts[key] = {
                     'fit_fn': model.func,
