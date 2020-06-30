@@ -53,10 +53,7 @@ class T1FrequencySweep(CalibBuilder):
                     raise ValueError('Please provide either "sweep_points" '
                                      'and "qubits," or "task_list" containing '
                                      'this information.')
-                task_list = [{'qubits_to_measure': qb.name,
-                              'sweep_points': sweep_points} for qb in qubits]
-                # remove sweep_points since they are in the tasks now
-                sweep_points = None
+                task_list = [{'qubits_to_measure': qb.name} for qb in qubits]
 
             super().__init__(task_list, qubits=qubits, **kw)
 

@@ -60,10 +60,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
                     raise ValueError('Please provide either "sweep_points" '
                                      'and "qubits," or "task_list" containing '
                                      'this information.')
-                task_list = [{'qubit_to_measure': qb.name,
-                              'sweep_points': sweep_points} for qb in qubits]
-                # remove sweep_points since they are in the tasks now
-                sweep_points = None
+                task_list = [{'qubit_to_measure': qb.name} for qb in qubits]
 
             super().__init__(task_list, qubits=qubits, **kw)
 
@@ -77,9 +74,9 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             # Check if we can apply identical pulses on all qubits in task_list
             # Can only do this if they have identical cliffords array
             one_clf_set = self.task_list[0][
-                'sweep_points'].get_sweep_params_property('values', 2)
+                'sweep_points'].get_sweep_params_property('values', 1)
             unique_clf_sets = np.unique([
-                task['sweep_points'].get_sweep_params_property('values', 2)
+                task['sweep_points'].get_sweep_params_property('values', 1)
                 for task in self.task_list])
             if len(unique_clf_sets) != len(one_clf_set):
                 self.identical_pulses = False
@@ -140,7 +137,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             # all qubits have the same cliffords array
             current_sweep_points = SweepPoints(from_dict_list=sweep_points)
             current_sweep_points.update(
-                SweepPoints(from_dict_list=task_list[0]['sweep_points']))
+                SweepPoints(from_dict_list=self.task_list[0]['sweep_points']))
             clifford = current_sweep_points[1].get(['clifford'])[0][sp2d_idx]
             cl_seq = rb.randomized_benchmarking_sequence(
                 clifford, interleaved_gate=self.interleaved_gate)
@@ -188,9 +185,9 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         pp = ProcessingPipeline()
         for task in self.task_list:
             cliffords = task['sweep_points'].get_sweep_params_property(
-                'values', 2)
-            seeds = task['sweep_points'].get_sweep_params_property(
                 'values', 1)
+            seeds = task['sweep_points'].get_sweep_params_property(
+                'values', 0)
             if not self.classified:
                 pp.add_node('rotate_iq', keys_in='raw',
                             meas_obj_names=task['qubit_to_measure'],
