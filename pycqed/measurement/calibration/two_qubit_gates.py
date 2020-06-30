@@ -80,9 +80,9 @@ class CalibBuilder(CircuitBuilder):
     def get_meas_objs_from_task(self, task):
         return self.find_qubits_in_tasks(self.qb_names, [task])
 
-    def guess_label(self, **kw):
+    def guess_label(self, experiment_name='Experiment', **kw):
         if self.label is None:
-            self.label = 'Experiment'
+            self.label = experiment_name
             if self.dev is not None:
                 self.label += self.dev.get_msmt_suffix(self.ro_qb_names)
             else:
@@ -225,6 +225,8 @@ class CalibBuilder(CircuitBuilder):
         :return: see sweep_n_dim
         """
         global_sweep_points = SweepPoints(from_dict_list=sweep_points)
+        if len(global_sweep_points) == 1:
+            global_sweep_points.add_sweep_dimension()
         parallel_blocks = []
         for task in task_list:
             task = self.preprocess_task(task, global_sweep_points, sweep_points)
