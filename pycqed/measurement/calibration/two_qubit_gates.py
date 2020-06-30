@@ -80,9 +80,9 @@ class CalibBuilder(CircuitBuilder):
     def get_meas_objs_from_task(self, task):
         return self.find_qubits_in_tasks(self.qb_names, [task])
 
-    def guess_label(self, **kw):
+    def guess_label(self, experiment_name='Experiment', **kw):
         if self.label is None:
-            self.label = 'Experiment'
+            self.label = experiment_name
             if self.dev is not None:
                 self.label += self.dev.get_msmt_suffix(self.ro_qb_names)
             else:
