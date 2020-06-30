@@ -120,7 +120,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         if task_list is None:
             task_list = self.task_list
         for task in task_list:
-            sweep_points = task['sweep_points']
+            sweep_points = task.get('sweep_points', [{},{}])
             if len(sweep_points) == 1:
                 # it must be the 2nd sweep dimension, over cliffords
                 sweep_points = [{}, sweep_points[0]]
