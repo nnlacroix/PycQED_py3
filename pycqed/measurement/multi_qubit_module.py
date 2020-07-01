@@ -1279,8 +1279,7 @@ def measure_two_qubit_randomized_benchmarking(
         sequence=sequences[0], upload=upload,
         parameter_name='Nr. Cliffords', unit='')
     MC.set_sweep_function(hard_sweep_func)
-    MC.set_sweep_points(hard_sweep_points if classified else
-                        hard_sweep_points * max(qb.acq_shots() for qb in qubits))
+    MC.set_sweep_points(hard_sweep_points)
 
     MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
         hard_sweep_func, sequences, 'Nr. Seeds', ''))

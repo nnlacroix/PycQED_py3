@@ -348,13 +348,14 @@ class MeasurementControl(Instrument):
                         (1 + self.soft_iteration))
             self.dset[start_idx:stop_idx,
                       len(self.sweep_functions):] = new_vals
-        sweep_len = len(self.get_sweep_points().T)
+        sweep_len = len(self.get_sweep_points().T)*self.acq_data_len_scaling
 
         ######################
         # DATA STORING BLOCK #
         ######################
         if sweep_len == len_new_data:  # 1D sweep
-            self.dset[:, 0] = self.get_sweep_points().T
+            self.dset[:, 0] = np.tile(self.get_sweep_points().T,
+                                      self.acq_data_len_scaling)
         else:
             try:
                 if len(self.sweep_functions) != 1:
