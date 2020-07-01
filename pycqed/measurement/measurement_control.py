@@ -369,6 +369,10 @@ class MeasurementControl(Instrument):
             except Exception:
                 # There are some cases where the sweep points are not
                 # specified that you don't want to crash (e.g. on -off seq)
+                logging.warning('You are in the exception case in '
+                                'MC.measure_hard() DATA STORING BLOCK section. '
+                                'Something might have gone wrong with your '
+                                'measurement.')
                 pass
 
         self.check_keyboard_interrupt()
