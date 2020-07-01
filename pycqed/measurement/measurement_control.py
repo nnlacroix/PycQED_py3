@@ -2,6 +2,8 @@ import types
 import logging
 log = logging.getLogger(__name__)
 import time
+from copy import deepcopy
+
 import numpy as np
 from scipy.optimize import fmin_powell
 from pycqed.measurement import hdf5_data as h5d
@@ -117,6 +119,10 @@ class MeasurementControl(Instrument):
         self._persist_ylabs = None
         self._analysis_display = None
 
+        self.exp_metadata = None
+        self.plot_sweep_pts_x = None
+        self.plot_sweep_pts_y = None
+
     ##############################################
     # Functions used to control the measurements #
     ##############################################
@@ -186,6 +192,7 @@ class MeasurementControl(Instrument):
         with h5d.Data(name=self.get_measurement_name(),
                       datadir=self.datadir()) as self.data_object:
             if exp_metadata is not None:
+                self.exp_metadata = deepcopy(exp_metadata)
                 self.save_exp_metadata(exp_metadata, self.data_object)
             try:
                 self.check_keyboard_interrupt()
@@ -668,8 +675,27 @@ class MeasurementControl(Instrument):
         '''
         if self.live_plot_enabled():
             self.time_last_2Dplot_update = time.time()
-            n = len(self.sweep_pts_y)
-            m = len(self.sweep_pts_x)
+
+            # check if the sequences have been compressed
+            cf = self.exp_metadata.get("compression_factor", 1)
+            # reshape array and sweep points if needed
+            n = int(len(self.sweep_pts_y) * cf)
+            m = int(len(self.sweep_pts_x) / cf)
+            self.plot_sweep_pts_x = self.sweep_pts_x[:m]
+            try:
+                # assumes constant spacing between swp for plotting
+                step = np.abs(self.sweep_pts_y[-1] - self.sweep_pts_y[-2])
+            except IndexError:
+                # This fallback is used to have a step value in the same order
+                # of magnitude as the value of the single sweep point
+                step = np.abs(self.sweep_pts_y[0]) \
+                    if self.sweep_pts_y[0] != 0 else 1
+            if cf != 1:
+                # assumes equal spacing, use only if need to "uncompress" plot
+                self.plot_sweep_pts_y = np.arange(self.sweep_pts_y[0], n*step, step)
+            else:
+                self.plot_sweep_pts_y = self.sweep_pts_y
+
             self.TwoD_array = np.empty(
                 [n, m, len(self.detector_function.value_names)])
             self.TwoD_array[:] = np.NAN
@@ -680,8 +706,8 @@ class MeasurementControl(Instrument):
             zunits = self.detector_function.value_units
 
             for j in range(len(self.detector_function.value_names)):
-                self.secondary_QtPlot.add(x=self.sweep_pts_x,
-                                          y=self.sweep_pts_y,
+                self.secondary_QtPlot.add(x=self.plot_sweep_pts_x,
+                                          y=self.plot_sweep_pts_y,
                                           z=self.TwoD_array[:, :, j],
                                           xlabel=slabels[0], xunit=sunits[0],
                                           ylabel=slabels[1], yunit=sunits[1],
@@ -751,7 +777,7 @@ class MeasurementControl(Instrument):
                         self.time_last_ad_plot_update = time.time()
                         self.secondary_QtPlot.update_plot()
             except Exception as e:
-                logging.warning(e)
+                log.warning(e)
 
     def initialize_plot_monitor_adaptive_cma(self):
         '''
@@ -962,10 +988,19 @@ class MeasurementControl(Instrument):
             if self.live_plot_enabled():
                 i = int((self.iteration) % self.ylen)
                 y_ind = i
+                cf = self.exp_metadata.get('compression_factor', 1)
                 for j in range(len(self.detector_function.value_names)):
                     z_ind = len(self.sweep_functions) + j
-                    self.TwoD_array[y_ind, :, j] = self.dset[
+                    data_row = self.dset[
                         i*self.xlen:(i+1)*self.xlen, z_ind]
+                    if cf != 1:
+                        # reshape data according to compression factor
+                        data_reshaped = data_row.reshape((cf, int(len(data_row)/cf)))
+                        y_start = self.iteration*cf % self.TwoD_array.shape[0]
+                        y_end = y_start + cf
+                        self.TwoD_array[y_start:y_end, :, j] = data_reshaped
+                    else:
+                        self.TwoD_array[y_ind, :, j] = data_row
                     self.secondary_QtPlot.traces[j]['config']['z'] = \
                         self.TwoD_array[:, :, j]
 
