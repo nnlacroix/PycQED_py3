@@ -3707,7 +3707,7 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'qubit_names': qubit_names,
+    exp_metadata.update({'qb_names': qubit_names,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
@@ -3824,7 +3824,8 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'preparation_params': prep_params,
+    exp_metadata.update({'qb_names': qubit_names,
+                         'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'artificial_detuning': artificial_detuning,
@@ -3944,7 +3945,8 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'preparation_params': prep_params,
+    exp_metadata.update({'qb_names': qubit_names,
+                         'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
@@ -4055,7 +4057,8 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'preparation_params': prep_params,
+    exp_metadata.update({'qb_names': qubit_names,
+                         'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
@@ -4169,7 +4172,8 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'preparation_params': prep_params,
+    exp_metadata.update({'qb_names': qubit_names,
+                         'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
