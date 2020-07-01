@@ -1916,6 +1916,10 @@ def measure_drive_cancellation(
         operation_dict = dev.get_operation_dict()
 
         drive_op_code = driven_qubit.name + ' ' + pulse
+        # We get sweep_vals for only one dimension since drive_cancellation_seq
+        # turns 2D sweep points into 1D-SegmentHardSweep.
+        # FIXME: in the future, this should rather be implemented via
+        # sequence.compress_2D_sweep
         seq, sweep_vals = mqs.drive_cancellation_seq(
             drive_op_code, ramsey_qubit_names, operation_dict, sweep_points,
             n_pulses=n_pulses, prep_params=prep_params, cal_points=cp,
