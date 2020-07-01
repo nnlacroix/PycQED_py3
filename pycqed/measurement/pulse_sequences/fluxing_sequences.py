@@ -192,13 +192,11 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
     pulse_list += [flux_pulse] + ge_half_end + ro_pulses
     hsl = len(list(hard_sweep_dict.values())[0]['values'])
 
-    if 'amplitude' in flux_pulse and 'amplitude2' not in flux_pulse:
-        params_to_set = ['amplitude']
-    elif 'dv_dphi' in flux_pulse:
-        params_to_set = ['dv_dphi']
-    elif 'amplitude' in flux_pulse and 'amplitude2' in flux_pulse:
-        params_to_set = ['amplitude', 'amplitude2']
-    else:
+    params_to_set = [param 
+        for param in ['amplitude', 'amplitude2', 'dv_dphi', 'trans_amplitude', 
+            'trans_amplitude2', 'amplitude_offset', 'amplitude_offset2'] 
+        if param in flux_pulse]
+    if len(params_to_set) == 0:
         raise ValueError('Unknown flux pulse amplitude control parameter. '
                          'Cannot do measurement without flux pulse.')
 
@@ -351,7 +349,7 @@ def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
             nr_flux_buffer*flux_pulse.get('flux_buffer_length', 0) +
             nr_flux_buffer*flux_pulse.get('flux_buffer_length2', 0) +
             # applies to transition-controlled gate only
-            nr_flux_buffer*flux_pulse.get('trans_length', 0))
+            flux_pulse.get('trans_length', 0))
     ssl = len(list(soft_sweep_dict.values())[0]['values'])
     sequences = []
     for i in range(ssl):
@@ -842,7 +840,8 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
         # different times.
         nr_flux_buffer*flux_pulse.get('flux_buffer_length', 0) +
         nr_flux_buffer*flux_pulse.get('flux_buffer_length2', 0) +
-        nr_flux_buffer*flux_pulse.get('trans_length', 0))
+        # applies to NZTC gate only
+        flux_pulse.get('trans_length', 0))
     # # ensure the delay is commensurate with 16/2.4e9
     # comm_const = (16/2.4e9)
     # if delay % comm_const > 1e-15:
