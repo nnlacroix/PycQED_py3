@@ -1843,21 +1843,47 @@ def measure_measurement_induced_dephasing(qb_dephased, qb_targeted, phases, amps
 
 def measure_drive_cancellation(
         dev, driven_qubit, ramsey_qubits, sweep_points,
-        phases=np.linspace(0, 2*np.pi, 3, endpoint=False), n=1, pulse='X180',
+        phases=None, n_pulses=1, pulse='X180',
         n_cal_points_per_state=2, cal_states='auto', prep_params=None,
         exp_metadata=None, label=None, upload=True, analyze=True):
         """
-        Sweep pulse cancellation parameters and measure Ramsey on cancelled qubits.
-        The sweep point keys should be of the form `qb.param`, where `qb` is the
-        name of the qubit the cancellation if for and `param` is a parameter in
-        the pulses cancellation_params dict.
+        Sweep pulse cancellation parameters and measure Ramsey on qubits the
+        cancellation is for.
 
-        For example to sweep the amplitude of the cancellation pulse on qb1,
-        you could configure the sweep points as `SweepPoints('qb1.amplitude',
-        np.linspace(0, 1, 21))`.
+        Args:
+            dev: The Device object used for the measurement
+            driven_qubit: The qubit object corresponding to the desired
+                target of the pulse that is being cancelled.
+            ramsey_qubits: A list of qubit objects corresponding to the
+                undesired targets of the pulse that is being cancelled.
+            sweep_points: A SweepPoints object that describes the pulse
+                parameters to sweep. The sweep point keys should be of the form
+                `qb.param`, where `qb` is the name of the qubit the cancellation
+                is for and `param` is a parameter in the pulses
+                cancellation_params dict. For example to sweep the amplitude of
+                the cancellation pulse on qb1, you could configure the sweep
+                points as `SweepPoints('qb1.amplitude', np.linspace(0, 1, 21))`.
+            phases: An array of Ramsey phases in degrees.
+            n_pulses: Number of pulse repetitions done between the Ramsey
+                pulses. Useful for amplification of small errors. Defaults to 1.
+            pulse: Operation name (without qb name) that will be done between
+                the Ramsey pulses. Defaults to 'X180'.
+            n_cal_points_per_state: Number of calibration measurements per
+                calibration state. Defaults to 2.
+            cal_states:
+                List of qubit states to use for calibration. Defaults to 'auto'.
+            prep_params: Perparation parameters dictionary specifying the type
+                of state preparation.
+            exp_metadata: A dictionary of extra metadata to save with the
+                experiment.
+            label: Overwrite the default measuremnt label.
+            upload: Whether the experimental sequence should be uploaded.
+                Defaults to true.
+            analyze: Whether the analysis will be run. Defaults to True.
 
-        The second sweep dimension of sweep_points must be called 'phases'.
         """
+        if phases is None:
+            phases = np.linspace(0, 360, 3, endpoint=False)
 
         if isinstance(driven_qubit, str):
             driven_qubit = dev.get_qb(driven_qubit)
@@ -1889,12 +1915,14 @@ def measure_drive_cancellation(
             n_per_state=n_cal_points_per_state)
         operation_dict = dev.get_operation_dict()
 
+        drive_op_code = driven_qubit.name + ' ' + pulse
         seq, sweep_vals = mqs.drive_cancellation_seq(
-            driven_qubit.name, ramsey_qubit_names, operation_dict, sweep_points,
-            pulse=pulse, n=n, prep_params=prep_params, cal_points=cp,
+            drive_op_code, ramsey_qubit_names, operation_dict, sweep_points,
+            n_pulses=n_pulses, prep_params=prep_params, cal_points=cp,
             upload=False)
 
-        [seq.repeat_ro(f"RO {qbn}", operation_dict) for qbn in ramsey_qubit_names]
+        [seq.repeat_ro(f"RO {qbn}", operation_dict)
+         for qbn in ramsey_qubit_names]
 
         sweep_func = awg_swf.SegmentHardSweep(
                 sequence=seq, upload=upload,

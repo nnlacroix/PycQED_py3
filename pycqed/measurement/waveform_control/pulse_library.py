@@ -174,7 +174,8 @@ class SSB_DRAG_pulse_with_cancellation(SSB_DRAG_pulse):
                 iq_idx = [i, q].index(channel)
                 cpars = p
                 break
-        assert iq_idx != -1
+        if iq_idx == -1:
+            return np.zeros_like(tvals)
 
         half = self.nr_sigma * self.sigma / 2
         tc = self.algorithm_time() + half + cpars.get('delay', 0.0)
