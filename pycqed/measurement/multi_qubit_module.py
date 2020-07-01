@@ -2771,7 +2771,7 @@ def measure_arbitrary_phase(qbc, qbt, target_phases, phase_func, cz_pulse_name,
 
 
 def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
-                           qubits_to_measure=None,
+                           qubits_to_measure=None, nr_cz_gates=1,
                            analyze=True, upload=True, n_cal_points_per_state=1,
                            cal_states='auto', prep_params=None,
                            exp_metadata=None, classified=False, update=False,
@@ -2794,6 +2794,8 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                 'unit': 'deg'}
     :param qubits_to_measure: (list) list of QuDev_transmon objects to
         be measured
+    :param nr_cz_gates: (int) number of two-qubit gates to insert between
+        Ramsey pulses
     :param analyze: (bool) whether to do analysis
     :param upload: (bool) whether to upload to AWGs
     :param n_cal_points_per_state: (int) how many cal points per cal state
@@ -2877,7 +2879,7 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
                     hard_sweep_dict=hard_sweep_params,
                     operation_dict=dev.get_operation_dict(),
                     cz_pulse_name=cz_pulse_name + f' {qbc.name} {qbt.name}',
-                    cal_points=cp,
+                    cal_points=cp, nr_cz_gates=nr_cz_gates,
                     upload=False, prep_params=current_prep_params,
                     prepend_pulse_dicts=prepend_pulse_dicts)
 
