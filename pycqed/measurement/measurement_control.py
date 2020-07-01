@@ -1,5 +1,6 @@
 import types
 import logging
+log = logging.getLogger(__name__)
 import time
 import numpy as np
 from scipy.optimize import fmin_powell
@@ -415,9 +416,9 @@ class MeasurementControl(Instrument):
                         set_val = sweep_function.set_parameter(swp_pt)
                     except ValueError as e:
                         if self.cfg_clipping_mode():
-                            logging.warning(
+                            log.warning(
                                 'MC clipping mode caught exception:')
-                            logging.warning(e)
+                            log.warning(e)
                         else:
                             raise e
                 if isinstance(set_val, float):
@@ -656,7 +657,7 @@ class MeasurementControl(Instrument):
                     self._mon_upd_time = time.time()
                     self.main_QtPlot.update_plot()
             except Exception as e:
-                logging.warning(e)
+                log.warning(e)
 
     def initialize_plot_monitor_2D(self):
         '''
@@ -710,7 +711,7 @@ class MeasurementControl(Instrument):
                     self.time_last_2Dplot_update = time.time()
                     self.secondary_QtPlot.update_plot()
             except Exception as e:
-                logging.warning(e)
+                log.warning(e)
 
     def initialize_plot_monitor_adaptive(self):
         '''
@@ -949,7 +950,7 @@ class MeasurementControl(Instrument):
                     self.time_last_ad_plot_update = time.time()
 
             except Exception as e:
-                logging.warning(e)
+                log.warning(e)
 
     def update_plotmon_2D_hard(self):
         '''
@@ -974,7 +975,7 @@ class MeasurementControl(Instrument):
                     self.time_last_2Dplot_update = time.time()
                     self.secondary_QtPlot.update_plot()
         except Exception as e:
-            logging.warning(e)
+            log.warning(e)
 
     def _set_plotting_interval(self, plotting_interval):
         if hasattr(self, 'main_QtPlot'):
@@ -1164,7 +1165,7 @@ class MeasurementControl(Instrument):
         if data_object is None:
             data_object = self.data_object
         if not hasattr(self, 'station'):
-            logging.warning('No station object specified, could not save',
+            log.warning('No station object specified, could not save',
                             ' instrument settings')
         else:
             # # This saves the snapshot of the entire setup
