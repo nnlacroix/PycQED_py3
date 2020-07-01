@@ -237,6 +237,8 @@ class BaseDataAnalysis(object):
 
         # prevent the job from calling itself in a loop
         options_dict = copy.deepcopy(kwargs.get('options_dict', {}))
+        if options_dict is None:
+            options_dict = {}
         options_dict.pop('delegate_plotting', None)
         kwargs['options_dict'] = options_dict
 
