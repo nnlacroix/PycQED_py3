@@ -212,6 +212,12 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if self.numeric_params is None:
             self.numeric_params = []
 
+        if not hasattr(self, "job"):
+            self.create_job(qb_names=qb_names, t_start=t_start, t_stop=t_stop,
+                            label=label, data_file_path=data_file_path,
+                            do_fitting=do_fitting, options_dict=options_dict,
+                            extract_only=extract_only, params_dict=params_dict,
+                            numeric_params=numeric_params, **kwargs)
         if auto:
             self.run_analysis()
 
@@ -5238,7 +5244,7 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                                 for fr in fit_res_objs])
         amps_errs[amps_errs == None] = 0.0
 
-        population_loss = np.abs(amps[0::2] - amps[1::2])/amps[1::2]
+        population_loss = amps[0::2] - amps[1::2]/amps[1::2]
         x   = amps[0::2] - amps[1::2]
         x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
                          dtype=np.float64)
@@ -5721,10 +5727,7 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             self.numeric_params = list(self.params_dict)
 
         self.qb_names = qb_names
-        super().__init__( **kwargs)
-
-        if auto:
-            self.run_analysis()
+        super().__init__(auto=auto, **kwargs)
 
     def extract_data(self):
         super().extract_data()
@@ -5929,6 +5932,9 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         self.DEFAULT_CLASSIF = "gmm"
         self.classif_method = self.options_dict.get("classif_method",
                                                     self.DEFAULT_CLASSIF)
+
+        self.create_job(options_dict=options_dict, auto=auto, **kw)
+
         if auto:
             self.run_analysis()
 
