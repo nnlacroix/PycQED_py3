@@ -24,7 +24,7 @@ Each pulse library module should add itself to this set, e.g.
 """
 
 
-class Pulse(object):
+class Pulse:
     """
     The pulse base class.
 
