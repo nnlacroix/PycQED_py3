@@ -27,8 +27,8 @@ class Segment:
     def __init__(self, name, pulse_pars_list=[]):
         self.name = name
         self.pulsar = ps.Pulsar.get_instance()
-        self.unresolved_pulses_raw = []
         self.unresolved_pulses = []
+        self.resolved_pulses = []
         self.previous_pulse = None
         self.elements = odict()
         self.element_start_end = {}
@@ -60,7 +60,7 @@ class Segment:
                              f'{pars_copy.get("name")}')
         if pars_copy.get('name', None) is None:
             pars_copy['name'] = pulse_pars['pulse_type'] + '_' + str(
-                len(self.unresolved_pulses_raw))
+                len(self.unresolved_pulses))
         self._pulse_names.add(pars_copy['name'])
 
         # Makes sure that element name is unique within sequence of
@@ -93,18 +93,18 @@ class Segment:
             # if the first pulse added to the segment has no ref_pulse
             # it is reference to segment_start by default
             elif self.previous_pulse == None and \
-                 len(self.unresolved_pulses_raw) == 0:
+                 len(self.unresolved_pulses) == 0:
                 new_pulse.ref_pulse = 'segment_start'
             else:
                 raise ValueError('No previous pulse has been added!')
 
-        self.unresolved_pulses_raw.append(new_pulse)
+        self.unresolved_pulses.append(new_pulse)
 
         self.previous_pulse = new_pulse
         # if self.elements is odict(), the resolve_timing function has to be
         # called prior to generating the waveforms
         self.elements = odict()
-        self.unresolved_pulses = []
+        self.resolved_pulses = []
 
     def extend(self, pulses):
         """
@@ -132,8 +132,8 @@ class Segment:
         self.add_charge_compensation()
 
     def enforce_single_element(self):
-        self.unresolved_pulses = deepcopy(self.unresolved_pulses_raw)
-        for p in self.unresolved_pulses:
+        self.resolved_pulses = deepcopy(self.unresolved_pulses)
+        for p in self.resolved_pulses:
             for ch in p.pulse_obj.channels:
                 ch_awg = self.pulsar.get(f'{ch}_awg')
                 if self.pulsar.get(f'{ch_awg}_enforce_single_element'):
@@ -142,17 +142,17 @@ class Segment:
 
     def resolve_timing(self):
         """
-        For each pulse in the unresolved_pulses list, this method:
+        For each pulse in the resolved_pulses list, this method:
             * updates the _t0 of the pulse by using the timing description of
               the UnresolvedPulse
             * saves the resolved pulse in the elements ordered dictionary by 
               ascending element start time and the pulses in each element by 
               ascending _t0
-            * orderes the unresolved_pulses list by ascending pulse middle
+            * orderes the resolved_pulses list by ascending pulse middle
         """
 
         self.elements = odict()
-        if self.unresolved_pulses == []:
+        if self.resolved_pulses == []:
             self.enforce_single_element()
 
         visited_pulses = []
@@ -225,13 +225,13 @@ class Segment:
             ref_pulses_dict = ref_pulses_dict_new
             ref_pulses_dict_all.update(ref_pulses_dict_new)
 
-        if len(visited_pulses) != len(self.unresolved_pulses):
-            log.error(f"{len(visited_pulses), len(self.unresolved_pulses)}")
+        if len(visited_pulses) != len(self.resolved_pulses):
+            log.error(f"{len(visited_pulses), len(self.resolved_pulses)}")
             for unpulse in visited_pulses:
-                if unpulse not in self.unresolved_pulses:
+                if unpulse not in self.resolved_pulses:
                     log.error(unpulse)
             raise Exception(f'Not all pulses have been resolved: '
-                            f'{self.unresolved_pulses}')
+                            f'{self.resolved_pulses}')
 
         # adds the resolved pulses to the elements OrderedDictionary
         for (t0, i, p) in sorted(visited_pulses):
@@ -240,7 +240,7 @@ class Segment:
             elif p.pulse_obj.element_name in self.elements:
                 self.elements[p.pulse_obj.element_name].append(p.pulse_obj)
 
-        # sort unresolved_pulses by ascending pulse middle. Used for Z_gate
+        # sort resolved_pulses by ascending pulse middle. Used for Z_gate
         # resolution
         for i in range(len(visited_pulses)):
             t0 = visited_pulses[i][0]
@@ -252,7 +252,7 @@ class Segment:
         for (t0, i, p) in sorted(visited_pulses):
             ordered_unres_pulses.append(p)
 
-        self.unresolved_pulses = ordered_unres_pulses
+        self.resolved_pulses = ordered_unres_pulses
 
     def add_charge_compensation(self):
         """
@@ -388,7 +388,7 @@ class Segment:
         """
 
         pulses = {}
-        for pulse in self.unresolved_pulses:
+        for pulse in self.resolved_pulses:
             ref_pulse_list = pulse.ref_pulse
             if not isinstance(ref_pulse_list, list):
                 ref_pulse_list = [ref_pulse_list]
@@ -665,13 +665,13 @@ class Segment:
         """
         The phase of a basis rotation is acquired by an basis pulse, if the
         middle of the basis rotation pulse happens before the middle of the
-        basis pulse. Using that self.unresolved_pulses was sorted by
+        basis pulse. Using that self.resolved_pulses was sorted by
         self.resolve_timing() the acquired phases can be calculated.
         """
 
         basis_phases = {}
 
-        for pulse in self.unresolved_pulses:
+        for pulse in self.resolved_pulses:
             for basis, rotation in pulse.basis_rotation.items():
                 basis_phases[basis] = basis_phases.get(basis, 0) + rotation
 
@@ -1102,7 +1102,7 @@ class Segment:
         num_two_qb = 0
         num_virtual = 0
         self.resolve_segment()
-        for p in self.unresolved_pulses:
+        for p in self.resolved_pulses:
             if p.op_code != '' and p.op_code[:2] != 'RO':
                 l = p.pulse_obj.length
                 t = p.pulse_obj._t0 + l / 2
@@ -1179,7 +1179,7 @@ class Segment:
         old_name = self.name
 
         # rename element names in unresolved pulses making use of the old name
-        for p in self.unresolved_pulses:
+        for p in self.resolved_pulses:
             if hasattr(p.pulse_obj, "element_name") \
                 and old_name in p.pulse_obj.element_name:
                 p.pulse_obj.element_name = p.pulse_obj.element_name.replace(old_name,
