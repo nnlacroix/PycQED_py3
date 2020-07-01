@@ -23,12 +23,13 @@ class Spectroscopy(ba.BaseDataAnalysis):
                  extract_only: bool = False,
                  auto: bool = True,
                  do_fitting: bool = False):
+        if options_dict is None:
+            options_dict = {}
         super().__init__(t_start=t_start, t_stop=t_stop,
                          options_dict=options_dict,
                          label=label,
                          extract_only=extract_only,
                          do_fitting=do_fitting)
-
         self.params_dict = {'measurementstring': 'measurementstring'}
         self.param_2d = options_dict.get('param_2d', None)
         if self.param_2d is not None:

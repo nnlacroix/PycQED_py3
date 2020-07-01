@@ -571,8 +571,16 @@ class BaseDataAnalysis(object):
                 savename = os.path.join(savedir, savebase + key + tstag + '.' + fmt)
                 self.figs[key].savefig(savename, bbox_inches='tight',
                                        fmt=fmt, dpi=dpi)
-            if close_figs:
-                plt.close(self.figs[key])
+        if close_figs:
+            self.close_figs(key_list)
+
+    def close_figs(self, key_list='auto'):
+        if key_list == 'auto' or key_list is None:
+            key_list = self.figs.keys()
+        for key in list(key_list):
+            plt.close(self.figs[key])
+            self.figs.pop(key)
+            self.axs.pop(self.plot_dicts[key]['fig_id'])
 
     def save_data(self, savedir: str = None, savebase: str = None,
                   tag_tstamp: bool = True,
@@ -840,7 +848,7 @@ class BaseDataAnalysis(object):
         if axs_dict is not None:
             for key, val in list(axs_dict.items()):
                 self.axs[key] = val
-        if key_list is 'auto':
+        if key_list == 'auto':
             key_list = self.auto_keys
         if key_list is None:
             key_list = self.plot_dicts.keys()
