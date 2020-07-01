@@ -1134,7 +1134,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         self.AWG = AWG
         self.integration_length = integration_length
         self.nr_shots = nr_shots
-        # to be used in MC.get_percdone()
+        # to be used in MC
         self.acq_data_len_scaling = self.nr_shots
 
         # 0/1/2 crosstalk supressed /digitized/raw
