@@ -1713,19 +1713,20 @@ class QuDev_transmon(Qubit):
                             )]])
 
         with temporary_value(
-            (self.ge_mod_freq, sideband*self.ge_mod_freq()),
-            (self.acq_weights_type, 'SSB'),
-            (self.instr_trigger.get_instr().pulse_period, trigger_sep),
+                (self.ro_mod_freq, sideband * self.ro_mod_freq()),
+                (self.acq_weights_type, 'SSB'),
+                (self.instr_trigger.get_instr().pulse_period, trigger_sep),
         ):
             self.prepare(drive='timedomain')
             ro_lo = self.instr_ro_lo.get_instr()
-            ro_lo.frequency(self.ge_freq() - self.ge_mod_freq()/sideband),
+            ro_lo.frequency(
+                self.ge_freq() - self.ge_mod_freq() - self.ro_mod_freq() / sideband),
 
             MC.set_detector_function(det.IndexDetector(
                 self.int_avg_det_spec, 0))
             self.instr_pulsar.get_instr().start(exclude=[self.instr_uhf()])
             MC.run(name='drive_carrier_calibration' + self.msmt_suffix,
-                mode='adaptive')
+                   mode='adaptive')
 
         a = ma.OptimizationAnalysis(label='drive_carrier_calibration')
         if plot:
