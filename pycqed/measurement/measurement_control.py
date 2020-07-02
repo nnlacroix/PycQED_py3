@@ -348,7 +348,7 @@ class MeasurementControl(Instrument):
                         (1 + self.soft_iteration))
             self.dset[start_idx:stop_idx,
                       len(self.sweep_functions):] = new_vals
-        sweep_len = len(self.get_sweep_points().T)*self.acq_data_len_scaling
+        sweep_len = len(self.get_sweep_points().T) * self.acq_data_len_scaling
 
         ######################
         # DATA STORING BLOCK #
@@ -373,7 +373,6 @@ class MeasurementControl(Instrument):
                                 'MC.measure_hard() DATA STORING BLOCK section. '
                                 'Something might have gone wrong with your '
                                 'measurement.')
-                pass
 
         self.check_keyboard_interrupt()
         self.update_instrument_monitor()
@@ -546,12 +545,13 @@ class MeasurementControl(Instrument):
         self.ylen = len(self.sweep_points_2D)
         if np.size(self.get_sweep_points()[0]) == 1:
             # create inner loop pts
-            self.sweep_pts_x = np.tile(self.get_sweep_points(), self.acq_data_len_scaling)
+            self.sweep_pts_x = np.tile(self.get_sweep_points(),
+                                       self.acq_data_len_scaling)
             x_tiled = np.tile(self.sweep_pts_x, self.ylen)
             # create outer loop
             self.sweep_pts_y = self.sweep_points_2D
             y_rep = np.repeat(self.sweep_pts_y,
-                              self.xlen*self.acq_data_len_scaling, axis=0)
+                              self.xlen * self.acq_data_len_scaling, axis=0)
             c = np.column_stack((x_tiled, y_rep))
             self.set_sweep_points(c)
             self.initialize_plot_monitor_2D()
@@ -1240,8 +1240,8 @@ class MeasurementControl(Instrument):
         h5d.write_dict_to_hdf5(metadata, entry_point=metadata_group)
 
     def get_percdone(self):
-        percdone = self.total_nr_acquired_values/(
-            np.shape(self.get_sweep_points())[0]*self.soft_avg())*100
+        percdone = self.total_nr_acquired_values / (
+            np.shape(self.get_sweep_points())[0] * self.soft_avg()) * 100
         return percdone
 
     def print_progress(self, stop_idx=None):
