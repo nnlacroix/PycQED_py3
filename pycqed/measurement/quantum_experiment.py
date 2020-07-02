@@ -25,10 +25,10 @@ class QuantumExperiment(CircuitBuilder):
 
     """
     _metadata_params = {'cal_points', 'preparation_params', 'sweep_points',
-                        'channel_map', 'ro_qubits'}
+                        'channel_map', 'meas_objs'}
 
     def __init__(self, dev=None, qubits=None, operation_dict=None,
-                 ro_qubits=None, classified=False, MC=None,
+                 meas_objs=None, classified=False, MC=None,
                  label=None, exp_metadata=None, upload=True, measure=True,
                  analyze=True, temporary_values=(), drive="timedomain",
                  sequences=(), sequence_function=None,
@@ -46,9 +46,11 @@ class QuantumExperiment(CircuitBuilder):
                 details).
             operation_dict (dict): dictionary with operations. Defaults to None.
                 (see circuitBuilder for more details).
-            ro_qubits (list): list of qubits to be read out (i.e. for which the detector
-                functions will be prepared). Defaults to self.qubits (attribute set by
-                circuitBuilder). Required for run_measurement() when qubits is None.
+            meas_objs (list): list of measure object (e.g., qubits) to be read
+                out (i.e. for which the detector functions will be
+                prepared). Defaults to self.qubits (attribute set by
+                CircuitBuilder). Required for run_measurement() when qubits
+                is None.
             classified (bool): whether
             MC (MeasurementControl): MeasurementControl object. Required for
                 run_measurement() if qubits is None and device is None.
@@ -110,7 +112,7 @@ class QuantumExperiment(CircuitBuilder):
         if self.exp_metadata is None:
             self.exp_metadata = {}
 
-        self.ro_qubits = self.qubits if ro_qubits is None else ro_qubits
+        self.create_meas_objs_list(**kw, meas_objs=meas_objs)
         self.MC = MC
 
         self.classified = classified
@@ -145,6 +147,17 @@ class QuantumExperiment(CircuitBuilder):
         self.exp_metadata.update(kw)
         self.exp_metadata.update({'classified_ro': self.classified})
 
+    def create_meas_objs_list(self, meas_objs=None, **kwargs):
+        """
+        Creates a default list for self.meas_objs if meas_objs is not provided,
+        and creates the list self.meas_obj_names.
+        Args:
+            meas_objs (list): a list of measurement objects (or None for
+                default, which is self.qubits)
+        """
+        self.meas_objs = self.qubits if meas_objs is None else meas_objs
+        self.meas_obj_names = [m.name for m in self.meas_objs]
+
     def _update_parameters(self, overwrite_dicts=True, **kwargs):
         """
         Update all attributes of the quantumExperiment class.
@@ -173,11 +186,13 @@ class QuantumExperiment(CircuitBuilder):
 
         """
         self._update_parameters(**kw)
+        assert self.meas_objs is not None, 'Cannot run measurement without ' \
+                                           'measure objects.'
 
         with temporary_value(*self.temporary_values):
-            # only prepare read out qubits
-            for qb in self.ro_qubits:
-                qb.prepare(drive=self.drive)
+            # only prepare measure objects
+            for m in self.meas_objs:
+                m.prepare(drive=self.drive)
 
             # create/retrieve sequence to run
             self._prepare_sequences(self.sequences, self.sequence_function,
@@ -386,14 +401,15 @@ class QuantumExperiment(CircuitBuilder):
 
             self.MC.set_sweep_points_2D(self.mc_points[1])
 
-        # check whether there is at least one readout qubit
-        if len(self.ro_qubits) == 0:
-            raise ValueError('No readout qubits provided. Cannot '
+        # check whether there is at least one measure object
+        if len(self.meas_objs) == 0:
+            raise ValueError('No measure objects provided. Cannot '
                              'configure detector functions')
 
         # Configure detector function
+        # FIXME: this should be extended to meas_objs that are not qubits
         df = get_multiplexed_readout_detector_functions(
-            self.ro_qubits, det_get_values_kws=self.df_kwargs)[self.df_name]
+            self.meas_objs, det_get_values_kws=self.df_kwargs)[self.df_name]
         self.MC.set_detector_function(df)
 
         if len(self.mc_points[1]) > 0:
@@ -419,10 +435,10 @@ class QuantumExperiment(CircuitBuilder):
                 self.MC = self.dev.instr_mc.get_instr()
             except AttributeError:
                 try:
-                    self.MC = self.qubits[0].instr_mc.get_instr()
+                    self.MC = self.meas_objs[0].instr_mc.get_instr()
                 except (AttributeError, IndexError):
                     raise ValueError("The Measurement Control (MC) could not "
-                                     "be retrieved because no Device/qubit "
+                                     "be retrieved because no Device/measure "
                                      "objects were found. Pass the MC to "
                                      "run_measurement() or set the MC attribute"
                                      " of the QuantumExperiment instance.")
@@ -443,7 +459,7 @@ class QuantumExperiment(CircuitBuilder):
             try:
                 if name in ('cal_points', 'sweep_points') and value is not None:
                     self.exp_metadata.update({name: repr(value)})
-                elif name in ('ro_qubits', "qubits") and value is not None:
+                elif name in ('meas_objs', "qubits") and value is not None:
                     self.exp_metadata.update({name: [qb.name for qb in value]})
                 else:
                     self.exp_metadata.update({name: value})
