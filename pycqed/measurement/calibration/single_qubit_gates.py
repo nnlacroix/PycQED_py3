@@ -58,14 +58,15 @@ class T1FrequencySweep(CalibBuilder):
             super().__init__(task_list, qubits=qubits, **kw)
 
             self.analysis = None
-            self.data_to_fit = {qb: 'pe' for qb in self.ro_qb_names}
+            self.data_to_fit = {qb: 'pe' for qb in self.meas_obj_names}
             self.sweep_points = SweepPoints(
                 from_dict_list=[{}, {}] if sweep_points is None
                 else sweep_points)
             self.add_amplitude_sweep_points()
 
+            preprocessed_task_list = self.preprocess_task_list(self.sweep_points)
             self.sequences, self.mc_points = \
-                self.parallel_sweep(self.sweep_points, self.task_list,
+                self.parallel_sweep(preprocessed_task_list,
                                     self.t1_flux_pulse_block, **kw)
             self.exp_metadata.update({
                 'global_PCA': len(self.cal_points.states) == 0
@@ -98,7 +99,7 @@ class T1FrequencySweep(CalibBuilder):
             task_list = self.task_list
         # TODO: check combination of sweep points in task and in sweep_points
         for task in task_list:
-            sweep_points = task.get('sweep_points', [{},{}])
+            sweep_points = task.get('sweep_points', [{}, {}])
             sweep_points = SweepPoints(from_dict_list=sweep_points)
             if len(sweep_points) == 1:
                 sweep_points.add_sweep_dimension()
@@ -119,9 +120,10 @@ class T1FrequencySweep(CalibBuilder):
                 this_qb = qubits[0]
                 fit_paras = deepcopy(this_qb.fit_ge_freq_from_flux_pulse_amp())
                 if len(fit_paras) == 0:
-                    raise ValueError(f'fit_ge_freq_from_flux_pulse_amp is empty'
-                                     f' for {this_qb.name}. Cannot calculate '
-                                     f'amplitudes from qubit frequencies.')
+                    raise ValueError(
+                        f'fit_ge_freq_from_flux_pulse_amp is empty'
+                        f' for {this_qb.name}. Cannot calculate '
+                        f'amplitudes from qubit frequencies.')
                 amplitudes = np.array(fit_mods.Qubit_freq_to_dac(
                     qubit_freqs, **fit_paras))
                 if np.any((amplitudes > abs(fit_paras['V_per_phi0']) / 2)):
@@ -162,7 +164,8 @@ class T1FrequencySweep(CalibBuilder):
                                  kw.get('spectator_op_codes', []),
                                  pulse_modifs=pulse_modifs)
 
-        pulse_modifs = {'all': {'element_name': 'flux_pulse', 'pulse_delay': 0}}
+        pulse_modifs = {
+            'all': {'element_name': 'flux_pulse', 'pulse_delay': 0}}
         fp = self.block_from_ops('flux', [f'FP {qubit_name}'],
                                  pulse_modifs=pulse_modifs)
         for k in ['channel', 'channel2']:
@@ -198,5 +201,5 @@ class T1FrequencySweep(CalibBuilder):
 
         self.all_fits = kw.get('all_fits', True)
         self.analysis = tda.T1FrequencySweepAnalysis(
-            qb_names=self.ro_qb_names,
+            qb_names=self.meas_obj_names,
             options_dict=dict(TwoD=False, all_fits=self.all_fits))
