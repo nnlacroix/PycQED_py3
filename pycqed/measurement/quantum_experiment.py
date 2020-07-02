@@ -413,6 +413,14 @@ class QuantumExperiment(CircuitBuilder):
         df = mqm.get_multiplexed_readout_detector_functions(
             self.meas_objs, **self.df_kwargs)[self.df_name]
         self.MC.set_detector_function(df)
+        if self.dev is not None:
+            meas_obj_value_names_map = self.dev.get_meas_obj_value_names_map(
+                self.meas_objs, df)
+        else:
+            meas_obj_value_names_map = mqm.get_meas_obj_value_names_map(
+                self.meas_objs, df)
+        self.exp_metadata.update(
+            {'meas_obj_value_names_map': meas_obj_value_names_map})
 
         if len(self.mc_points[1]) > 0:
             mmnt_mode = "2D"
