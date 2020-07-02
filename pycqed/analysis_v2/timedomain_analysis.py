@@ -208,6 +208,12 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if self.numeric_params is None:
             self.numeric_params = []
 
+        if not hasattr(self, "job"):
+            self.create_job(qb_names=qb_names, t_start=t_start, t_stop=t_stop,
+                            label=label, data_file_path=data_file_path,
+                            do_fitting=do_fitting, options_dict=options_dict,
+                            extract_only=extract_only, params_dict=params_dict,
+                            numeric_params=numeric_params, **kwargs)
         if auto:
             self.run_analysis()
 
@@ -219,19 +225,23 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             if self.qb_names is None:
                 raise ValueError('Provide the "qb_names."')
 
-        self.channel_map = self.get_param_value('channel_map')
+        self.channel_map = self.get_param_value('meas_obj_value_names_map')
         if self.channel_map is None:
-            value_names = self.raw_data_dict['value_names']
-            if np.ndim(value_names) > 0:
-                value_names = value_names
-            if 'w' in value_names[0]:
-                self.channel_map = a_tools.get_qb_channel_map_from_hdf(
-                    self.qb_names, value_names=value_names,
-                    file_path=self.raw_data_dict['folder'])
-            else:
-                self.channel_map = {}
-                for qbn in self.qb_names:
-                    self.channel_map[qbn] = value_names
+            # if the new name meas_obj_value_names_map is not found, try with
+            # the old name channel_map
+            self.channel_map = self.get_param_value('channel_map')
+            if self.channel_map is None:
+                value_names = self.raw_data_dict['value_names']
+                if np.ndim(value_names) > 0:
+                    value_names = value_names
+                if 'w' in value_names[0]:
+                    self.channel_map = a_tools.get_qb_channel_map_from_hdf(
+                        self.qb_names, value_names=value_names,
+                        file_path=self.raw_data_dict['folder'])
+                else:
+                    self.channel_map = {}
+                    for qbn in self.qb_names:
+                        self.channel_map[qbn] = value_names
 
         if len(self.channel_map) == 0:
             raise ValueError('No qubit RO channels have been found.')
@@ -262,7 +272,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 raise ValueError('Please provide "meas_obj_sweep_points_map."')
             self.proc_data_dict['sweep_points_dict'] = \
                 {qbn: {'sweep_points': self.sp.get_sweep_params_property(
-                    'values', 1, self.mospm[qbn])[0]}
+                    'values', 0, self.mospm[qbn])[0]}
                  for qbn in self.qb_names}
         else:
             self.proc_data_dict['sweep_points_dict'] = \
@@ -458,7 +468,13 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     def get_cal_data_points(self):
         if len(self.cal_states_rotations) == 0:
-            self.cal_states_dict = {}
+            # "To use PCA (no cal states rotation), the measurement function
+            # has to specify the following in the metadata:
+            # - CalibrationPoints with qubit names but empty states
+            # - cal_states_rotations = {}
+            # - rotate = True
+            # - data_to_fit defined ({qbn: 'prob_to_fit'})
+            self.cal_states_dict = {qbn: [] for qbn in self.qb_names}
             self.cal_states_dict_for_rotation = self.cal_states_dict
         else:
             if self.cal_states_dict is None:
@@ -502,10 +518,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             {qbn: '' for qbn in self.qb_names})
         for qbn in self.qb_names:
             cal_states_dict = self.cal_states_dict_for_rotation[qbn]
-            if len(cal_states_dict) not in [2, 3]:
+            if len(cal_states_dict) not in [0, 2, 3]:
                 raise NotImplementedError('Calibration states rotation is '
-                                          'currently only implemented for 2 '
-                                          'or 3 cal states per qubit.')
+                                          'currently only implemented for 0, '
+                                          '2, or 3 cal states per qubit.')
 
             if self.get_param_value('TwoD', default_value=False):
                 if len(cal_states_dict) == 3:
@@ -754,6 +770,29 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                 cal_one_points=cal_one_points)
         return rotated_data_dict
 
+    def get_xaxis_label_unit(self, qb_name):
+        hard_sweep_params = self.get_param_value('hard_sweep_params')
+        sweep_name = self.get_param_value('sweep_name')
+        sweep_unit = self.get_param_value('sweep_unit')
+        if self.sp is not None:
+            _, xunit, xlabel = self.sp.get_sweep_params_description(
+                param_names=self.mospm[qb_name], dimension=0)[0]
+        elif hard_sweep_params is not None:
+            xlabel = list(hard_sweep_params)[0]
+            xunit = list(hard_sweep_params.values())[0][
+                'unit']
+        elif (sweep_name is not None) and (sweep_unit is not None):
+            xlabel = sweep_name
+            xunit = sweep_unit
+        else:
+            xlabel = self.raw_data_dict['sweep_parameter_names']
+            xunit = self.raw_data_dict['sweep_parameter_units']
+        if np.ndim(xlabel) > 0:
+            xlabel = xlabel[0]
+        if np.ndim(xunit) > 0:
+            xunit = xunit[0]
+        return xlabel, xunit
+
     @staticmethod
     def get_cal_state_color(cal_state_label):
         if cal_state_label == 'g' or cal_state_label == r'$|g\rangle$':
@@ -847,26 +886,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                          self.raw_data_dict['measurementstring'] +
                          '\nRaw data ' + suffix + ' ' + qb_name)
             plot_name = 'raw_plot_' + qb_name + suffix
-            # get xunit and label: temporarily with try catch for old
-            # sequences which do not have unit and label in meta data
-            hard_sweep_params = self.get_param_value('hard_sweep_params')
-            sweep_name = self.get_param_value('sweep_name')
-            sweep_unit = self.get_param_value('sweep_unit')
-            if self.sp is not None:
-                _, xunit, xlabel = self.sp.get_sweep_params_description(
-                    param_names=self.mospm[qb_name], dimension=1)[0]
-            elif hard_sweep_params is not None:
-                xlabel = list(hard_sweep_params)[0]
-                xunit = list(hard_sweep_params.values())[0][
-                    'unit']
-            elif (sweep_name is not None) and (sweep_unit is not None):
-                xlabel = sweep_name
-                xunit = sweep_unit
-            else:
-                xlabel = self.raw_data_dict['sweep_parameter_names']
-                xunit = self.raw_data_dict['sweep_parameter_units']
-            if np.ndim(xunit) > 0:
-                xunit = xunit[0]
+            xlabel, xunit = self.get_xaxis_label_unit(qb_name)
 
             for ax_id, ro_channel in enumerate(raw_data_dict):
                 if self.get_param_value('TwoD', default_value=False):
@@ -884,7 +904,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             qb_name].items():
                         if self.sp is not None:
                             yunit = self.sp.get_sweep_params_property(
-                                'unit', dimension=2, param_names=pn)
+                                'unit', dimension=1, param_names=pn)
                         self.plot_dicts[f'{plot_name}_{ro_channel}_{pn}'] = {
                             'fig_id': plot_name + '_' + pn,
                             'ax_id': ax_id,
@@ -982,25 +1002,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             title += '\n' + title_suffix
 
         plot_dict_name = fig_name + '_' + plot_name_suffix
-        # get x info (try for old sequences which do not have info in meta
-        hard_sweep_params = self.get_param_value('hard_sweep_params')
-        sweep_name = self.get_param_value('sweep_name')
-        sweep_unit = self.get_param_value('sweep_unit')
-        if self.sp is not None:
-            _, xunit, xlabel = self.sp.get_sweep_params_description(
-                param_names=self.mospm[qb_name], dimension=1)[0]
-        elif hard_sweep_params is not None:
-            xlabel = list(hard_sweep_params)[0]
-            xunit = list(hard_sweep_params.values())[0][
-                'unit']
-        elif (sweep_name is not None) and (sweep_unit is not None):
-            xlabel = sweep_name
-            xunit = sweep_unit
-        else:
-            xlabel = self.raw_data_dict['sweep_parameter_names']
-            xunit = self.raw_data_dict['sweep_parameter_units']
-        if np.ndim(xunit) > 0:
-            xunit = xunit[0]
+        xlabel, xunit = self.get_xaxis_label_unit(qb_name)
 
         if self.get_param_value('TwoD', default_value=False):
             if self.sp is None:
@@ -1016,7 +1018,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     qb_name].items():
                 if self.sp is not None:
                     yunit = self.sp.get_sweep_params_property(
-                        'unit', dimension=2, param_names=pn)
+                        'unit', dimension=1, param_names=pn)
                 self.plot_dicts[f'{plot_dict_name}_{pn}'] = {
                     'plotfn': self.plot_colorxy,
                     'fig_id': fig_name + '_' + pn,
@@ -4402,23 +4404,12 @@ class RamseyAnalysis(MultiQubit_TimeDomain_Analysis):
                 textstr = ''
                 T2_star_str = ''
 
-                try:
-                    xunit = self.metadata["sweep_unit"]
-                    xlabel = self.metadata["sweep_name"]
-                except KeyError:
-                    xlabel = self.raw_data_dict['sweep_parameter_names'][0]
-                    xunit = self.raw_data_dict['sweep_parameter_units'][0]
-                if np.ndim(xunit) > 0:
-                    xunit = xunit[0]
-
                 for i, key in enumerate([k + qbn for k in self.fit_keys]):
 
                     fit_res = self.fit_dicts[key]['fit_res']
                     self.plot_dicts['fit_' + key] = {
                         'fig_id': base_plot_name,
                         'plotfn': self.plot_fit,
-                        'xlabel': xlabel,
-                        'xunit': xunit,
                         'fit_res': fit_res,
                         'setlabel': 'exp decay fit' if i == 0 else
                             'gauss decay fit',
@@ -4537,6 +4528,7 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def prepare_fitting(self):
         self.fit_dicts = OrderedDict()
+
         for qbn in self.qb_names:
             for msmt_label in ['_xx', '_xy', '_xmy']:
                 sweep_points = self.proc_data_dict['qscale_data'][qbn][
@@ -4544,12 +4536,21 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                 data = self.proc_data_dict['qscale_data'][qbn][
                     'data' + msmt_label]
 
+                # As a workaround for a weird bug letting crash the analysis
+                # every second time, we do not use lmfit.models.ConstantModel
+                # and lmfit.models.LinearModel, but create custom models.
                 if msmt_label == '_xx':
-                    model = lmfit.models.ConstantModel()
+                    model = lmfit.Model(lambda x, c: c)
+                    guess_pars = model.make_params(c=np.mean(data))
                 else:
-                    model = lmfit.models.LinearModel()
+                    model = lmfit.Model(lambda x, slope, intercept:
+                                        slope * x + intercept)
+                    slope = (data[-1] - data[0]) / \
+                            (sweep_points[-1] - sweep_points[0])
+                    intercept = data[-1] - slope * sweep_points[-1]
+                    guess_pars = model.make_params(slope=slope,
+                                                   intercept=intercept)
 
-                guess_pars = model.guess(data=data, x=sweep_points)
                 key = 'fit' + msmt_label + '_' + qbn
                 self.fit_dicts[key] = {
                     'fit_fn': model.func,
@@ -4625,18 +4626,7 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                     plot_name = base_plot_name
                 else:
                     plot_name = 'data' + msmt_label + '_' + qbn
-
-                # plot data
-                try:
-                    xunit = self.metadata["sweep_unit"]
-                    xlabel = self.metadata["sweep_name"]
-                except KeyError:
-                    xlabel = self.raw_data_dict['sweep_parameter_names']
-                    xunit = self.raw_data_dict['sweep_parameter_units']
-                if np.ndim(xlabel) > 0:
-                    xlabel = xlabel[0]
-                if np.ndim(xunit) > 0:
-                    xunit = xunit[0]
+                xlabel, xunit = self.get_xaxis_label_unit(qbn)
                 self.plot_dicts[plot_name] = {
                     'plotfn': self.plot_line,
                     'xvals': sweep_points,
@@ -5420,7 +5410,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                   for fr in fit_res_objs])
             amps_errs[amps_errs == None] = 0.0
 
-            population_loss = np.abs(amps[0::2] - amps[1::2])/amps[1::2]
+            population_loss = (amps[0::2] - amps[1::2])/amps[1::2]
             x   = amps[0::2] - amps[1::2]
             x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
                              dtype=np.float64)
@@ -5790,10 +5780,7 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             self.numeric_params = list(self.params_dict)
 
         self.qb_names = qb_names
-        super().__init__( **kwargs)
-
-        if auto:
-            self.run_analysis()
+        super().__init__(auto=auto, **kwargs)
 
     def extract_data(self):
         super().extract_data()
@@ -5998,6 +5985,9 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
         self.DEFAULT_CLASSIF = "gmm"
         self.classif_method = self.options_dict.get("classif_method",
                                                     self.DEFAULT_CLASSIF)
+
+        self.create_job(options_dict=options_dict, auto=auto, **kw)
+
         if auto:
             self.run_analysis()
 
@@ -6086,9 +6076,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             # mapping would fail. The number of different states can be different
             # for each qubit and therefore the mapping should also be done per qubit.
             state_integer = 0
-            for state in self.cp.get_states(qbn)[qbn]:
-                if "int" in self.states_info[qbn][state]:
-                    continue # in case state is repeated, no new integer needed
+            for state in means[qbn].keys():
                 self.states_info[qbn][state]["int"] = state_integer
                 state_integer += 1
 
@@ -6110,10 +6098,14 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 self._classify(qb_shots, prep_states,
                                method=self.classif_method, qb_name=qbn,
                                **self.options_dict.get("classif_kw", dict()))
-            states_label_order = self._get_state_labels_order(
-                np.unique(self.cp.get_states(qbn)[qbn]))
+            # order "unique" states to have in usual order "gef" etc.
+            state_labels_ordered = self._order_state_labels(
+                list(means[qbn].keys()))
+            # translate to corresponding integers
+            state_labels_ordered_int = [self.states_info[qbn][s]['int'] for s in
+                                        state_labels_ordered]
             fm = self.fidelity_matrix(prep_states, pred_states,
-                                      labels=states_label_order)
+                                      labels=state_labels_ordered_int)
 
             # save fidelity matrix and classifier
             pdd['analysis_params']['state_prob_mtx'][qbn] = fm
@@ -6132,7 +6124,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 prep_states = prep_states[presel_filter]
                 pred_states = self.clf_[qbn].predict(qb_shots_masked)
                 fm = self.fidelity_matrix(prep_states, pred_states,
-                                          labels=states_label_order)
+                                          labels=state_labels_ordered_int)
 
                 pdd['data_masked'][qbn] = dict(X=deepcopy(qb_shots_masked),
                                           prep_states=deepcopy(prep_states))
@@ -6269,15 +6261,30 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                                        plot_fitting=plot_fitting, **kwargs)
 
     @staticmethod
-    def _get_state_labels_order(states_labels,
-                                order="gefhabcdijklmnopqrtuvwxyz0123456789"):
+    def _order_state_labels(states_labels,
+                            order="gefhabcdijklmnopqrtuvwxyz0123456789"):
+        """
+        Orders state labels according to provided ordering. e.g. for default
+        ("f", "e", "g") would become ("g", "e", "f")
+        Args:
+            states_labels (list, tuple): list of states_labels
+            order (str): custom string order
+
+        Returns:
+
+        """
         try:
-            return np.argsort([order.index(s) for s in states_labels])
+            indices = [order.index(s) for s in states_labels]
+            order_for_states = np.argsort(indices).astype(np.int32)
+            return np.array(states_labels)[order_for_states]
+
         except Exception as e:
             log.error(f"Could not find order in state_labels:"
-                      f"{states_labels}. {e}."
+                      f"{states_labels}. Probably because one or several "
+                      f"states are not part of '{order}'. Error: {e}."
                       f" Returning same as input order")
-            return np.arange(states_labels)
+            return states_labels
+
 
     def plot(self, **kwargs):
         if not self.get_param_value("plot", True):
@@ -6290,11 +6297,12 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             tab_x = a_tools.truncate_colormap(cmap, 0,
                                               n_qb_states/10)
 
-            kwargs = dict(states=np.unique(self.cp.get_states(qbn)[qbn]),
-                          xlabel="Integration Unit 1, $u_1$",
-                          ylabel="Integration Unit 2, $u_2$",
-                          scale=self.options_dict.get("hist_scale", "linear"),
-                          cmap=tab_x)
+            kwargs = {
+                "states": list(pdd["analysis_params"]['means'][qbn].keys()),
+                "xlabel": "Integration Unit 1, $u_1$",
+                "ylabel": "Integration Unit 2, $u_2$",
+                "scale":self.options_dict.get("hist_scale", "linear"),
+                "cmap":tab_x}
             data_keys = [k for k in list(pdd.keys()) if
                             k.startswith("data") and qbn in pdd[k]]
 
@@ -6365,13 +6373,14 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             if show:
                 plt.show()
 
+            # state assignment prob matrix
             title = self.raw_data_dict['timestamp'] + "\n{} State Assignment" \
                 " Probability Matrix\nTotal # shots:{}"\
                 .format(self.classif_method,
                         self.proc_data_dict['analysis_params']['n_shots'])
             fig = self.plot_fidelity_matrix(
                 self.proc_data_dict['analysis_params']['state_prob_mtx'][qbn],
-                kwargs['states'][self._get_state_labels_order(kwargs['states'])],
+                self._order_state_labels(kwargs['states']),
                 title=title,
                 show=show,
                 auto_shot_info=False)
@@ -6386,8 +6395,8 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                         self.proc_data_dict['analysis_params']['n_shots_masked'][qbn])
 
                 fig = self.plot_fidelity_matrix(
-                    self.proc_data_dict['analysis_params'] \
-                                       ['state_prob_mtx_masked'][qbn],
-                    kwargs['states'][self._get_state_labels_order(kwargs['states'])],                  title=title, show=show, auto_shot_info=False)
+                    pdd['analysis_params']['state_prob_mtx_masked'][qbn],
+                    self._order_state_labels(kwargs['states']),
+                    title=title, show=show, auto_shot_info=False)
                 fig_key = f'{qbn}_state_prob_matrix_masked_{self.classif_method}'
                 self.figs[fig_key] = fig

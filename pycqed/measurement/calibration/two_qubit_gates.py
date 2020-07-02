@@ -4,6 +4,7 @@ from copy import deepcopy
 from itertools import zip_longest
 import traceback
 from pycqed.utilities.general import temporary_value
+from pycqed.measurement.quantum_experiment import QuantumExperiment
 from pycqed.measurement.waveform_control.circuit_builder import CircuitBuilder
 from pycqed.measurement.waveform_control.block import Block, ParametricValue
 from pycqed.measurement.waveform_control.segment import UnresolvedPulse
@@ -21,49 +22,33 @@ log = logging.getLogger(__name__)
 #  they are explained, explain all kw where they are processed)
 # TODO: add some comments that explain the way the code works
 
-class CalibBuilder(CircuitBuilder):
+
+class MultiTaskingExperiment(QuantumExperiment):
     def __init__(self, task_list, dev=None, qubits=None,
                  operation_dict=None, **kw):
+        self.task_list = task_list
         # Try to get qubits or at least qb_names
         _, qb_names = self.extract_qubits(dev, qubits, operation_dict)
         # Filter to the ones that are needed
         qb_names = self.find_qubits_in_tasks(qb_names, task_list)
-        # Initialize the CircuitBuilder
+        # Initialize the QuantumExperiment
         super().__init__(dev=dev, qubits=qubits,
                          operation_dict=operation_dict,
                          filter_qb_names=qb_names, **kw)
 
-        self.MC = None
         self.cal_points = None
-        self.sweep_points = None
         self.cal_states = None
-        self.ro_qubits = None
-        self.ro_qb_names = None
-
-        self.classified = kw.pop('classified', False)
-        self.label = kw.pop('label', None)
-        self.upload = kw.pop('upload', True)
-        self.update = kw.pop('update', False)
-        self.measure = kw.pop('measure', True)
-        self.analyze = kw.pop('analyze', True)
-
+        self.exception = None
+        self.all_main_blocks = []
         self.cal_states_rotations = {}
         self.data_to_fit = {}
-        self.sequences = []
-        self.mc_points = []
-        self.channels_to_upload = []
-        self.det_get_values_kws = {'classified': self.classified,
-                                   'correlated': False,
-                                   'thresholded': True,
-                                   'averaged': True}
 
-        self.exp_metadata = kw.pop('exp_metadata', None)
-        if self.exp_metadata is None:
-            self.exp_metadata = {}
+        # The following is done because the respective call in the init of
+        # QuantumExperiment does not capture all kw since many are explicit
+        # arguments of the init there.
+        kw.pop('exp_metadata', None)
         self.exp_metadata.update(kw)
-        self.exp_metadata.update({'classified_ro': self.classified})
-        self.task_list = task_list
-        self.create_ro_qubit_list()
+
         self.create_cal_points(**kw)
 
     def add_to_meas_obj_sweep_points_map(self, meas_objs, sweep_point):
@@ -74,86 +59,45 @@ class CalibBuilder(CircuitBuilder):
         for mo in meas_objs:
             if mo not in self.exp_metadata['meas_obj_sweep_points_map']:
                 self.exp_metadata['meas_obj_sweep_points_map'][mo] = []
-            self.exp_metadata['meas_obj_sweep_points_map'][mo].append(
-                sweep_point)
+            if sweep_point not in self.exp_metadata[
+                    'meas_obj_sweep_points_map'][mo]:
+                self.exp_metadata['meas_obj_sweep_points_map'][mo].append(
+                    sweep_point)
 
     def get_meas_objs_from_task(self, task):
         return self.find_qubits_in_tasks(self.qb_names, [task])
 
-    def guess_label(self, **kw):
+    def guess_label(self, experiment_name=None, **kw):
+        if experiment_name is None:
+            experiment_name = getattr(self, 'experiment_name', 'Experiment')
         if self.label is None:
-            self.label = 'Experiment'
+            self.label = experiment_name
             if self.dev is not None:
-                self.label += self.dev.get_msmt_suffix(self.ro_qb_names)
+                self.label += self.dev.get_msmt_suffix(self.meas_obj_names)
             else:
                 # guess_label is called from run_measurement -> we have qubits
-                self.label += mqm.get_multi_qubit_msmt_suffix(self.ro_qubits)
+                self.label += mqm.get_multi_qubit_msmt_suffix(self.meas_objs)
 
     def run_measurement(self, **kw):
-        assert self.ro_qubits is not None, 'Cannot run measurement without ' \
-                                           'qubit objects.'
-        self.MC = self.ro_qubits[0].instr_mc.get_instr()
-        self.guess_label(**kw)
-
-        # only measure ro_qubits
-        for qb in self.ro_qubits:
-            qb.prepare(drive='timedomain') # FIXME: drive should be a parameter
-
-        if len(self.sweep_points) == 2:
-            # compress 2D sweep
-            compression_seg_lim = kw.pop('compression_seg_lim', None)
-            if compression_seg_lim is not None:
-                self.sequences, self.mc_points[0], self.mc_points[1], cf = \
-                    self.sequences[0].compress_2D_sweep(self.sequences,
-                                                        compression_seg_lim)
-                self.exp_metadata.update({'compression_factor': cf})
-
-        hard_sweep_func = awg_swf.SegmentHardSweep(
-            sequence=self.sequences[0], upload=self.upload,
-            parameter_name=list(self.sweep_points[0])[0],
-            unit=self.sweep_points.get_sweep_params_property('unit', 1))
-
-        self.MC.set_sweep_function(hard_sweep_func)
-        self.MC.set_sweep_points(self.mc_points[0])
-
-        if len(self.sweep_points) == 2:
-            self.channels_to_upload = kw.get('channels_to_upload',
-                                             self.channels_to_upload)
-            self.MC.set_sweep_function_2D(awg_swf.SegmentSoftSweep(
-                hard_sweep_func, self.sequences,
-                list(self.sweep_points[1])[0],
-                self.sweep_points.get_sweep_params_property('unit', 2),
-                channels_to_upload=self.channels_to_upload))
-            self.MC.set_sweep_points_2D(self.mc_points[1])
-
-        det_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
-        det_func = mqm.get_multiplexed_readout_detector_functions(
-            self.ro_qubits, nr_averages=max(qb.acq_averages() for qb in
-                                            self.ro_qubits),
-            det_get_values_kws=self.det_get_values_kws)[det_name]
-        self.MC.set_detector_function(det_func)
-
-        if self.dev is not None:
-            meas_obj_value_names_map = self.dev.get_meas_obj_value_names_map(
-                self.ro_qubits, det_func)
-        else:
-            meas_obj_value_names_map = mqm.get_meas_obj_value_names_map(
-                self.ro_qubits, det_func)
+        # allow the user to overwrite the automatically generated list of
+        # channels to upload
+        self.channels_to_upload = kw.get('channels_to_upload',
+                                         self.channels_to_upload)
+        self.df_kwargs.update(
+            {'nr_averages': max(qb.acq_averages() for qb in self.meas_objs)})
 
         self.exp_metadata.update({
             'preparation_params': self.get_prep_params(),
             'rotate': len(self.cal_states) != 0 and not self.classified,
             'sweep_points': self.sweep_points,
-            'meas_obj_value_names_map': meas_obj_value_names_map,
-            'ro_qubits': self.ro_qb_names,
+            'ro_qubits': self.meas_obj_names,
             'cal_states_rotations': self.cal_states_rotations,
             'data_to_fit': self.data_to_fit,
         })
         if self.task_list is not None:
             self.exp_metadata.update({'task_list': self.task_list})
 
-        self.MC.run(self.label, exp_metadata=self.exp_metadata,
-                    mode='2D' if len(self.sweep_points) == 2 else '1D')
+        super().run_measurement(**kw)
 
     def create_cal_points(self, n_cal_points_per_state=1, cal_states='auto',
                           for_ef=False, **kw):
@@ -173,9 +117,19 @@ class CalibBuilder(CircuitBuilder):
         self.cal_states = CalibrationPoints.guess_cal_states(
             cal_states, for_ef=for_ef)
         self.cal_points = CalibrationPoints.multi_qubit(
-            self.ro_qb_names, self.cal_states,
+            self.meas_obj_names, self.cal_states,
             n_per_state=n_cal_points_per_state)
         self.exp_metadata.update({'cal_points': repr(self.cal_points)})
+
+    def preprocess_task_list(self, sweep_points):
+        self.sweep_points = SweepPoints(from_dict_list=sweep_points)
+        if len(self.sweep_points) == 1:
+            self.sweep_points.add_sweep_dimension()
+        preprocessed_task_list = []
+        for task in self.task_list:
+            preprocessed_task_list.append(
+                self.preprocess_task(task, self.sweep_points, sweep_points))
+        return preprocessed_task_list
 
     def preprocess_task(self, task, global_sweep_points, sweep_points=None,
                         **kw):
@@ -200,9 +154,11 @@ class CalibBuilder(CircuitBuilder):
             params_to_prefix = [[], []]
         task['sweep_points'] = current_sweep_points
 
+        if len(params_to_prefix) == 1:
+            params_to_prefix.append([])
         for gsp, csp, params in zip(global_sweep_points,
-                                current_sweep_points,
-                                params_to_prefix):
+                                    current_sweep_points,
+                                    params_to_prefix):
             for k in csp.keys():
                 if k in params:
                     gsp[prefix + k] = csp[k]
@@ -211,26 +167,24 @@ class CalibBuilder(CircuitBuilder):
                     self.add_to_meas_obj_sweep_points_map(mo, k)
         return task
 
-    def parallel_sweep(self, sweep_points, task_list=(), block_func=None, **kw):
+    def parallel_sweep(self, preprocessed_task_list=(), block_func=None, **kw):
         """
         Calls a block creation function for each task in a task list,
         puts these blocks in parallel and sweeps over the given sweep points.
 
-        :param sweep_points: SweepPoints object (or list of sweep_dicts)
         :param task_list: a list of dictionaries, each containing keyword
             arguments for block_func, plus a key 'prefix' with a unique
-            prefix string
+            prefix string, plus optionally a key 'params_to_prefix' created
+            by preprocess_task indicating which sweep parameters have to be
+            prefixed with the task prefix.
         :param block_func: a handle to a function that creates a block
         :param kw: keyword arguments are passed to sweep_n_dim
         :return: see sweep_n_dim
         """
-        global_sweep_points = SweepPoints(from_dict_list=sweep_points)
         parallel_blocks = []
-        for task in task_list:
-            task = self.preprocess_task(task, global_sweep_points, sweep_points)
+        for task in preprocessed_task_list:
             prefix = task.pop('prefix')
             params_to_prefix = task.pop('params_to_prefix', None)
-
             if not 'block_func' in task:
                 task['block_func'] = block_func
             new_block = task['block_func'](**task)
@@ -239,16 +193,65 @@ class CalibBuilder(CircuitBuilder):
                     prefix, [k for l in params_to_prefix for k in l])
             parallel_blocks.append(new_block)
 
-        all_main_blocks = self.simultaneous_blocks('all', parallel_blocks)
-        if len(global_sweep_points[1]) == 0:
+        self.all_main_blocks = self.simultaneous_blocks('all', parallel_blocks)
+        if len(self.sweep_points[1]) == 0:
             # with this dummy soft sweep, exactly one sequence will be created
             # and the data format will be the same as for a true soft sweep
-            global_sweep_points.add_sweep_parameter('dummy_sweep_param', [0])
-        self.sweep_points = global_sweep_points
-        # only measure ro_qubits
-        return self.sweep_n_dim(global_sweep_points, body_block=all_main_blocks,
+            self.sweep_points.add_sweep_parameter('dummy_sweep_param', [0])
+        # only measure meas_objs
+        return self.sweep_n_dim(self.sweep_points,
+                                body_block=self.all_main_blocks,
                                 cal_points=self.cal_points,
-                                ro_qubits=self.ro_qb_names, **kw)
+                                ro_qubits=self.meas_obj_names, **kw)
+
+    @staticmethod
+    def find_qubits_in_tasks(qubits, task_list, search_in_operations=True):
+        qbs_dict = {qb if isinstance(qb, str) else qb.name: qb for qb in
+                    qubits}
+        found_qubits = []
+
+        def append_qbs(found_qubits, candidate):
+            if isinstance(candidate, QuDev_transmon):
+                if candidate not in found_qubits:
+                    found_qubits.append(candidate)
+            elif isinstance(candidate, str):
+                if candidate in qbs_dict.keys():
+                    if qbs_dict[candidate] not in found_qubits:
+                        found_qubits.append(qbs_dict[candidate])
+                elif ' ' in candidate and search_in_operations:
+                    append_qbs(found_qubits, candidate.split(' '))
+            elif isinstance(candidate, list):
+                for v in candidate:
+                    append_qbs(found_qubits, v)
+            else:
+                return None
+
+        for task in task_list:
+            for v in task.values():
+                append_qbs(found_qubits, v)
+        return found_qubits
+
+    def create_meas_objs_list(self, task_list=None, **kw):
+        if task_list is None:
+            task_list = self.task_list
+        if task_list is None:
+            task_list = [{}]
+        ro_qubits = [task.pop('ro_qubits', []) for task in task_list]
+        ro_qubits.append(kw.pop('ro_qubits', []))
+        if any([isinstance(qbn, list) for qbn in ro_qubits]):
+            # flatten
+            ro_qubits = [i for j in ro_qubits for i in j]
+        # unique and sort
+        ro_qubits = list(np.unique(ro_qubits))
+        ro_qubits.sort()
+        self.meas_objs, self.meas_obj_names = self.get_qubits(
+            'all' if len(ro_qubits) == 0 else ro_qubits)
+
+
+class CalibBuilder(MultiTaskingExperiment):
+    def __init__(self, task_list, **kw):
+        super().__init__(task_list=task_list, **kw)
+        self.update = kw.pop('update', False)
 
     def max_pulse_length(self, pulse, sweep_points=None,
                          given_pulse_length=None):
@@ -289,22 +292,6 @@ class CalibBuilder(CircuitBuilder):
                 prepend_pulses += [prepend_pulse]
         return Block('prepend', prepend_pulses)
 
-    def create_ro_qubit_list(self, task_list=None, **kw):
-        if task_list is None:
-            task_list = self.task_list
-        if task_list is None:
-            task_list = [{}]
-        ro_qubits = [task.pop('ro_qubits', []) for task in task_list]
-        ro_qubits.append(kw.pop('ro_qubits', []))
-        if any([isinstance(qbn, list) for qbn in ro_qubits]):
-            # flatten
-            ro_qubits = [i for j in ro_qubits for i in j]
-        # unique and sort
-        ro_qubits = list(np.unique(ro_qubits))
-        ro_qubits.sort()
-        self.ro_qubits, self.ro_qb_names = self.get_qubits(
-            'all' if len(ro_qubits) == 0 else ro_qubits)
-
     @staticmethod
     def add_default_ramsey_sweep_points(sweep_points, **kw):
         if sweep_points is None:
@@ -313,8 +300,7 @@ class CalibBuilder(CircuitBuilder):
         if len(sweep_points) == 1:
             sweep_points.add_sweep_dimension()
         if len(sweep_points[0]) > 0:
-            nr_phases = len(sweep_points.get_sweep_params_property(
-                'values', 1)) // 2
+            nr_phases = sweep_points.length(0) // 2
         else:
             nr_phases = kw.get('nr_phases', 6)
         hard_sweep_dict = SweepPoints()
@@ -326,41 +312,22 @@ class CalibBuilder(CircuitBuilder):
         sweep_points.update(hard_sweep_dict + [{}])
         return sweep_points
 
-    @staticmethod
-    def find_qubits_in_tasks(qubits, task_list, search_in_operations=True):
-        qbs_dict = {qb if isinstance(qb, str) else qb.name: qb for qb in
-                    qubits}
-        found_qubits = []
-
-        def append_qbs(found_qubits, candidate):
-            if isinstance(candidate, QuDev_transmon):
-                if candidate not in found_qubits:
-                    found_qubits.append(candidate)
-            elif isinstance(candidate, str):
-                if candidate in qbs_dict.keys():
-                    if qbs_dict[candidate] not in found_qubits:
-                        found_qubits.append(qbs_dict[candidate])
-                elif ' ' in candidate and search_in_operations:
-                    append_qbs(found_qubits, candidate.split(' '))
-            elif isinstance(candidate, list):
-                for v in candidate:
-                    append_qbs(found_qubits, v)
-            else:
-                return None
-
-        for task in task_list:
-            for v in task.values():
-                append_qbs(found_qubits, v)
-        return found_qubits
 
 
 class CPhase(CalibBuilder):
     """
-    Creates a CalibrationPoints object based on the given parameters.
+    class to measure the leakage and the phase acquired during a flux pulse
+    conditioned on the state of another qubit (qbl).
+    In this measurement, the phase from two Ramsey type measurements
+    on qbr is measured, once with the control qubit in the excited state
+    and once in the ground state. The conditional phase is calculated as the
+    difference.
 
-    TODO
-    :param cz_pulse_name: see CircuitBuilder
-    :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
+    Args:
+        FIXME: add further args
+        TODO
+        :param cz_pulse_name: see CircuitBuilder
+        :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
     ...
     """
 
@@ -384,25 +351,22 @@ class CPhase(CalibBuilder):
             self.cz_durations = {}
 
             sweep_points = self.add_default_sweep_points(sweep_points, **kw)
+            preprocessed_task_list = self.preprocess_task_list(sweep_points)
             self.sequences, self.mc_points = self.parallel_sweep(
-                sweep_points, task_list, self.cphase_block, **kw)
+                preprocessed_task_list, self.cphase_block, **kw)
 
             self.exp_metadata.update({
                 'cz_durations': self.cz_durations,
             })
 
-            if self.measure:
-                self.run_measurement(**kw)
-            if self.analyze:
-                self.run_analysis(**kw)
+            self.autorun()
         except Exception as x:
             self.exception = x
             traceback.print_exc()
 
     def add_default_sweep_points(self, sweep_points, **kw):
         sweep_points = self.add_default_ramsey_sweep_points(sweep_points, **kw)
-        nr_phases = len(sweep_points.get_sweep_params_property(
-            'values', 1)) // 2
+        nr_phases = sweep_points.length(0) // 2
         hard_sweep_dict = SweepPoints(
             'pi_pulse_off', [0] * nr_phases + [1] * nr_phases)
         sweep_points.update(hard_sweep_dict + [{}])
@@ -494,12 +458,12 @@ class CPhase(CalibBuilder):
             channel_map = {qb.name: [vn + ' ' +
                                      qb.instr_uhf() for vn in
                                      qb.int_avg_classif_det.value_names]
-                           for qb in self.ro_qubits}
+                           for qb in self.meas_objs}
         else:
             channel_map = {qb.name: [vn + ' ' +
                                      qb.instr_uhf() for vn in
                                      qb.int_avg_det.value_names]
-                           for qb in self.ro_qubits}
+                           for qb in self.meas_objs}
         self.analysis = tda.CPhaseLeakageAnalysis(
             qb_names=self.qb_names,
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
@@ -579,13 +543,10 @@ class DynamicPhase(CalibBuilder):
                         self.operation_dict[self.get_cz_operation_name(
                             **task)]['basis_rotation'] = {}
 
+                preprocessed_task_list = self.preprocess_task_list(sweep_points)
                 self.sequences, self.mc_points = self.parallel_sweep(
-                    sweep_points, task_list, self.dynamic_phase_block, **kw)
-
-                if self.measure:
-                    self.run_measurement(**kw)
-                if self.analyze:
-                    self.run_analysis(**kw)
+                    preprocessed_task_list, self.dynamic_phase_block, **kw)
+                self.autorun()
 
             if self.update:
                 assert self.dev is not None, \
@@ -617,8 +578,7 @@ class DynamicPhase(CalibBuilder):
 
     def add_default_sweep_points(self, sweep_points, **kw):
         sweep_points = self.add_default_ramsey_sweep_points(sweep_points, **kw)
-        nr_phases = len(sweep_points.get_sweep_params_property(
-            'values', 1)) // 2
+        nr_phases = sweep_points.length(0) // 2
         hard_sweep_dict = SweepPoints(
             'flux_pulse_off', [0] * nr_phases + [1] * nr_phases)
         sweep_points.update(hard_sweep_dict + [{}])

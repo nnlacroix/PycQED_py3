@@ -1,28 +1,20 @@
 import numpy as np
-from copy import copy
 from copy import deepcopy
-from itertools import zip_longest
 import traceback
-from pycqed.utilities.general import temporary_value
 from pycqed.measurement.calibration.two_qubit_gates import CalibBuilder
+import pycqed.measurement.sweep_functions as swf
 from pycqed.measurement.waveform_control.block import Block, ParametricValue
-from pycqed.measurement.waveform_control.segment import UnresolvedPulse
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.analysis import fitting_models as fit_mods
-from pycqed.measurement.calibration.calibration_points import CalibrationPoints
-import pycqed.measurement.awg_sweep_functions as awg_swf
 import pycqed.analysis_v2.timedomain_analysis as tda
-from pycqed.instrument_drivers.meta_instrument.qubit_objects.QuDev_transmon \
-    import QuDev_transmon
-from pycqed.measurement.multi_qubit_module import \
-    get_multiplexed_readout_detector_functions
+from pycqed.utilities.general import temporary_value
 import logging
+
 log = logging.getLogger(__name__)
 
 
 class T1FrequencySweep(CalibBuilder):
-    def __init__(self, dev, task_list=None, sweep_points=None,
-                 qubits=None, **kw):
+    def __init__(self, task_list=None, sweep_points=None, qubits=None, **kw):
         """
         Flux pulse amplitude measurement used to determine the qubits energy in
         dependence of flux pulse amplitude.
@@ -33,7 +25,6 @@ class T1FrequencySweep(CalibBuilder):
        |          --------| --------- fluxpulse ---------- |
 
 
-        :param dev: instance of Device class; see CalibBuilder docstring
         :param task_list: list of dicts; see CalibBuilder docstring
         :param sweep_points: SweepPoints class instance with first sweep
             dimension describing the flux pulse lengths and second dimension
@@ -65,43 +56,36 @@ class T1FrequencySweep(CalibBuilder):
                     raise ValueError('Please provide either "sweep_points" '
                                      'and "qubits," or "task_list" containing '
                                      'this information.')
-                task_list = [{'qubits_to_measure': qb.name,
-                              'sweep_points': sweep_points} for qb in qubits]
-            if qubits is None:
-                qubits = self.find_qubits_in_tasks(dev.qubits(), task_list)
-            super().__init__(dev, qubits=qubits, **kw)
+                task_list = [{'qubits_to_measure': qb.name} for qb in qubits]
+
+            super().__init__(task_list, qubits=qubits, **kw)
 
             self.analysis = None
-            task_list = self.add_amplitude_sweep_points(task_list)
-            self.task_list = task_list
-            self.ro_qubits = self.get_ro_qubits()
-            self.guess_label()
-            self.data_to_fit = {qb.name: 'pe' for qb in self.ro_qubits}
-            for_ef = kw.get('for_ef', False)
-            kw['for_ef'] = for_ef
-            self.create_cal_points(**kw)
-            sweep_points = SweepPoints(from_dict_list=[{}, {}])
-            self.sequences, sp = \
-                self.parallel_sweep(sweep_points, self.task_list,
+            self.data_to_fit = {qb: 'pe' for qb in self.meas_obj_names}
+            self.sweep_points = SweepPoints(
+                from_dict_list=[{}, {}] if sweep_points is None
+                else sweep_points)
+            self.add_amplitude_sweep_points()
+
+            preprocessed_task_list = self.preprocess_task_list(self.sweep_points)
+            self.sequences, self.mc_points = \
+                self.parallel_sweep(preprocessed_task_list,
                                     self.t1_flux_pulse_block, **kw)
-            self.hard_sweep_points, self.soft_sweep_points = sp
             self.exp_metadata.update({
-                'data_to_fit': self.data_to_fit,
                 'global_PCA': len(self.cal_points.states) == 0
             })
 
-            if self.measure:
+            if kw.get('compression_seg_lim', None) is None:
                 # compress the 2nd sweep dimension completely onto the first
-                self.run_measurement(
-                    compression_seg_lim=np.product([len(s) for s in sp]) +
-                                        len(self.cal_points.states), **kw)
-            if self.analyze:
-                self.run_analysis(**kw)
+                kw['compression_seg_lim'] = \
+                    np.product([len(s) for s in self.mc_points]) \
+                    + len(self.cal_points.states)
+            self.autorun()
         except Exception as x:
             self.exception = x
             traceback.print_exc()
 
-    def add_amplitude_sweep_points(self, task_list):
+    def add_amplitude_sweep_points(self, task_list=None):
         """
         If flux pulse amplitudes are not in the sweep_points in each task, but
         qubit frequencies are, then amplitudes will be calculated based on
@@ -111,29 +95,37 @@ class T1FrequencySweep(CalibBuilder):
             for each qubit.
         :return: updated task list
         """
+        if task_list is None:
+            task_list = self.task_list
+        # TODO: check combination of sweep points in task and in sweep_points
         for task in task_list:
-            this_qb = self.get_qubits(task['qubits_to_measure'])[0][0]
-            sweep_points = task['sweep_points']
+            sweep_points = task.get('sweep_points', [{}, {}])
+            sweep_points = SweepPoints(from_dict_list=sweep_points)
             if len(sweep_points) == 1:
-                raise NotImplementedError('Sweep points must be two-dimensional'
-                                          ' with dim 1 over flux pulse lengths,'
-                                          ' and dim 2 over qubit frequencies'
-                                          ' or flux pulse amplitudes.')
-                # add the commented out code below when we know a good default
-                # for the sweep points
-                # # it must be the 1st sweep dimension, over flux pulse lengths
-                # sweep_points = [sweep_points[0], {}]
-                # sweep_points = SweepPoints(from_dict_list=sweep_points)
-
-            if sweep_points.get_sweep_params_property('unit', 2).lower() == 'hz':
+                sweep_points.add_sweep_dimension()
+            if 'qubit_freqs' in sweep_points[1]:
+                qubit_freqs = sweep_points[1]['qubit_freqs'][0]
+            elif len(self.sweep_points) >= 2 and \
+                    'qubit_freqs' in self.sweep_points[1]:
+                qubit_freqs = self.sweep_points[1]['qubit_freqs'][0]
+            else:
+                qubit_freqs = None
+            if qubit_freqs is not None:
+                qubits, _ = self.get_qubits(task['qubits_to_measure'])
+                if qubits is None:
+                    raise KeyError('qubit_freqs specified in sweep_points, '
+                                   'but no qubit objects available, so that '
+                                   'the corresponding amplitudes cannot be '
+                                   'computed.')
+                this_qb = qubits[0]
                 fit_paras = deepcopy(this_qb.fit_ge_freq_from_flux_pulse_amp())
                 if len(fit_paras) == 0:
-                    raise ValueError(f'fit_ge_freq_from_flux_pulse_amp is empty'
-                                     f' for {this_qb.name}. Cannot calculate '
-                                     f'amplitudes from qubit frequencies.')
+                    raise ValueError(
+                        f'fit_ge_freq_from_flux_pulse_amp is empty'
+                        f' for {this_qb.name}. Cannot calculate '
+                        f'amplitudes from qubit frequencies.')
                 amplitudes = np.array(fit_mods.Qubit_freq_to_dac(
-                    sweep_points.get_sweep_params_property('values', 2),
-                    **fit_paras))
+                    qubit_freqs, **fit_paras))
                 if np.any((amplitudes > abs(fit_paras['V_per_phi0']) / 2)):
                     amplitudes -= fit_paras['V_per_phi0']
                 elif np.any((amplitudes < -abs(fit_paras['V_per_phi0']) / 2)):
@@ -172,7 +164,8 @@ class T1FrequencySweep(CalibBuilder):
                                  kw.get('spectator_op_codes', []),
                                  pulse_modifs=pulse_modifs)
 
-        pulse_modifs = {'all': {'element_name': 'flux_pulse', 'pulse_delay': 0}}
+        pulse_modifs = {
+            'all': {'element_name': 'flux_pulse', 'pulse_delay': 0}}
         fp = self.block_from_ops('flux', [f'FP {qubit_name}'],
                                  pulse_modifs=pulse_modifs)
         for k in ['channel', 'channel2']:
@@ -191,13 +184,13 @@ class T1FrequencySweep(CalibBuilder):
         return self.sequential_blocks(f't1 flux pulse {qubit_name}',
                                       [pb, pp, fp])
 
-    def guess_label(self):
+    def guess_label(self, **kw):
         """
         Default measurement label.
         """
-        if self.label is None:
-            self.label = f'T1_frequency_sweep' \
-                         f'{self.dev.get_msmt_suffix(self.ro_qubits)}'
+        if kw.get('experiment_name', None) is None:
+            kw['experiment_name'] = 'T1_frequency_sweep'
+        return super().guess_label(**kw)
 
     def run_analysis(self, **kw):
         """
@@ -208,5 +201,145 @@ class T1FrequencySweep(CalibBuilder):
 
         self.all_fits = kw.get('all_fits', True)
         self.analysis = tda.T1FrequencySweepAnalysis(
-            qb_names=[qb.name for qb in self.ro_qubits],
+            qb_names=self.meas_obj_names,
             options_dict=dict(TwoD=False, all_fits=self.all_fits))
+
+
+class ParallelLOSweepExperiment(CalibBuilder):
+    def __init__(self, task_list, sweep_points=None, **kw):
+        for task in task_list:
+            if not isinstance(task['qb'], str):
+                task['qb'] = task['qb'].name
+            if not 'prefix' in task:
+                task['prefix'] = f"{task['qb']}_"
+
+        super().__init__(task_list, **kw)
+        self.lo_offsets = {}
+        self.lo_sweep_points = []
+        self.analysis = {}
+
+        preprocessed_task_list = self.preprocess_task_list(sweep_points)
+        self.resolve_lo_sweep_points(**kw)
+        self.sequences, self.mc_points = self.parallel_sweep(
+            preprocessed_task_list, self.sweep_block, **kw)
+
+    def resolve_lo_sweep_points(self, freq_sp_suffix='freq', **kw):
+        all_freqs = self.sweep_points.get_sweep_params_property('values', 1,
+                                                                'all')
+        if np.ndim(all_freqs) == 1:
+            all_freqs = [all_freqs]
+        all_diffs = [np.diff(freqs) for freqs in all_freqs]
+        assert all([sum(abs(diff - all_diffs[0])) == 0 for diff in
+                    all_diffs]), "The steps between frequency sweep points " \
+                                 "must be the same for all qubits."
+        self.lo_sweep_points = all_freqs[0] - all_freqs[0][0]
+
+        if self.qubits is None:
+            log.warning('No qubit objects provided. Creating the sequence '
+                        'without checking for ge_mod_freq corrections.')
+        else:
+            temp_vals = []
+            for task in self.task_list:
+                qb = self.get_qubits(task['qb'])[0][0]
+                sp = self.exp_metadata['meas_obj_sweep_points_map'][qb.name]
+                freq_sp = [s for s in sp if s.endswith(freq_sp_suffix)][0]
+                f_start = self.sweep_points.get_sweep_params_property(
+                    'values', 1, freq_sp)[0]
+                lo = qb.instr_ge_lo.get_instr()
+                if lo not in self.lo_offsets:
+                    self.lo_offsets[lo] = f_start - qb.ge_mod_freq()
+                else:
+                    temp_vals.append(
+                        (qb.ge_mod_freq, f_start - self.lo_offsets[lo]))
+
+            with temporary_value(*temp_vals):
+                self.update_operation_dict()
+
+    def run_measurement(self, **kw):
+        name = 'Drive frequency shift'
+        sweep_functions = [swf.Offset_Sweep(
+            lo.frequency, offset, name=name, parameter_name=name, unit='Hz')
+            for lo, offset in self.lo_offsets.items()]
+        self.sweep_functions = [
+            self.sweep_functions[0], swf.multi_sweep_function(
+                sweep_functions, name=name, parameter_name=name)]
+        self.mc_points[1] = self.lo_sweep_points
+        super().run_measurement(**kw)
+
+    def get_meas_objs_from_task(self, task):
+        return [task['qb']]
+
+    def sweep_block(self, **kw):
+        raise NotImplementedError('Child class has to implement sweep_block.')
+
+
+class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
+    """
+        Flux pulse amplitude measurement used to determine the qubits energy in
+        dependence of flux pulse amplitude.
+
+        pulse sequence:
+           |    -------------    |X180|  ---------------------  |RO|
+           |    ---   | ---- fluxpulse ----- |
+
+
+            sweep_points:
+            amplitude (numpy array): array of amplitudes of the flux pulse
+            freq (numpy array): array of drive frequencies
+
+        Returns: None
+
+    """
+
+    def __init__(self, task_list, sweep_points=None, **kw):
+        try:
+            self.experiment_name = 'Flux_amplitude'
+            super().__init__(task_list, sweep_points, **kw)
+            self.exp_metadata.update({"global_PCA": True})
+            self.autorun(**kw)
+
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def sweep_block(self, qb, flux_op_code=None, delay=None,
+                                  **kw):
+        """
+        Performs X180 pulse on top of a fluxpulse
+        :param qb: (str) the name of the qubit
+        :param flux_op_code: (optional str) the flux pulse op_code (default:
+            FP qb)
+        :param delay: (optional float): flux pulse delay (default: centered to
+            center of drive pulse)
+        :param kw:
+        """
+        if flux_op_code is None:
+            flux_op_code = f'FP {qb}'
+        pulse_modifs = {'X180': {'element_name': 'FPA_Pi_el'}}
+        b = self.block_from_ops(f'ge_flux {qb}',
+                                 [f'X180 {qb}', flux_op_code],
+                                 pulse_modifs=pulse_modifs)
+        fp = b.pulses[1]
+        fp['ref_point'] = 'middle'
+        if delay is None:
+            delay = fp['pulse_length'] / 2
+        fp['pulse_delay'] = -fp.get('buffer_length_start', 0) - delay
+        fp['amplitude'] = ParametricValue('amplitude')
+        return b
+
+    def run_analysis(self, **kw):
+        """
+        Runs analysis and stores analysis instances in self.analysis.
+        :param kw:
+        """
+        for task in self.task_list:
+            qb_name = task['qb']
+            self.analysis[qb_name] = tda.FluxAmplitudeSweepAnalysis(
+                qb_names=[qb_name], options_dict=dict(TwoD=True))
+
+        if self.update:
+            for qb in self.qubits:
+                if qb.name in self.analysis:
+                    qb.fit_ge_freq_from_flux_pulse_amp(
+                        self.analysis[qb.name].fit_res[
+                            f'freq_fit_{qb.name}'].best_values)

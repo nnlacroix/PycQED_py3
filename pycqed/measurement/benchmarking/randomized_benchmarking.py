@@ -1,7 +1,7 @@
 import numpy as np
 import traceback
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
-from pycqed.measurement.calibration.two_qubit_gates import CalibBuilder
+from pycqed.measurement.calibration.two_qubit_gates import MultiTaskingExperiment
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.measurement.randomized_benchmarking import \
     randomized_benchmarking as rb
@@ -10,7 +10,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-class SingleQubitRandomizedBenchmarking(CalibBuilder):
+class SingleQubitRandomizedBenchmarking(MultiTaskingExperiment):
     def __init__(self, task_list=None, sweep_points=None, qubits=None,
                  nr_seeds=None, interleaved_gate=None, gate_decomposition='HZ',
                  identical_pulses=False, **kw):
@@ -60,10 +60,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
                     raise ValueError('Please provide either "sweep_points" '
                                      'and "qubits," or "task_list" containing '
                                      'this information.')
-                task_list = [{'qubit_to_measure': qb.name,
-                              'sweep_points': sweep_points} for qb in qubits]
-                # remove sweep_points since they are in the tasks now
-                sweep_points = None
+                task_list = [{'qubit_to_measure': qb.name} for qb in qubits]
 
             super().__init__(task_list, qubits=qubits, **kw)
 
@@ -77,30 +74,22 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             # Check if we can apply identical pulses on all qubits in task_list
             # Can only do this if they have identical cliffords array
             one_clf_set = self.task_list[0][
-                'sweep_points'].get_sweep_params_property('values', 2)
+                'sweep_points'].get_sweep_params_property('values', 1)
             unique_clf_sets = np.unique([
-                task['sweep_points'].get_sweep_params_property('values', 2)
+                task['sweep_points'].get_sweep_params_property('values', 1)
                 for task in self.task_list])
             if len(unique_clf_sets) != len(one_clf_set):
                 self.identical_pulses = False
 
             # TODO: there is currently no analysis for RB with cal_points
             kw['cal_states'] = kw.get('cal_states', '')
-            self.sweep_points = SweepPoints(
-                from_dict_list=[{}, {}] if sweep_points is None
-                else sweep_points)
-            for task in task_list:
-                self.preprocess_task(task, self.sweep_points, sweep_points)
+            self.preprocess_task_list(sweep_points)
             self.sequences, self.mc_points = self.sweep_n_dim(
                 self.sweep_points, body_block=None,
                 body_block_func=self.rb_block, cal_points=self.cal_points,
-                ro_qubits=self.ro_qb_names, **kw)
+                ro_qubits=self.meas_obj_names, **kw)
             self.add_processing_pipeline()
-
-            if self.measure:
-                self.run_measurement(**kw)
-            if self.analyze:
-                self.run_analysis(**kw)
+            self.autorun()
 
         except Exception as x:
             self.exception = x
@@ -120,7 +109,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         if task_list is None:
             task_list = self.task_list
         for task in task_list:
-            sweep_points = task['sweep_points']
+            sweep_points = task.get('sweep_points', [{},{}])
             if len(sweep_points) == 1:
                 # it must be the 2nd sweep dimension, over cliffords
                 sweep_points = [{}, sweep_points[0]]
@@ -140,7 +129,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
             # all qubits have the same cliffords array
             current_sweep_points = SweepPoints(from_dict_list=sweep_points)
             current_sweep_points.update(
-                SweepPoints(from_dict_list=task_list[0]['sweep_points']))
+                SweepPoints(from_dict_list=self.task_list[0]['sweep_points']))
             clifford = current_sweep_points[1].get(['clifford'])[0][sp2d_idx]
             cl_seq = rb.randomized_benchmarking_sequence(
                 clifford, interleaved_gate=self.interleaved_gate)
@@ -148,7 +137,7 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
                 cl_seq, gate_decomp=self.gate_decomposition)
             rb_block_list = [self.block_from_ops(
                 f'rb_{qb}', [f'{p} {qb}' for p in pulse_keys])
-                for qb in self.ro_qb_names]
+                for qb in self.meas_obj_names]
         else:
             rb_block_list = []
             for task in self.task_list:
@@ -175,11 +164,11 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         if self.label is None:
             if self.interleaved_gate is None:
                 self.label = f'RB_{self.gate_decomposition}' \
-                             f'{self.dev.get_msmt_suffix(self.ro_qb_names)}'
+                             f'{self.dev.get_msmt_suffix(self.meas_obj_names)}'
             else:
                 self.label = f'IRB_{self.interleaved_gate}_' \
                              f'{self.gate_decomposition}' \
-                             f'{self.dev.get_msmt_suffix(self.ro_qb_names)}'
+                             f'{self.dev.get_msmt_suffix(self.meas_obj_names)}'
 
     def add_processing_pipeline(self):
         """
@@ -188,9 +177,9 @@ class SingleQubitRandomizedBenchmarking(CalibBuilder):
         pp = ProcessingPipeline()
         for task in self.task_list:
             cliffords = task['sweep_points'].get_sweep_params_property(
-                'values', 2)
-            seeds = task['sweep_points'].get_sweep_params_property(
                 'values', 1)
+            seeds = task['sweep_points'].get_sweep_params_property(
+                'values', 0)
             if not self.classified:
                 pp.add_node('rotate_iq', keys_in='raw',
                             meas_obj_names=task['qubit_to_measure'],

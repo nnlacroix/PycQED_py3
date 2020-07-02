@@ -30,14 +30,7 @@ class CircuitBuilder:
         self.dev = dev
         self.qubits, self.qb_names = self.extract_qubits(
             dev, qubits, operation_dict, filter_qb_names)
-
-        if operation_dict is not None:
-            self.operation_dict = deepcopy(operation_dict)
-        elif dev is not None:
-            self.operation_dict = deepcopy(dev.get_operation_dict())
-        else:
-            self.operation_dict = deepcopy(mqm.get_operation_dict(qubits))
-
+        self.update_operation_dict(operation_dict)
         self.cz_pulse_name = kw.get('cz_pulse_name', 'upCZ')
         self.decompose_rotation_gates = kw.get('decompose_rotation_gates', {})
         self.prep_params = kw.get('prep_params', None)
@@ -69,6 +62,22 @@ class CircuitBuilder:
                 qubits = [qb for qb in qubits if qb.name in filter_qb_names]
             qb_names = [qb for qb in qb_names if qb in filter_qb_names]
         return qubits, qb_names
+
+    def update_operation_dict(self, operation_dict=None):
+        """
+        Updates the stored operation_dict based on the passed operation_dict or
+        based on the stored device/qubit objects.
+        :param operation_dict: (optional) The operation dict to be used. If
+            not provided, an operation dict is generated from  the stored
+            device/qubit objects.
+        :return:
+        """
+        if operation_dict is not None:
+            self.operation_dict = deepcopy(operation_dict)
+        elif self.dev is not None:
+            self.operation_dict = deepcopy(self.dev.get_operation_dict())
+        else:
+            self.operation_dict = deepcopy(mqm.get_operation_dict(self.qubits))
 
     def get_qubits(self, qb_names=None):
         """
@@ -723,14 +732,11 @@ class CircuitBuilder:
         if ro_kwargs is None:
             ro_kwargs = {}
 
-        nr_sp_list = [len(sweep_points.get_sweep_params_property('values', 1))]
+        nr_sp_list = sweep_points.length()
         if sweep_dims == 1:
             sweep_points = copy(sweep_points)
             sweep_points.add_sweep_dimension()
             nr_sp_list.append(1)
-        else:
-            nr_sp_list.append(len(sweep_points.get_sweep_params_property(
-                'values', 2)))
 
         prep = self.initialize(init_state=init_state, qb_names=ro_qubits)
         ro = self.mux_readout(**ro_kwargs, qb_names=ro_qubits)

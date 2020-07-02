@@ -5,8 +5,6 @@ from pycqed.utilities.general import temporary_value
 from pycqed.measurement.waveform_control.circuit_builder import CircuitBuilder
 import pycqed.measurement.awg_sweep_functions as awg_swf
 from pycqed.measurement import multi_qubit_module as mqm
-from pycqed.measurement.multi_qubit_module import \
-    get_multiplexed_readout_detector_functions
 import pycqed.analysis_v2.base_analysis as ba
 import logging
 log = logging.getLogger(__name__)
@@ -25,10 +23,10 @@ class QuantumExperiment(CircuitBuilder):
 
     """
     _metadata_params = {'cal_points', 'preparation_params', 'sweep_points',
-                        'channel_map', 'ro_qubits'}
+                        'channel_map', 'meas_objs'}
 
     def __init__(self, dev=None, qubits=None, operation_dict=None,
-                 ro_qubits=None, classified=False, MC=None,
+                 meas_objs=None, classified=False, MC=None,
                  label=None, exp_metadata=None, upload=True, measure=True,
                  analyze=True, temporary_values=(), drive="timedomain",
                  sequences=(), sequence_function=None,
@@ -46,9 +44,11 @@ class QuantumExperiment(CircuitBuilder):
                 details).
             operation_dict (dict): dictionary with operations. Defaults to None.
                 (see circuitBuilder for more details).
-            ro_qubits (list): list of qubits to be read out (i.e. for which the detector
-                functions will be prepared). Defaults to self.qubits (attribute set by
-                circuitBuilder). Required for run_measurement() when qubits is None.
+            meas_objs (list): list of measure object (e.g., qubits) to be read
+                out (i.e. for which the detector functions will be
+                prepared). Defaults to self.qubits (attribute set by
+                CircuitBuilder). Required for run_measurement() when qubits
+                is None.
             classified (bool): whether
             MC (MeasurementControl): MeasurementControl object. Required for
                 run_measurement() if qubits is None and device is None.
@@ -99,10 +99,14 @@ class QuantumExperiment(CircuitBuilder):
                 further keyword arguments are passed to the CircuitBuilder __init__
         """
 
-        # if no qubits/devices are provided, use empty list to skip iterations
-        #  over qubit lists
-        if qubits is None and dev is None:
-            qubits = []
+        if qubits is None and dev is None and operation_dict is None:
+            raise NotImplementedError('Experiments without qubits are not '
+                                      'implemented yet. Either dev or qubits'
+                                      'or operation_dict has to be provided.')
+            # planned future behavior (but has to be tested in all aspects):
+            # if no qubits/devive/operation_dict are provided, use empty
+            # list to skip iterations over qubit lists
+            # qubits = []
         super().__init__(dev=dev, qubits=qubits, operation_dict=operation_dict,
                          **kw)
 
@@ -110,40 +114,53 @@ class QuantumExperiment(CircuitBuilder):
         if self.exp_metadata is None:
             self.exp_metadata = {}
 
-        self.ro_qubits = self.qubits if ro_qubits is None else ro_qubits
+        self.create_meas_objs_list(**kw, meas_objs=meas_objs)
         self.MC = MC
 
         self.classified = classified
         self.label = label
         self.upload = upload
         self.measure = measure
-        self.temporary_values = temporary_values
+        self.temporary_values = list(temporary_values)
         self.analyze = analyze
         self.drive = drive
 
-        self.sequences = sequences
+        self.sequences = list(sequences)
         self.sequence_function = sequence_function
         self.sequence_kwargs = {} if sequence_kwargs is None else sequence_kwargs
         self.sweep_points = self.sequence_kwargs.get("sweep_points", None)
-        self.mc_points = mc_points if mc_points is not None else ([], [])
+        self.mc_points = mc_points if mc_points is not None else [[], []]
         self.sweep_functions = sweep_functions
         self.force_2D_sweep = force_2D_sweep
         self.compression_seg_lim = compression_seg_lim
         self.channels_to_upload = []
 
         # detector and sweep functions
-        default_df_kwargs = {'classified': self.classified,
-                             'correlated': False,
-                             'thresholded': True,
-                             'averaged': True}
+        default_df_kwargs = {'det_get_values_kws':
+                                 {'classified': self.classified,
+                                  'correlated': False,
+                                  'thresholded': True,
+                                  'averaged': True}}
         self.df_kwargs = default_df_kwargs if df_kwargs is None else df_kwargs
-        if df_name is None:
+        if df_name is not None:
             self.df_name = df_name
-        if self.df_name is None:
+        else:
             self.df_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
+        self.df = None
 
         self.exp_metadata.update(kw)
         self.exp_metadata.update({'classified_ro': self.classified})
+
+    def create_meas_objs_list(self, meas_objs=None, **kwargs):
+        """
+        Creates a default list for self.meas_objs if meas_objs is not provided,
+        and creates the list self.meas_obj_names.
+        Args:
+            meas_objs (list): a list of measurement objects (or None for
+                default, which is self.qubits)
+        """
+        self.meas_objs = self.qubits if meas_objs is None else meas_objs
+        self.meas_obj_names = [m.name for m in self.meas_objs]
 
     def _update_parameters(self, overwrite_dicts=True, **kwargs):
         """
@@ -173,11 +190,15 @@ class QuantumExperiment(CircuitBuilder):
 
         """
         self._update_parameters(**kw)
+        assert self.meas_objs is not None, 'Cannot run measurement without ' \
+                                           'measure objects.'
+        if len(self.mc_points) == 1:
+            self.mc_points = [self.mc_points[0], []]
 
         with temporary_value(*self.temporary_values):
-            # only prepare read out qubits
-            for qb in self.ro_qubits:
-                qb.prepare(drive=self.drive)
+            # only prepare measure objects
+            for m in self.meas_objs:
+                m.prepare(drive=self.drive)
 
             # create/retrieve sequence to run
             self._prepare_sequences(self.sequences, self.sequence_function,
@@ -213,11 +234,16 @@ class QuantumExperiment(CircuitBuilder):
         Returns: analysis object
 
         """
+        if analysis_class is None:
+            analysis_class = ba.BaseDataAnalysis
+        self.analysis = analysis_class(**kwargs)
+        return self.analysis
+
+    def autorun(self, **kw):
+        if self.measure:
+            self.run_measurement(**kw)
         if self.analyze:
-            if analysis_class is None:
-                analysis_class = ba.BaseDataAnalysis
-            self.analysis = analysis_class(**kwargs)
-            return self.analysis
+            self.run_analysis(**kw)
 
     def serialize(self, omitted_attrs=('MC', 'device', 'qubits')):
         """
@@ -370,32 +396,37 @@ class QuantumExperiment(CircuitBuilder):
                 sweep_param_name, unit = "None", ""
             if len(self.channels_to_upload) == 0:
                 self.channels_to_upload = "all"
-            if self.sweep_functions[1] != awg_swf.SegmentSoftSweep:
-                raise NotImplementedError(
-                    "2D sweeps with sweepfunction different than "
-                    "SegmentSoftsweep are not yet supported (but "
-                    "the framework should allow to implement it "
-                    "quite easily: we should just distinguish which"
-                    "arguments should be passed in which case ("
-                    "for now, different soft sweep functions accept "
-                    "different arguments...) to self.sweep_functions[1]"
-                    ". Feel free to give it a go and make a pull "
-                    "request ;)")
-            self.MC.set_sweep_function_2D(self.sweep_functions[1](
-                sweep_func_1st_dim, self.sequences, sweep_param_name, unit,
-                self.channels_to_upload))
+            if self.sweep_functions[1] == awg_swf.SegmentSoftSweep:
+                self.MC.set_sweep_function_2D(self.sweep_functions[1](
+                    sweep_func_1st_dim, self.sequences, sweep_param_name, unit,
+                    self.channels_to_upload))
+            else:
+                # In case of an unknown sweep function type, it is assumed
+                # that self.sweep_functions[1] has already been initialized
+                # with all required parameters and can be directly passed to
+                # MC.
+                self.MC.set_sweep_function_2D(self.sweep_functions[1])
 
             self.MC.set_sweep_points_2D(self.mc_points[1])
 
-        # check whether there is at least one readout qubit
-        if len(self.ro_qubits) == 0:
-            raise ValueError('No readout qubits provided. Cannot '
+        # check whether there is at least one measure object
+        if len(self.meas_objs) == 0:
+            raise ValueError('No measure objects provided. Cannot '
                              'configure detector functions')
 
         # Configure detector function
-        df = get_multiplexed_readout_detector_functions(
-            self.ro_qubits, **self.df_kwargs)[self.df_name]
+        # FIXME: this should be extended to meas_objs that are not qubits
+        df = mqm.get_multiplexed_readout_detector_functions(
+            self.meas_objs, **self.df_kwargs)[self.df_name]
         self.MC.set_detector_function(df)
+        if self.dev is not None:
+            meas_obj_value_names_map = self.dev.get_meas_obj_value_names_map(
+                self.meas_objs, df)
+        else:
+            meas_obj_value_names_map = mqm.get_meas_obj_value_names_map(
+                self.meas_objs, df)
+        self.exp_metadata.update(
+            {'meas_obj_value_names_map': meas_obj_value_names_map})
 
         if len(self.mc_points[1]) > 0:
             mmnt_mode = "2D"
@@ -420,10 +451,10 @@ class QuantumExperiment(CircuitBuilder):
                 self.MC = self.dev.instr_mc.get_instr()
             except AttributeError:
                 try:
-                    self.MC = self.qubits[0].instr_mc.get_instr()
+                    self.MC = self.meas_objs[0].instr_mc.get_instr()
                 except (AttributeError, IndexError):
                     raise ValueError("The Measurement Control (MC) could not "
-                                     "be retrieved because no Device/qubit "
+                                     "be retrieved because no Device/measure "
                                      "objects were found. Pass the MC to "
                                      "run_measurement() or set the MC attribute"
                                      " of the QuantumExperiment instance.")
@@ -444,7 +475,7 @@ class QuantumExperiment(CircuitBuilder):
             try:
                 if name in ('cal_points', 'sweep_points') and value is not None:
                     self.exp_metadata.update({name: repr(value)})
-                elif name in ('ro_qubits', "qubits") and value is not None:
+                elif name in ('meas_objs', "qubits") and value is not None:
                     self.exp_metadata.update({name: [qb.name for qb in value]})
                 else:
                     self.exp_metadata.update({name: value})
