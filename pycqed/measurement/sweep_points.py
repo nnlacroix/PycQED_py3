@@ -44,12 +44,11 @@ class SweepPoints(list):
         'V', 'Pulse amplitude, $A$')
     """
     def __init__(self, param_name=None, values=None, unit='', label=None,
-                 from_dict_list=None):
+                 dimension=-1, from_dict_list=None):
         super().__init__()
         if param_name is not None and values is not None:
-            if label is None:
-                label = param_name
-            self.append({param_name: (values, unit, label)})
+            self.add_sweep_parameter(param_name, values, unit, label,
+                                     dimension)
         elif from_dict_list is not None:
             for d in deepcopy(from_dict_list):
                 if len(d) == 0 or isinstance(list(d.values())[0], tuple):
