@@ -119,11 +119,11 @@ class QuantumExperiment(CircuitBuilder):
         self.label = label
         self.upload = upload
         self.measure = measure
-        self.temporary_values = temporary_values
+        self.temporary_values = list(temporary_values)
         self.analyze = analyze
         self.drive = drive
 
-        self.sequences = sequences
+        self.sequences = list(sequences)
         self.sequence_function = sequence_function
         self.sequence_kwargs = {} if sequence_kwargs is None else sequence_kwargs
         self.sweep_points = self.sequence_kwargs.get("sweep_points", None)
