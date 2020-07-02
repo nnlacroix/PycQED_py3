@@ -390,20 +390,16 @@ class QuantumExperiment(CircuitBuilder):
                 sweep_param_name, unit = "None", ""
             if len(self.channels_to_upload) == 0:
                 self.channels_to_upload = "all"
-            if self.sweep_functions[1] != awg_swf.SegmentSoftSweep:
-                raise NotImplementedError(
-                    "2D sweeps with sweepfunction different than "
-                    "SegmentSoftsweep are not yet supported (but "
-                    "the framework should allow to implement it "
-                    "quite easily: we should just distinguish which"
-                    "arguments should be passed in which case ("
-                    "for now, different soft sweep functions accept "
-                    "different arguments...) to self.sweep_functions[1]"
-                    ". Feel free to give it a go and make a pull "
-                    "request ;)")
-            self.MC.set_sweep_function_2D(self.sweep_functions[1](
-                sweep_func_1st_dim, self.sequences, sweep_param_name, unit,
-                self.channels_to_upload))
+            if self.sweep_functions[1] == awg_swf.SegmentSoftSweep:
+                self.MC.set_sweep_function_2D(self.sweep_functions[1](
+                    sweep_func_1st_dim, self.sequences, sweep_param_name, unit,
+                    self.channels_to_upload))
+            else:
+                # In case of an unknown sweep function type, it is assumed
+                # that self.sweep_functions[1] has already been initialized
+                # with all required parameters and can be directly passed to
+                # MC.
+                self.MC.set_sweep_function_2D(self.sweep_functions[1])
 
             self.MC.set_sweep_points_2D(self.mc_points[1])
 
