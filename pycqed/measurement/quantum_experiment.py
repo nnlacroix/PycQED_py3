@@ -99,10 +99,14 @@ class QuantumExperiment(CircuitBuilder):
                 further keyword arguments are passed to the CircuitBuilder __init__
         """
 
-        # if no qubits/devices are provided, use empty list to skip iterations
-        #  over qubit lists
-        if qubits is None and dev is None:
-            qubits = []
+        if qubits is None and dev is None and operation_dict is None:
+            raise NotImplementedError('Experiments without qubits are not '
+                                      'implemented yet. Either dev or qubits'
+                                      'or operation_dict has to be provided.')
+            # planned future behavior (but has to be tested in all aspects):
+            # if no qubits/devive/operation_dict are provided, use empty
+            # list to skip iterations over qubit lists
+            # qubits = []
         super().__init__(dev=dev, qubits=qubits, operation_dict=operation_dict,
                          **kw)
 
