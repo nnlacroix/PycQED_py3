@@ -4520,15 +4520,18 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                 data = self.proc_data_dict['qscale_data'][qbn][
                     'data' + msmt_label]
 
+                # As a workaround for a weird bug letting crash the analysis
+                # every second time, we do not use lmfit.models.ConstantModel
+                # and lmfit.models.LinearModel, but create custom models.
                 if msmt_label == '_xx':
                     model = lmfit.Model(lambda x, c: c)
                     guess_pars = model.make_params(c=np.mean(data))
                 else:
                     model = lmfit.Model(lambda x, slope, intercept:
-                                        slope*x+intercept)
+                                        slope * x + intercept)
                     slope = (data[-1] - data[0]) / \
                             (sweep_points[-1] - sweep_points[0])
-                    intercept = data[-1] - slope*sweep_points[-1]
+                    intercept = data[-1] - slope * sweep_points[-1]
                     guess_pars = model.make_params(slope=slope,
                                                    intercept=intercept)
 
