@@ -5191,93 +5191,6 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
             sweep_dict = self.proc_data_dict['sweep_points_dict'][qbn]
             sweep_dict['sweep_points'] *= np.pi/180
 
-                    self.fit_dicts[key] = {
-                        'fit_fn': fit_mods.CosFunc,
-                        'fit_xvals': {'t': phases},
-                        'fit_yvals': {'data': data},
-                        'guess_pars': guess_pars}
-                else:
-                    if self.get_param_value('classified_ro', False):
-                        self.leakage_values = np.append(self.leakage_values,
-                                                        np.mean(data))
-                    else:
-                        # fit leakage qb results to a constant
-                        model = lmfit.models.ConstantModel()
-                        guess_pars = model.guess(data=data, x=phases)
-
-                        self.fit_dicts[key] = {
-                            'fit_fn': model.func,
-                            'fit_xvals': {'x': phases},
-                            'fit_yvals': {'data': data},
-                            'guess_pars': guess_pars}
-
-    def analyze_fit_results(self):
-        self.proc_data_dict['analysis_params_dict'] = OrderedDict()
-        # get cphases population losses
-        keys = [k for k in list(self.fit_dicts.keys()) if
-                self.cphase_qbname in k]
-        fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
-        # cphases
-        phases = np.array([fr.best_values['phase'] for fr in fit_res_objs])
-        phases_errs = np.array([fr.params['phase'].stderr
-                                for fr in fit_res_objs])
-        phases_errs[phases_errs == None] = 0.0
-
-        cphases = phases[0::2] - phases[1::2]
-        cphases[cphases < 0] += 2*np.pi
-        cphases_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
-                                           phases_errs[1::2]**2,
-                                           dtype=np.float64))
-        self.proc_data_dict['analysis_params_dict'][
-            'cphase'] = {'val': cphases, 'stderr': cphases_stderrs}
-
-        # population losses
-        amps = np.array([fr.best_values['amplitude'] for fr in fit_res_objs])
-        amps_errs = np.array([fr.params['amplitude'].stderr
-                                for fr in fit_res_objs])
-        amps_errs[amps_errs == None] = 0.0
-
-        population_loss = (amps[0::2] - amps[1::2])/amps[1::2]
-        x   = amps[0::2] - amps[1::2]
-        x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
-                         dtype=np.float64)
-        y = amps[1::2]
-        y_err = amps_errs[1::2]
-        try:
-            population_loss_stderrs = np.sqrt(np.array(
-                ((y * x_err) ** 2 + (x * y_err) ** 2) / (y ** 4),
-                dtype=np.float64))
-        except:
-            population_loss_stderrs = float("nan")
-        self.proc_data_dict['analysis_params_dict'][
-            'population_loss'] = {'val': population_loss,
-                                  'stderr': population_loss_stderrs}
-
-        if self.leakage_qbname is not None:
-            # get leakage
-            if self.get_param_value('classified_ro', False):
-                leakage = self.leakage_values[0::2] - self.leakage_values[1::2]
-                leakage_errs = np.zeros(len(leakage))
-            else:
-                keys = [k for k in list(self.fit_dicts.keys()) if
-                        self.leakage_qbname in k]
-                fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
-
-                lines = np.array([fr.best_values['c'] for fr in fit_res_objs])
-                lines_errs = np.array([fr.params['c'].stderr for
-                                       fr in fit_res_objs])
-                lines_errs[lines_errs == None] = 0.0
-
-                leakage = lines[0::2] - lines[1::2]
-                leakage_errs = np.array(np.sqrt(lines_errs[0::2]**2 +
-                                                lines_errs[1::2]**2),
-                                 dtype=np.float64)
-
-            self.proc_data_dict['analysis_params_dict'][
-                'leakage'] = {'val': leakage, 'stderr': leakage_errs}
-
-        self.save_processed_data(key='analysis_params_dict')
-
     def plot_traces(self, prob_label, data_2d, qbn):
         plotsize = self.get_default_plot_params(set=False)[
             'figure.figsize']
@@ -5513,7 +5426,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                   for fr in fit_res_objs])
             amps_errs[amps_errs == None] = 0.0
 
-            population_loss = np.abs(amps[0::2] - amps[1::2])/amps[1::2]
+            population_loss = (amps[0::2] - amps[1::2])/amps[1::2]
             x   = amps[0::2] - amps[1::2]
             x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
                              dtype=np.float64)
