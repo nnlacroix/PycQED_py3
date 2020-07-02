@@ -359,10 +359,7 @@ class CPhase(CalibBuilder):
                 'cz_durations': self.cz_durations,
             })
 
-            if self.measure:
-                self.run_measurement(**kw)
-            if self.analyze:
-                self.run_analysis(**kw)
+            self.autorun()
         except Exception as x:
             self.exception = x
             traceback.print_exc()
@@ -549,11 +546,7 @@ class DynamicPhase(CalibBuilder):
                 preprocessed_task_list = self.preprocess_task_list(sweep_points)
                 self.sequences, self.mc_points = self.parallel_sweep(
                     preprocessed_task_list, self.dynamic_phase_block, **kw)
-
-                if self.measure:
-                    self.run_measurement(**kw)
-                if self.analyze:
-                    self.run_analysis(**kw)
+                self.autorun()
 
             if self.update:
                 assert self.dev is not None, \

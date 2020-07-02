@@ -239,6 +239,12 @@ class QuantumExperiment(CircuitBuilder):
         self.analysis = analysis_class(**kwargs)
         return self.analysis
 
+    def autorun(self, **kw):
+        if self.measure:
+            self.run_measurement(**kw)
+        if self.analyze:
+            self.run_analysis(**kw)
+
     def serialize(self, omitted_attrs=('MC', 'device', 'qubits')):
         """
         Map a Quantum experiment to a large dict for hdf5 storage/pickle object,

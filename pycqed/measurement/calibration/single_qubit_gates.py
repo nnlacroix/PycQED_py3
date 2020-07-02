@@ -77,10 +77,7 @@ class T1FrequencySweep(CalibBuilder):
                 kw['compression_seg_lim'] = \
                     np.product([len(s) for s in self.mc_points]) \
                     + len(self.cal_points.states)
-            if self.measure:
-                self.run_measurement(**kw)
-            if self.analyze:
-                self.run_analysis(**kw)
+            self.autorun()
         except Exception as x:
             self.exception = x
             traceback.print_exc()
