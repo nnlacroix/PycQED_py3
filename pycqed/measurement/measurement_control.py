@@ -348,13 +348,14 @@ class MeasurementControl(Instrument):
                         (1 + self.soft_iteration))
             self.dset[start_idx:stop_idx,
                       len(self.sweep_functions):] = new_vals
-        sweep_len = len(self.get_sweep_points().T)
+        sweep_len = len(self.get_sweep_points().T) * self.acq_data_len_scaling
 
         ######################
         # DATA STORING BLOCK #
         ######################
         if sweep_len == len_new_data:  # 1D sweep
-            self.dset[:, 0] = self.get_sweep_points().T
+            self.dset[:, 0] = np.tile(self.get_sweep_points().T,
+                                      self.acq_data_len_scaling)
         else:
             try:
                 if len(self.sweep_functions) != 1:
@@ -368,7 +369,10 @@ class MeasurementControl(Instrument):
             except Exception:
                 # There are some cases where the sweep points are not
                 # specified that you don't want to crash (e.g. on -off seq)
-                pass
+                logging.warning('You are in the exception case in '
+                                'MC.measure_hard() DATA STORING BLOCK section. '
+                                'Something might have gone wrong with your '
+                                'measurement.')
 
         self.check_keyboard_interrupt()
         self.update_instrument_monitor()
@@ -541,11 +545,13 @@ class MeasurementControl(Instrument):
         self.ylen = len(self.sweep_points_2D)
         if np.size(self.get_sweep_points()[0]) == 1:
             # create inner loop pts
-            self.sweep_pts_x = self.get_sweep_points()
+            self.sweep_pts_x = np.tile(self.get_sweep_points(),
+                                       self.acq_data_len_scaling)
             x_tiled = np.tile(self.sweep_pts_x, self.ylen)
             # create outer loop
             self.sweep_pts_y = self.sweep_points_2D
-            y_rep = np.repeat(self.sweep_pts_y, self.xlen, axis=0)
+            y_rep = np.repeat(self.sweep_pts_y,
+                              self.xlen * self.acq_data_len_scaling, axis=0)
             c = np.column_stack((x_tiled, y_rep))
             self.set_sweep_points(c)
             self.initialize_plot_monitor_2D()
@@ -1234,8 +1240,8 @@ class MeasurementControl(Instrument):
         h5d.write_dict_to_hdf5(metadata, entry_point=metadata_group)
 
     def get_percdone(self):
-        percdone = self.total_nr_acquired_values/self.acq_data_len_scaling/(
-            np.shape(self.get_sweep_points())[0]*self.soft_avg())*100
+        percdone = self.total_nr_acquired_values / (
+            np.shape(self.get_sweep_points())[0] * self.soft_avg()) * 100
         return percdone
 
     def print_progress(self, stop_idx=None):
