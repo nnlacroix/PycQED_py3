@@ -770,8 +770,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         return rotated_data_dict
 
     def get_xaxis_label_unit(self, qb_name):
-        # get xunit and label: temporarily with try catch for old
-        # sequences which do not have unit and label in meta data
         hard_sweep_params = self.get_param_value('hard_sweep_params')
         sweep_name = self.get_param_value('sweep_name')
         sweep_unit = self.get_param_value('sweep_unit')
@@ -788,6 +786,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         else:
             xlabel = self.raw_data_dict['sweep_parameter_names']
             xunit = self.raw_data_dict['sweep_parameter_units']
+        if np.ndim(xlabel) > 0:
+            xlabel = xlabel[0]
         if np.ndim(xunit) > 0:
             xunit = xunit[0]
         return xlabel, xunit

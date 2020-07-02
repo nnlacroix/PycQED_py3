@@ -70,21 +70,25 @@ def get_param_from_metadata_group(timestamp=None, param_name=None,
         h5filepath = a_tools.measurement_filename(folder)
         data_file = h5py.File(h5filepath, 'r+')
 
-    if param_name is None:
-        group = data_file['Experimental Data']
-        return read_dict_from_hdf5({}, group['Experimental Metadata'])
+    try:
+        if param_name is None:
+            group = data_file['Experimental Data']
+            return read_dict_from_hdf5({}, group['Experimental Metadata'])
 
-    group = data_file['Experimental Data']['Experimental Metadata']
-    if param_name in group:
-        group = group[param_name]
-        param_value = OrderedDict()
-        param_value = read_dict_from_hdf5(param_value, group)
-    elif param_name in group.attrs:
-        param_value = get_hdf_param_value(group, param_name)
-    else:
-        raise KeyError(f'{param_name} was not found in metadata.')
-    if close_file:
+        group = data_file['Experimental Data']['Experimental Metadata']
+        if param_name in group:
+            group = group[param_name]
+            param_value = OrderedDict()
+            param_value = read_dict_from_hdf5(param_value, group)
+        elif param_name in group.attrs:
+            param_value = get_hdf_param_value(group, param_name)
+        else:
+            raise KeyError(f'{param_name} was not found in metadata.')
+        if close_file:
+            data_file.close()
+    except Exception as e:
         data_file.close()
+        raise e
     return param_value
 
 
@@ -104,14 +108,17 @@ def get_data_from_hdf_file(timestamp=None, data_file=None,
         folder = a_tools.get_folder(timestamp)
         h5filepath = a_tools.measurement_filename(folder)
         data_file = h5py.File(h5filepath, 'r+')
-    group = data_file['Experimental Data']
-
-    if 'Data' in group:
-        dataset = np.array(group['Data'])
-    else:
-        raise KeyError(f'{Data} was not found in Experimental Data.')
-    if close_file:
+    try:
+        group = data_file['Experimental Data']
+        if 'Data' in group:
+            dataset = np.array(group['Data'])
+        else:
+            raise KeyError(f'{Data} was not found in Experimental Data.')
+        if close_file:
+            data_file.close()
+    except Exception as e:
         data_file.close()
+        raise e
     return dataset
 
 
