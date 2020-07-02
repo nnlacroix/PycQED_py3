@@ -5,8 +5,6 @@ from pycqed.utilities.general import temporary_value
 from pycqed.measurement.waveform_control.circuit_builder import CircuitBuilder
 import pycqed.measurement.awg_sweep_functions as awg_swf
 from pycqed.measurement import multi_qubit_module as mqm
-from pycqed.measurement.multi_qubit_module import \
-    get_multiplexed_readout_detector_functions
 import pycqed.analysis_v2.base_analysis as ba
 import logging
 log = logging.getLogger(__name__)
@@ -134,15 +132,17 @@ class QuantumExperiment(CircuitBuilder):
         self.channels_to_upload = []
 
         # detector and sweep functions
-        default_df_kwargs = {'classified': self.classified,
-                             'correlated': False,
-                             'thresholded': True,
-                             'averaged': True}
+        default_df_kwargs = {'det_get_values_kws':
+                                 {'classified': self.classified,
+                                  'correlated': False,
+                                  'thresholded': True,
+                                  'averaged': True}}
         self.df_kwargs = default_df_kwargs if df_kwargs is None else df_kwargs
         if df_name is not None:
             self.df_name = df_name
         else:
             self.df_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
+        self.df = None
 
         self.exp_metadata.update(kw)
         self.exp_metadata.update({'classified_ro': self.classified})
@@ -408,8 +408,8 @@ class QuantumExperiment(CircuitBuilder):
 
         # Configure detector function
         # FIXME: this should be extended to meas_objs that are not qubits
-        df = get_multiplexed_readout_detector_functions(
-            self.meas_objs, det_get_values_kws=self.df_kwargs)[self.df_name]
+        df = mqm.get_multiplexed_readout_detector_functions(
+            self.meas_objs, **self.df_kwargs)[self.df_name]
         self.MC.set_detector_function(df)
 
         if len(self.mc_points[1]) > 0:
