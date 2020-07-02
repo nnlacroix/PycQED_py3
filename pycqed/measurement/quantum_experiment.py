@@ -192,6 +192,8 @@ class QuantumExperiment(CircuitBuilder):
         self._update_parameters(**kw)
         assert self.meas_objs is not None, 'Cannot run measurement without ' \
                                            'measure objects.'
+        if len(self.mc_points) == 1:
+            self.mc_points = [self.mc_points[0], []]
 
         with temporary_value(*self.temporary_values):
             # only prepare measure objects
