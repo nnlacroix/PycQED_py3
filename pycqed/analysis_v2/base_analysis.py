@@ -234,12 +234,13 @@ class BaseDataAnalysis(object):
         """
         sep = ', ' if len(args) > 0 else ""
         class_name = self.__class__.__name__
+        kwargs = copy.copy(kwargs)
 
         # prevent the job from calling itself in a loop
         options_dict = copy.deepcopy(kwargs.get('options_dict', {}))
         if options_dict is None:
             options_dict = {}
-        options_dict.pop('delegate_plotting', None)
+        options_dict['delegate_plotting'] = False
         kwargs['options_dict'] = options_dict
 
         # prepare import
