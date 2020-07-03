@@ -325,6 +325,11 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
             delay = fp['pulse_length'] / 2
         fp['pulse_delay'] = -fp.get('buffer_length_start', 0) - delay
         fp['amplitude'] = ParametricValue('amplitude')
+
+        self.cal_states_rotations.update(self.cal_points.get_rotations(
+            qb_names=qb, **kw))
+        self.data_to_fit.update({qb: 'pe'})
+
         return b
 
     def run_analysis(self, **kw):
