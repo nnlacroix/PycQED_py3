@@ -100,11 +100,17 @@ class AnalysisDaemon:
 
                     job = self.read_job(filename)
                     errl = len(self.job_errs)
+                    os.rename(filename, filename + '.running')
                     self.run_job(job)
+                    time.sleep(1)  # wait to make sure that files are written
+                    if os.path.isfile(filename):
+                        os.rename(filename, filename + '.loop_detected')
+                        log.warning(f'A loop was detected! Job {filename} '
+                                    f'tries to delegate plotting.')
                     if errl == len(self.errs):
-                        os.rename(filename, filename + '.done')
+                        os.rename(filename + '.running', filename + '.done')
                     else:
-                        os.rename(filename, filename + '.failed')
+                        os.rename(filename + '.running', filename + '.failed')
                         new_errors = self.errs[errl:]
                         self.write_to_job(filename + '.failed', new_errors)
                     self.last_ts = ts
