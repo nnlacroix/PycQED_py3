@@ -5427,8 +5427,9 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                                 for fr in fit_res_objs])
         amps_errs[amps_errs == None] = 0.0
 
-        population_loss = (amps[0::2] - amps[1::2])/amps[1::2]
-        x   = amps[0::2] - amps[1::2]
+        # population_loss = (amp_qbL_|g> - amp_qbL_|e>)/amp_qbL_|g>
+        population_loss = (amps[1::2] - amps[0::2])/amps[1::2]
+        x = amps[0::2] - amps[1::2]
         x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
                          dtype=np.float64)
         y = amps[1::2]
@@ -5458,10 +5459,8 @@ class CPhaseLeakageAnalysis(MultiQubit_TimeDomain_Analysis):
                                        fr in fit_res_objs])
                 lines_errs[lines_errs == None] = 0.0
 
-                leakage = lines[0::2] - lines[1::2]
-                leakage_errs = np.array(np.sqrt(lines_errs[0::2]**2 +
-                                                lines_errs[1::2]**2),
-                                 dtype=np.float64)
+                leakage = lines[0::2]
+                leakage_errs = np.array(lines_errs[0::2], dtype=np.float64)
 
             self.proc_data_dict['analysis_params_dict'][
                 'leakage'] = {'val': leakage, 'stderr': leakage_errs}
