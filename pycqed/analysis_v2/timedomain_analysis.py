@@ -3204,6 +3204,7 @@ class RODynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
                     'plotfn': self.plot_text,
                     'text_string': textstr}
 
+
 class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
     def __init__(self, qb_names, *args, **kwargs):
         self.mask_freq = kwargs.pop('mask_freq', None)
@@ -3215,22 +3216,22 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
         super().process_data()
 
         pdd = self.proc_data_dict
-        nr_sp = {qb: len(pdd['sweep_points_dict'][qb]['sweep_points']) \
-            for qb in self.qb_names}
-        nr_sp2d = {qb: len(pdd['sweep_points_2D_dict'][qb][self.raw_data_dict['sweep_parameter_names'][1]])\
-            for qb in self.qb_names}
+        nr_sp = {qb: len(pdd['sweep_points_dict'][qb]['sweep_points'])
+                 for qb in self.qb_names}
+        nr_sp2d = {qb: len(list(pdd['sweep_points_2D_dict'][qb].values())[0])
+                           for qb in self.qb_names}
         nr_cp = self.num_cal_points
 
         # make matrix out of vector
-        data_reshaped = {qb: \
-            np.reshape(deepcopy(pdd['data_to_fit'][qb]),(nr_sp[qb], nr_sp2d[qb])) \
+        data_reshaped = {qb: np.reshape(deepcopy(pdd['data_to_fit'][qb]),
+                                        (nr_sp[qb], nr_sp2d[qb]))
             for qb in self.qb_names}
 
         pdd['data_reshaped'] = data_reshaped
 
         # remove calibration points from data to fit
-        data_no_cp = {qb: \
-            np.array([data_reshaped[qb][i,:] for i in range(nr_sp[qb]-nr_cp)]) \
+        data_no_cp = {qb: np.array([data_reshaped[qb][i, :]
+                                    for i in range(nr_sp[qb]-nr_cp)])
             for qb in self.qb_names}
 
         # apply mask
@@ -3243,15 +3244,15 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
         pdd['freqs_masked'] = {}
         pdd['amps_masked'] = {}
         pdd['data_masked'] = {}
-
         for qb in self.qb_names:
+            sp_param = [k for k in self.mospm[qb] if 'freq' in k][0]
             pdd['freqs_masked'][qb] = \
-                pdd['sweep_points_2D_dict'][qb][self.raw_data_dict['sweep_parameter_names'][1]][self.mask_freq]
-            pdd['amps_masked'][qb] = pdd['sweep_points_dict'][qb]['sweep_points'][
-                                     :-self.num_cal_points][self.mask_amp]
+                pdd['sweep_points_2D_dict'][qb][sp_param][self.mask_freq]
+            pdd['amps_masked'][qb] = \
+                pdd['sweep_points_dict'][qb]['sweep_points'][
+                :-self.num_cal_points][self.mask_amp]
             data_masked = data_no_cp[qb][self.mask_amp,:]
-            pdd['data_masked'][qb] = data_masked[:,self.mask_freq]
-
+            pdd['data_masked'][qb] = data_masked[:, self.mask_freq]
 
     def prepare_fitting(self):
         pdd = self.proc_data_dict
@@ -3313,7 +3314,8 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
 
             # fit the freqs to the qubit model
             freq_mod = lmfit.Model(fit_mods.Qubit_dac_to_freq)
-            freq_mod.guess = fit_mods.Qubit_dac_arch_guess.__get__(freq_mod, freq_mod.__class__)
+            freq_mod.guess = fit_mods.Qubit_dac_arch_guess.__get__(
+                freq_mod, freq_mod.__class__)
 
             self.fit_dicts[f'freq_fit_{qb}'] = {
                 'model': freq_mod,
@@ -3327,13 +3329,14 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
         rdd = self.raw_data_dict
 
         for qb in self.qb_names:
+            sp_param = [k for k in self.mospm[qb] if 'freq' in k][0]
             self.plot_dicts[f'data_2d_{qb}'] = {
                 'title': rdd['measurementstring'] +
                             '\n' + rdd['timestamp'],
                 'ax_id': f'data_2d_{qb}',
                 'plotfn': self.plot_colorxy,
                 'xvals': pdd['sweep_points_dict'][qb]['sweep_points'],
-                'yvals': pdd['sweep_points_2D_dict'][qb][self.raw_data_dict['sweep_parameter_names'][1]],
+                'yvals': pdd['sweep_points_2D_dict'][qb][sp_param],
                 'zvals': np.transpose(pdd['data_reshaped'][qb]),
                 'xlabel': r'Flux pulse amplitude',
                 'xunit': 'V',
