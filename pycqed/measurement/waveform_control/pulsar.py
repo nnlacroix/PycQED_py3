@@ -169,9 +169,6 @@ class UHFQCPulsar:
         self.add_parameter('{}_compensation_pulse_delay'.format(name), 
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
-        self.add_parameter('{}_compensation_pulse_gaussian_filter_sigma'.format(name),
-                           initial_value=0, unit='s',
-                           parameter_class=ManualParameter)
 
     @staticmethod
     def _uhfqc_setter(obj, id, par):
@@ -454,9 +451,6 @@ class HDAWG8Pulsar:
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
         self.add_parameter('{}_internal_modulation'.format(name), 
-        self.add_parameter('{}_compensation_pulse_gaussian_filter_sigma'.format(name),
-                           initial_value=0, unit='s',
-                           parameter_class=ManualParameter)
                            initial_value=False, vals=vals.Bool(),
                            parameter_class=ManualParameter)
     
@@ -790,9 +784,6 @@ class AWG5014Pulsar:
                             parameter_class=ManualParameter,
                             vals=vals.Numbers(0., 1.), initial_value=0.5)
         self.add_parameter('{}_compensation_pulse_delay'.format(name), 
-                           initial_value=0, unit='s',
-                           parameter_class=ManualParameter)
-        self.add_parameter('{}_compensation_pulse_gaussian_filter_sigma'.format(name),
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
     

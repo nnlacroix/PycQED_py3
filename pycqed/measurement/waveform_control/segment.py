@@ -358,9 +358,7 @@ class Segment:
                 'amplitude': amp,
                 'buffer_length_start': comp_delay,
                 'buffer_length_end': comp_delay,
-                'pulse_length': length,
-                'gaussian_filter_sigma': self.pulsar.get(
-                    '{}_compensation_pulse_gaussian_filter_sigma'.format(c))
+                'pulse_length': length
             }
             pulse = pl.BufferedSquarePulse(
                 last_element, c, name='compensation_pulse_{}'.format(i), **kw)
