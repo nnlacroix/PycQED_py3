@@ -134,6 +134,7 @@ class QuantumExperiment(CircuitBuilder):
         self.force_2D_sweep = force_2D_sweep
         self.compression_seg_lim = compression_seg_lim
         self.channels_to_upload = []
+        self.timestamp = None
 
         # detector and sweep functions
         default_df_kwargs = {'det_get_values_kws':
@@ -210,8 +211,20 @@ class QuantumExperiment(CircuitBuilder):
             self.guess_label(**kw)
 
             # run measurement
-            self.MC.run(name=self.label, exp_metadata=self.exp_metadata,
-                        mode=mode)
+            try:
+                self.MC.run(name=self.label, exp_metadata=self.exp_metadata,
+                            mode=mode)
+            except (Exception, KeyboardInterrupt) as e:
+                self.extract_timestamp()
+                raise e
+        self.extract_timestamp()
+
+    def extract_timestamp(self):
+        try:
+            self.timestamp = self.MC.data_object._datemark + '_' \
+                             + self.MC.data_object._timemark
+        except Exception:
+            pass  # if extraction fails, keep the old value (None from init)
 
     def guess_label(self, **kwargs):
         """
