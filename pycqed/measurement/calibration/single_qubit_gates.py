@@ -332,15 +332,19 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
 
         return b
 
-    def run_analysis(self, **kw):
+    def run_analysis(self, analysis_kwargs=None, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.
         :param kw:
         """
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+
         for task in self.task_list:
             qb_name = task['qb']
             self.analysis[qb_name] = tda.FluxAmplitudeSweepAnalysis(
-                qb_names=[qb_name], options_dict=dict(TwoD=True))
+                qb_names=[qb_name], options_dict=dict(TwoD=True),
+                t_start=self.timestamp, **analysis_kwargs)
 
         if self.update:
             for qb in self.qubits:
