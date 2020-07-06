@@ -396,9 +396,10 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         """
         if flux_op_code is None:
             flux_op_code = f'FP {qb}'
-        pulse_modifs = {'X180': {'element_name': 'FPA_Pi_el'}}
+        pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
+                        'attr=element_name': 'default'}
         b = self.block_from_ops(f'ge_flux {qb}',
-                                 [f'X180 {qb}', flux_op_code],
+                                 [f'X180 {qb}', flux_op_code, f'RO {qb}'],
                                  pulse_modifs=pulse_modifs)
         fp = b.pulses[1]
         fp['ref_point'] = 'middle'
@@ -406,6 +407,13 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
             delay = fp['pulse_length'] / 2
         fp['pulse_delay'] = -fp.get('buffer_length_start', 0) - delay
         fp['amplitude'] = ParametricValue('amplitude')
+
+        ro = b.pulses[2]
+        ro['ref_pulse'] = f'FPS_Pi'
+        ro['ref_point'] = 'middle'
+        ro['pulse_delay'] = fp['pulse_length'] - delay + \
+                                  fp.get('buffer_length_end', 0) + \
+                                  fp.get('trans_length', 0)
 
         self.cal_states_rotations.update(self.cal_points.get_rotations(
             qb_names=qb, **kw))
