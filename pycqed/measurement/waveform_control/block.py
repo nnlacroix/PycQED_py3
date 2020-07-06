@@ -319,10 +319,11 @@ class ParametricValue:
         :return:
         """
         d = sweep_dict[self.param]
-        if not hasattr(d, '__iter__'):
+        if not isinstance(d, list) and not isinstance(d, dict) and not \
+                isinstance(d, tuple):
             v = d
         elif isinstance(sweep_dict[self.param], dict) and 'values' in \
-                sweep_dict[self.param]:  # convention in sweep_dicts
+                sweep_dict[self.param]:  # convention in old sweep_dicts
             v = d['values'][ind]
         else: # convention in SweepPoints class
             v = d[0][ind]
