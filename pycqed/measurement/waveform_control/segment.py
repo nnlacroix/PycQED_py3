@@ -1039,16 +1039,19 @@ class Segment:
                                     f"{instr}_{ch}"] - delays.get(instr, 0)
                                 if channel_map is None:
                                     # plot per device
+                                    ax[i, 0].set_title(instr)
                                     ax[i, 0].plot(tvals * 1e6, wf,
                                                   label=f"{elem_name[1]}_{k}_{ch}",
                                                   **plot_kwargs)
                                 else:
                                     # plot on each qubit subplot which includes
                                     # this channel in the channel map
-                                    match = [i for i, (_, qb_chs) in
-                                                     enumerate(channel_map.items())
-                                                     if f"{instr}_{ch}" in qb_chs]
-                                    for qbi in match:
+                                    match = {i: qb_name
+                                             for i, (qb_name, qb_chs) in
+                                             enumerate(channel_map.items())
+                                             if f"{instr}_{ch}" in qb_chs}
+                                    for qbi, qb_name in match.items():
+                                        ax[qbi, 0].set_title(qb_name)
                                         ax[qbi, 0].plot(tvals * 1e6, wf,
                                                       label=f"{elem_name[1]}_{k}_{ch}",
                                                       **plot_kwargs)
@@ -1076,7 +1079,8 @@ class Segment:
             plt.tight_layout()
             if savefig:
                 plt.savefig(f'{self.name}.png')
-            # plt.show()
+            plt.show()
+            plt.close(fig)
             return fig, ax
         except Exception as e:
             log.error(f"Could not plot: {self.name}")

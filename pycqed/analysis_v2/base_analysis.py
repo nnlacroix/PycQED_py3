@@ -25,7 +25,7 @@ import h5py
 from pycqed.measurement.hdf5_data import write_dict_to_hdf5
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
 from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import copy
 import logging
 log = logging.getLogger(__name__)
@@ -327,7 +327,8 @@ class BaseDataAnalysis(object):
         if not hasattr(self, "metadata") or self.metadata is None:
             return self.options_dict.get(param_name, default_value)
         # multi timestamp with different metadata
-        elif isinstance(self.metadata, (list, tuple)) and len(self.metadata) != 0:
+        elif isinstance(self.metadata, (list, tuple)) and \
+                len(self.metadata) != 0:
             return self.options_dict.get(param_name,
                 self.metadata[metadata_index].get(param_name, default_value))
         # base case
@@ -459,7 +460,7 @@ class BaseDataAnalysis(object):
                     if prep_params is None:
                         prep_params = dict()
                     # get length of hard sweep points (1st sweep dimension)
-                    len_dim_1_sp = len(sp.get_sweep_params_property('values', 1))
+                    len_dim_1_sp = len(sp.get_sweep_params_property('values', 0))
                     if 'active' in prep_params.get('preparation_type', 'wait'):
                         reset_reps = prep_params.get('reset_reps', 1)
                         len_dim_1_sp *= reset_reps+1
@@ -468,7 +469,7 @@ class BaseDataAnalysis(object):
                         len_dim_1_sp *= 2
                     hsp = np.arange(len_dim_1_sp)
                     # get length of soft sweep points (2nd sweep dimension)
-                    dim_2_sp = sp.get_sweep_params_property('values', 2)
+                    dim_2_sp = sp.get_sweep_params_property('values', 1)
                     ssp = np.arange(len(dim_2_sp))
                     raw_data_dict['hard_sweep_points'] = hsp
                     raw_data_dict['soft_sweep_points'] = ssp
