@@ -5432,9 +5432,11 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
         for lk_qbn in self.leakage_qbnames:
             # get leakage
             if self.get_param_value('classified_ro', False):
-                leakage = self.leakage_values[0::2] - \
-                          self.leakage_values[1::2]
+                leakage = self.leakage_values[0::2]
                 leakage_errs = np.zeros(len(leakage))
+                leakage_increase = self.leakage_values[0::2] - \
+                                   self.leakage_values[1::2]
+                leakage_increase_errs = np.zeros(len(leakage))
             else:
                 keys = [k for k in list(self.fit_dicts.keys()) if
                         lk_qbn in k]
@@ -5446,14 +5448,19 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                        fr in fit_res_objs])
                 lines_errs[lines_errs == None] = 0.0
 
-                leakage = lines[0::2] - lines[1::2]
-                leakage_errs = np.array(np.sqrt(lines_errs[0::2]**2 +
-                                                lines_errs[1::2]**2),
-                                        dtype=np.float64)
+                leakage = lines[0::2]
+                leakage_errs = np.array(lines_errs[0::2], dtype=np.float64)
+                leakage_increase = lines[0::2] - lines[1::2]
+                leakage_increase_errs = np.array(np.sqrt(lines_errs[0::2]**2,
+                                                         lines_errs[1::2]**2),
+                                                 dtype=np.float64)
 
             self.proc_data_dict['analysis_params_dict'][
                 f'leakage_{lk_qbn}'] = \
                 {'val': leakage, 'stderr': leakage_errs}
+            self.proc_data_dict['analysis_params_dict'][
+                'leakage_increase'] = {'val': leakage_increase,
+                                       'stderr': leakage_increase_errs}
 
         self.save_processed_data(key='analysis_params_dict')
 
@@ -5511,6 +5518,12 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                 f'leakage_{qbn}']['val'][0],
                             self.proc_data_dict['analysis_params_dict'][
                                 f'leakage_{qbn}']['stderr'][0])
+                        textstr += '\nLeakage increase = \n\t' \
+                                   '{:.5f} $\\pm$ {:.5f}'.format(
+                            self.proc_data_dict['analysis_params_dict'][
+                                'leakage_increase']['val'][0],
+                            self.proc_data_dict['analysis_params_dict'][
+                                'leakage_increase']['stderr'][0])
                         self.plot_dicts['text_msg_' + qbn] = {
                             'fig_id': figure_name,
                             'ypos': -0.2,
