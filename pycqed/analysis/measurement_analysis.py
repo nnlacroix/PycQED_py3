@@ -19,6 +19,7 @@ import pylab
 from pycqed.analysis.tools import data_manipulation as dm_tools
 import importlib
 from time import time
+import scipy
 
 try:
     import pygsti
@@ -3293,10 +3294,14 @@ class SSRO_Analysis(MeasurementAnalysis):
             fig, axes = plt.subplots(figsize=(10, 4))
             n1, bins1, patches = pylab.hist(shots_I_1_rot, bins=40,
                                             label='1 I', histtype='step',
-                                            color='red', normed=False)
+                                            color='red'
+                                            # , normed=False
+                                            )
             n0, bins0, patches = pylab.hist(shots_I_0_rot, bins=40,
                                             label='0 I', histtype='step',
-                                            color='blue', normed=False)
+                                            color='blue'
+                                            #, normed=False
+                                            )
             pylab.clf()
             # n0, bins0 = np.histogram(shots_I_0_rot, bins=int(min_len/50),
             #                          normed=1)
@@ -3319,16 +3324,16 @@ class SSRO_Analysis(MeasurementAnalysis):
             norm0 = (bins0[1] - bins0[0]) * min_len
             norm1 = (bins1[1] - bins1[0]) * min_len
 
-            y0 = norm0 * (1 - frac1_0) * pylab.normpdf(bins0, mu0_0, sigma0_0) + \
-                 norm0 * frac1_0 * pylab.normpdf(bins0, mu1_0, sigma1_0)
-            y1_0 = norm0 * frac1_0 * pylab.normpdf(bins0, mu1_0, sigma1_0)
-            y0_0 = norm0 * (1 - frac1_0) * pylab.normpdf(bins0, mu0_0, sigma0_0)
+            y0 = norm0 * (1 - frac1_0) * scipy.stats.norm.pdf(bins0, mu0_0, sigma0_0) + \
+                 norm0 * frac1_0 * scipy.stats.norm.pdf(bins0, mu1_0, sigma1_0)
+            y1_0 = norm0 * frac1_0 * scipy.stats.norm.pdf(bins0, mu1_0, sigma1_0)
+            y0_0 = norm0 * (1 - frac1_0) * scipy.stats.norm.pdf(bins0, mu0_0, sigma0_0)
 
             # building up the histogram fits for on measurements
-            y1 = norm1 * (1 - frac1_1) * pylab.normpdf(bins1, mu0_1, sigma0_1) + \
-                 norm1 * frac1_1 * pylab.normpdf(bins1, mu1_1, sigma1_1)
-            y1_1 = norm1 * frac1_1 * pylab.normpdf(bins1, mu1_1, sigma1_1)
-            y0_1 = norm1 * (1 - frac1_1) * pylab.normpdf(bins1, mu0_1, sigma0_1)
+            y1 = norm1 * (1 - frac1_1) * scipy.stats.norm.pdf(bins1, mu0_1, sigma0_1) + \
+                 norm1 * frac1_1 * scipy.stats.norm.pdf(bins1, mu1_1, sigma1_1)
+            y1_1 = norm1 * frac1_1 * scipy.stats.norm.pdf(bins1, mu1_1, sigma1_1)
+            y0_1 = norm1 * (1 - frac1_1) * scipy.stats.norm.pdf(bins1, mu0_1, sigma0_1)
 
             pylab.semilogy(bins0, y0, 'C0', linewidth=1.5)
             pylab.semilogy(bins0, y1_0, 'C0--', linewidth=3.5)

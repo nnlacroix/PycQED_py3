@@ -30,7 +30,7 @@ class Agilent_33250A(VisaInstrument):
                            label='Pulse_shape',
                            get_cmd='FUNC?',
                            set_cmd='FUNC {}',
-                           vals=Enum('SIN','SQU'),
+                           vals=Enum('SIN','SQU',),
                            docstring=('Command for setting the desired pulse shape. '
                                       'Currently supportet: sinus, square.'))
 
@@ -69,3 +69,12 @@ class Agilent_33250A(VisaInstrument):
                                         'ON': 1},
                            docstring='Command for switching on/off the device output synchronization.')
         self.connect_message()
+
+    def start(self):
+        self.write('OUTP OFF')
+        self.write('BURS:STAT OFF')
+        self.write('BURS:MODE TRIG')
+        self.write('BURS:NCYC 3')
+        self.write('BURS:STAT ON')
+        self.write('OUTP ON')
+        self.write('TRIG')

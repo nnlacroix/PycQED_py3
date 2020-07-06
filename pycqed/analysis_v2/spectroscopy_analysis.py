@@ -1394,9 +1394,9 @@ class ResonatorSpectroscopy_v2(Spectroscopy):
         spectrums = self.proc_data_dict['spectra']
         all_freqs = self.proc_data_dict['plot_frequency']
         freqs = all_freqs if np.ndim(all_freqs) == 1 else all_freqs[0]
-        total_dist = np.abs(spectrums['e'] - spectrums['g']) + \
-                     np.abs(spectrums['f'] - spectrums['g']) + \
-                     np.abs(spectrums['f'] - spectrums['e'])
+        total_dist = np.abs(spectrums['e'] - spectrums['g'])   # + \
+            # np.abs(spectrums['f'] - spectrums['g']) + \
+            # np.abs(spectrums['f'] - spectrums['e'])
         fmax = freqs[np.argmax(total_dist)]
         # FIXME: just as debug plotting for now
         if fig is None:
