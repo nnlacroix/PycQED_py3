@@ -199,10 +199,16 @@ class MultiTaskingExperiment(QuantumExperiment):
             # and the data format will be the same as for a true soft sweep
             self.sweep_points.add_sweep_parameter('dummy_sweep_param', [0])
         # only measure meas_objs
+        if 'ro_qubits' not in kw:
+            op_codes = [p['op_code'] for p in self.all_main_blocks.pulses if
+                        'op_code' in p]
+            kw = copy(kw)
+            kw['ro_qubits'] = [m for m in self.meas_obj_names if f'RO {m}'
+                               not in op_codes]
+
         return self.sweep_n_dim(self.sweep_points,
                                 body_block=self.all_main_blocks,
-                                cal_points=self.cal_points,
-                                ro_qubits=self.meas_obj_names, **kw)
+                                cal_points=self.cal_points, **kw)
 
     @staticmethod
     def find_qubits_in_tasks(qubits, task_list, search_in_operations=True):
