@@ -302,8 +302,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             self.exception = x
             traceback.print_exc()
 
-    def sweep_block(self, qb, flux_op_code=None, ro_pulse_delay=None,
-                                  **kw):
+    def sweep_block(self, qb, sweep_points, flux_op_code=None,
+                    ro_pulse_delay=None, **kw):
         """
         Performs X180 pulse on top of a fluxpulse
         Timings of sequence
@@ -312,6 +312,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                          <-  delay  ->
 
         :param qb: (str) the name of the qubit
+        :param sweep_points: the sweep points containing a parameter delay
+            in dimension 0
         :param flux_op_code: (optional str) the flux pulse op_code (default
             FP qb)
         :param ro_pulse_delay: Can be 'auto' to start the readout after
@@ -325,19 +327,27 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             flux_op_code = f'FP {qb}'
         if ro_pulse_delay is None:
             ro_pulse_delay = 100e-9
-        ro = [] if ro_pulse_delay == 'auto' else f'RO {qb}'
-        pulse_modifs = {'X180': {'element_name': 'FPS_Pi_el'}}
+        pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
+                        'attr=element_name': 'default'}
         b = self.block_from_ops(f'ge_flux {qb}',
-                                [f'X180 {qb}', flux_op_code] + ro,
+                                [f'X180 {qb}', flux_op_code, f'RO {qb}'],
                                 pulse_modifs=pulse_modifs)
         fp = b.pulses[1]
         fp['ref_point'] = 'middle'
         offs = fp.get('buffer_length_start', 0)
         fp['pulse_delay'] = ParametricValue(
             'delay', func=lambda x, o=offs: -(x + o))
-        if ro_pulse_delay != 'auto':
-            ro = b.pulses[2]
-            ro['ref_pulse'] = 'start'
+        ro = b.pulses[2]
+        ro['ref_pulse'] = f'FPS_Pi'
+        if ro_pulse_delay == 'auto':
+            ro['ref_point'] = 'middle'
+            ro['pulse_delay'] = \
+                fp['pulse_length'] - np.min(
+                    sweep_points.get_sweep_params_property(
+                        'values', dimension=0, param_names='delay')) + \
+                fp.get('buffer_length_end', 0) + fp.get('trans_length', 0)
+        else:
+            ro['ref_point'] = 'end'
             ro['pulse_delay'] = ro_pulse_delay
         return b
 
