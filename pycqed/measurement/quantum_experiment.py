@@ -197,8 +197,10 @@ class QuantumExperiment(CircuitBuilder):
             self.mc_points = [self.mc_points[0], []]
 
         with temporary_value(*self.temporary_values):
-            # only prepare measure objects
-            for m in self.meas_objs:
+            # Perpare all involved qubits. If not available, prepare
+            # all measure objects.
+            mos = self.qubits if self.qubits is not None else self.meas_objs
+            for m in mos:
                 m.prepare(drive=self.drive)
 
             # create/retrieve sequence to run
