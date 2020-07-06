@@ -1,4 +1,5 @@
 import numpy as np
+from copy import copy
 from copy import deepcopy
 import traceback
 from pycqed.measurement.calibration.two_qubit_gates import CalibBuilder
@@ -7,6 +8,7 @@ from pycqed.measurement.waveform_control.block import Block, ParametricValue
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.analysis import fitting_models as fit_mods
 import pycqed.analysis_v2.timedomain_analysis as tda
+from pycqed.analysis import measurement_analysis as ma
 from pycqed.utilities.general import temporary_value
 import logging
 
@@ -271,6 +273,85 @@ class ParallelLOSweepExperiment(CalibBuilder):
 
     def sweep_block(self, **kw):
         raise NotImplementedError('Child class has to implement sweep_block.')
+
+
+class FluxPulseScope(ParallelLOSweepExperiment):
+    """
+        flux pulse scope measurement used to determine the shape of flux pulses
+        set up as a 2D measurement (delay and drive pulse frequecy are
+        being swept)
+        pulse sequence:
+                      <- delay ->
+           |    -------------    |X180|  ---------------------  |RO|
+           |    ---   | ---- fluxpulse ----- |
+
+            sweep_points:
+            delay (numpy array): array of amplitudes of the flux pulse
+            freq (numpy array): array of drive frequencies
+
+        Returns: None
+
+    """
+
+    def __init__(self, task_list, sweep_points=None, **kw):
+        try:
+            self.experiment_name = 'Flux_scope'
+            super().__init__(task_list, sweep_points, **kw)
+            self.autorun(**kw)
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def sweep_block(self, qb, flux_op_code=None, ro_pulse_delay=None,
+                                  **kw):
+        """
+        Performs X180 pulse on top of a fluxpulse
+        Timings of sequence
+        |          ----------           |X180|  ----------------------------  |RO|
+        |        ---      | --------- fluxpulse ---------- |
+                         <-  delay  ->
+
+        :param qb: (str) the name of the qubit
+        :param flux_op_code: (optional str) the flux pulse op_code (default
+            FP qb)
+        :param ro_pulse_delay: Can be 'auto' to start the readout after
+            the end of the flux pulse or a delay in seconds to start a fixed
+            amount of time after the drive pulse. If not provided or set to
+            None, a default fixed delay of 100e-9 is used.
+
+        :param kw:
+        """
+        if flux_op_code is None:
+            flux_op_code = f'FP {qb}'
+        if ro_pulse_delay is None:
+            ro_pulse_delay = 100e-9
+        ro = [] if ro_pulse_delay == 'auto' else f'RO {qb}'
+        pulse_modifs = {'X180': {'element_name': 'FPS_Pi_el'}}
+        b = self.block_from_ops(f'ge_flux {qb}',
+                                [f'X180 {qb}', flux_op_code] + ro,
+                                pulse_modifs=pulse_modifs)
+        fp = b.pulses[1]
+        fp['ref_point'] = 'middle'
+        offs = fp.get('buffer_length_start', 0)
+        fp['pulse_delay'] = ParametricValue(
+            'delay', func=lambda x, o=offs: -(x + o))
+        if ro_pulse_delay != 'auto':
+            ro = b.pulses[2]
+            ro['ref_pulse'] = 'start'
+            ro['pulse_delay'] = ro_pulse_delay
+        return b
+
+    def run_analysis(self, **kw):
+        """
+        Runs analysis and stores analysis instances in self.analysis.
+        :param kw:
+        """
+        tda.MultiQubit_TimeDomain_Analysis(qb_names=self.meas_obj_names,
+                                           options_dict=dict(TwoD=True))
+        for task in self.task_list:
+            qb_name = task['qb']
+            self.analysis[qb_name] = ma.FluxPulse_Scope_Analysis(
+                qb_name=qb_name)
 
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
