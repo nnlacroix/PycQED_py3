@@ -89,7 +89,7 @@ class SingleQubitRandomizedBenchmarking(MultiTaskingExperiment):
                 body_block_func=self.rb_block, cal_points=self.cal_points,
                 ro_qubits=self.meas_obj_names, **kw)
             self.add_processing_pipeline()
-            self.autorun()
+            self.autorun(**kw)
 
         except Exception as x:
             self.exception = x
