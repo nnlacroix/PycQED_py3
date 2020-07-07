@@ -645,6 +645,78 @@ class UHFQC_input_average_detector(UHFQC_Base):
                                           loop_cnt=int(self.nr_averages),
                                           mode='iavg')
 
+class UHFQC_scope_detector(Hard_Detector):
+    """
+    Detector used for acquiring averaged timetraces and their Fourier'
+    transforms using the scope module of the UHF
+    """
+    def __init__(self, UHFQC, AWG=None, channels=(0, 1),
+                 nr_averages=20, nr_samples=4096, fft_mode='timedomain',
+                 **kw):
+        super().__init__()
+
+        self.UHFQC = UHFQC
+        self.scope = UHFQC.daq.scopeModule()
+        self.AWG = AWG
+        self.channels = channels
+        self.nr_samples = nr_samples
+        self.nr_averages = nr_averages
+        self.fft_mode = fft_mode
+        self.value_names = [f'{UHFQC.name}_ch{ch}' for ch in channels]
+        if fft_mode == 'fft_power':
+            self.value_names = ['V^2' for _ in channels]
+        else:
+            self.value_names = ['V' for _ in channels]
+        self.trigger_channel = kw.get('trigger_channel', 2)
+        self.trigger_level = kw.get('trigger_level', 0.1)
+        self.trigger = kw.get('trigger', self.AWG is not None)
+
+    def finish(self):
+        if self.AWG is not None:
+            self.AWG.stop()
+
+        self.scope.unsubscribe(f'/{self.UHFQA.devname}/scopes/0/wave')
+        self.scope.finish()
+
+    def get_values(self):
+        self.scope.set('scopeModule/averager/restart', 1)
+        self.UHFQA.scopes_0_enable(1)
+        self.scope.subscribe(f'/{self.UHFQA.devname}/scopes/0/wave')
+        self.scope.execute()
+        if self.AWG is not None:
+            self.AWG.start()
+        while int(self.scope.progress()) != 1:
+            time.sleep(0.1)
+            result = self.scope.read()
+        return result
+
+    def prepare(self, sweep_points=None):
+        if self.AWG is not None:
+            self.AWG.stop()
+        self.UHFQC.scopes_0_length(self.nr_samples)
+        self.UHFQC.scopes_0_enable(0)
+        self.UHFQC.scopes_0_single(1)
+        if self.fft_mode == 'fft_power':
+            self.scope.set('scopeModule/mode', 3)
+            self.scope.set('scopeModule/fft/power', 1)
+        elif self.fft_mode == 'fft':
+            self.scope.set('scopeModule/mode', 3)
+            self.scope.set('scopeModule/fft/power', 0)
+        elif self.fft_mode == 'timedomain':
+            self.scope.set('scopeModule/mode', 1)
+            self.scope.set('scopeModule/fft/power', 0)
+        else:
+            raise ValueError("Invalid fft_mode. Allowed options are "
+                             "'timedomain', 'fft' and 'fft_power'")
+        self.scope.set('scopeModule/averager/weight', 1)
+        self.UHFQC.scopes_0_segments_count(self.nr_averages)
+        self.UHFQC.scopes_0_segments_enable(1)
+
+        self.UHFQC.scopes_0_trigenable(self.trigger)
+        self.UHFQC.scopes_0_trigchannel(self.trigger_channel)
+        self.UHFQC.scopes_0_triglevel(self.trigger_level)
+        self.UHFQC.scopes_0_trigslope(0)
+
 
 class UHFQC_integrated_average_detector(UHFQC_Base):
 
