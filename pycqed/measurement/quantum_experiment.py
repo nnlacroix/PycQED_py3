@@ -134,6 +134,7 @@ class QuantumExperiment(CircuitBuilder):
         self.force_2D_sweep = force_2D_sweep
         self.compression_seg_lim = compression_seg_lim
         self.channels_to_upload = []
+        self.timestamp = None
 
         # detector and sweep functions
         default_df_kwargs = {'det_get_values_kws':
@@ -196,8 +197,10 @@ class QuantumExperiment(CircuitBuilder):
             self.mc_points = [self.mc_points[0], []]
 
         with temporary_value(*self.temporary_values):
-            # only prepare measure objects
-            for m in self.meas_objs:
+            # Perpare all involved qubits. If not available, prepare
+            # all measure objects.
+            mos = self.qubits if self.qubits is not None else self.meas_objs
+            for m in mos:
                 m.prepare(drive=self.drive)
 
             # create/retrieve sequence to run
@@ -210,8 +213,20 @@ class QuantumExperiment(CircuitBuilder):
             self.guess_label(**kw)
 
             # run measurement
-            self.MC.run(name=self.label, exp_metadata=self.exp_metadata,
-                        mode=mode)
+            try:
+                self.MC.run(name=self.label, exp_metadata=self.exp_metadata,
+                            mode=mode)
+            except (Exception, KeyboardInterrupt) as e:
+                self.extract_timestamp()
+                raise e
+        self.extract_timestamp()
+
+    def extract_timestamp(self):
+        try:
+            self.timestamp = self.MC.data_object._datemark + '_' \
+                             + self.MC.data_object._timemark
+        except Exception:
+            pass  # if extraction fails, keep the old value (None from init)
 
     def guess_label(self, **kwargs):
         """

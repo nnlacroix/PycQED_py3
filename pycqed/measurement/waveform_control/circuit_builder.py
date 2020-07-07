@@ -738,8 +738,17 @@ class CircuitBuilder:
             sweep_points.add_sweep_dimension()
             nr_sp_list.append(1)
 
-        prep = self.initialize(init_state=init_state, qb_names=ro_qubits)
         ro = self.mux_readout(**ro_kwargs, qb_names=ro_qubits)
+        all_ro_qubits = copy(ro_qubits)
+        all_ro_op_codes = [p['op_code'] for p in ro.pulses]
+        if body_block is not None:
+            op_codes = [p['op_code'] for p in body_block.pulses if 'op_code'
+                        in p]
+            all_ro_qubits += [qb for qb in self.qb_names if f'RO {qb}' in
+                            op_codes and qb not in all_ro_qubits]
+            all_ro_op_codes += [f'RO {qb}' for qb in all_ro_qubits if qb not
+                                in ro_qubits]
+        prep = self.initialize(init_state=init_state, qb_names=all_ro_qubits)
 
         seqs = []
         for i in range(nr_sp_list[1]):
@@ -770,7 +779,7 @@ class CircuitBuilder:
 
         # repeat UHF seqZ code
         for s in seqs:
-            for ro_op in [p['op_code'] for p in ro.pulses]:
+            for ro_op in all_ro_op_codes:
                 s.repeat_ro(ro_op, self.operation_dict)
 
         if sweep_dims == 1:
