@@ -231,9 +231,10 @@ class ParallelLOSweepExperiment(CalibBuilder):
         if np.ndim(all_freqs) == 1:
             all_freqs = [all_freqs]
         all_diffs = [np.diff(freqs) for freqs in all_freqs]
-        assert all([sum(abs(diff - all_diffs[0])) == 0 for diff in
-                    all_diffs]), "The steps between frequency sweep points " \
-                                 "must be the same for all qubits."
+        assert all([np.mean(abs(diff - all_diffs[0]) / all_diffs[0]) < 1e-10
+                    for diff in all_diffs]), \
+            "The steps between frequency sweep points must be the same for " \
+            "all qubits."
         self.lo_sweep_points = all_freqs[0] - all_freqs[0][0]
 
         if self.qubits is None:
