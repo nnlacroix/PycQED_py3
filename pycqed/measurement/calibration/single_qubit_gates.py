@@ -82,7 +82,7 @@ class T1FrequencySweep(CalibBuilder):
                 kw['compression_seg_lim'] = \
                     np.product([len(s) for s in self.mc_points]) \
                     + len(self.cal_points.states)
-            self.autorun()
+            self.autorun(**kw)
         except Exception as x:
             self.exception = x
             traceback.print_exc()
@@ -297,7 +297,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
             self.experiment_name = 'Flux_scope'
-            super().__init__(task_list, sweep_points, **kw)
+            super().__init__(task_list, sweep_points,
+                             kw_for_task_keys=['ro_pulse_delay'], **kw)
             self.autorun(**kw)
         except Exception as x:
             self.exception = x
@@ -329,27 +330,27 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         if ro_pulse_delay is None:
             ro_pulse_delay = 100e-9
         pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
-                        'attr=element_name': 'default'}
+                        'attr=element_name,op_code=X180': 'FPS_Pi_el'}
         b = self.block_from_ops(f'ge_flux {qb}',
-                                [f'X180 {qb}', flux_op_code, f'RO {qb}'],
+                                [f'X180 {qb}', flux_op_code],
                                 pulse_modifs=pulse_modifs)
         fp = b.pulses[1]
         fp['ref_point'] = 'middle'
         offs = fp.get('buffer_length_start', 0)
         fp['pulse_delay'] = ParametricValue(
             'delay', func=lambda x, o=offs: -(x + o))
-        ro = b.pulses[2]
-        ro['ref_pulse'] = f'FPS_Pi'
+
         if ro_pulse_delay == 'auto':
-            ro['ref_point'] = 'middle'
-            ro['pulse_delay'] = \
+            delay = \
                 fp['pulse_length'] - np.min(
                     sweep_points.get_sweep_params_property(
                         'values', dimension=0, param_names='delay')) + \
                 fp.get('buffer_length_end', 0) + fp.get('trans_length', 0)
+            b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'middle',
+                                'pulse_delay': delay})
         else:
-            ro['ref_point'] = 'end'
-            ro['pulse_delay'] = ro_pulse_delay
+            b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'end',
+                                'pulse_delay': ro_pulse_delay})
 
         self.cal_states_rotations.update(self.cal_points.get_rotations(
             qb_names=qb, **kw))
@@ -391,7 +392,8 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
             self.experiment_name = 'Flux_amplitude'
-            super().__init__(task_list, sweep_points, **kw)
+            super().__init__(task_list, sweep_points,
+                             kw_for_task_keys=['delay'], **kw)
             self.exp_metadata.update({"global_PCA": True})
             self.autorun(**kw)
 
@@ -399,8 +401,7 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
             self.exception = x
             traceback.print_exc()
 
-    def sweep_block(self, qb, flux_op_code=None, delay=None,
-                                  **kw):
+    def sweep_block(self, qb, flux_op_code=None, delay=None, **kw):
         """
         Performs X180 pulse on top of a fluxpulse
         :param qb: (str) the name of the qubit
@@ -415,7 +416,6 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
                         'attr=element_name,op_code=X180': 'FPS_Pi_el'}
         b = self.block_from_ops(f'ge_flux {qb}',
-                                 # [f'X180 {qb}', flux_op_code, f'RO {qb}'],
                                  [f'X180 {qb}', flux_op_code],
                                  pulse_modifs=pulse_modifs)
         fp = b.pulses[1]
@@ -425,12 +425,7 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         fp['pulse_delay'] = -fp.get('buffer_length_start', 0) - delay
         fp['amplitude'] = ParametricValue('amplitude')
 
-        # ro = b.pulses[2]
-        # ro['ref_pulse'] = f'FPS_Pi'
-        # ro['ref_point'] = 'middle'
-        # ro['pulse_delay'] = fp['pulse_length'] - delay + \
-        #                           fp.get('buffer_length_end', 0) + \
-        #                           fp.get('trans_length', 0)
+        b.set_end_after_all_pulses()
 
         self.cal_states_rotations.update(self.cal_points.get_rotations(
             qb_names=qb, **kw))

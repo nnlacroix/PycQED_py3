@@ -25,8 +25,14 @@ log = logging.getLogger(__name__)
 
 class MultiTaskingExperiment(QuantumExperiment):
     def __init__(self, task_list, dev=None, qubits=None,
-                 operation_dict=None, **kw):
+                 operation_dict=None, kw_for_task_keys=(), **kw):
+
         self.task_list = task_list
+        for param in kw_for_task_keys:
+            for task in self.task_list:
+                if param not in task:
+                    task[param] = kw.get(param, None)
+
         # Try to get qubits or at least qb_names
         _, qb_names = self.extract_qubits(dev, qubits, operation_dict)
         # Filter to the ones that are needed
@@ -42,6 +48,8 @@ class MultiTaskingExperiment(QuantumExperiment):
         self.all_main_blocks = []
         self.cal_states_rotations = {}
         self.data_to_fit = {}
+        self.experiment_name = kw.pop(
+            'experiment_name', getattr(self, 'experiment_name', 'Experiment'))
 
         # The following is done because the respective call in the init of
         # QuantumExperiment does not capture all kw since many are explicit
@@ -67,11 +75,9 @@ class MultiTaskingExperiment(QuantumExperiment):
     def get_meas_objs_from_task(self, task):
         return self.find_qubits_in_tasks(self.qb_names, [task])
 
-    def guess_label(self, experiment_name=None, **kw):
-        if experiment_name is None:
-            experiment_name = getattr(self, 'experiment_name', 'Experiment')
+    def guess_label(self, **kw):
         if self.label is None:
-            self.label = experiment_name
+            self.label = self.experiment_name
             if self.dev is not None:
                 self.label += self.dev.get_msmt_suffix(self.meas_obj_names)
             else:
@@ -340,6 +346,7 @@ class CPhase(CalibBuilder):
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
+            self.experiment_name = 'CPhase_measurement'
             for task in task_list:
                 for k in ['qbl', 'qbr']:
                     if not isinstance(task[k], str):
@@ -366,7 +373,7 @@ class CPhase(CalibBuilder):
                 'cz_durations': self.cz_durations,
             })
 
-            self.autorun()
+            self.autorun(**kw)
         except Exception as x:
             self.exception = x
             traceback.print_exc()
@@ -443,9 +450,9 @@ class CPhase(CalibBuilder):
         predictive_label = kw.pop('predictive_label', False)
         if self.label is None:
             if predictive_label:
-                self.label = 'Predictive_cphase_measurement'
+                self.label = 'Predictive_' + self.experiment_name
             else:
-                self.label = 'CPhase_measurement'
+                self.label = self.experiment_name
             if self.classified:
                 self.label += '_classified'
             if 'active' in self.get_prep_params()['preparation_type']:
@@ -553,7 +560,7 @@ class DynamicPhase(CalibBuilder):
                 preprocessed_task_list = self.preprocess_task_list(sweep_points)
                 self.sequences, self.mc_points = self.parallel_sweep(
                     preprocessed_task_list, self.dynamic_phase_block, **kw)
-                self.autorun()
+                self.autorun(**kw)
 
             if self.update:
                 assert self.dev is not None, \
