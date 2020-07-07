@@ -18,7 +18,7 @@ import pycqed.measurement.pulse_sequences.fluxing_sequences as fsqs
 import pycqed.measurement.detector_functions as det
 import pycqed.analysis.fitting_models as fms
 from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
 from pycqed.measurement.waveform_control import pulsar as ps
 import pycqed.analysis.measurement_analysis as ma
@@ -3720,6 +3720,9 @@ def get_multi_qubit_msmt_suffix(qubits):
     :param qubits: list of QuDev_transmon instances.
     :return: string with the measurement label suffix
     """
+    # TODO: this was also added in Device. Remove from here when all the
+    # functions that call it have been upgraded to use the Device class
+    # (Steph 15.06.2020)
     qubit_names = [qb.name for qb in qubits]
     if len(qubit_names) == 1:
         msmt_suffix = qubits[0].msmt_suffix

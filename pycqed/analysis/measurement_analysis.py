@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis import fitting_models as fit_mods
 import pycqed.measurement.hdf5_data as h5d
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import scipy.optimize as optimize
 import lmfit
 import textwrap
@@ -6647,7 +6647,8 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         if len(self.exp_metadata) != 0:
             try:
                 self.delays = self.exp_metadata['sweep_points_dict'][self.qb_name]
-                self.freqs = self.exp_metadata['sweep_points_dict_2D'][self.qb_name]
+                self.freqs = self.exp_metadata['sweep_points_dict_2D'][
+                    self.qb_name][:len(self.sweep_points_2D)]
                 cp = self.exp_metadata.get('cal_points', None)
                 if cp is not None:
                     cp = CalibrationPoints.from_string(cp)

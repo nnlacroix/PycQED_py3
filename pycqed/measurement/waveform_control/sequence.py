@@ -230,7 +230,8 @@ class Sequence:
 
                 segment_counter += seq.n_segments()
 
-                merged_seqs[-1].name += "+" + seq.name # update name of merged seq
+                # update name of merged seq
+                merged_seqs[-1].name += "+" + seq.name
                 if merge_repeat_patterns:
                     for ch_name, pattern in seq.repeat_patterns.items():
                         # if channel is already present, update number of
@@ -240,37 +241,42 @@ class Sequence:
                                 merged_seqs[-1].repeat_patterns[ch_name]
                             if pattern_prev[1] != pattern[1]:
                                 raise NotImplementedError(
-                                    "The repeat patterns for channel: {ch_name} do not "
-                                    f"have the same 'outer loop' specification (see "
-                                    f"docstring Sequence.repeat). Repeat patterns cannot "
-                                    f"be merged automatically. Set merge_repeat_patterns "
-                                    f"to False and update the repeat patterns manually.")
+                                    f"The repeat patterns for channel: "
+                                    f"{ch_name} do not have the same "
+                                    f"'outer loop' specification (see "
+                                    f"docstring Sequence.repeat). Repeat "
+                                    f"patterns cannot be merged automatically. "
+                                    f"Set merge_repeat_patterns to False and "
+                                    f"update the repeat patterns manually.")
                             pattern_updated = (pattern_prev[0] + pattern[0],
                                                pattern_prev[1])
-                            merged_seqs[-1].repeat_patterns[ch_name] = pattern_updated
+                            merged_seqs[-1].repeat_patterns[ch_name] = \
+                                pattern_updated
                         # add repeat pattern
                         else:
-                            merged_seqs[-1].repeat_patterns.update({ch_name:
-                                                                         pattern})
+                            merged_seqs[-1].repeat_patterns.update(
+                                {ch_name: pattern})
 
         return merged_seqs
 
     @staticmethod
-    def compress_2D_sweep(sequences, segment_limit=None, merge_repeat_patterns=True):
+    def compress_2D_sweep(sequences, segment_limit=None,
+                          merge_repeat_patterns=True):
         """
-        Compresses a list of sequences to a lower number of sequences (if possible),
-        each of which containing the same amount of segments (assumes fixed number
-        of readout per segment) while respecting the segment_limit (memory limit).
-        Note that all sequences MUST have the same number of segments.
-        Wraps the Sequence.merge() by computing an effective segment limit that
-        minimizes the total number of sequences (to reduce upload time overhead)
-        while keeping the (new) number of segments per sequence constant
-        (it currently is a limitation of 2D sweeps that  all sequences must have same
-        number of readouts)
+        Compresses a list of sequences to a lower number of sequences
+        (if possible), each of which containing the same amount of segments
+        (assumes fixed number of readout per segment) while respecting the
+        segment_limit (memory limit). Note that all sequences MUST have the
+        same number of segments. Wraps the Sequence.merge() by computing an
+        effective segment limit that minimizes the total number of sequences
+        (to reduce upload time overhead) while keeping the (new)
+        number of segments per sequence constant (it currently is a limitation
+        of 2D sweeps that  all sequences must have same number of readouts)
         Args:
-            sequences (list): list of sequences to compress, which all have the same
-                number of segments
-            segment_limit (int): maximal number of segments that can be in a sequence
+            sequences (list): list of sequences to compress, which all have
+                the same number of segments
+            segment_limit (int): maximal number of segments that can be in
+                a sequence
             merge_repeat_patterns (bool): see docstring of Sequence.merge.
 
         Returns: list of sequences for the compressed 2D sweep,
@@ -279,7 +285,8 @@ class Sequence:
 
         """
         assert len(np.unique([s.n_segments() for s in sequences])) == 1, \
-            "To allow compression, all sequences must have the same number of segments"
+            "To allow compression, all sequences must have the same number " \
+            "of segments"
         from pycqed.utilities.math import factors
         n_soft_sp = len(sequences)
         n_seg = sequences[0].n_segments()

@@ -14,14 +14,13 @@ from pycqed.measurement import awg_sweep_functions as awg_swf
 from pycqed.measurement import awg_sweep_functions_multi_qubit as awg_swf2
 from pycqed.measurement import sweep_functions as swf
 from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
 from pycqed.measurement.pulse_sequences import single_qubit_tek_seq_elts as sq
 from pycqed.measurement.pulse_sequences import fluxing_sequences as fsqs
 from pycqed.analysis_v3 import pipeline_analysis as pla
 from pycqed.analysis import measurement_analysis as ma
 from pycqed.analysis_v2 import timedomain_analysis as tda
-from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.utilities.general import add_suffix_to_dict_keys
 from pycqed.utilities.general import temporary_value
 from pycqed.instrument_drivers.meta_instrument.qubit_objects.qubit_object \
@@ -30,7 +29,7 @@ from pycqed.measurement import optimization as opti
 from pycqed.measurement import mc_parameter_wrapper
 import pycqed.analysis_v2.spectroscopy_analysis as sa
 from pycqed.utilities import math
-import pycqed.analysis.fitting_models as fms
+import pycqed.analysis.fitting_models as fit_mods
 import os
 import \
     pycqed.measurement.waveform_control.fluxpulse_predistortion as fl_predist
@@ -3528,8 +3527,16 @@ class QuDev_transmon(Qubit):
         MC.set_detector_function(self.int_avg_det)
         if exp_metadata is None:
             exp_metadata = {}
-        exp_metadata.update({'sweep_points_dict': {self.name: amplitudes},
-                             'sweep_points_dict_2D': {self.name: freqs},
+
+        sp = SweepPoints()
+        sp.add_sweep_parameter(f'{self.name}_amplitude', amplitudes, 'V',
+                               'Flux pulse amplitude')
+        sp.add_sweep_dimension()
+        sp.add_sweep_parameter(f'{self.name}_freq', freqs, 'Hz',
+                               'Qubit frequency')
+        exp_metadata.update({'sweep_points': sp,
+                             'meas_obj_sweep_points_map':
+                                 sp.get_meas_obj_sweep_points_map([self.name]),
                              'use_cal_points': cal_points,
                              'preparation_params': prep_params,
                              'cal_points': repr(cp),
@@ -3592,7 +3599,7 @@ class QuDev_transmon(Qubit):
 
         fit_paras = deepcopy(self.fit_ge_freq_from_flux_pulse_amp())
         if freqs is not None:
-            amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
+            amplitudes = fit_mods.Qubit_freq_to_dac(freqs, **fit_paras)
 
         amplitudes = np.array(amplitudes)
 
@@ -3633,14 +3640,19 @@ class QuDev_transmon(Qubit):
         MC.set_detector_function(self.int_avg_det)
         if exp_metadata is None:
             exp_metadata = {}
-        exp_metadata.update({
-                            #  'sweep_points_dict': {self.name: amplitudes if\
-                            #                        freqs is None else freqs},
-                             'amplitudes': amplitudes,
+        # create SweepPoints
+        sp = SweepPoints(f'{self.name}_pulse_length', flux_lengths, 's',
+                         'Flux pulse length')
+        sp.add_sweep_dimension()
+        sp.add_sweep_parameter(f'{self.name}_amplitude', amplitudes, 'V',
+                               'Flux pulse amplitude')
+        if freqs is not None:
+            sp.add_sweep_parameter(f'{self.name}_qubit_freqs', freqs, 'Hz',
+                                   'Qubit frequency')
+        exp_metadata.update({'sweep_points': sp,
+                             'meas_obj_sweep_points_map':
+                                 sp.get_meas_obj_sweep_points_map(self.name),
                              'preparation_params': prep_params,
-                             'frequencies': freqs,
-                             'flux_lengths': flux_lengths,
-                             'use_cal_points': cal_points,
                              'cal_points': repr(cp),
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
@@ -3680,7 +3692,7 @@ class QuDev_transmon(Qubit):
         '''
         fit_paras = deepcopy(self.fit_ge_freq_from_flux_pulse_amp())
         if freqs is not None:
-            amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
+            amplitudes = fit_mods.Qubit_freq_to_dac(freqs, **fit_paras)
 
         amplitudes = np.array(amplitudes)
 

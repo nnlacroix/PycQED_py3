@@ -678,7 +678,8 @@ def temporary_value(*param_value_pairs):
 
     class TemporaryValueContext:
         def __init__(self, *param_value_pairs):
-            if not isinstance(param_value_pairs[0], (tuple, list)):
+            if len(param_value_pairs) > 0 and \
+                    not isinstance(param_value_pairs[0], (tuple, list)):
                 param_value_pairs = (param_value_pairs,)
             self.param_value_pairs = param_value_pairs
             self.old_value_pairs = []

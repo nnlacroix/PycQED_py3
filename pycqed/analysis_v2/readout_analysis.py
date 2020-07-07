@@ -13,15 +13,14 @@ import logging
 from scipy import stats
 
 log = logging.getLogger(__name__)
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from copy import deepcopy
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import lmfit
 import matplotlib.colors as mc
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import gridspec
-from matplotlib.colors import LinearSegmentedColormap as lscmap
 from scipy.optimize import minimize
 from sklearn.metrics import confusion_matrix
 from sklearn.mixture import GaussianMixture as GM
