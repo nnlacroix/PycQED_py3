@@ -481,6 +481,14 @@ class QuDev_transmon(Qubit):
             integration_length=self.acq_length(),
             result_logging_mode='raw', real_imag=False, single_int_avg=True)
 
+        self.scope_fft_det = det.UHFQC_scope_detector(
+            UHFQC=self.instr_uhf.get_instr(),
+            AWG=self.instr_pulsar.get_instr(),
+            fft_mode='fft_power',
+            nr_averages=self.acq_averages(),
+            nr_samples=nr_samples,
+        )
+
     def prepare(self, drive='timedomain'):
         ro_lo = self.instr_ro_lo
         ge_lo = self.instr_ge_lo
@@ -1687,10 +1695,94 @@ class QuDev_transmon(Qubit):
         a = ma.MeasurementAnalysis(plot_args=dict(log=True, marker=''))
         return a
 
+    def measure_drive_mixer_spectrum_fft(self, ro_lo_freq, amplitude=0.5,
+                                         trigger_sep=5e-6):
+        MC = self.instr_mc.get_instr()
+        s = swf.None_Sweep(
+            name='UHF intermediate frequency',
+            parameter_name='UHF intermediate frequency',
+            unit='Hz')
+        drive_pulse = dict(
+            pulse_type='GaussFilteredCosIQPulse',
+            pulse_length=self.acq_length(),
+            ref_point='start',
+            amplitude=amplitude,
+            I_channel=self.ge_I_channel(),
+            Q_channel=self.ge_Q_channel(),
+            mod_frequency=self.ge_mod_freq(),
+            phase_lock=False,
+        )
+        sq.pulse_list_list_seq([[self.get_acq_pars(), drive_pulse]])
+
+        with temporary_value(
+                (self.ro_freq, ro_lo_freq + self.ro_mod_freq()),
+                (self.instr_trigger.get_instr().pulse_period, trigger_sep),
+        ):
+            self.prepare(drive='timedomain')
+            MC.set_sweep_function(s)
+            MC.set_sweep_points(self.scope_fft_det.get_sweep_vals())
+            MC.set_detector_function(self.scope_fft_det)
+            self.instr_pulsar.get_instr().start()
+            MC.run('ge_uc_spectrum' + self.msmt_suffix)
+
+        a = ma.MeasurementAnalysis(plot_args=dict(log=True, marker=''))
+        return a
+
     def calibrate_drive_mixer_carrier(self, update=True, x0=(0., 0.),
                                       initial_stepsize=0.01, trigger_sep=5e-6,
                                       no_improv_break=50, upload=True,
                                       plot=True, sideband=1):
+        MC = self.instr_mc.get_instr()
+        ad_func_pars = {'adaptive_function': opti.nelder_mead,
+                        'x0': x0,
+                        'initial_step': [initial_stepsize, initial_stepsize],
+                        'no_improv_break': no_improv_break,
+                        'minimize': True,
+                        'maxiter': 500}
+        chI_par = self.instr_pulsar.get_instr().parameters['{}_offset'.format(
+            self.ge_I_channel())]
+        chQ_par = self.instr_pulsar.get_instr().parameters['{}_offset'.format(
+            self.ge_Q_channel())]
+        MC.set_sweep_functions([chI_par, chQ_par])
+        MC.set_adaptive_function_parameters(ad_func_pars)
+        if upload:
+            sq.pulse_list_list_seq([[self.get_acq_pars(), dict(
+                pulse_type='GaussFilteredCosIQPulse',
+                pulse_length=self.acq_length(),
+                ref_point='start',
+                amplitude=0,
+                I_channel=self.ge_I_channel(),
+                Q_channel=self.ge_Q_channel(),
+            )]])
+
+        with temporary_value(
+                (self.ro_freq, self.ge_freq() - self.ge_mod_freq()),
+                (self.acq_weights_type, 'SSB'),
+                (self.instr_trigger.get_instr().pulse_period, trigger_sep),
+        ):
+            self.prepare(drive='timedomain')
+            MC.set_detector_function(det.IndexDetector(
+                self.int_avg_det_spec, 0))
+            self.instr_pulsar.get_instr().start(exclude=[self.instr_uhf()])
+            MC.run(name='drive_carrier_calibration' + self.msmt_suffix,
+                   mode='adaptive')
+
+        a = ma.OptimizationAnalysis(label='drive_carrier_calibration')
+        if plot:
+            # v2 creates a pretty picture of the optimizations
+            ma.OptimizationAnalysis_v2(label='drive_carrier_calibration')
+
+        ch_1_min = a.optimization_result[0][0]
+        ch_2_min = a.optimization_result[0][1]
+        if update:
+            self.ge_I_offset(ch_1_min)
+            self.ge_Q_offset(ch_2_min)
+        return ch_1_min, ch_2_min
+
+    def calibrate_drive_mixer_carrier_fft(self, update=True, x0=(0., 0.),
+                                      initial_stepsize=0.01, trigger_sep=5e-6,
+                                      no_improv_break=50, upload=True,
+                                      plot=True):
         MC = self.instr_mc.get_instr()
         ad_func_pars = {'adaptive_function': opti.nelder_mead,
                         'x0': x0,
@@ -1720,12 +1812,11 @@ class QuDev_transmon(Qubit):
                 (self.instr_trigger.get_instr().pulse_period, trigger_sep),
         ):
             self.prepare(drive='timedomain')
-            ro_lo = self.instr_ro_lo.get_instr()
-            ro_lo.frequency(
-                self.ge_freq() - self.ge_mod_freq() - self.ro_mod_freq() / sideband),
-
+            d = self.scope_fft_det
+            idx = np.argmin(np.abs(d.get_sweep_vals() -
+                                   np.abs(self.ro_mod_freq())))
             MC.set_detector_function(det.IndexDetector(
-                self.int_avg_det_spec, 0))
+                det.SumDetector(d), idx))
             self.instr_pulsar.get_instr().start(exclude=[self.instr_uhf()])
             MC.run(name='drive_carrier_calibration' + self.msmt_suffix,
                    mode='adaptive')
@@ -1741,6 +1832,60 @@ class QuDev_transmon(Qubit):
             self.ge_I_offset(ch_1_min)
             self.ge_Q_offset(ch_2_min)
         return ch_1_min, ch_2_min
+
+    def calibrate_drive_mixer_skewness(self, update=True, amplitude=0.5,
+                                       trigger_sep=5e-6, no_improv_break=50,
+                                       initial_stepsize=(0.15, 10)):
+        MC = self.instr_mc.get_instr()
+        ad_func_pars = {'adaptive_function': opti.nelder_mead,
+                        'x0': [self.ge_alpha(), self.ge_phi_skew()],
+                        'initial_step': initial_stepsize,
+                        'no_improv_break': no_improv_break,
+                        'minimize': True,
+                        'maxiter': 500}
+        MC.set_sweep_functions([self.ge_alpha, self.ge_phi_skew])
+        MC.set_adaptive_function_parameters(ad_func_pars)
+
+        with temporary_value(
+                (self.ge_alpha, self.ge_alpha()),
+                (self.ge_phi_skew, self.ge_phi_skew()),
+                (self.ro_freq, self.ge_freq() - 2 * self.ge_mod_freq()),
+                (self.acq_weights_type, 'SSB'),
+                (self.instr_trigger.get_instr().pulse_period, trigger_sep),
+        ):
+            self.prepare(drive='timedomain')
+            detector = self.int_avg_det_spec
+            detector.always_prepare = True
+            detector.AWG = self.instr_pulsar.get_instr()
+            detector.prepare_function = lambda \
+                    alphaparam=self.ge_alpha, skewparam=self.ge_phi_skew: \
+                sq.pulse_list_list_seq([[self.get_acq_pars(), dict(
+                    pulse_type='GaussFilteredCosIQPulse',
+                    pulse_length=self.acq_length(),
+                    ref_point='start',
+                    amplitude=amplitude,
+                    I_channel=self.ge_I_channel(),
+                    Q_channel=self.ge_Q_channel(),
+                    mod_frequency=self.ge_mod_freq(),
+                    phase_lock=False,
+                    alpha=alphaparam(),
+                    phi_skew=skewparam(),
+                )]])
+            MC.set_detector_function(det.IndexDetector(detector, 0))
+            MC.run(name='drive_skewness_calibration' + self.msmt_suffix,
+                   mode='adaptive')
+
+        a = ma.OptimizationAnalysis(label='drive_skewness_calibration')
+        # v2 creates a pretty picture of the optimizations
+        ma.OptimizationAnalysis_v2(label='drive_skewness_calibration')
+
+        # phi and alpha are the coefficients that go in the predistortion matrix
+        alpha = a.optimization_result[0][0]
+        phi = a.optimization_result[0][1]
+        if update:
+            self.ge_alpha(alpha)
+            self.ge_phi_skew(phi)
+        return alpha, phi
 
     def calibrate_drive_mixer_skewness(self, update=True, amplitude=0.5,
                                        trigger_sep=5e-6, no_improv_break=50,
