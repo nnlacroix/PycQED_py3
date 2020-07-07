@@ -330,27 +330,27 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         if ro_pulse_delay is None:
             ro_pulse_delay = 100e-9
         pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
-                        'attr=element_name': 'default'}
+                        'attr=element_name,op_code=X180': 'FPS_Pi_el'}
         b = self.block_from_ops(f'ge_flux {qb}',
-                                [f'X180 {qb}', flux_op_code, f'RO {qb}'],
+                                [f'X180 {qb}', flux_op_code],
                                 pulse_modifs=pulse_modifs)
         fp = b.pulses[1]
         fp['ref_point'] = 'middle'
         offs = fp.get('buffer_length_start', 0)
         fp['pulse_delay'] = ParametricValue(
             'delay', func=lambda x, o=offs: -(x + o))
-        ro = b.pulses[2]
-        ro['ref_pulse'] = f'FPS_Pi'
+
         if ro_pulse_delay == 'auto':
-            ro['ref_point'] = 'middle'
-            ro['pulse_delay'] = \
+            delay = \
                 fp['pulse_length'] - np.min(
                     sweep_points.get_sweep_params_property(
                         'values', dimension=0, param_names='delay')) + \
                 fp.get('buffer_length_end', 0) + fp.get('trans_length', 0)
+            b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'middle',
+                                'pulse_delay': delay})
         else:
-            ro['ref_point'] = 'end'
-            ro['pulse_delay'] = ro_pulse_delay
+            b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'end',
+                                'pulse_delay': ro_pulse_delay})
 
         self.cal_states_rotations.update(self.cal_points.get_rotations(
             qb_names=qb, **kw))
