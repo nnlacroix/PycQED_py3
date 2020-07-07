@@ -262,6 +262,7 @@ class CalibBuilder(MultiTaskingExperiment):
     def max_pulse_length(self, pulse, sweep_points=None,
                          given_pulse_length=None):
         pulse = copy(pulse)
+        pulse['name'] = 'tmp'
         pulse['element_name'] = 'tmp'
 
         if given_pulse_length is not None:
