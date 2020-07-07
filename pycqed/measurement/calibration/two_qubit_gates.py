@@ -25,8 +25,14 @@ log = logging.getLogger(__name__)
 
 class MultiTaskingExperiment(QuantumExperiment):
     def __init__(self, task_list, dev=None, qubits=None,
-                 operation_dict=None, **kw):
+                 operation_dict=None, kw_for_task_keys=(), **kw):
+
         self.task_list = task_list
+        for param in kw_for_task_keys:
+            for task in self.task_list:
+                if param not in task:
+                    task[param] = kw.get(param, None)
+
         # Try to get qubits or at least qb_names
         _, qb_names = self.extract_qubits(dev, qubits, operation_dict)
         # Filter to the ones that are needed
