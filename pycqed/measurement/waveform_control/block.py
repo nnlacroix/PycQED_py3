@@ -18,9 +18,12 @@ class Block:
     counter = 0
     INSIDE_BLOCKINFO_NAME = "BlockInfo"
 
-    def __init__(self, block_name, pulse_list:list, pulse_modifs=None):
+    def __init__(self, block_name, pulse_list:list, pulse_modifs=None,
+                 **kw):
         self.name = block_name
         self.pulses = deepcopy(pulse_list)
+        self.block_start = kw.get('block_start', {})
+        self.block_end = kw.get('block_end', {})
         if pulse_modifs is not None:
             self.pulses = self.pulses_sweepcopy([pulse_modifs], [None])
 
@@ -82,10 +85,10 @@ class Block:
                        "pulse_delay": block_delay,
                        "ref_pulse": ref_pulse,
                        "ref_point": ref_point}
-        block_start.update(kwargs.get("block_start", {}))
+        block_start.update(kwargs.get("block_start", self.block_start))
         block_end = {"name": f"end",
                      "pulse_type": "VirtualPulse"}
-        block_end.update(kwargs.get("block_end", {}))
+        block_end.update(kwargs.get("block_end", self.block_end))
         if sweep_dicts_list is not None and sweep_index_list is not None:
             pulses_built = self.pulses_sweepcopy(sweep_dicts_list, sweep_index_list)
         else:
