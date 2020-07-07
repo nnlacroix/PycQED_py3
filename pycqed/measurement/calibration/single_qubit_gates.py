@@ -350,6 +350,11 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         else:
             ro['ref_point'] = 'end'
             ro['pulse_delay'] = ro_pulse_delay
+
+        self.cal_states_rotations.update(self.cal_points.get_rotations(
+            qb_names=qb, **kw))
+        self.data_to_fit.update({qb: 'pe'})
+
         return b
 
     def run_analysis(self, **kw):
