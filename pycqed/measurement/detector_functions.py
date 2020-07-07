@@ -123,6 +123,31 @@ class IndexDetector(Detector_Function):
     def finish(self):
         self.detector.finish()
 
+
+class SumDetector(Detector_Function):
+    def __init__(self, detector, idxs=None):
+        super().__init__()
+        self.detector = detector
+        if idxs is None:
+            idxs = np.arange(len(detector.value_names))
+        self.idxs = idxs
+        self.name = detector.name + ' sum'
+        self.value_names = [detector.value_names[idxs[0]]]
+        self.value_units = [detector.value_units[idxs[0]]]
+        self.detector_control = detector.detector_control
+
+    def prepare(self, **kw):
+        self.detector.prepare(**kw)
+
+    def get_values(self):
+        return np.array(self.detector.get_values())[self.idxs].sum(axis=0)
+
+    def acquire_data_point(self):
+        return np.array(self.acquire_data_point())[self.idxs].sum(axis=0)
+
+    def finish(self):
+        self.detector.finish()
+
 ###############################################################################
 ###############################################################################
 ####################             None Detector             ####################
