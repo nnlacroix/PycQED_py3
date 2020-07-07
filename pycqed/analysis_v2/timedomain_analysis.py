@@ -877,6 +877,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             func_for_swpts = lambda qb_name: self.raw_data_dict[
                 'hard_sweep_points']
         for qb_name, raw_data_dict in self.proc_data_dict[key].items():
+            if qb_name not in self.qb_names:
+                continue
             sweep_points = func_for_swpts(qb_name)
             if len(raw_data_dict) == 1:
                 numplotsx = 1
@@ -5352,16 +5354,16 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
         super().process_data()
 
         # Find leakage and ramsey qubit names
-        task_list = self.get_param_value('task_list', default_value=[])
         self.leakage_qbnames = self.get_param_value('leakage_qbnames',
                                             default_value=[])
-        if len(self.leakage_qbnames) == 0:
-            self.leakage_qbnames = [task['qbl'] for task in task_list]
-
         self.ramsey_qbnames = self.get_param_value('ramsey_qbnames',
                                                    default_value=[])
-        if len(self.ramsey_qbnames ) == 0:
-            self.ramsey_qbnames = [task['qbr'] for task in task_list]
+        task_list = self.get_param_value('task_list', default_value=[])
+        for task in task_list:
+            if len(self.leakage_qbnames) == 0 and 'qbl' in task:
+                self.leakage_qbnames += [task['qbl']]
+            if len(self.ramsey_qbnames) == 0 and 'qbr' in task:
+                self.ramsey_qbnames += [task['qbr']]
 
         # Make sure data has the right shape (len(hard_sp), len(soft_sp))
         for qbn, data in self.proc_data_dict['data_to_fit'].items():

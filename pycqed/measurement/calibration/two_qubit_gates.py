@@ -668,7 +668,6 @@ class DynamicPhase(CalibBuilder):
                         # FIXME in analysis: in case of a soft sweep, analysis
                         #  has to overwrite length and amp with values from the
                         #  sweep_points
-                        'sweep_points': self.sweep_points,
                         'save_figs': ~extract_only}, extract_only=extract_only)
             self.dyn_phases[op] = {}
             for qb_name in task['qubits_to_measure']:
