@@ -659,14 +659,14 @@ class UHFQC_scope_detector(Hard_Detector):
         self.scope = UHFQC.daq.scopeModule()
         self.AWG = AWG
         self.channels = channels
-        self.nr_samples = nr_samples
+        self.nr_samples = max(int(2**np.floor(np.log2(nr_samples))), 4096)
         self.nr_averages = nr_averages
         self.fft_mode = fft_mode
         self.value_names = [f'{UHFQC.name}_ch{ch}' for ch in channels]
         if fft_mode == 'fft_power':
-            self.value_names = ['V^2' for _ in channels]
+            self.value_units = ['V^2' for _ in channels]
         else:
-            self.value_names = ['V' for _ in channels]
+            self.value_units = ['V' for _ in channels]
         self.trigger_channel = kw.get('trigger_channel', 2)
         self.trigger_level = kw.get('trigger_level', 0.1)
         self.trigger = kw.get('trigger', self.AWG is not None)
@@ -675,26 +675,36 @@ class UHFQC_scope_detector(Hard_Detector):
         if self.AWG is not None:
             self.AWG.stop()
 
-        self.scope.unsubscribe(f'/{self.UHFQA.devname}/scopes/0/wave')
+        self.scope.unsubscribe(f'/{self.UHFQC.devname}/scopes/0/wave')
         self.scope.finish()
 
     def get_values(self):
         self.scope.set('scopeModule/averager/restart', 1)
-        self.UHFQA.scopes_0_enable(1)
-        self.scope.subscribe(f'/{self.UHFQA.devname}/scopes/0/wave')
+        self.UHFQC.scopes_0_enable(1)
+        self.scope.subscribe(f'/{self.UHFQC.devname}/scopes/0/wave')
         self.scope.execute()
         if self.AWG is not None:
             self.AWG.start()
+        result = self.scope.read()
         while int(self.scope.progress()) != 1:
             time.sleep(0.1)
             result = self.scope.read()
-        return result
+        return [x.reshape(self.nr_averages, -1).mean(0) for
+                x in result[self.UHFQC.devname]['scopes']['0']['wave'][0][0]['wave']]
 
     def prepare(self, sweep_points=None):
         if self.AWG is not None:
             self.AWG.stop()
-        self.UHFQC.scopes_0_length(self.nr_samples)
+
         self.UHFQC.scopes_0_enable(0)
+        self.UHFQC.scopes_0_length(self.nr_samples)
+        self.UHFQC.scopes_0_channel((1 << len(self.channels)) - 1)
+        self.UHFQC.scopes_0_segments_count(self.nr_averages)
+        self.UHFQC.scopes_0_segments_enable(1)
+
+        for i, ch in enumerate(self.channels):
+            self.UHFQC.set(f'scopes_0_channels_{i}_inputselect', ch)
+
         self.UHFQC.scopes_0_single(1)
         if self.fft_mode == 'fft_power':
             self.scope.set('scopeModule/mode', 3)
@@ -709,14 +719,17 @@ class UHFQC_scope_detector(Hard_Detector):
             raise ValueError("Invalid fft_mode. Allowed options are "
                              "'timedomain', 'fft' and 'fft_power'")
         self.scope.set('scopeModule/averager/weight', 1)
-        self.UHFQC.scopes_0_segments_count(self.nr_averages)
-        self.UHFQC.scopes_0_segments_enable(1)
 
         self.UHFQC.scopes_0_trigenable(self.trigger)
         self.UHFQC.scopes_0_trigchannel(self.trigger_channel)
         self.UHFQC.scopes_0_triglevel(self.trigger_level)
         self.UHFQC.scopes_0_trigslope(0)
 
+    def get_sweep_vals(self):
+        if self.fft_mode == 'timedomain':
+            return np.linspace(0, self.nr_samples/1.8e9, self.nr_samples, endpoint=False)
+        elif self.fft_mode in ('fft', 'fft_power'):
+            return np.linspace(0, 0.9e9, self.nr_samples//2, endpoint=False)
 
 class UHFQC_integrated_average_detector(UHFQC_Base):
 
