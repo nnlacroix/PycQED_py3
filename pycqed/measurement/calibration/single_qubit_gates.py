@@ -392,7 +392,8 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
             self.experiment_name = 'Flux_amplitude'
-            super().__init__(task_list, sweep_points, **kw)
+            super().__init__(task_list, sweep_points,
+                             kw_for_task_keys=['delay'], **kw)
             self.exp_metadata.update({"global_PCA": True})
             self.autorun(**kw)
 
@@ -400,8 +401,7 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
             self.exception = x
             traceback.print_exc()
 
-    def sweep_block(self, qb, flux_op_code=None, delay=None,
-                                  **kw):
+    def sweep_block(self, qb, flux_op_code=None, delay=None, **kw):
         """
         Performs X180 pulse on top of a fluxpulse
         :param qb: (str) the name of the qubit
