@@ -42,6 +42,8 @@ class MultiTaskingExperiment(QuantumExperiment):
         self.all_main_blocks = []
         self.cal_states_rotations = {}
         self.data_to_fit = {}
+        self.experiment_name = kw.pop(
+            'experiment_name', getattr(self, 'experiment_name', 'Experiment'))
 
         # The following is done because the respective call in the init of
         # QuantumExperiment does not capture all kw since many are explicit
@@ -67,11 +69,9 @@ class MultiTaskingExperiment(QuantumExperiment):
     def get_meas_objs_from_task(self, task):
         return self.find_qubits_in_tasks(self.qb_names, [task])
 
-    def guess_label(self, experiment_name=None, **kw):
-        if experiment_name is None:
-            experiment_name = getattr(self, 'experiment_name', 'Experiment')
+    def guess_label(self, **kw):
         if self.label is None:
-            self.label = experiment_name
+            self.label = self.experiment_name
             if self.dev is not None:
                 self.label += self.dev.get_msmt_suffix(self.meas_obj_names)
             else:
