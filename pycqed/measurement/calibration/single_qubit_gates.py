@@ -297,7 +297,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
             self.experiment_name = 'Flux_scope'
-            super().__init__(task_list, sweep_points, **kw)
+            super().__init__(task_list, sweep_points,
+                             kw_for_task_keys=['ro_pulse_delay'], **kw)
             self.autorun(**kw)
         except Exception as x:
             self.exception = x
