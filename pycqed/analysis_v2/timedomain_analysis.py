@@ -870,6 +870,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             func_for_swpts = lambda qb_name: self.raw_data_dict[
                 'hard_sweep_points']
         for qb_name, raw_data_dict in self.proc_data_dict[key].items():
+            if qb_name not in self.qb_names:
+                continue
             sweep_points = func_for_swpts(qb_name)
             if len(raw_data_dict) == 1:
                 numplotsx = 1
@@ -5145,16 +5147,10 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
         super().process_data()
 
         # Find leakage and ramsey qubit names
-        task_list = self.get_param_value('task_list', default_value=[])
         self.leakage_qbnames = self.get_param_value('leakage_qbnames',
                                             default_value=[])
-        if len(self.leakage_qbnames) == 0:
-            self.leakage_qbnames = [task['qbl'] for task in task_list]
-
         self.ramsey_qbnames = self.get_param_value('ramsey_qbnames',
                                                    default_value=[])
-        if len(self.ramsey_qbnames ) == 0:
-            self.ramsey_qbnames = [task['qbr'] for task in task_list]
 
         # Make sure data has the right shape (len(hard_sp), len(soft_sp))
         for qbn, data in self.proc_data_dict['data_to_fit'].items():
@@ -5245,24 +5241,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                             self.get_cal_state_color(
                                 list(self.cal_states_dict)[i])}}
 
-            hard_sweep_params = self.get_param_value('hard_sweep_params')
-            sweep_name = self.get_param_value('sweep_name')
-            sweep_unit = self.get_param_value('sweep_unit')
-            if self.sp is not None:
-                xlabel = self.sp[0]['phase'][2]
-                xunit = self.sp[0]['phase'][1]
-            elif hard_sweep_params is not None:
-                xlabel = list(hard_sweep_params)[0]
-                xunit = list(hard_sweep_params.values())[0][
-                    'unit']
-            elif (sweep_name is not None) and (sweep_unit is not None):
-                xlabel = sweep_name
-                xunit = sweep_unit
-            else:
-                xlabel = self.raw_data_dict['sweep_parameter_names']
-                xunit = self.raw_data_dict['sweep_parameter_units']
-            if np.ndim(xunit) > 0:
-                xunit = xunit[0]
+            xlabel, xunit = self.get_xaxis_label_unit(qbn)
             self.plot_dicts['data_{}_{}_{}'.format(
                 row, qbn, prob_label)] = {
                 'plotfn': self.plot_line,
@@ -5581,6 +5560,23 @@ class CPhaseLeakageAnalysis(MultiCZgate_Calib_Analysis):
     def process_data(self):
         super().process_data()
 
+        self.gates_list = self.get_param_value('gates_list', default_value=[])
+        # Find leakage and ramsey qubit names
+        # first try the legacy code
+        leakage_qbname = self.get_param_value('leakage_qbname')
+        ramsey_qbname = self.get_param_value('ramsey_qbname')
+        if leakage_qbname is not None and ramsey_qbname is not None:
+            self.gates_list += [(leakage_qbname, ramsey_qbname)]
+            self.leakage_qbnames = [leakage_qbname]
+            self.ramsey_qbnames = [ramsey_qbname]
+        else:
+            # new measurement framework
+            task_list = self.get_param_value('task_list', default_value=[])
+            for task in task_list:
+                self.gates_list += [(task['qbl'], task['qbr'])]
+                self.leakage_qbnames += [task['qbl']]
+                self.ramsey_qbnames += [task['qbr']]
+
         if len(self.leakage_qbnames) == 0 and len(self.ramsey_qbnames) == 0:
             raise ValueError('Please provide either leakage_qbnames or '
                              'ramsey_qbnames.')
@@ -5595,9 +5591,16 @@ class CPhaseLeakageAnalysis(MultiCZgate_Calib_Analysis):
 
         self.phase_key = 'cphase'
         if len(self.leakage_qbnames) > 0:
-            legend_label_func = lambda qbn, row: \
-                f'{qbn} in $|g\\rangle$' if row % 2 != 0 else \
-                    f'{qbn} in $|e\\rangle$'
+            def legend_label_func(qbn, row, gates_list=self.gates_list):
+                leakage_qbnames = [qb_tup[0] for qb_tup in gates_list]
+                if qbn in leakage_qbnames:
+                    return f'{qbn} in $|g\\rangle$' if row % 2 != 0 else \
+                        f'{qbn} in $|e\\rangle$'
+                else:
+                    qbln = [qb_tup for qb_tup in gates_list
+                            if qbn == qb_tup[1]][0][0]
+                    return f'{qbln} in $|g\\rangle$' if row % 2 != 0 else \
+                        f'{qbln} in $|e\\rangle$'
         else:
             legend_label_func = lambda qbn, row: \
                 'qbc in $|g\\rangle$' if row % 2 != 0 else \
