@@ -340,6 +340,7 @@ class CPhase(CalibBuilder):
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
+            self.experiment_name = 'CPhase_measurement'
             for task in task_list:
                 for k in ['qbl', 'qbr']:
                     if not isinstance(task[k], str):
@@ -443,9 +444,9 @@ class CPhase(CalibBuilder):
         predictive_label = kw.pop('predictive_label', False)
         if self.label is None:
             if predictive_label:
-                self.label = 'Predictive_cphase_measurement'
+                self.label = 'Predictive_' + self.experiment_name
             else:
-                self.label = 'CPhase_measurement'
+                self.label = self.experiment_name
             if self.classified:
                 self.label += '_classified'
             if 'active' in self.get_prep_params()['preparation_type']:
