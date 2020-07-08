@@ -107,18 +107,36 @@ class IndexDetector(Detector_Function):
         self.detector = detector
         self.index = index
         self.name = detector.name + '[{}]'.format(index)
-        self.value_names = [detector.value_names[index]]
-        self.value_units = [detector.value_units[index]]
-        self.detector_control = detector.detector_control
+        if isinstance(self.index, tuple):
+            self.value_names = [detector.value_names[index[0]]]
+            self.value_units = [detector.value_units[index[0]]]
+            self.detector_control = 'soft'
+        else:
+            self.value_names = [detector.value_names[index]]
+            self.value_units = [detector.value_units[index]]
+            self.detector_control = detector.detector_control
+
 
     def prepare(self, **kw):
         self.detector.prepare(**kw)
 
     def get_values(self):
-        return self.detector.get_values()[self.index]
+        if isinstance(self.index, tuple):
+            v = self.detector.get_values()
+            for i in self.index:
+                v = v[i]
+            return v
+        else:
+            return self.detector.get_values()[self.index]
 
     def acquire_data_point(self):
-        return self.detector.acquire_data_point()[self.index]
+        if isinstance(self.index, tuple):
+            v = self.detector.get_values()
+            for i in self.index:
+                v = v[i]
+            return v
+        else:
+            return self.detector.acquire_data_point()[self.index]
 
     def finish(self):
         self.detector.finish()
@@ -140,10 +158,10 @@ class SumDetector(Detector_Function):
         self.detector.prepare(**kw)
 
     def get_values(self):
-        return np.array(self.detector.get_values())[self.idxs].sum(axis=0)
+        return [np.array(self.detector.get_values())[self.idxs].sum(axis=0)]
 
     def acquire_data_point(self):
-        return np.array(self.acquire_data_point())[self.idxs].sum(axis=0)
+        return [np.array(self.detector.acquire_data_point())[self.idxs].sum(axis=0)]
 
     def finish(self):
         self.detector.finish()
@@ -704,7 +722,8 @@ class UHFQC_scope_detector(Hard_Detector):
         self.scope.finish()
 
     def get_values(self):
-        self.scope.set('scopeModule/averager/restart', 1)
+        # self.scope.set('scopeModule/averager/restart', 1)
+        self.UHFQC.scopes_0_single(1)
         self.UHFQC.scopes_0_enable(1)
         self.scope.subscribe(f'/{self.UHFQC.devname}/scopes/0/wave')
         self.scope.execute()
