@@ -129,7 +129,7 @@ class MultiTaskingExperiment(QuantumExperiment):
 
     def preprocess_task_list(self, sweep_points):
         self.sweep_points = SweepPoints(from_dict_list=sweep_points)
-        if len(self.sweep_points) == 1:
+        while len(self.sweep_points) < 2:
             self.sweep_points.add_sweep_dimension()
         preprocessed_task_list = []
         for task in self.task_list:
@@ -248,12 +248,16 @@ class MultiTaskingExperiment(QuantumExperiment):
             task_list = self.task_list
         if task_list is None:
             task_list = [{}]
-        ro_qubits = [task.pop('ro_qubits', []) for task in task_list]
-        ro_qubits.append(kw.pop('ro_qubits', []))
-        if any([isinstance(qbn, list) for qbn in ro_qubits]):
-            # flatten
-            ro_qubits = [i for j in ro_qubits for i in j]
+        ro_qubits = kw.pop('ro_qubits', None)
+        if ro_qubits is None:
+            ro_qubits = [qb for task in task_list for qb in task.pop(
+                'ro_qubits', self.get_meas_objs_from_task(task))]
+        else:
+            ro_qubits += [qb for task in task_list for qb in
+                          task.pop('ro_qubits', [])]
         # unique and sort
+        ro_qubits = [qb if isinstance(qb, str) else qb.name for qb in
+                     ro_qubits]
         ro_qubits = list(np.unique(ro_qubits))
         ro_qubits.sort()
         self.meas_objs, self.meas_obj_names = self.get_qubits(
@@ -361,7 +365,6 @@ class CPhase(CalibBuilder):
             self.cphases = None
             self.population_losses = None
             self.leakage = None
-            self.analysis = None
             self.cz_durations = {}
 
             sweep_points = self.add_default_sweep_points(sweep_points, **kw)
@@ -692,3 +695,124 @@ class DynamicPhase(CalibBuilder):
                         'dynamic_phase']['val'] * 180 / np.pi
 
         return self.dyn_phases, self.dynamic_phase_analysis
+
+
+
+class Chevron(CalibBuilder):
+    """
+    TODO
+
+    Args:
+        FIXME: add further args
+        TODO
+        :param cz_pulse_name: see CircuitBuilder
+        :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
+    ...
+    """
+
+    def __init__(self, task_list, sweep_points=None, **kw):
+        try:
+            self.experiment_name = 'Chevron'
+            for task in task_list:
+                if task.get('qbr', None) is None:
+                    task['qbr'] = task['qbt']
+                for k in ['qbc', 'qbt', 'qbr']:
+                    if not isinstance(task[k], str):
+                        task[k] = task[k].name
+                if task['qbr'] not in [task['qbc'], task['qbt']]:
+                    raise ValueError(
+                        'Only target or control qubit can be read out!')
+                if not 'prefix' in task:
+                    task['prefix'] = f"{task['qbc']}{task['qbt']}_"
+
+            super().__init__(task_list, **kw)
+
+            preprocessed_task_list = self.preprocess_task_list(sweep_points)
+            self.sequences, self.mc_points = self.parallel_sweep(
+                preprocessed_task_list, self.sweep_block, **kw)
+
+            self.autorun(**kw)
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def add_default_sweep_points(self, sweep_points, **kw):
+        sweep_points = self.add_default_ramsey_sweep_points(sweep_points, **kw)
+        nr_phases = sweep_points.length(0) // 2
+        hard_sweep_dict = SweepPoints(
+            'pi_pulse_off', [0] * nr_phases + [1] * nr_phases)
+        sweep_points.update(hard_sweep_dict + [{}])
+        return sweep_points
+
+    def sweep_block(self, sweep_points,
+                     qbc, qbt, qbr, num_cz_gates=1, max_flux_length=None,
+                     prepend_pulse_dicts=None, **kw):
+        """
+        chevron block (sweep of flux pulse parameters)
+
+        Timings of sequence
+                                      <-- length -->
+        qb_control:    |X180|  ---   |  fluxpulse   |
+
+        qb_target:     |X180|  --------------------------------------  |RO|
+
+        TODO
+        :param cz_pulse_name: task-specific prefix of CZ gates (overwrites
+            global choice passed to the class init)
+        ...
+        """
+
+        hard_sweep_dict, soft_sweep_dict = sweep_points
+
+        pb = self.prepend_pulses_block(prepend_pulse_dicts)
+        pulse_modifs = {'all': {'element_name': 'initial_rots_el'}}
+        ir = self.block_from_ops('initial_rots',
+                                 [f'X180 {qbc}', f'X180 {qbt}'],
+                                 pulse_modifs=pulse_modifs)
+        ir.pulses[1]['ref_point_new'] = 'end'
+
+        fp = self.block_from_ops('flux', [f"{kw.get('cz_pulse_name', 'CZ')} "
+                                          f"{qbc} {qbt}"] * num_cz_gates)
+        # FIXME: currently, this assumes that only flux pulse parameters are
+        #  swept in the soft sweep. In fact, channels_to_upload should be
+        #  determined based on the sweep_points
+        for k in ['channel', 'channel2']:
+            if k in fp.pulses[0]:
+                if fp.pulses[0][k] not in self.channels_to_upload:
+                    self.channels_to_upload.append(fp.pulses[0][k])
+
+        for k in list(hard_sweep_dict.keys()) + list(soft_sweep_dict.keys()):
+            for p in fp.pulses:
+                p[k] = ParametricValue(k)
+
+        if max_flux_length is not None:
+            log.debug(f'max_flux_length = {max_flux_length * 1e9:.2f} ns, '
+                      f'set by user')
+        max_flux_length = self.max_pulse_length(fp.pulses[0], sweep_points,
+                                                max_flux_length)
+        b = self.sequential_blocks(f'chevron {qbc} {qbt}', [pb, ir, fp])
+        b.block_end.update({'ref_pulse': 'initial_rots-|-end',
+                            'pulse_delay': max_flux_length * num_cz_gates})
+
+        # TODO: do we need cal_states_rotations?
+        # self.cal_states_rotations.update({qbr: {'g': 0, 'e': 1, 'f': 2}})
+        self.data_to_fit.update({qbr: 'pe'})
+
+        return b
+
+    def guess_label(self, **kw):
+        if self.label is None:
+            self.label = self.experiment_name
+            for t in self.task_list:
+                self.label += f"_{t['qbc']}{t['qbt']}"
+
+    def get_meas_objs_from_task(self, task):
+        # FIXME is this correct? it will prevent us from doing
+        #  preselection/reset on the other qubit
+        return [task['qbr']]
+
+    def run_analysis(self, **kw):
+        self.analysis = tda.MultiQubit_TimeDomain_Analysis(
+            qb_names=[task['qbr'] for task in self.task_list],
+            options_dict={'TwoD': True})
+        return self.analysis
