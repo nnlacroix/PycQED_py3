@@ -3624,13 +3624,14 @@ def get_multi_qubit_msmt_suffix(qubits):
 
 ## Multi-qubit time-domain measurements ##
 
-def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
-                         n_cal_points_per_state=1, cal_states='auto',
-                         n=1, for_ef=False, last_ge_pulse=False,
+def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
+                         prep_params=None, n_cal_points_per_state=2,
+                         cal_states='auto', n=1, for_ef=False, last_ge_pulse=False,
                          upload=True, update=False, analyze=True, label=None,
                          exp_metadata=None, det_type='int_avg_det', **kw):
     """
     Performs an n-qubit Rabi measurement.
+    :param dev: Device class instance
     :param qubits: list of QuDev_transmon objects
     :param sweep_points: SweepPoints object. If None, creates SweepPoints
         from amps (assumes all qubits use the same sweep points)
@@ -3655,7 +3656,10 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
     :param kw: keyword arguments. Are used in
         get_multiplexed_readout_detector_functions
     """
+    qubits = dev.get_qubits(qubits)
     qubit_names = [qb.name for qb in qubits]
+    MC = dev.instr_mc.get_instr()
+
     if sweep_points is None:
         if amps is None:
             raise ValueError('Both "amps" and "sweep_points" cannot be None.')
@@ -3667,8 +3671,7 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
                     unit='V', label='Pulse Amplitude')
 
     if prep_params is None:
-        prep_params = get_multi_qubit_prep_params(
-            [qb.preparation_params() for qb in qubits])
+        prep_params = dev.get_prep_params(qubits)
 
     if label is None:
         label = 'Rabi_ef' if for_ef else 'Rabi'
@@ -3681,7 +3684,6 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
         label += get_multi_qubit_msmt_suffix(qubits)
 
     for qb in qubits:
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
@@ -3714,7 +3716,8 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'preparation_params': prep_params,
+    exp_metadata.update({'qb_names': qubit_names,
+                         'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
@@ -3735,8 +3738,9 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
     # Analyze this measurement
     if analyze:
         rabi_ana = tda.RabiAnalysis(
-            qb_names=qubit_names,
-            options_dict=dict(delegate_plotting=delegate_plotting))
+            qb_names=qubit_names, options_dict=dict(
+                delegate_plotting=delegate_plotting,
+                channel_map=get_meas_obj_value_names_map(qubits, det_func)))
         if update:
             for qb in qubits:
                 amp180 = rabi_ana.proc_data_dict['analysis_params_dict'][
@@ -3749,14 +3753,15 @@ def measure_n_qubit_rabi(qubits, sweep_points=None, amps=None, prep_params=None,
                     qb.ef_amp90_scale(0.5)
 
 
-def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
+def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
                            artificial_detuning=0, prep_params=None,
-                           n_cal_points_per_state=1, cal_states='auto',
+                           n_cal_points_per_state=2, cal_states='auto',
                            for_ef=False, last_ge_pulse=False,
                            upload=True, update=False, analyze=True, label=None,
                            exp_metadata=None, det_type='int_avg_det', **kw):
     """
     Performs an n-qubit Ramsey measurement.
+    :param dev: Device class instance
     :param qubits: list of QuDev_transmon objects
     :param sweep_points: SweepPoints object. If None, creates SweepPoints
         from delays (assumes all qubits use the same sweep points)
@@ -3781,7 +3786,10 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
     :param kw: keyword arguments. Are used in
         get_multiplexed_readout_detector_functions
     """
+    qubits = dev.get_qubits(qubits)
     qubit_names = [qb.name for qb in qubits]
+    MC = dev.instr_mc.get_instr()
+
     if sweep_points is None:
         if delays is None:
             raise ValueError('Both "delays" and "sweep_points" cannot be None.')
@@ -3793,8 +3801,7 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
                     unit='s', label=r'Second $\pi$-half pulse delay')
 
     if prep_params is None:
-        prep_params = get_multi_qubit_prep_params(
-            [qb.preparation_params() for qb in qubits])
+        prep_params = dev.get_prep_params(qubits)
 
     if label is None:
         label = 'Ramsey_ef' if for_ef else 'Ramsey'
@@ -3805,7 +3812,6 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
         label += get_multi_qubit_msmt_suffix(qubits)
 
     for qb in qubits:
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
@@ -3830,7 +3836,8 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'preparation_params': prep_params,
+    exp_metadata.update({'qb_names': qubit_names,
+                         'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'artificial_detuning': artificial_detuning,
@@ -3869,13 +3876,14 @@ def measure_n_qubit_ramsey(qubits, sweep_points=None, delays=None,
                         qb.T2_star(T2_star)
 
 
-def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
+def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
                            prep_params=None, for_ef=False, last_ge_pulse=False,
-                           n_cal_points_per_state=1, cal_states='auto',
+                           n_cal_points_per_state=2, cal_states='auto',
                            upload=True, update=False, analyze=True, label=None,
                            exp_metadata=None, det_type='int_avg_det', **kw):
     """
-    Performs an n-qubit Rabi measurement.
+    Performs an n-qubit QScale measurement.
+    :param dev: Device class instance
     :param qubits: list of QuDev_transmon objects
     :param sweep_points: SweepPoints object. If None, creates SweepPoints
         from qscales (assumes all qubits use the same sweep points)
@@ -3899,7 +3907,10 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
     :param kw: keyword arguments. Are used in
         get_multiplexed_readout_detector_functions
     """
+    qubits = dev.get_qubits(qubits)
     qubit_names = [qb.name for qb in qubits]
+    MC = dev.instr_mc.get_instr()
+
     if sweep_points is None:
         if qscales is None:
             raise ValueError('Both "qscales" and "sweep_points" '
@@ -3912,8 +3923,7 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
                     unit='', label='DRAG q-scale')
 
     if prep_params is None:
-        prep_params = get_multi_qubit_prep_params(
-            [qb.preparation_params() for qb in qubits])
+        prep_params = dev.get_prep_params(qubits)
 
     if label is None:
         label = 'Qscale_ef' if for_ef else 'Qscale'
@@ -3924,7 +3934,6 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
         label += get_multi_qubit_msmt_suffix(qubits)
 
     for qb in qubits:
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
@@ -3948,7 +3957,8 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'preparation_params': prep_params,
+    exp_metadata.update({'qb_names': qubit_names,
+                         'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
@@ -3979,13 +3989,14 @@ def measure_n_qubit_qscale(qubits, sweep_points=None, qscales=None,
                     qb.ge_motzoi(qscale)
 
 
-def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
+def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
                        prep_params=None, for_ef=False, last_ge_pulse=False,
-                       n_cal_points_per_state=1, cal_states='auto',
+                       n_cal_points_per_state=2, cal_states='auto',
                        upload=True, update=False, analyze=True, label=None,
                        exp_metadata=None, det_type='int_avg_det', **kw):
     """
-    Performs an n-qubit Rabi measurement.
+    Performs an n-qubit T1 measurement.
+    :param dev: Device class instance
     :param qubits: list of QuDev_transmon objects
     :param sweep_points: SweepPoints object. If None, creates SweepPoints
         from delays (assumes all qubits use the same sweep points)
@@ -4009,7 +4020,10 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
     :param kw: keyword arguments. Are used in
         get_multiplexed_readout_detector_functions
     """
+    qubits = dev.get_qubits(qubits)
     qubit_names = [qb.name for qb in qubits]
+    MC = dev.instr_mc.get_instr()
+
     if sweep_points is None:
         if delays is None:
             raise ValueError('Both "delays" and "sweep_points" cannot be None.')
@@ -4021,8 +4035,7 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
                     unit='s', label='Pulse Delay')
 
     if prep_params is None:
-        prep_params = get_multi_qubit_prep_params(
-            [qb.preparation_params() for qb in qubits])
+        prep_params = dev.get_prep_params(qubits)
 
     if label is None:
         label = 'T1_ef' if for_ef else 'T1'
@@ -4033,7 +4046,6 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
         label += get_multi_qubit_msmt_suffix(qubits)
 
     for qb in qubits:
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
@@ -4057,7 +4069,8 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'preparation_params': prep_params,
+    exp_metadata.update({'qb_names': qubit_names,
+                         'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
@@ -4087,14 +4100,15 @@ def measure_n_qubit_t1(qubits, sweep_points=None, delays=None,
                     qb.T1(T1)
 
 
-def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
+def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
                          artificial_detuning=0, prep_params=None,
-                         n_cal_points_per_state=1, cal_states='auto',
+                         n_cal_points_per_state=2, cal_states='auto',
                          for_ef=False, last_ge_pulse=False,
                          upload=True, update=False, analyze=True, label=None,
                          exp_metadata=None, det_type='int_avg_det', **kw):
     """
-    Performs an n-qubit Ramsey measurement.
+    Performs an n-qubit Echo measurement.
+    :param dev: Device class instance
     :param qubits: list of QuDev_transmon objects
     :param sweep_points: SweepPoints object
     :param delays: array of echo delays to sweep. If None, creates SweepPoints
@@ -4119,7 +4133,10 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
     :param kw: keyword arguments. Are used in
         get_multiplexed_readout_detector_functions
     """
+    qubits = dev.get_qubits(qubits)
     qubit_names = [qb.name for qb in qubits]
+    MC = dev.instr_mc.get_instr()
+
     if sweep_points is None:
         if delays is None:
             raise ValueError('Both "delays" and "sweep_points" cannot be None.')
@@ -4131,8 +4148,7 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
                     unit='s', label=r'Echo delay')
 
     if prep_params is None:
-        prep_params = get_multi_qubit_prep_params(
-            [qb.preparation_params() for qb in qubits])
+        prep_params = dev.get_prep_params(qubits)
 
     if label is None:
         label = 'Echo_ef' if for_ef else 'Echo'
@@ -4143,7 +4159,6 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
         label += get_multi_qubit_msmt_suffix(qubits)
 
     for qb in qubits:
-        MC = qb.instr_mc.get_instr()
         qb.prepare(drive='timedomain')
 
     cal_states = CalibrationPoints.guess_cal_states(cal_states,
@@ -4169,7 +4184,8 @@ def measure_n_qubit_echo(qubits, sweep_points=None, delays=None,
 
     if exp_metadata is None:
         exp_metadata = {}
-    exp_metadata.update({'preparation_params': prep_params,
+    exp_metadata.update({'qb_names': qubit_names,
+                         'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
                          'meas_obj_sweep_points_map':
