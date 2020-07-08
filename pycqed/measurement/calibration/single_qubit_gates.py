@@ -220,6 +220,8 @@ class ParallelLOSweepExperiment(CalibBuilder):
         self.lo_sweep_points = []
         self.analysis = {}
 
+        if sweep_points is None:
+            sweep_points = [{}, {}]
         preprocessed_task_list = self.preprocess_task_list(sweep_points)
         self.resolve_lo_sweep_points(**kw)
         self.sequences, self.mc_points = self.parallel_sweep(
