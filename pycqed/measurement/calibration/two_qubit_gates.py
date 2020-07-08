@@ -483,12 +483,20 @@ class CPhase(CalibBuilder):
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
                           'plot_all_probs': plot_all_probs,
                           'channel_map': channel_map})
-        self.cphases = self.analysis.proc_data_dict[
-            'analysis_params_dict']['cphase']['val']
-        self.population_losses = self.analysis.proc_data_dict[
-            'analysis_params_dict']['population_loss']['val']
-        self.leakage = self.analysis.proc_data_dict[
-            'analysis_params_dict']['leakage']['val']
+        self.cphases = {}
+        self.population_losses = {}
+        self.leakage = {}
+        for task in self.task_list:
+            self.cphases.update({task['prefix'][:-1]: self.analysis.proc_data_dict[
+                'analysis_params_dict'][f"cphase_{task['qbr']}"]['val']})
+            self.population_losses.update(
+                {task['prefix'][:-1]: self.analysis.proc_data_dict[
+                    'analysis_params_dict'][
+                    f"population_loss_{task['qbr']}"]['val']})
+            self.leakage.update(
+                {task['prefix'][:-1]: self.analysis.proc_data_dict[
+                    'analysis_params_dict'][
+                    f"leakage_{task['qbl']}"]['val']})
 
         return self.cphases, self.population_losses, self.leakage, \
                self.analysis
