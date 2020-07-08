@@ -129,7 +129,7 @@ class MultiTaskingExperiment(QuantumExperiment):
 
     def preprocess_task_list(self, sweep_points):
         self.sweep_points = SweepPoints(from_dict_list=sweep_points)
-        if len(self.sweep_points) == 1:
+        while len(self.sweep_points) < 2:
             self.sweep_points.add_sweep_dimension()
         preprocessed_task_list = []
         for task in self.task_list:
