@@ -2461,14 +2461,21 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
         list(soft_sweep_params)[0], list(soft_sweep_params.values())[0]['unit'],
         channels_to_upload=channels_to_upload))
     MC.set_sweep_points_2D(soft_sweep_points)
-    MC.set_detector_function(qbr.int_avg_classif_det if classified
-                             else qbr.int_avg_det)
-    exp_metadata.update({'preparation_params': prep_params,
-                         'cal_points': repr(cp),
-                         'rotate': len(cal_states) != 0,
-                         'data_to_fit': {qbr.name: 'pe'},
-                         'hard_sweep_params': hard_sweep_params,
-                         'soft_sweep_params': soft_sweep_params})
+    det_func = qbr.int_avg_classif_det if classified else qbr.int_avg_det
+    MC.set_detector_function(det_func)
+    sweep_points = SweepPoints(from_dict_list=[hard_sweep_params,
+                                               soft_sweep_params])
+    exp_metadata.update({
+        'preparation_params': prep_params,
+        'cal_points': repr(cp),
+        'rotate': len(cal_states) != 0,
+        'data_to_fit': {qbr.name: 'pe'},
+        'sweep_points': sweep_points,
+        'meas_obj_sweep_points_map':
+            sweep_points.get_meas_obj_sweep_points_map([qbr.name]),
+        'meas_obj_value_names_map':
+            get_meas_obj_value_names_map([qbr], det_func)
+    })
     MC.run_2D(name=label, exp_metadata=exp_metadata)
 
     if analyze:
