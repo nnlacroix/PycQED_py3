@@ -5438,8 +5438,8 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 f'leakage_{lk_qbn}'] = \
                 {'val': leakage, 'stderr': leakage_errs}
             self.proc_data_dict['analysis_params_dict'][
-                'leakage_increase'] = {'val': leakage_increase,
-                                       'stderr': leakage_increase_errs}
+                f'leakage_increase_{lk_qbn}'] = {'val': leakage_increase,
+                                                 'stderr': leakage_increase_errs}
 
         self.save_processed_data(key='analysis_params_dict')
 
