@@ -481,13 +481,14 @@ class QuDev_transmon(Qubit):
             integration_length=self.acq_length(),
             result_logging_mode='raw', real_imag=False, single_int_avg=True)
 
-        self.scope_fft_det = det.UHFQC_scope_detector(
-            UHFQC=self.instr_uhf.get_instr(),
-            AWG=self.instr_pulsar.get_instr(),
-            fft_mode='fft_power',
-            nr_averages=self.acq_averages(),
-            nr_samples=nr_samples,
-        )
+        if hasattr(self.instr_uhf.get_instr().daq, 'scopeModule'):
+            self.scope_fft_det = det.UHFQC_scope_detector(
+                UHFQC=self.instr_uhf.get_instr(),
+                AWG=self.instr_pulsar.get_instr(),
+                fft_mode='fft_power',
+                nr_averages=self.acq_averages(),
+                nr_samples=nr_samples,
+            )
 
     def prepare(self, drive='timedomain'):
         ro_lo = self.instr_ro_lo
