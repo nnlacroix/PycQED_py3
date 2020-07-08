@@ -249,3 +249,17 @@ class SweepPoints(list):
             self.add_sweep_dimension()
         for d, u in zip(self, sweep_points):
             d.update(u)
+
+    def find_parameter(self, param_name):
+        """
+        Returns the first dimension in which a given sweep parameter is found
+
+        :param param_name: (str) name of the sweep parameter
+
+        :return: (int or None) the first dimension in which the parameter if
+            found or None if no parameter with the given name exists.
+        """
+        for dim in range(len(self)):
+            if param_name in self[dim]:
+                return dim
+        return None
