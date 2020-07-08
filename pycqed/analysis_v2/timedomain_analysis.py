@@ -378,7 +378,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 classify=self.get_param_value("classify", True),
                 classifier_params=self.get_param_value("classifier_params"),
                 states_map=self.get_param_value("states_map"))
-            # ensure rotation is remove when single shots yield probabilities
+            # ensure rotation is removed when single shots yield probabilities
             rotate = False if self.get_param_value("classify", True) \
                 else rotate
         try:
@@ -420,6 +420,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             # this assumes data obtained with classifier detector!
             # ie pg, pe, pf are expected to be in the value_names
             self.proc_data_dict['projected_data_dict'] = OrderedDict()
+            print(self.proc_data_dict[
+                      'meas_results_per_qb'])
             for qbn, data_dict in self.proc_data_dict[
                     'meas_results_per_qb'].items():
                 self.proc_data_dict['projected_data_dict'][qbn] = OrderedDict()
@@ -434,18 +436,20 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
             # correct probabilities given calibration matrix
             if self.get_param_value("correction_matrix") is not None:
-                self.proc_data_dict['projected_data_dict_corrected'] = OrderedDict()
+                self.proc_data_dict['projected_data_dict_corrected'] = \
+                    OrderedDict()
                 for qbn, data_dict in self.proc_data_dict[
                     'meas_results_per_qb'].items():
-                    self.proc_data_dict['projected_data_dict'][qbn] = OrderedDict()
-                    probas_raw = np.asarray([data_dict[k] for k in data_dict
-                                             for state_prob in ['pg', 'pe', 'pf'] if
-                                             state_prob in k])
+                    self.proc_data_dict['projected_data_dict'][qbn] = \
+                        OrderedDict()
+                    probas_raw = np.asarray([
+                        data_dict[k] for k in data_dict for state_prob in
+                        ['pg', 'pe', 'pf'] if state_prob in k])
                     corr_mtx = self.get_param_value("correction_matrix")[qbn]
                     probas_corrected = np.linalg.inv(corr_mtx).T @ probas_raw
                     for state_prob in ['pg', 'pe', 'pf']:
-                        self.proc_data_dict['projected_data_dict_corrected'][qbn].update(
-                            {state_prob: data for key, data in
+                        self.proc_data_dict['projected_data_dict_corrected'][
+                            qbn].update({state_prob: data for key, data in
                              zip(["pg", "pe", "pf"], probas_corrected)})
 
         # get data_to_fit
@@ -875,10 +879,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 a_tools.predict_proba_from_clf(). Defaults to
                 qb.acq_classifier_params(). Note: it
             states_map (dict):
-                list of states corresponding to the different integers outputed
+                list of states corresponding to the different integers output
                 by the classifier. Defaults to  {0: "g", 1: "e", 2: "f", 3: "h"}
 
-        Other parameter taken from self.get_param_value:
+        Other parameters taken from self.get_param_value:
             use_preselection (bool): whether or not preselection should be used
                 before averaging. If true, then checks if there is a preselection
                 readout in prep_params and if so, performs preselection on the
