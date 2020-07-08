@@ -151,7 +151,8 @@ class QuantumExperiment(CircuitBuilder):
         self.df = None
 
         self.exp_metadata.update(kw)
-        self.exp_metadata.update({'classified_ro': self.classified})
+        self.exp_metadata.update({'classified_ro': self.classified,
+                                  'cz_pulse_name': self.cz_pulse_name})
 
     def create_meas_objs_list(self, meas_objs=None, **kwargs):
         """
