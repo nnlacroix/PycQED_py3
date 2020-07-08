@@ -135,6 +135,7 @@ class QuantumExperiment(CircuitBuilder):
         self.compression_seg_lim = compression_seg_lim
         self.channels_to_upload = []
         self.timestamp = None
+        self.analysis = None
 
         # detector and sweep functions
         default_df_kwargs = {'det_get_values_kws':

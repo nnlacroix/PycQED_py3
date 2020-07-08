@@ -361,7 +361,6 @@ class CPhase(CalibBuilder):
             self.cphases = None
             self.population_losses = None
             self.leakage = None
-            self.analysis = None
             self.cz_durations = {}
 
             sweep_points = self.add_default_sweep_points(sweep_points, **kw)

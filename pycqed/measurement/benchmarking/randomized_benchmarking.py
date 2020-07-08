@@ -64,7 +64,6 @@ class SingleQubitRandomizedBenchmarking(MultiTaskingExperiment):
 
             super().__init__(task_list, qubits=qubits, **kw)
 
-            self.analysis = None
             self.nr_seeds = nr_seeds
             self.interleaved_gate = interleaved_gate
             self.gate_decomposition = gate_decomposition
