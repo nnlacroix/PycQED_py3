@@ -248,12 +248,16 @@ class MultiTaskingExperiment(QuantumExperiment):
             task_list = self.task_list
         if task_list is None:
             task_list = [{}]
-        ro_qubits = [task.pop('ro_qubits', []) for task in task_list]
-        ro_qubits.append(kw.pop('ro_qubits', []))
-        if any([isinstance(qbn, list) for qbn in ro_qubits]):
-            # flatten
-            ro_qubits = [i for j in ro_qubits for i in j]
+        ro_qubits = kw.pop('ro_qubits', None)
+        if ro_qubits is None:
+            ro_qubits = [qb for task in task_list for qb in task.pop(
+                'ro_qubits', self.get_meas_objs_from_task(task))]
+        else:
+            ro_qubits += [qb for task in task_list for qb in
+                          task.pop('ro_qubits', [])]
         # unique and sort
+        ro_qubits = [qb if isinstance(qb, str) else qb.name for qb in
+                     ro_qubits]
         ro_qubits = list(np.unique(ro_qubits))
         ro_qubits.sort()
         self.meas_objs, self.meas_obj_names = self.get_qubits(
