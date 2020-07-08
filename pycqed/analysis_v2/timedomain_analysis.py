@@ -257,7 +257,15 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     def create_sweep_points_dict(self):
         sweep_points_dict = self.get_param_value('sweep_points_dict')
         hard_sweep_params = self.get_param_value('hard_sweep_params')
-        if sweep_points_dict is not None:
+        if self.sp is not None:
+            self.mospm = self.get_param_value('meas_obj_sweep_points_map')
+            if self.mospm is None:
+                raise ValueError('Please provide "meas_obj_sweep_points_map."')
+            self.proc_data_dict['sweep_points_dict'] = \
+                {qbn: {'sweep_points': self.sp.get_sweep_params_property(
+                    'values', 0, self.mospm[qbn])[0]}
+                 for qbn in self.qb_names}
+        elif sweep_points_dict is not None:
             # assumed to be of the form {qbn1: swpts_array1, qbn2: swpts_array2}
             self.proc_data_dict['sweep_points_dict'] = \
                 {qbn: {'sweep_points': sweep_points_dict[qbn]}
@@ -266,14 +274,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             self.proc_data_dict['sweep_points_dict'] = \
                 {qbn: {'sweep_points': list(hard_sweep_params.values())[0][
                     'values']} for qbn in self.qb_names}
-        elif self.sp is not None:
-            self.mospm = self.get_param_value('meas_obj_sweep_points_map')
-            if self.mospm is None:
-                raise ValueError('Please provide "meas_obj_sweep_points_map."')
-            self.proc_data_dict['sweep_points_dict'] = \
-                {qbn: {'sweep_points': self.sp.get_sweep_params_property(
-                    'values', 0, self.mospm[qbn])[0]}
-                 for qbn in self.qb_names}
         else:
             self.proc_data_dict['sweep_points_dict'] = \
                 {qbn: {'sweep_points': self.data_filter(
