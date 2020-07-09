@@ -92,7 +92,7 @@ def two_qubit_randomized_benchmarking_seqs(
         qb1n, qb2n, operation_dict, cliffords, nr_seeds,
         max_clifford_idx=11520, cz_pulse_name=None, cal_points=None,
         net_clifford=0, clifford_decomposition_name='HZ',
-        cl_sequence=None,
+        cl_sequence=None, sampling_seeds=None,
         interleaved_gate=None, upload=True, prep_params=dict()):
 
     """
@@ -132,6 +132,8 @@ def two_qubit_randomized_benchmarking_seqs(
 
     seq_name = '2Qb_RB_sequence'
 
+    if sampling_seeds is None:
+        sampling_seeds = [None] * len(nr_seeds)
     print(cl_sequence)
 
     # Set Clifford decomposition
@@ -142,20 +144,22 @@ def two_qubit_randomized_benchmarking_seqs(
             assert len(nr_seeds) % len(cl_sequence) == 0
             k = len(nr_seeds) // len(cl_sequence)
             cl_seq_temp = k * cl_sequence
-            print(cl_seq_temp)
+
     sequences = []
     for nCl in cliffords:
         pulse_list_list_all = []
-        for _ in nr_seeds:
+        for s in nr_seeds:
             if cl_sequence is None:
                 cl_seq = rb.randomized_benchmarking_sequence_new(
                     nCl,
                     number_of_qubits=2,
                     max_clifford_idx=max_clifford_idx,
                     interleaving_cl=interleaved_gate,
-                    desired_net_cl=net_clifford)
+                    desired_net_cl=net_clifford,
+                    seed=sampling_seeds[s])
+
             elif isinstance(cl_sequence[0], list):
-                cl_seq = cl_seq_temp[_]
+                cl_seq = cl_seq_temp[s]
             else:
                 cl_seq = cl_sequence
 

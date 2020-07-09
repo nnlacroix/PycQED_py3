@@ -1228,7 +1228,7 @@ def measure_two_qubit_randomized_benchmarking(
         n_cal_points_per_state=2, cal_states=tuple(),
         label=None, prep_params=None, upload=True, analyze_RB=True,
         classified=True, correlated=True, thresholded=True,
-        averaged=True, **kw):
+        averaged=True, sampling_seeds=None, **kw):
 
     # check whether qubits are connected
     dev.check_connection(qb1, qb2)
@@ -1263,7 +1263,8 @@ def measure_two_qubit_randomized_benchmarking(
     cal_states = CalibrationPoints.guess_cal_states(cal_states)
     cp = CalibrationPoints.multi_qubit([qb1n, qb2n], cal_states,
                                        n_per_state=n_cal_points_per_state)
-
+    if sampling_seeds is None:
+        sampling_seeds = np.random.randint(0, 1e8, nr_seeds)
     operation_dict = dev.get_operation_dict()
     sequences, hard_sweep_points, soft_sweep_points = \
         mqs.two_qubit_randomized_benchmarking_seqs(
@@ -1273,7 +1274,8 @@ def measure_two_qubit_randomized_benchmarking(
             cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}', net_clifford=net_clifford,
             clifford_decomposition_name=clifford_decomposition_name,
             interleaved_gate=interleaved_gate, upload=False,
-            cal_points=cp, prep_params=prep_params, cl_sequence=cl_seq)
+            cal_points=cp, prep_params=prep_params,
+            cl_sequence=cl_seq, sampling_seeds=sampling_seeds)
 
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
@@ -1321,6 +1323,11 @@ def measure_two_qubit_randomized_benchmarking(
     exp_metadata = {'preparation_params': prep_params,
                     'cal_points': repr(cp),
                     'sweep_points': sp,
+                    'character_rb': character_rb,
+                    'interleaved_gate': interleaved_gate,
+                    'sampling_seeds': sampling_seeds,
+                    'net_clifford': net_clifford,
+                    'gate_decomposition': clifford_decomposition_name,
                     'meas_obj_sweep_points_map':
                         {qbn: ['nr_seeds', 'cliffords'] for qbn in mobj_names},
                     'meas_obj_value_names_map': meas_obj_value_names_map,
