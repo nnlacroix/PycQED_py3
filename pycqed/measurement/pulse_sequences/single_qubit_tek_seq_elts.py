@@ -693,18 +693,21 @@ def single_state_active_reset(operation_dict, qb_name,
 def randomized_renchmarking_seqs(
         qb_name, operation_dict, cliffords, nr_seeds, net_clifford=0,
         gate_decomposition='HZ', interleaved_gate=None, upload=True,
-        cal_points=None, prep_params=dict(), cl_sequence=None):
+        cal_points=None, prep_params=dict(), cl_sequence=None,
+        sampling_seeds=None):
 
     seq_name = '1Qb_RB_sequence'
-
+    if sampling_seeds is None:
+        sampling_seeds = [None] * len(nr_seeds)
     sequences = []
     for nCl in cliffords:
         pulse_list_list_all = []
-        for _ in nr_seeds:
+        for s in nr_seeds:
             if cl_sequence is None:
                 cl_seq = rb.randomized_benchmarking_sequence(
                     nCl, desired_net_cl=net_clifford,
-                    interleaved_gate=interleaved_gate)
+                    interleaved_gate=interleaved_gate,
+                    seed=sampling_seeds[s])
             else:
                 cl_seq = cl_sequence
             print(cl_seq)
