@@ -6826,9 +6826,10 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         if plot:
             fig, ax = plt.subplots()
             if return_stds:
-                ax.errorbar(delays/1e-9, fitted_freqs/1e6, yerr=fitted_stds/1e6)
+                ax.errorbar(delays/1e-9, self.fitted_freqs/1e6,
+                            yerr=fitted_stds/1e6)
             else:
-                ax.plot(delays/1e-9, fitted_freqs/1e6)
+                ax.plot(delays/1e-9, self.fitted_freqs/1e6)
             ax.set_xlabel(r'delay, $\tau$ (ns)')
             ax.set_ylabel(r'fitted qubit frequency, $f_q$ (MHz)')
             plt.show()
