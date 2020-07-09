@@ -636,14 +636,14 @@ class MeasurementControl(Instrument):
             zunit = zunits[j]
             labels = [l for l in slabels]
             units = [u for u in sunits]
-            ticks = [[] for l in labels]
-            ticks[0] = self.sweep_pts_x
-            if len (ticks) > 1:
-                ticks[1] = self.sweep_pts_y
+            sweep_vals = [[] for l in labels]
+            sweep_vals[0] = self.sweep_pts_x
+            if len (sweep_vals) > 1:
+                sweep_vals[1] = self.sweep_pts_y
 
             if cf != 1:
                 # if 2D sweep compression was used
-                x, y = ticks
+                x, y = sweep_vals
                 n = int(len(y) * cf)
                 m = int(len(x) / cf)
                 new_x = x[:m]
@@ -655,45 +655,55 @@ class MeasurementControl(Instrument):
                     # order of magnitude as the value of the single sweep point
                     step = np.abs(y[0]) if y[0] != 0 else 1
                 new_y = list(y[0] + step * np.arange(0, n))
-                ticks = [new_x, new_y]
+                sweep_vals = [new_x, new_y]
 
-            new_ticks = deepcopy(ticks)
+            new_sweep_vals = deepcopy(sweep_vals)
 
-            if vnmom is not None:
-                mo = vnmom.get(zlabel, None)
-                if mo is not None:
-                    zlabel = f'{mo}: {zlabel}'
-                    if mospm is not None and sp is not None and mo in \
-                            mospm:
-                        dim_sp = {spn: sp.find_parameter(spn) for spn in
-                                  mospm[mo]}
-                        for i in range(len(labels)):
-                            spi = [spn for spn, dim in dim_sp.items() if dim
-                                   == i]
-                            if len(spi):
-                                labels[i] = sp.get_sweep_params_property(
-                                    'label', i, spi[0])
-                                units[i] = sp.get_sweep_params_property(
-                                    'unit', i, spi[0])
-                                tmp_ticks = sp.get_sweep_params_property(
-                                    'values', i, spi[0])
-                                if len(tmp_ticks) < len(new_ticks[i]):
-                                    new_ticks[i] = \
-                                        cal_mod.CalibrationPoints.extend_sweep_points_by_n_cal_pts(
-                                            len(new_ticks[i]) - len(tmp_ticks),
-                                            tmp_ticks
-                                        )
-                                else:
-                                    new_ticks[i] = tmp_ticks
+            mo = vnmom.get(zlabel, None) if vnmom is not None else None
+            if mo is not None:
+                zlabel = f'{mo}: {zlabel}'
+            if mo is not None and mospm is not None and sp is not None and mo \
+                    in mospm:
+                dim_sp = {spn: sp.find_parameter(spn) for spn in
+                          mospm[mo]}
+                for i in range(len(labels)):
+                    spi = [spn for spn, dim in dim_sp.items() if dim
+                           == i]
+                    if len(spi):
+                        labels[i] = sp.get_sweep_params_property(
+                            'label', i, spi[0])
+                        units[i] = sp.get_sweep_params_property(
+                            'unit', i, spi[0])
+                        tmp_sweep_vals = sp.get_sweep_params_property(
+                            'values', i, spi[0])
+                        len_diff = len(new_sweep_vals[i]) - len(tmp_sweep_vals)
+                        if len_diff > 0:
+                            new_sweep_vals[i] = \
+                                cal_mod.CalibrationPoints.extend_sweep_points_by_n_cal_pts(
+                                    len_diff, tmp_sweep_vals)
+                        else:
+                            new_sweep_vals[i] = tmp_sweep_vals
+
+            for i in range(len(labels)):
+                diff = np.diff(new_sweep_vals[i])
+                # if the sweep_vals are not equidistant or if they look like
+                # sweep indices
+                if any([np.abs(d - diff[0]) / np.abs(diff[0]) > 1e-5 for d in
+                        diff]) or list(new_sweep_vals[i]) \
+                        == list(range(len(new_sweep_vals[i]))):
+                    # fall back to sweep indices
+                    labels[i] = 'sweep index'
+                    units[i] = ''
+                    new_sweep_vals[i] = range(len(new_sweep_vals[i]))
 
             plotmon_axes_info[vn] = dict(
                 labels=labels,
                 units=units,
-                ticks=new_ticks,
+                sweep_vals=new_sweep_vals,
                 zlabel=zlabel,
                 zunit=zunit,
                 lookup=[{t: n for t, n in zip(ts, ns)}
-                        for ts, ns in zip(ticks, new_ticks)]
+                        for ts, ns in zip(sweep_vals, new_sweep_vals)]
             )
             if cf != 1:
                 plotmon_axes_info[vn]['lookup'][0] = {
@@ -799,16 +809,16 @@ class MeasurementControl(Instrument):
         if self.live_plot_enabled():
             self.time_last_2Dplot_update = time.time()
             self._plotmon_axes_info = self._get_plotmon_axes_info()
+            sv = list(self._plotmon_axes_info.values())[0]['sweep_vals']
             self.TwoD_array = np.empty(
-                [len(list(self._plotmon_axes_info.values())[0]['ticks'][1]),
-                 len(list(self._plotmon_axes_info.values())[0]['ticks'][0]),
+                [len(sv[1]), len(sv[0]),
                  len(self.detector_function.value_names)])
             self.TwoD_array[:] = np.NAN
             self.secondary_QtPlot.clear()
             for j, vn in enumerate(self.detector_function.value_names):
                 axes_info = self._plotmon_axes_info[vn]
                 self.secondary_QtPlot.add(
-                    x=axes_info['ticks'][0], y=axes_info['ticks'][1],
+                    x=axes_info['sweep_vals'][0], y=axes_info['sweep_vals'][1],
                     z=self.TwoD_array[:, :, j],
                     xlabel=axes_info['labels'][0], xunit=axes_info['units'][0],
                     ylabel=axes_info['labels'][1], yunit=axes_info['units'][1],
