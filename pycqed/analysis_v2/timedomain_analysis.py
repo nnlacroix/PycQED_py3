@@ -6663,4 +6663,5 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     'yvals': self.proc_data_dict['analysis_params_dict'][
                                                  f'fitted_freqs_{qbn}']['val'],
                     'color': 'r',
-                    'linestyle': '-',}
+                    'linestyle': '-',
+                    'marker': None,}
