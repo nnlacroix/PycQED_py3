@@ -445,7 +445,10 @@ class BaseDataAnalysis(object):
             hybrid_measurement = False
             if mc_points.shape[0] > 1:
                 hsp = np.unique(mc_points[0])
-                ssp = np.unique(mc_points[1:])
+                ssp, counts = np.unique(mc_points[1], return_counts=True)
+                if counts[0] != len(hsp):
+                    # ssro data
+                    hsp = np.tile(hsp, counts[0]//len(hsp))
                 # if needed, decompress the data (assumes hsp and ssp are indices)
                 if compression_factor != 1:
                     hsp = hsp[:int(len(hsp) / compression_factor)]

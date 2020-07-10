@@ -1539,7 +1539,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
         if self.thresholds is not None:
             for qubit, channel in self.channel_map.items():
                 shots_cont = np.array(
-                    self.raw_data_dict['measured_data'][channel])
+                    self.raw_data_dict['measured_data'][channel]).T.flatten()
                 shots_thresh[qubit] = (shots_cont > self.thresholds[qubit])
             self.proc_data_dict['shots_thresholded'] = shots_thresh
         else:
