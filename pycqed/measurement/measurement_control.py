@@ -656,9 +656,11 @@ class MeasurementControl(Instrument):
             labels = [l for l in slabels]
             units = [u for u in sunits]
             sweep_vals = [[] for l in labels]
-            sweep_vals[0] = self.sweep_pts_x
-            if len (sweep_vals) > 1:
+            if self.mode == '2D':
+                sweep_vals[0] = self.sweep_pts_x
                 sweep_vals[1] = self.sweep_pts_y
+            else:
+                sweep_vals[0] = self.get_sweep_points()
 
             if cf != 1:
                 # if 2D sweep compression was used
