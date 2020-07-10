@@ -1935,7 +1935,7 @@ def measure_drive_cancellation(
             n_per_state=n_cal_points_per_state)
         operation_dict = dev.get_operation_dict()
 
-        drive_op_code = driven_qubit.name + ' ' + pulse
+        drive_op_code = pulse + ' ' + driven_qubit.name
         # We get sweep_vals for only one dimension since drive_cancellation_seq
         # turns 2D sweep points into 1D-SegmentHardSweep.
         # FIXME: in the future, this should rather be implemented via
