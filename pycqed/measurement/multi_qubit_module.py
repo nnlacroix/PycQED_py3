@@ -1968,7 +1968,7 @@ def measure_drive_cancellation(
             'ramsey_qubit_names': ramsey_qubit_names,
             'preparation_params': prep_params,
             'cal_points': repr(cp),
-            'sweep_points': sweep_points_for_analysis,
+            'sweep_points': sweep_points,
             'meas_obj_sweep_points_map': meas_obj_sweep_points_map,
             'meas_obj_value_names_map':
                 get_meas_obj_value_names_map(ramsey_qubits, det_func),

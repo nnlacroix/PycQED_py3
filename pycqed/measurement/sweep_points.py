@@ -219,11 +219,11 @@ class SweepPoints(list):
         :return: dict of the form
          {mobj_name: [sweep_param_name_0, ..., sweep_param_name_n]}
         """
-        if not isinstance(measured_objects, list):
-            measured_objects = [measured_objects]
-        for i, mobj in enumerate(measured_objects):
+        if not isinstance(measurement_objects, list):
+            measurement_objects = [measurement_objects]
+        for i, mobj in enumerate(measurement_objects):
             if hasattr(mobj, 'name'):
-                measured_objects[i] = mobj.name
+                measurement_objects[i] = mobj.name
 
         sweep_points_map = OrderedDict()
         for i, mobjn in enumerate(measurement_objects):
