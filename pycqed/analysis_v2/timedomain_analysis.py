@@ -3967,10 +3967,10 @@ class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
         # get the ramsey phases as the values of the first sweep parameter
         # in the 2nd sweep dimension.
         # !!! This assumes all qubits have the same ramsey phases !!!
-        pdd['ramsey_phases'] = self.sp.get_sweep_params_property('values', 2)
+        pdd['ramsey_phases'] = self.sp.get_sweep_params_property('values', 1)
         pdd['qb_sweep_points'] = {}
         pdd['qb_sweep_param'] = {}
-        for k, v in self.sp.get_sweep_dimension(1).items():
+        for k, v in self.sp.get_sweep_dimension(0).items():
             if k == 'phase':
                 continue
             qb, param = k.split('.')
@@ -4058,7 +4058,7 @@ class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
                     'linestyle': '',
                     'color': color,
                     'setlabel': legendlabel,
-                    'do_legend': True,
+                    'do_legend': False,
                     'legend_bbox_to_anchor': (1, 1),
                     'legend_pos': 'upper left',
                 }
@@ -4077,7 +4077,8 @@ class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
                         'fit_res': self.fit_res[label],
                         'plot_init': self.options_dict.get('plot_init', False),
                         'color': color,
-                        'setlabel': legendlabel
+                        'do_legend': False,
+                        # 'setlabel': legendlabel
                     }
 
                 # Phase contrast
