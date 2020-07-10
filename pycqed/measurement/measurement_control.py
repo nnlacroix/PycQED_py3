@@ -1414,7 +1414,7 @@ class MeasurementControl(Instrument):
             percdone = self.get_percdone()
             elapsed_time = time.time() - self.begintime
             progress_message = "\r {percdone}% completed \telapsed time: "\
-                "{t_elapsed}s \ttime left: {t_left}s".format(
+                "{t_elapsed}s \ttime left: {t_left}s     ".format(
                     percdone=int(percdone),
                     t_elapsed=round(elapsed_time, 1),
                     t_left=round((100.-percdone)/(percdone) *
