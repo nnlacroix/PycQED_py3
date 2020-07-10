@@ -260,7 +260,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if self.sp is not None:
             self.mospm = self.get_param_value('meas_obj_sweep_points_map')
             if self.mospm is None:
-                raise ValueError('Please provide "meas_obj_sweep_points_map."')
+                raise ValueError('When providing "sweep_points", '
+                                 '"meas_obj_sweep_points_map" has to be '
+                                 'provided in addition.')
             self.proc_data_dict['sweep_points_dict'] = \
                 {qbn: {'sweep_points': self.sp.get_sweep_params_property(
                     'values', 0, self.mospm[qbn])[0]}
