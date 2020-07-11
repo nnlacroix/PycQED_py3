@@ -62,7 +62,8 @@ class SingleQubitRandomizedBenchmarking(MultiTaskingExperiment):
                                      'this information.')
                 task_list = [{'qubit_to_measure': qb.name} for qb in qubits]
 
-            super().__init__(task_list, qubits=qubits, **kw)
+            super().__init__(task_list, qubits=qubits,
+                             sweep_points=sweep_points, **kw)
 
             self.nr_seeds = nr_seeds
             self.interleaved_gate = interleaved_gate
@@ -82,7 +83,7 @@ class SingleQubitRandomizedBenchmarking(MultiTaskingExperiment):
 
             # TODO: there is currently no analysis for RB with cal_points
             kw['cal_states'] = kw.get('cal_states', '')
-            self.preprocess_task_list(sweep_points)
+            self.preprocess_task_list()
             self.sequences, self.mc_points = self.sweep_n_dim(
                 self.sweep_points, body_block=None,
                 body_block_func=self.rb_block, cal_points=self.cal_points,
