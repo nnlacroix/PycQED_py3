@@ -74,6 +74,8 @@ class SweepPoints(list):
         """
         if label is None:
             label = param_name
+        assert self.find_parameter(param_name) is None, \
+            f'A sweep parameter with name "{param_name}" already exists.'
         while len(self) == 0 or (dimension >= 0 and dimension >= len(self)):
             self.add_sweep_dimension()
         assert self.length(dimension) in [0, len(values)], \
