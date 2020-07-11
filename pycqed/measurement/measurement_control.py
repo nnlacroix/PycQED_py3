@@ -287,7 +287,8 @@ class MeasurementControl(Instrument):
         self.check_keyboard_interrupt()
         self.update_instrument_monitor()
         self.update_plotmon(force_update=True)
-        if self.mode == '2D':
+        if self.mode == '2D' and self.detector_function.detector_control != \
+                'hard':
             self.update_plotmon_2D(force_update=True)
         elif self.mode == 'adaptive':
             self.update_plotmon_adaptive(force_update=True)
@@ -1138,7 +1139,8 @@ class MeasurementControl(Instrument):
 
                 if (time.time() - self.time_last_2Dplot_update >
                         self.plotting_interval()
-                        or self.iteration == len(self.sweep_points)/self.xlen):
+                        or self.iteration + 1 == len(
+                            self.sweep_points) / self.xlen):
                     self.time_last_2Dplot_update = time.time()
                     self.secondary_QtPlot.update_plot()
         except Exception as e:
