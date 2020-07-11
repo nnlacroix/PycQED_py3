@@ -6454,6 +6454,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             self.proc_data_dict['sweep_points_dict'])
         if freq_ranges_exclude is not None:
             for qbn, freq_range_list in freq_ranges_exclude.items():
+                if freq_range_list is None:
+                    continue
                 param_name = self.mospm[qbn][1]
                 freqs = self.proc_data_dict['proc_sweep_points_2D_dict'][qbn][
                     param_name]
@@ -6471,6 +6473,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
         # exclude delays
         if delay_ranges_exclude is not None:
             for qbn, delay_range_list in delay_ranges_exclude.items():
+                if delay_range_list is None:
+                    continue
                 delays = self.proc_data_dict['proc_sweep_points_dict'][qbn][
                     'msmt_sweep_points']
                 data = self.proc_data_dict['proc_data_to_fit'][qbn]
@@ -6494,6 +6498,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
 
         self.sign_of_peaks = self.get_param_value('sign_of_peaks',
                                                   default_value=OrderedDict())
+        if self.sign_of_peaks is None:
+            self.sign_of_peaks = {}
         if len(self.sign_of_peaks) == 0:
             for qbn in self.qb_names:
                 msmt_data = self.proc_data_dict['proc_data_to_fit'][qbn][
@@ -6551,7 +6557,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                 'sweep_points']
             for i, delay in enumerate(delays):
                 data_slice = data[:, i]
-                if self.rectangles_exclude is not None:
+                if self.rectangles_exclude is not None and \
+                        self.rectangles_exclude.get(qbn, None) is not None:
                     for rectangle in self.rectangles_exclude[qbn]:
                         if rectangle[0] < delay < rectangle[1]:
                             reduction_arr = np.logical_not(
