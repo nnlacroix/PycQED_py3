@@ -941,7 +941,7 @@ def measure_parity_correction(qb0, qb1, qb2, feedback_delay, f_LO,
         '' if reset else '_noreset', '_'.join([qb.name for qb in qubits])),
         exp_metadata=exp_metadata)
 
-def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map, 
+def measure_parity_single_round(dev, ancilla_qubit, data_qubits, CZ_map,
                                 preps=None, upload=True, prep_params=None, 
                                 cal_points=None, analyze=True,
                                 exp_metadata=None, label=None, 
@@ -988,7 +988,7 @@ def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map,
     seq, sweep_points = mqs.parity_single_round_seq(
             ancilla_qubit.name, [qb.name for qb in data_qubits], CZ_map,
             preps=preps, cal_points=cal_points, prep_params=prep_params,
-            operation_dict=get_operation_dict(qubits), upload=False)
+            operation_dict=dev.get_operation_dict(), upload=False)
 
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
             sequence=seq, upload=upload, parameter_name='Preparation'))
