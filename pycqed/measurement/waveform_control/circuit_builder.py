@@ -702,7 +702,8 @@ class CircuitBuilder:
                                                       [prep, body_block, ro])
                 else:
                     this_body_block = body_block_func(
-                        j, i, sweep_points, **kw.get('body_block_func_kw', {}))
+                        j, i, sweep_points=sweep_points,
+                        **kw.get('body_block_func_kw', {}))
                     segblock = self.sequential_blocks(
                         'segblock', [prep, this_body_block, ro])
                 seq.add(Segment(f'seg{j}', segblock.build(
