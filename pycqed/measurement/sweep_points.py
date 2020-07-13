@@ -66,7 +66,7 @@ class SweepPoints(list):
         """
         Adds sweep points to a given dimension.
         :param param_name: (str) parameter name
-        :param values: (list) sweep values
+        :param values: (list or numpy array) sweep values
         :param unit: (optional str) unit of the values (default: '')
         :param label: (optional str) label e.g. for plots (default: param_name)
         :dim: the dimension to which the point should be added (default:
