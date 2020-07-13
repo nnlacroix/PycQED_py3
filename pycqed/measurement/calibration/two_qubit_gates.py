@@ -275,13 +275,12 @@ class MultiTaskingExperiment(QuantumExperiment):
         # kw is intentionally passed as dict here!
         for k, v in self.kw_for_sweep_points.items():
             for t in self.task_list + [kw_dict]:
-                if k in t:
-                    print(k,t)
+                if k in t and t[k] is not None:
                     if 'sweep_points' not in t or t['sweep_points'] is\
                             None:
                         t['sweep_points'] = SweepPoints()
-                    print(t['sweep_points'], v)
-                    t['sweep_points'].add_sweep_parameter(values=t[k], **v)
+                    values = np.arange(t[k]) if isinstance(t[k], int) else t[k]
+                    t['sweep_points'].add_sweep_parameter(values=values, **v)
 
 class CalibBuilder(MultiTaskingExperiment):
     def __init__(self, task_list, **kw):
