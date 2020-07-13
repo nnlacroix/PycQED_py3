@@ -3611,12 +3611,13 @@ class QuDev_transmon(Qubit):
         sp.add_sweep_dimension()
         sp.add_sweep_parameter(f'{self.name}_amplitude', amplitudes, 'V',
                                'Flux pulse amplitude')
+        mospm = sp.get_meas_obj_sweep_points_map(self.name)
         if freqs is not None:
             sp.add_sweep_parameter(f'{self.name}_qubit_freqs', freqs, 'Hz',
                                    'Qubit frequency')
+            mospm[self.name] += [f'{self.name}_qubit_freqs']
         exp_metadata.update({'sweep_points': sp,
-                             'meas_obj_sweep_points_map':
-                                 sp.get_meas_obj_sweep_points_map(self.name),
+                             'meas_obj_sweep_points_map': mospm,
                              'preparation_params': prep_params,
                              'cal_points': repr(cp),
                              'rotate': cal_points,
