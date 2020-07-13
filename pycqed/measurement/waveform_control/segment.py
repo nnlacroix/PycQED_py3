@@ -1184,12 +1184,14 @@ class Segment:
         """
         old_name = self.name
 
-        # rename element names in unresolved pulses making use of the old name
-        for p in self.resolved_pulses:
+        # rename element names in unresolved_pulses and resolved_pulses making
+        # use of the old name
+        for p in self.unresolved_pulses + self.resolved_pulses:
             if hasattr(p.pulse_obj, "element_name") \
-                and old_name in p.pulse_obj.element_name:
-                p.pulse_obj.element_name = p.pulse_obj.element_name.replace(old_name,
-                                                                            new_name)
+                    and p.pulse_obj.element_name.endswith(f"_{old_name}"):
+                p.pulse_obj.element_name = \
+                    p.pulse_obj.element_name[:-(len(old_name) + 1)] + '_' \
+                    + new_name
         # rename segment name
         self.name = new_name
 

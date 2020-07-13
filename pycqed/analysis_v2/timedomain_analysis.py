@@ -260,7 +260,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if self.sp is not None:
             self.mospm = self.get_param_value('meas_obj_sweep_points_map')
             if self.mospm is None:
-                raise ValueError('Please provide "meas_obj_sweep_points_map."')
+                raise ValueError('When providing "sweep_points", '
+                                 '"meas_obj_sweep_points_map" has to be '
+                                 'provided in addition.')
             self.proc_data_dict['sweep_points_dict'] = \
                 {qbn: {'sweep_points': self.sp.get_sweep_params_property(
                     'values', 0, self.mospm[qbn])[0]}
@@ -307,13 +309,15 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 self.proc_data_dict['sweep_points_2D_dict'] = \
                     {qbn: {sspn[i]: self.raw_data_dict['soft_sweep_points'][i]
                            for i in range(len(sspn))} for qbn in self.qb_names}
-        percentage_done = self.get_param_value('percentage_done', 100)
-        if percentage_done < 100:
-            for sps in self.proc_data_dict['sweep_points_2D_dict'].values():
-                nr_sp2d = int(round(len(list(sps.values())[0]) *
-                                    percentage_done / 100))
-                for k, v in sps.items():
-                    sps[k] = v[:nr_sp2d]
+        # remove non-measured sweep points in that case in case the
+        # measurement was cancelled
+        # raw_data_dict['soft_sweep_points'] is obtained in
+        # BaseDataAnalysis.add_measured_data(), and its length should
+        # always correspond to the actual number of measured soft sweep points.
+        ssl = len(self.raw_data_dict['soft_sweep_points'])
+        for sps in self.proc_data_dict['sweep_points_2D_dict'].values():
+            for k, v in sps.items():
+                sps[k] = v[:ssl]
 
     def create_meas_results_per_qb(self):
         measured_RO_channels = list(self.raw_data_dict['measured_data'])
@@ -912,9 +916,12 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             yunit = yunit[0]
                     for pn, ssp in self.proc_data_dict['sweep_points_2D_dict'][
                             qb_name].items():
+                        ylabel = pn
                         if self.sp is not None:
                             yunit = self.sp.get_sweep_params_property(
                                 'unit', dimension=1, param_names=pn)
+                            ylabel = self.sp.get_sweep_params_property(
+                                'label', dimension=1, param_names=pn)
                         self.plot_dicts[f'{plot_name}_{ro_channel}_{pn}'] = {
                             'fig_id': plot_name + '_' + pn,
                             'ax_id': ax_id,
@@ -924,7 +931,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             'zvals': raw_data_dict[ro_channel].T,
                             'xlabel': xlabel,
                             'xunit': xunit,
-                            'ylabel': pn,
+                            'ylabel': ylabel,
                             'yunit': yunit,
                             'numplotsx': numplotsx,
                             'numplotsy': numplotsy,
@@ -1026,9 +1033,12 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     yunit = yunit[0]
             for pn, ssp in self.proc_data_dict['sweep_points_2D_dict'][
                     qb_name].items():
+                ylabel = pn
                 if self.sp is not None:
                     yunit = self.sp.get_sweep_params_property(
                         'unit', dimension=1, param_names=pn)
+                    ylabel = self.sp.get_sweep_params_property(
+                        'label', dimension=1, param_names=pn)
                 self.plot_dicts[f'{plot_dict_name}_{pn}'] = {
                     'plotfn': self.plot_colorxy,
                     'fig_id': fig_name + '_' + pn,
@@ -1037,7 +1047,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     'zvals': yvals,
                     'xlabel': xlabel,
                     'xunit': xunit,
-                    'ylabel': pn,
+                    'ylabel': ylabel,
                     'yunit': yunit,
                     'title': title,
                     'clabel': data_axis_label}
@@ -3407,8 +3417,6 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                                'flux pulse length.')
             self.lengths[qbn] = self.sp.get_sweep_params_property(
                 'values', 0, len_key[0])
-            print(self.sp.get_sweep_params_property(
-                'values', 0, len_key[0]))
 
             amp_key = [pn for pn in self.mospm[qbn] if 'amp' in pn]
             if len(len_key) == 0:
@@ -3949,26 +3957,30 @@ class MeasurementInducedDephasingAnalysis(MultiQubit_TimeDomain_Analysis):
 class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):
         super().process_data()
+        if self.sp is None:
+            raise ValueError('This analysis needs a SweepPoints '
+                             'class instance.')
 
         pdd = self.proc_data_dict
-
-        pdd['ramsey_phases'] = np.unique(
-            self.get_param_value('sweep_points')[0]['phase'][0])
+        # get the ramsey phases as the values of the first sweep parameter
+        # in the 2nd sweep dimension.
+        # !!! This assumes all qubits have the same ramsey phases !!!
+        pdd['ramsey_phases'] = self.sp.get_sweep_params_property('values', 1)
         pdd['qb_sweep_points'] = {}
         pdd['qb_sweep_param'] = {}
-        for k, v in self.get_param_value('sweep_points')[0].items():
+        for k, v in self.sp.get_sweep_dimension(0).items():
             if k == 'phase':
                 continue
             qb, param = k.split('.')
-            pdd['qb_sweep_points'][qb] = v[0][::len(pdd['ramsey_phases'])]
+            pdd['qb_sweep_points'][qb] = v[0]
             pdd['qb_sweep_param'][qb] = (param, v[1], v[2])
         pdd['qb_msmt_vals'] = {}
         pdd['qb_cal_vals'] = {}
-        cp = eval(self.get_param_value('cal_points'))
-        for qb, data_flat in pdd['data_to_fit'].items():
-            pdd['qb_msmt_vals'][qb] = data_flat[:-len(cp.states)].reshape(
+
+        for qb, data in pdd['data_to_fit'].items():
+            pdd['qb_msmt_vals'][qb] = data[:, :-self.num_cal_points].reshape(
                 len(pdd['qb_sweep_points'][qb]), len(pdd['ramsey_phases']))
-            pdd['qb_cal_vals'][qb] = data_flat[-len(cp.states):]
+            pdd['qb_cal_vals'][qb] = data[0, -self.num_cal_points:]
 
     def prepare_fitting(self):
         pdd = self.proc_data_dict
@@ -4001,23 +4013,6 @@ class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
             pdd['phase_offset'][qb] += 180 * (pdd['phase_contrast'][qb] < 0)
             pdd['phase_offset'][qb] = (pdd['phase_offset'][qb] + 180) % 360 - 180
             pdd['phase_contrast'][qb] = np.abs(pdd['phase_contrast'][qb])
-
-            # gauss_mod = lmfit.models.GaussianModel()
-            # self.fit_dicts[f'phase_contrast_fit_{qb}'] = {
-            #     'model': gauss_mod,
-            #     'guess_dict': {'center': {'value': 0, 'vary': False}},
-            #     'fit_xvals': {'x': pdd['amps_reshaped']},
-            #     'fit_yvals': {'data': pdd['phase_contrast'][qb]}}
-            #
-            # quadratic_mod = lmfit.models.QuadraticModel()
-            # self.fit_dicts[f'phase_offset_fit_{qb}'] = {
-            #     'model': quadratic_mod,
-            #     'guess_dict': {'b': {'value': 0, 'vary': False}},
-            #     'fit_xvals': {'x': pdd['amps_reshaped']},
-            #     'fit_yvals': {'data': pdd['phase_offset'][qb]}}
-            #
-            # self.run_fitting()
-            # self.save_fit_results()
 
     def prepare_plots(self):
         pdd = self.proc_data_dict
@@ -4061,7 +4056,7 @@ class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
                     'linestyle': '',
                     'color': color,
                     'setlabel': legendlabel,
-                    'do_legend': True,
+                    'do_legend': False,
                     'legend_bbox_to_anchor': (1, 1),
                     'legend_pos': 'upper left',
                 }
@@ -4080,7 +4075,8 @@ class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
                         'fit_res': self.fit_res[label],
                         'plot_init': self.options_dict.get('plot_init', False),
                         'color': color,
-                        'setlabel': legendlabel
+                        'do_legend': False,
+                        # 'setlabel': legendlabel
                     }
 
                 # Phase contrast
@@ -5482,7 +5478,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 'legend_pos': legend_pos}
 
             if self.do_fitting and 'projected' not in figure_name:
-                k = 'fit_{}{}_{}'.format(
+                k = 'fit_{}{}_{}_'.format(
                     'on' if row % 2 == 0 else 'off', row, qbn)
 
                 if qbn in self.ramsey_qbnames:
@@ -5544,7 +5540,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 phases = np.unique(self.proc_data_dict['sweep_points_dict'][
                                        qbn]['msmt_sweep_points'])
                 data = self.proc_data_dict['data_to_fit_reshaped'][qbn][row, :]
-                key = 'fit_{}{}_{}'.format(labels[row % 2], row, qbn)
+                key = 'fit_{}{}_{}_'.format(labels[row % 2], row, qbn)
                 if qbn in self.ramsey_qbnames:
                     # fit ramsey qb results to a cosine
                     model = lmfit.Model(fit_mods.CosFunc)
@@ -5571,7 +5567,6 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                         # fit leakage qb results to a constant
                         model = lmfit.models.ConstantModel()
                         guess_pars = model.guess(data=data, x=phases)
-
                         self.fit_dicts[key] = {
                             'fit_fn': model.func,
                             'fit_xvals': {'x': phases},
@@ -5582,7 +5577,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
         for cp_qbn in self.ramsey_qbnames:
             # get phase differences and population losses
-            keys = [k for k in list(self.fit_dicts.keys()) if cp_qbn in k]
+            keys = [k for k in list(self.fit_dicts.keys()) if f'{cp_qbn}_' in k]
             fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
             # phase_diffs
             phases = np.array([fr.best_values['phase'] for fr in fit_res_objs])
@@ -5633,7 +5628,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 leakage_increase_errs = np.zeros(len(leakage))
             else:
                 keys = [k for k in list(self.fit_dicts.keys()) if
-                        lk_qbn in k]
+                        f'{lk_qbn}_' in k]
                 fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
 
                 lines = np.array([fr.best_values['c'] for fr
@@ -6661,6 +6656,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             self.proc_data_dict['sweep_points_dict'])
         if freq_ranges_exclude is not None:
             for qbn, freq_range_list in freq_ranges_exclude.items():
+                if freq_range_list is None:
+                    continue
                 param_name = self.mospm[qbn][1]
                 freqs = self.proc_data_dict['proc_sweep_points_2D_dict'][qbn][
                     param_name]
@@ -6678,6 +6675,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
         # exclude delays
         if delay_ranges_exclude is not None:
             for qbn, delay_range_list in delay_ranges_exclude.items():
+                if delay_range_list is None:
+                    continue
                 delays = self.proc_data_dict['proc_sweep_points_dict'][qbn][
                     'msmt_sweep_points']
                 data = self.proc_data_dict['proc_data_to_fit'][qbn]
@@ -6701,6 +6700,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
 
         self.sign_of_peaks = self.get_param_value('sign_of_peaks',
                                                   default_value=OrderedDict())
+        if self.sign_of_peaks is None:
+            self.sign_of_peaks = {}
         if len(self.sign_of_peaks) == 0:
             for qbn in self.qb_names:
                 msmt_data = self.proc_data_dict['proc_data_to_fit'][qbn][
@@ -6758,7 +6759,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                 'sweep_points']
             for i, delay in enumerate(delays):
                 data_slice = data[:, i]
-                if self.rectangles_exclude is not None:
+                if self.rectangles_exclude is not None and \
+                        self.rectangles_exclude.get(qbn, None) is not None:
                     for rectangle in self.rectangles_exclude[qbn]:
                         if rectangle[0] < delay < rectangle[1]:
                             reduction_arr = np.logical_not(
@@ -6870,4 +6872,5 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     'yvals': self.proc_data_dict['analysis_params_dict'][
                                                  f'fitted_freqs_{qbn}']['val'],
                     'color': 'r',
-                    'linestyle': '-',}
+                    'linestyle': '-',
+                    'marker': None,}

@@ -18,6 +18,7 @@ import subprocess
 from functools import reduce  # forward compatibility for Python 3
 import operator
 import string
+from collections import OrderedDict  # for eval in load_settings
 log = logging.getLogger(__name__)
 
 digs = string.digits + string.ascii_letters

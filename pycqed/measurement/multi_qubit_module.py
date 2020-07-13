@@ -941,7 +941,7 @@ def measure_parity_correction(qb0, qb1, qb2, feedback_delay, f_LO,
         '' if reset else '_noreset', '_'.join([qb.name for qb in qubits])),
         exp_metadata=exp_metadata)
 
-def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map, 
+def measure_parity_single_round(dev, ancilla_qubit, data_qubits, CZ_map,
                                 preps=None, upload=True, prep_params=None, 
                                 cal_points=None, analyze=True,
                                 exp_metadata=None, label=None, 
@@ -988,7 +988,7 @@ def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map,
     seq, sweep_points = mqs.parity_single_round_seq(
             ancilla_qubit.name, [qb.name for qb in data_qubits], CZ_map,
             preps=preps, cal_points=cal_points, prep_params=prep_params,
-            operation_dict=get_operation_dict(qubits), upload=False)
+            operation_dict=dev.get_operation_dict(), upload=False)
 
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
             sequence=seq, upload=upload, parameter_name='Preparation'))
@@ -1863,21 +1863,47 @@ def measure_measurement_induced_dephasing(qb_dephased, qb_targeted, phases, amps
 
 def measure_drive_cancellation(
         dev, driven_qubit, ramsey_qubits, sweep_points,
-        phases=np.linspace(0, 2*np.pi, 3, endpoint=False), n=1, pulse='X180',
+        phases=None, n_pulses=1, pulse='X180',
         n_cal_points_per_state=2, cal_states='auto', prep_params=None,
         exp_metadata=None, label=None, upload=True, analyze=True):
         """
-        Sweep pulse cancellation parameters and measure Ramsey on cancelled qubits.
-        The sweep point keys should be of the form `qb.param`, where `qb` is the
-        name of the qubit the cancellation if for and `param` is a parameter in
-        the pulses cancellation_params dict.
+        Sweep pulse cancellation parameters and measure Ramsey on qubits the
+        cancellation is for.
 
-        For example to sweep the amplitude of the cancellation pulse on qb1,
-        you could configure the sweep points as `SweepPoints('qb1.amplitude',
-        np.linspace(0, 1, 21))`.
+        Args:
+            dev: The Device object used for the measurement
+            driven_qubit: The qubit object corresponding to the desired
+                target of the pulse that is being cancelled.
+            ramsey_qubits: A list of qubit objects corresponding to the
+                undesired targets of the pulse that is being cancelled.
+            sweep_points: A SweepPoints object that describes the pulse
+                parameters to sweep. The sweep point keys should be of the form
+                `qb.param`, where `qb` is the name of the qubit the cancellation
+                is for and `param` is a parameter in the pulses
+                cancellation_params dict. For example to sweep the amplitude of
+                the cancellation pulse on qb1, you could configure the sweep
+                points as `SweepPoints('qb1.amplitude', np.linspace(0, 1, 21))`.
+            phases: An array of Ramsey phases in degrees.
+            n_pulses: Number of pulse repetitions done between the Ramsey
+                pulses. Useful for amplification of small errors. Defaults to 1.
+            pulse: Operation name (without qb name) that will be done between
+                the Ramsey pulses. Defaults to 'X180'.
+            n_cal_points_per_state: Number of calibration measurements per
+                calibration state. Defaults to 2.
+            cal_states:
+                List of qubit states to use for calibration. Defaults to 'auto'.
+            prep_params: Perparation parameters dictionary specifying the type
+                of state preparation.
+            exp_metadata: A dictionary of extra metadata to save with the
+                experiment.
+            label: Overwrite the default measuremnt label.
+            upload: Whether the experimental sequence should be uploaded.
+                Defaults to true.
+            analyze: Whether the analysis will be run. Defaults to True.
 
-        The second sweep dimension of sweep_points must be called 'phases'.
         """
+        if phases is None:
+            phases = np.linspace(0, 360, 3, endpoint=False)
 
         if isinstance(driven_qubit, str):
             driven_qubit = dev.get_qb(driven_qubit)
@@ -1895,6 +1921,7 @@ def measure_drive_cancellation(
 
         sweep_points.add_sweep_dimension()
         sweep_points.add_sweep_parameter('phase', phases, 'deg', 'Ramsey phase')
+
         if exp_metadata is None:
             exp_metadata = {}
 
@@ -1908,12 +1935,18 @@ def measure_drive_cancellation(
             n_per_state=n_cal_points_per_state)
         operation_dict = dev.get_operation_dict()
 
+        drive_op_code = pulse + ' ' + driven_qubit.name
+        # We get sweep_vals for only one dimension since drive_cancellation_seq
+        # turns 2D sweep points into 1D-SegmentHardSweep.
+        # FIXME: in the future, this should rather be implemented via
+        # sequence.compress_2D_sweep
         seq, sweep_vals = mqs.drive_cancellation_seq(
-            driven_qubit.name, ramsey_qubit_names, operation_dict, sweep_points,
-            pulse=pulse, n=n, prep_params=prep_params, cal_points=cp,
+            drive_op_code, ramsey_qubit_names, operation_dict, sweep_points,
+            n_pulses=n_pulses, prep_params=prep_params, cal_points=cp,
             upload=False)
 
-        [seq.repeat_ro(f"RO {qbn}", operation_dict) for qbn in ramsey_qubit_names]
+        [seq.repeat_ro(f"RO {qbn}", operation_dict)
+         for qbn in ramsey_qubit_names]
 
         sweep_func = awg_swf.SegmentHardSweep(
                 sequence=seq, upload=upload,
@@ -1927,22 +1960,16 @@ def measure_drive_cancellation(
             ['int_avg_det']
         MC.set_detector_function(det_func)
 
-        sweep_points_for_analysis = [
-            {k: (np.repeat(v[0], len(phases)), v[1], v[2])
-             for k, v in sweep_points[0].items()}
-        ]
-        len_sweep = len(list(sweep_points[0].values())[0][0])
-        sweep_points_for_analysis[0]['phase'] = \
-            (np.tile(phases, len_sweep), 'rad', 'Ramsey phase')
-        meas_obj_sweep_points_map = {qbn: ['phase'] for qbn in ramsey_qubit_names}
-
+        # !!! Watch out with the call below. See docstring for this function
+        # to see the assumptions it makes !!!
+        meas_obj_sweep_points_map = sweep_points.get_meas_obj_sweep_points_map(
+            [qb.name for qb in ramsey_qubits])
         exp_metadata.update({
             'ramsey_qubit_names': ramsey_qubit_names,
             'preparation_params': prep_params,
             'cal_points': repr(cp),
-            'sweep_points': sweep_points_for_analysis,
-            'meas_obj_sweep_points_map':
-                meas_obj_sweep_points_map,
+            'sweep_points': sweep_points,
+            'meas_obj_sweep_points_map': meas_obj_sweep_points_map,
             'meas_obj_value_names_map':
                 get_meas_obj_value_names_map(ramsey_qubits, det_func),
             'rotate': len(cp.states) != 0,
@@ -1953,7 +1980,7 @@ def measure_drive_cancellation(
 
         if analyze:
             return tda.DriveCrosstalkCancellationAnalysis(
-                qb_names=ramsey_qubit_names)
+                qb_names=ramsey_qubit_names, options_dict={'TwoD': True})
 
 
 def calibrate_n_qubits(qubits, f_LO, sweep_points_dict, sweep_params=None,
@@ -2468,14 +2495,21 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
         list(soft_sweep_params)[0], list(soft_sweep_params.values())[0]['unit'],
         channels_to_upload=channels_to_upload))
     MC.set_sweep_points_2D(soft_sweep_points)
-    MC.set_detector_function(qbr.int_avg_classif_det if classified
-                             else qbr.int_avg_det)
-    exp_metadata.update({'preparation_params': prep_params,
-                         'cal_points': repr(cp),
-                         'rotate': len(cal_states) != 0,
-                         'data_to_fit': {qbr.name: 'pe'},
-                         'hard_sweep_params': hard_sweep_params,
-                         'soft_sweep_params': soft_sweep_params})
+    det_func = qbr.int_avg_classif_det if classified else qbr.int_avg_det
+    MC.set_detector_function(det_func)
+    sweep_points = SweepPoints(from_dict_list=[hard_sweep_params,
+                                               soft_sweep_params])
+    exp_metadata.update({
+        'preparation_params': prep_params,
+        'cal_points': repr(cp),
+        'rotate': len(cal_states) != 0,
+        'data_to_fit': {qbr.name: 'pe'},
+        'sweep_points': sweep_points,
+        'meas_obj_sweep_points_map':
+            sweep_points.get_meas_obj_sweep_points_map([qbr.name]),
+        'meas_obj_value_names_map':
+            get_meas_obj_value_names_map([qbr], det_func)
+    })
     MC.run_2D(name=label, exp_metadata=exp_metadata)
 
     if analyze:
