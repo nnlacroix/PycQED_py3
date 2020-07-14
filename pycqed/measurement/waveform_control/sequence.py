@@ -260,6 +260,33 @@ class Sequence:
         return merged_seqs
 
     @staticmethod
+    def interleave_sequences(seq_list_list):
+        """
+        Interleave a list of Sequence instances.
+        :param seq_list_list: list of lists of Sequence instances
+        :return: list of interleaved Sequences
+        """
+        # make sure all sequence lists in seq_list_list have the same length
+        if len(set([len(seq_list) for seq_list in seq_list_list])) != 1:
+            raise ValueError('The sequence lists do not have the same length.')
+        # make sure all sequence lists in seq_list_list have the same segments
+        if len(set([seq_list[0].n_acq_elements() for
+                        seq_list in seq_list_list])) != 1:
+            raise ValueError('The sequence lists do not have the same number '
+                             'of segments.')
+
+        interleaved_seqs = len(seq_list_list) * len(seq_list_list[0]) * ['']
+        for i in range(len(seq_list_list)):
+            interleaved_seqs[i::len(seq_list_list[i])-1] = seq_list_list[i]
+
+        mc_points = [
+            np.arange(len(interleaved_seqs) *
+                      interleaved_seqs[0].n_acq_elements()),
+            np.arange(len(interleaved_seqs))]
+
+        return interleaved_seqs, mc_points
+
+    @staticmethod
     def compress_2D_sweep(sequences, segment_limit=None,
                           merge_repeat_patterns=True):
         """
