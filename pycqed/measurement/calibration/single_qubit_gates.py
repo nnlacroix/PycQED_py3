@@ -70,9 +70,9 @@ class T1FrequencySweep(CalibBuilder):
                 else self.sweep_points)
             self.add_amplitude_sweep_points()
 
-            preprocessed_task_list = self.preprocess_task_list()
+            self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.sequences, self.mc_points = \
-                self.parallel_sweep(preprocessed_task_list,
+                self.parallel_sweep(self.preprocessed_task_list,
                                     self.t1_flux_pulse_block, **kw)
             self.exp_metadata.update({
                 'global_PCA': len(self.cal_points.states) == 0
@@ -221,10 +221,10 @@ class ParallelLOSweepExperiment(CalibBuilder):
         self.lo_sweep_points = []
         self.analysis = {}
 
-        preprocessed_task_list = self.preprocess_task_list()
+        self.preprocessed_task_list = self.preprocess_task_list(**kw)
         self.resolve_lo_sweep_points(**kw)
         self.sequences, self.mc_points = self.parallel_sweep(
-            preprocessed_task_list, self.sweep_block, **kw)
+            self.preprocessed_task_list, self.sweep_block, **kw)
 
     def resolve_lo_sweep_points(self, freq_sp_suffix='freq', **kw):
         all_freqs = self.sweep_points.get_sweep_params_property('values', 1,

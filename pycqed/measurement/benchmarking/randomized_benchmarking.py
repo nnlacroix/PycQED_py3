@@ -82,7 +82,7 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
 
             self.identical_pulses = nr_seeds is not None
             self.gate_decomposition = gate_decomposition
-            self.preprocessed_task_list = self.preprocess_task_list()
+            self.preprocessed_task_list = self.preprocess_task_list(**kw)
 
             # Check if we can apply identical pulses on all qubits in task_list
             # Can only do this if they have identical cliffords array
