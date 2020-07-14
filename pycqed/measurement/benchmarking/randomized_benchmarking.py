@@ -93,7 +93,10 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
                     k.endswith('cliffords')], axis=0)
                 if unique_clf_sets.shape[0] > 1:
                     raise ValueError('Cannot apply identical pulses. '
-                                     'Not all qubits have the same Cliffords.')
+                                     'Not all qubits have the same Cliffords.'
+                                     'To use non-identical pulses, '
+                                     'move nr_seeds from keyword arguments '
+                                     'into the tasks.')
 
             self.sequences, self.mc_points = self.sweep_n_dim(
                 self.sweep_points, body_block=None,
