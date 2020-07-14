@@ -2419,7 +2419,7 @@ def calibrate_n_qubits(qubits, f_LO, sweep_points_dict, sweep_params=None,
 
 def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
                     cz_pulse_name, upload=True, label=None, qbr=None,
-                    classified=False, n_cal_points_per_state=2,
+                    classified=False, n_cal_points_per_state=1,
                     num_cz_gates=1, cal_states='auto', prep_params=None,
                     exp_metadata=None, analyze=True, return_seq=False,
                     channels_to_upload=None, **kw):
@@ -2450,9 +2450,9 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
     for qb in [qbc, qbt]:
         qb.prepare(drive='timedomain')
 
-    cal_states = CalibrationPoints.guess_cal_states(cal_states)
-    cp = CalibrationPoints.single_qubit(qbr.name, cal_states,
-                                        n_per_state=n_cal_points_per_state)
+    cal_states = CalibrationPoints.guess_cal_states(cal_states, for_ef=True)
+    cp = CalibrationPoints.multi_qubit([qbr.name], cal_states,
+                                       n_per_state=n_cal_points_per_state)
 
     if prep_params is None:
         prep_params = dev.get_prep_params([qbc, qbt])
@@ -2502,6 +2502,9 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
     exp_metadata.update({
         'preparation_params': prep_params,
         'cal_points': repr(cp),
+        'cal_states_rotations':
+             {qbr.name: {'g': 0, 'e': 1, 'f': 2}} if
+             (len(cal_states) != 0 and not classified) else None,
         'rotate': len(cal_states) != 0,
         'data_to_fit': {qbr.name: 'pe'},
         'sweep_points': sweep_points,
