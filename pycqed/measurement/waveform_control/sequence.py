@@ -276,12 +276,9 @@ class Sequence:
                              'of segments.')
 
         interleaved_seqs = len(seq_list_list) * len(seq_list_list[0]) * ['']
-        print(len(interleaved_seqs))
         for i in range(len(seq_list_list)):
             interleaved_seqs[i::len(seq_list_list[i])-1] = seq_list_list[i]
-        print(len(interleaved_seqs))
 
-        print(interleaved_seqs)
         mc_points = [
             np.arange(len(interleaved_seqs) *
                       interleaved_seqs[0].n_acq_elements()),
