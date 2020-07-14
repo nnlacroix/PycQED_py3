@@ -372,12 +372,9 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         Runs analysis and stores analysis instances in self.analysis.
         :param kw:
         """
-        tda.MultiQubit_TimeDomain_Analysis(qb_names=self.meas_obj_names,
-                                           options_dict=dict(TwoD=True))
-        for task in self.task_list:
-            qb_name = task['qb']
-            self.analysis[qb_name] = ma.FluxPulse_Scope_Analysis(
-                qb_name=qb_name)
+        self.analysis = tda.FluxPulseScopeAnalysis(
+            qb_names=self.meas_obj_names,
+            options_dict=dict(TwoD=True, global_PCA=True,))
 
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
