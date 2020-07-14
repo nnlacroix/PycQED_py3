@@ -52,7 +52,6 @@ class MultiTaskingExperiment(QuantumExperiment):
         self.cal_states = None
         self.exception = None
         self.all_main_blocks = []
-        self.cal_states_rotations = {}
         self.data_to_fit = {}
         self.experiment_name = kw.pop(
             'experiment_name', getattr(self, 'experiment_name', 'Experiment'))
@@ -103,7 +102,6 @@ class MultiTaskingExperiment(QuantumExperiment):
             'rotate': len(self.cal_states) != 0 and not self.classified,
             'sweep_points': self.sweep_points,
             'ro_qubits': self.meas_obj_names,
-            'cal_states_rotations': self.cal_states_rotations,
             'data_to_fit': self.data_to_fit,
         })
         if self.task_list is not None:
@@ -394,6 +392,7 @@ class CPhase(CalibBuilder):
             self.population_losses = None
             self.leakage = None
             self.cz_durations = {}
+            self.cal_states_rotations = {}
 
             self.add_default_sweep_points(**kw)
             preprocessed_task_list = self.preprocess_task_list()
@@ -402,6 +401,7 @@ class CPhase(CalibBuilder):
 
             self.exp_metadata.update({
                 'cz_durations': self.cz_durations,
+                'cal_states_rotations': self.cal_states_rotations,
             })
 
             self.autorun(**kw)
@@ -689,8 +689,6 @@ class DynamicPhase(CalibBuilder):
                 if '=' not in k and k != 'flux_pulse_off':
                     p[k] = ParametricValue(k)
 
-        self.cal_states_rotations.update(self.cal_points.get_rotations(
-            qb_names=qubits_to_measure, **kw))
         self.data_to_fit.update({qb: 'pe' for qb in qubits_to_measure})
         return self.sequential_blocks(
             f"dynphase {'_'.join(qubits_to_measure)}", [pb, ir, fp, fr])
@@ -822,8 +820,6 @@ class Chevron(CalibBuilder):
         b.block_end.update({'ref_pulse': 'initial_rots-|-end',
                             'pulse_delay': max_flux_length * num_cz_gates})
 
-        # TODO: do we need cal_states_rotations?
-        # self.cal_states_rotations.update({qbr: {'g': 0, 'e': 1, 'f': 2}})
         self.data_to_fit.update({qbr: 'pe'})
 
         return b

@@ -361,8 +361,6 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'end',
                                 'pulse_delay': ro_pulse_delay})
 
-        self.cal_states_rotations.update(self.cal_points.get_rotations(
-            qb_names=qb, **kw))
         self.data_to_fit.update({qb: 'pe'})
 
         return b
@@ -441,8 +439,6 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
 
         b.set_end_after_all_pulses()
 
-        self.cal_states_rotations.update(self.cal_points.get_rotations(
-            qb_names=qb, **kw))
         self.data_to_fit.update({qb: 'pe'})
 
         return b
