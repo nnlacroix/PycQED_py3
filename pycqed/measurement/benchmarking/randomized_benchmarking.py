@@ -15,9 +15,9 @@ log = logging.getLogger(__name__)
 class RandomizedBenchmarking(MultiTaskingExperiment):
 
     kw_for_sweep_points = {
-        'nr_seeds': dict(param_name='seeds', unit='',
+        'nr_seeds': [dict(param_name='seeds', unit='',
                          label='Seeds', dimension=0,
-                         values_func=lambda ns: np.random.randint(0, 1e8, ns)),
+                         values_func=lambda ns: np.random.randint(0, 1e8, ns))],
         'cliffords': dict(param_name='cliffords', unit='',
                           label='Nr. Cliffords',
                           dimension=1),
@@ -64,14 +64,23 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
          lengths for different qubits
         """
         try:
+            self.interleaved_gate = interleaved_gate
+            if self.interleaved_gate is not None:
+                self.kw_for_sweep_points['nr_seeds'] += [
+                    dict(param_name='seeds_irb', unit='',
+                         label='Seeds', dimension=0,
+                         values_func=lambda ns: np.random.randint(0, 1e8, ns))]
             kw['cal_states'] = kw.get('cal_states', '')
+            if not hasattr(self, 'experiment_name'):
+                self.experiment_name = f'RB_{gate_decomposition}' if \
+                    interleaved_gate is not None else \
+                    f'SingleQubitIRB_{gate_decomposition}'
             super().__init__(task_list, qubits=qubits,
                              sweep_points=sweep_points,
                              nr_seeds=nr_seeds,
                              cliffords=cliffords, **kw)
 
             self.identical_pulses = nr_seeds is not None
-            self.interleaved_gate = interleaved_gate
             self.gate_decomposition = gate_decomposition
             self.preprocessed_task_list = self.preprocess_task_list()
 
@@ -93,7 +102,8 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
             if self.interleaved_gate is not None:
                 seqs_irb, _ = self.sweep_n_dim(
                     self.sweep_points, body_block=None,
-                    interleaved_gate=self.interleaved_gate,
+                    body_block_func_kw={'interleaved_gate':
+                                            self.interleaved_gate},
                     body_block_func=self.rb_block, cal_points=self.cal_points,
                     ro_qubits=self.meas_obj_names, **kw)
                 # interleave sequences
@@ -107,19 +117,6 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
         except Exception as x:
             self.exception = x
             traceback.print_exc()
-
-    def guess_label(self):
-        """
-        Default measurement label.
-        """
-        if self.label is None:
-            if self.interleaved_gate is None:
-                self.label = f'{self.experiment_name}_{self.gate_decomposition}' \
-                             f'{self.dev.get_msmt_suffix(self.meas_obj_names)}'
-            else:
-                self.label = f'{self.experiment_name}_{self.interleaved_gate}_' \
-                             f'{self.gate_decomposition}' \
-                             f'{self.dev.get_msmt_suffix(self.meas_obj_names)}'
 
     def rb_block(self, sp1d_idx, sp2d_idx, **kw):
         pass
@@ -143,36 +140,37 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
         """
         See docstring for RandomizedBenchmarking.
         """
-        self.experiment_name = 'SingleQubitRB' if \
-            kw.get('interleaved_gate', None) else 'SingleQubitIRB'
         if task_list is None:
             if qubits is None:
                 raise ValueError('Please provide either "qubits" or "task_list"')
             task_list = [{'qb': qb.name} for qb in qubits]
 
+        gate_decomposition = kw.get('gate_decomposition', 'HZ')
+        self.experiment_name = f'SingleQubitRB_{gate_decomposition}' if \
+            kw.get('interleaved_gate', None) is None else \
+            f'SingleQubitIRB_{gate_decomposition}'
         super().__init__(task_list, sweep_points=sweep_points,
                          qubits=qubits, **kw)
 
     def rb_block(self, sp1d_idx, sp2d_idx, **kw):
+        interleaved_gate = kw.get('interleaved_gate', None)
         pulse_op_codes_list = []
         tl = [self.preprocessed_task_list[0]] if self.identical_pulses else \
             self.preprocessed_task_list
-        print(self.identical_pulses)
         for i, task in enumerate(tl):
+            param_name = 'seeds' if interleaved_gate is None else 'seeds_irb'
             seed = task['sweep_points'].get_sweep_params_property(
-                'values', 0, 'seeds')[sp1d_idx]
-            print(seed)
+                'values', 0, param_name)[sp1d_idx]
             clifford = task['sweep_points'].get_sweep_params_property(
                 'values', 1, 'cliffords')[sp2d_idx]
             cl_seq = rb.randomized_benchmarking_sequence(
-                clifford, seed=seed, interleaved_gate=kw.get(
-                    'interleaved_gate', None))
+                clifford, seed=seed, interleaved_gate=interleaved_gate)
             pulse_op_codes_list += [rb.decompose_clifford_seq(
                 cl_seq, gate_decomp=self.gate_decomposition)]
         rb_block_list = [self.block_from_ops(
-            f"rb_{task['qb']}",
-            [f"{p} {task['qb']}" for p in
-             pulse_op_codes_list[0 if self.identical_pulses else i]])
+            f"rb_{task['qb']}", [f"{p} {task['qb']}" for p in
+                                 pulse_op_codes_list[0 if self.identical_pulses
+                                 else i]])
             for i, task in enumerate(self.preprocessed_task_list)]
 
         return self.simultaneous_blocks_align_end(f'sim_rb_{clifford}{sp1d_idx}',
@@ -220,13 +218,12 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
             Clifford that is sampled. Set to 24**2 to only sample the tensor
             product of 2 single qubit Clifford groups.
         """
-        self.experiment_name = 'TwoQubitRB' if kw.get('interleaved_gate', None) \
-            else 'TwoQubitIRB'
+        self.experiment_name = 'TwoQubitRB' if \
+            kw.get('interleaved_gate', None) is None else 'TwoQubitIRB'
         self.max_clifford_idx = max_clifford_idx
         tqc.gate_decomposition = rb.get_clifford_decomposition(
-            kw.get('interleaved_gate', 'HZ'))
+            kw.get('gate_decomposition', 'HZ'))
 
-        task_list = deepcopy(task_list)
         for task in task_list:
             for k in ['qb_1', 'qb_2']:
                 if not isinstance(task[k], str):
@@ -237,22 +234,36 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
 
         super().__init__(task_list, sweep_points=sweep_points, **kw)
 
+    def guess_label(self, **kw):
+        """
+        Default measurement label.
+        """
+        suffix = [''.join([task['qb_1'], task['qb_2']])
+                  for task in self.task_list]
+        suffix = '_'.join(suffix)
+        if self.label is None:
+            if self.interleaved_gate is None:
+                self.label = f'{self.experiment_name}_' \
+                             f'{self.gate_decomposition}_{suffix}'
+            else:
+                self.label = f'{self.experiment_name}_{self.interleaved_gate}_' \
+                             f'{self.gate_decomposition}_{suffix}'
+
     def rb_block(self, sp1d_idx, sp2d_idx, **kw):
-        tl = [self.preprocessed_task_list[0]] if self.identical_pulses else \
-            self.preprocessed_task_list
-        print(len(tl))
+        interleaved_gate = kw.get('interleaved_gate', None)
         rb_block_list = []
         for i, task in enumerate(self.preprocessed_task_list):
+            param_name = 'seeds' if interleaved_gate is None else 'seeds_irb'
             seed = task['sweep_points'].get_sweep_params_property(
-                'values', 0, 'seeds')[sp1d_idx]
+                'values', 0, param_name)[sp1d_idx]
             clifford = task['sweep_points'].get_sweep_params_property(
                 'values', 1, 'cliffords')[sp2d_idx]
+
             cl_seq = rb.randomized_benchmarking_sequence_new(
                 clifford, number_of_qubits=2, seed=seed,
                 max_clifford_idx=kw.get('max_clifford_idx',
                                         self.max_clifford_idx),
-                interleaving_cl=kw.get('interleaved_gate', None))
-            print(cl_seq)
+                interleaving_cl=interleaved_gate)
 
             qb_1 = task['qb_1']
             qb_2 = task['qb_2']
