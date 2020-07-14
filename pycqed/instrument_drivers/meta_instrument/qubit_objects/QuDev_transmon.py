@@ -3395,10 +3395,18 @@ class QuDev_transmon(Qubit):
             parameter_name='Drive frequency', unit='Hz'))
         MC.set_sweep_points_2D(sweep_points_2D)
         MC.set_detector_function(self.int_avg_det)
+        sweep_points = SweepPoints('delay', delays, unit='s',
+                                   label=r'delay, $\tau$', dimension=0)
+        sweep_points.add_sweep_parameter('freq', freqs, unit='Hz',
+                                         label=r'drive frequency, $f_d$',
+                                         dimension=1)
+        mospm = {self.name: ['delay', 'freq']}
         if exp_metadata is None:
             exp_metadata = {}
         exp_metadata.update({'sweep_points_dict': {self.name: delays},
                              'sweep_points_dict_2D': {self.name: freqs},
+                             'sweep_points': sweep_points,
+                             'meas_obj_sweep_points_map': mospm,
                              'use_cal_points': cal_points,
                              'preparation_params': prep_params,
                              'cal_points': repr(cp),
@@ -3410,8 +3418,9 @@ class QuDev_transmon(Qubit):
 
         if analyze:
             try:
-                tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name],
-                                                   options_dict=dict(TwoD=True))
+                tda.FluxPulseScopeAnalysis(
+                    qb_names=[self.name],
+                    options_dict=dict(TwoD=True, global_PCA=True,))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)
 
