@@ -455,15 +455,11 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         if analysis_kwargs is None:
             analysis_kwargs = {}
 
-        for task in self.task_list:
-            qb_name = task['qb']
-            self.analysis[qb_name] = tda.FluxAmplitudeSweepAnalysis(
-                qb_names=[qb_name], options_dict=dict(TwoD=True),
-                t_start=self.timestamp, **analysis_kwargs)
+        self.analysis = tda.FluxAmplitudeSweepAnalysis(
+            qb_names=self.meas_obj_names, options_dict=dict(TwoD=True),
+            t_start=self.timestamp, **analysis_kwargs)
 
         if self.update:
-            for qb in self.qubits:
-                if qb.name in self.analysis:
-                    qb.fit_ge_freq_from_flux_pulse_amp(
-                        self.analysis[qb.name].fit_res[
-                            f'freq_fit_{qb.name}'].best_values)
+            for qb in self.meas_obj_names:
+                qb.fit_ge_freq_from_flux_pulse_amp(
+                    self.analysis.fit_res[f'freq_fit_{qb.name}'].best_values)
