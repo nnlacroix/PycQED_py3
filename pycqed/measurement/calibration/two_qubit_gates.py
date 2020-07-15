@@ -31,11 +31,7 @@ class MultiTaskingExperiment(QuantumExperiment):
                  operation_dict=None, **kw):
 
         self.task_list = task_list
-        for param in self.kw_for_task_keys:
-            for task in self.task_list:
-                if param not in task:
-                    task[param] = kw.get(param, None)
-        self.generate_kw_sweep_points(kw_dict=kw)
+        self.generate_kw_sweep_points(kw)
 
         # Try to get qubits or at least qb_names
         _, qb_names = self.extract_qubits(dev, qubits, operation_dict)
@@ -52,7 +48,6 @@ class MultiTaskingExperiment(QuantumExperiment):
         self.cal_states = None
         self.exception = None
         self.all_main_blocks = []
-        self.cal_states_rotations = {}
         self.data_to_fit = {}
         self.experiment_name = kw.pop(
             'experiment_name', getattr(self, 'experiment_name', 'Experiment'))
@@ -103,7 +98,6 @@ class MultiTaskingExperiment(QuantumExperiment):
             'rotate': len(self.cal_states) != 0 and not self.classified,
             'sweep_points': self.sweep_points,
             'ro_qubits': self.meas_obj_names,
-            'cal_states_rotations': self.cal_states_rotations,
             'data_to_fit': self.data_to_fit,
         })
         if self.task_list is not None:
@@ -133,7 +127,7 @@ class MultiTaskingExperiment(QuantumExperiment):
             n_per_state=n_cal_points_per_state)
         self.exp_metadata.update({'cal_points': repr(self.cal_points)})
 
-    def preprocess_task_list(self):
+    def preprocess_task_list(self, **kw):
         given_sweep_points = self.sweep_points
         self.sweep_points = SweepPoints(from_dict_list=given_sweep_points)
         while len(self.sweep_points) < 2:
@@ -142,7 +136,7 @@ class MultiTaskingExperiment(QuantumExperiment):
         for task in self.task_list:
             preprocessed_task_list.append(
                 self.preprocess_task(task, self.sweep_points,
-                                     given_sweep_points))
+                                     given_sweep_points, **kw))
         return preprocessed_task_list
 
     def preprocess_task(self, task, global_sweep_points, sweep_points=None,
@@ -155,20 +149,21 @@ class MultiTaskingExperiment(QuantumExperiment):
         task['prefix'] = prefix
         mo = self.get_meas_objs_from_task(task)
 
-        if sweep_points is None:
-            sweep_points = [{}, {}]
+        for param in self.kw_for_task_keys:
+            if param not in task:
+                task[param] = kw.get(param, None)
 
         current_sweep_points = SweepPoints(from_dict_list=sweep_points)
-        if 'sweep_points' in task:
-            current_sweep_points.update(
-                SweepPoints(from_dict_list=task['sweep_points']))
-            params_to_prefix = [d.keys() for d in task['sweep_points']]
-            task['params_to_prefix'] = params_to_prefix
-        else:
-            params_to_prefix = [[], []]
+        self.generate_kw_sweep_points(task)
+        current_sweep_points.update(
+            SweepPoints(from_dict_list=task['sweep_points']))
+        params_to_prefix = [d.keys() for d in task['sweep_points']]
+        task['params_to_prefix'] = params_to_prefix
         task['sweep_points'] = current_sweep_points
 
-        if len(params_to_prefix) == 1:
+        while len(current_sweep_points) < 2:
+            current_sweep_points.add_sweep_dimension()
+        while len(params_to_prefix) < 2:
             params_to_prefix.append([])
         for gsp, csp, params in zip(global_sweep_points,
                                     current_sweep_points,
@@ -197,6 +192,7 @@ class MultiTaskingExperiment(QuantumExperiment):
         """
         parallel_blocks = []
         for task in preprocessed_task_list:
+            task = copy(task)
             prefix = task.pop('prefix')
             params_to_prefix = task.pop('params_to_prefix', None)
             if not 'block_func' in task:
@@ -271,26 +267,24 @@ class MultiTaskingExperiment(QuantumExperiment):
         self.meas_objs, self.meas_obj_names = self.get_qubits(
             'all' if len(ro_qubits) == 0 else ro_qubits)
 
-    def generate_kw_sweep_points(self, kw_dict):
-        # kw is intentionally passed as dict here!
+    def generate_kw_sweep_points(self, task):
+        # instead of a task, a kw dict can also be passed
+        task['sweep_points'] = SweepPoints(
+            from_dict_list=task.get('sweep_points', None))
         for k, vals in self.kw_for_sweep_points.items():
             if isinstance(vals, dict):
                 vals = [vals]
             for v in vals:
                 values_func = v.pop('values_func', None)
-                for t in self.task_list + [kw_dict]:
-                    if k in t and t[k] is not None:
-                        t['sweep_points'] = SweepPoints(
-                            from_dict_list=t.get('sweep_points', None))
-                        if values_func is not None:
-                            values = values_func(t[k])
-                        elif isinstance(t[k], int):
-                            values = np.arange(t[k])
-                        else:
-                            values = t[k]
-                        t['sweep_points'].add_sweep_parameter(
-                            values=values, **v)
-
+                if k in task and task[k] is not None:
+                    if values_func is not None:
+                        values = values_func(task[k])
+                    elif isinstance(task[k], int):
+                        values = np.arange(task[k])
+                    else:
+                        values = task[k]
+                    task['sweep_points'].add_sweep_parameter(
+                        values=values, **v)
 
 class CalibBuilder(MultiTaskingExperiment):
     def __init__(self, task_list, **kw):
@@ -394,14 +388,16 @@ class CPhase(CalibBuilder):
             self.population_losses = None
             self.leakage = None
             self.cz_durations = {}
+            self.cal_states_rotations = {}
 
             self.add_default_sweep_points(**kw)
-            preprocessed_task_list = self.preprocess_task_list()
+            self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.sequences, self.mc_points = self.parallel_sweep(
-                preprocessed_task_list, self.cphase_block, **kw)
+                self.preprocessed_task_list, self.cphase_block, **kw)
 
             self.exp_metadata.update({
                 'cz_durations': self.cz_durations,
+                'cal_states_rotations': self.cal_states_rotations,
             })
 
             self.autorun(**kw)
@@ -596,9 +592,9 @@ class DynamicPhase(CalibBuilder):
                         self.operation_dict[self.get_cz_operation_name(
                             **task)]['basis_rotation'] = {}
 
-                preprocessed_task_list = self.preprocess_task_list()
+                self.preprocessed_task_list = self.preprocess_task_list(**kw)
                 self.sequences, self.mc_points = self.parallel_sweep(
-                    preprocessed_task_list, self.dynamic_phase_block, **kw)
+                    self.preprocessed_task_list, self.dynamic_phase_block, **kw)
                 self.autorun(**kw)
 
             if self.update:
@@ -689,8 +685,6 @@ class DynamicPhase(CalibBuilder):
                 if '=' not in k and k != 'flux_pulse_off':
                     p[k] = ParametricValue(k)
 
-        self.cal_states_rotations.update(self.cal_points.get_rotations(
-            qb_names=qubits_to_measure, **kw))
         self.data_to_fit.update({qb: 'pe' for qb in qubits_to_measure})
         return self.sequential_blocks(
             f"dynphase {'_'.join(qubits_to_measure)}", [pb, ir, fp, fr])
@@ -755,9 +749,9 @@ class Chevron(CalibBuilder):
 
             super().__init__(task_list, sweep_points=sweep_points, **kw)
 
-            preprocessed_task_list = self.preprocess_task_list()
+            self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.sequences, self.mc_points = self.parallel_sweep(
-                preprocessed_task_list, self.sweep_block, **kw)
+                self.preprocessed_task_list, self.sweep_block, **kw)
 
             self.autorun(**kw)
         except Exception as x:
@@ -822,8 +816,6 @@ class Chevron(CalibBuilder):
         b.block_end.update({'ref_pulse': 'initial_rots-|-end',
                             'pulse_delay': max_flux_length * num_cz_gates})
 
-        # TODO: do we need cal_states_rotations?
-        # self.cal_states_rotations.update({qbr: {'g': 0, 'e': 1, 'f': 2}})
         self.data_to_fit.update({qbr: 'pe'})
 
         return b

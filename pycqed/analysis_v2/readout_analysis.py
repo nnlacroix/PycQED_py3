@@ -953,7 +953,8 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
     def plot_fidelity_matrix(fm, target_names,
                              title="State Assignment Probability Matrix",
                              auto_shot_info=True, ax=None,
-                             cmap=None, normalize=True, show=False):
+                             cmap=None, normalize=True, show=False,
+                             plot_cb=True):
         fidelity_avg = np.trace(fm) / float(np.sum(fm))
         if auto_shot_info:
             title += '\nTotal # shots:{}'.format(np.sum(fm))
@@ -971,8 +972,9 @@ class Singleshot_Readout_Analysis_Qutrit(ba.BaseDataAnalysis):
         im = ax.imshow(fm, interpolation='nearest', cmap=cmap,
                        norm=mc.LogNorm(), vmin=5e-3, vmax=1.)
         ax.set_title(title)
-        cb = fig.colorbar(im)
-        cb.set_label('Assignment Probability, $P_{ij}$')
+        if plot_cb:
+            cb = fig.colorbar(im)
+            cb.set_label('Assignment Probability, $P_{ij}$')
 
         if target_names is not None:
             tick_marks = np.arange(len(target_names))
