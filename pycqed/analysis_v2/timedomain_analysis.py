@@ -5514,9 +5514,9 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                         textstr += '\nLeakage increase = \n\t' \
                                    '{:.5f} $\\pm$ {:.5f}'.format(
                             self.proc_data_dict['analysis_params_dict'][
-                                'leakage_increase']['val'][0],
+                                f'leakage_increase_{qbn}']['val'][0],
                             self.proc_data_dict['analysis_params_dict'][
-                                'leakage_increase']['stderr'][0])
+                                f'leakage_increase_{qbn}']['stderr'][0])
                         self.plot_dicts['text_msg_' + qbn] = {
                             'fig_id': figure_name,
                             'ypos': -0.2,
