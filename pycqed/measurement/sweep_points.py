@@ -44,7 +44,7 @@ class SweepPoints(list):
         'V', 'Pulse amplitude, $A$')
     """
     def __init__(self, param_name=None, values=None, unit='', label=None,
-                 dimension=-1, from_dict_list=None):
+                 dimension=-1, from_dict_list=None, min_length=0):
         super().__init__()
         if param_name is not None and values is not None:
             self.add_sweep_parameter(param_name, values, unit, label,
@@ -60,6 +60,8 @@ class SweepPoints(list):
                                      v.get('unit',''),
                                      v.get('label', k))
                                  for k, v in d.items()})
+        while len(self) < min_length:
+            self.add_sweep_dimension()
 
     def add_sweep_parameter(self, param_name, values, unit='', label=None,
                             dimension=-1):
