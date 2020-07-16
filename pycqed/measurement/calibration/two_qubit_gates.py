@@ -24,14 +24,18 @@ log = logging.getLogger(__name__)
 
 
 class MultiTaskingExperiment(QuantumExperiment):
+    kw_for_sweep_points = {}
+    kw_for_task_keys = ()
+
     def __init__(self, task_list, dev=None, qubits=None,
-                 operation_dict=None, kw_for_task_keys=(), **kw):
+                 operation_dict=None, **kw):
 
         self.task_list = task_list
-        for param in kw_for_task_keys:
+        for param in self.kw_for_task_keys:
             for task in self.task_list:
                 if param not in task:
                     task[param] = kw.get(param, None)
+        self.generate_kw_sweep_points(kw_dict=kw)
 
         # Try to get qubits or at least qb_names
         _, qb_names = self.extract_qubits(dev, qubits, operation_dict)
@@ -42,6 +46,8 @@ class MultiTaskingExperiment(QuantumExperiment):
                          operation_dict=operation_dict,
                          filter_qb_names=qb_names, **kw)
 
+        if 'sweep_points' in kw:
+            self.sweep_points = kw.pop('sweep_points')
         self.cal_points = None
         self.cal_states = None
         self.exception = None
@@ -127,14 +133,16 @@ class MultiTaskingExperiment(QuantumExperiment):
             n_per_state=n_cal_points_per_state)
         self.exp_metadata.update({'cal_points': repr(self.cal_points)})
 
-    def preprocess_task_list(self, sweep_points):
-        self.sweep_points = SweepPoints(from_dict_list=sweep_points)
+    def preprocess_task_list(self):
+        given_sweep_points = self.sweep_points
+        self.sweep_points = SweepPoints(from_dict_list=given_sweep_points)
         while len(self.sweep_points) < 2:
             self.sweep_points.add_sweep_dimension()
         preprocessed_task_list = []
         for task in self.task_list:
             preprocessed_task_list.append(
-                self.preprocess_task(task, self.sweep_points, sweep_points))
+                self.preprocess_task(task, self.sweep_points,
+                                     given_sweep_points))
         return preprocessed_task_list
 
     def preprocess_task(self, task, global_sweep_points, sweep_points=None,
@@ -263,6 +271,17 @@ class MultiTaskingExperiment(QuantumExperiment):
         self.meas_objs, self.meas_obj_names = self.get_qubits(
             'all' if len(ro_qubits) == 0 else ro_qubits)
 
+    def generate_kw_sweep_points(self, kw_dict):
+        # kw is intentionally passed as dict here!
+        for k, v in self.kw_for_sweep_points.items():
+            for t in self.task_list + [kw_dict]:
+                if k in t:
+                    print(k,t)
+                    if 'sweep_points' not in t or t['sweep_points'] is\
+                            None:
+                        t['sweep_points'] = SweepPoints()
+                    print(t['sweep_points'], v)
+                    t['sweep_points'].add_sweep_parameter(values=t[k], **v)
 
 class CalibBuilder(MultiTaskingExperiment):
     def __init__(self, task_list, **kw):
@@ -360,15 +379,15 @@ class CPhase(CalibBuilder):
 
             kw['for_ef'] = kw.get('for_ef', True)
 
-            super().__init__(task_list, **kw)
+            super().__init__(task_list, sweep_points=sweep_points, **kw)
 
             self.cphases = None
             self.population_losses = None
             self.leakage = None
             self.cz_durations = {}
 
-            sweep_points = self.add_default_sweep_points(sweep_points, **kw)
-            preprocessed_task_list = self.preprocess_task_list(sweep_points)
+            self.add_default_sweep_points(**kw)
+            preprocessed_task_list = self.preprocess_task_list()
             self.sequences, self.mc_points = self.parallel_sweep(
                 preprocessed_task_list, self.cphase_block, **kw)
 
@@ -381,13 +400,13 @@ class CPhase(CalibBuilder):
             self.exception = x
             traceback.print_exc()
 
-    def add_default_sweep_points(self, sweep_points, **kw):
-        sweep_points = self.add_default_ramsey_sweep_points(sweep_points, **kw)
-        nr_phases = sweep_points.length(0) // 2
+    def add_default_sweep_points(self, **kw):
+        self.sweep_points = self.add_default_ramsey_sweep_points(
+            self.sweep_points, **kw)
+        nr_phases = self.sweep_points.length(0) // 2
         hard_sweep_dict = SweepPoints(
             'pi_pulse_off', [0] * nr_phases + [1] * nr_phases)
-        sweep_points.update(hard_sweep_dict + [{}])
-        return sweep_points
+        self.sweep_points.update(hard_sweep_dict + [{}])
 
     def cphase_block(self, sweep_points,
                      qbl, qbr, num_cz_gates=1, max_flux_length=None,
@@ -559,16 +578,16 @@ class DynamicPhase(CalibBuilder):
                 # this happens if we are in child or if simultaneous=True or
                 # if only one qubit per task is measured
                 self.measurements = [self]
-                super().__init__(task_list, **kw)
+                super().__init__(task_list, sweep_points=sweep_points, **kw)
 
-                sweep_points = self.add_default_sweep_points(sweep_points, **kw)
+                self.add_default_sweep_points(**kw)
 
                 if self.reset_phases_before_measurement:
                     for task in task_list:
                         self.operation_dict[self.get_cz_operation_name(
                             **task)]['basis_rotation'] = {}
 
-                preprocessed_task_list = self.preprocess_task_list(sweep_points)
+                preprocessed_task_list = self.preprocess_task_list()
                 self.sequences, self.mc_points = self.parallel_sweep(
                     preprocessed_task_list, self.dynamic_phase_block, **kw)
                 self.autorun(**kw)
@@ -601,13 +620,13 @@ class DynamicPhase(CalibBuilder):
             self.exception = x
             traceback.print_exc()
 
-    def add_default_sweep_points(self, sweep_points, **kw):
-        sweep_points = self.add_default_ramsey_sweep_points(sweep_points, **kw)
-        nr_phases = sweep_points.length(0) // 2
+    def add_default_sweep_points(self, **kw):
+        self.sweep_points = self.add_default_ramsey_sweep_points(
+            self.sweep_points, **kw)
+        nr_phases = self.sweep_points.length(0) // 2
         hard_sweep_dict = SweepPoints(
             'flux_pulse_off', [0] * nr_phases + [1] * nr_phases)
-        sweep_points.update(hard_sweep_dict + [{}])
-        return sweep_points
+        self.sweep_points.update(hard_sweep_dict + [{}])
 
     def guess_label(self, **kw):
         if self.label is None:
@@ -725,9 +744,9 @@ class Chevron(CalibBuilder):
                 if not 'prefix' in task:
                     task['prefix'] = f"{task['qbc']}{task['qbt']}_"
 
-            super().__init__(task_list, **kw)
+            super().__init__(task_list, sweep_points=sweep_points, **kw)
 
-            preprocessed_task_list = self.preprocess_task_list(sweep_points)
+            preprocessed_task_list = self.preprocess_task_list()
             self.sequences, self.mc_points = self.parallel_sweep(
                 preprocessed_task_list, self.sweep_block, **kw)
 
