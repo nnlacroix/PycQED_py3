@@ -15,9 +15,9 @@ log = logging.getLogger(__name__)
 class RandomizedBenchmarking(MultiTaskingExperiment):
 
     kw_for_sweep_points = {
-        'nr_seeds': [dict(param_name='seeds', unit='',
+        'nr_seeds': dict(param_name='seeds', unit='',
                          label='Seeds', dimension=0,
-                         values_func=lambda ns: np.random.randint(0, 1e8, ns))],
+                         values_func=lambda ns: np.random.randint(0, 1e8, ns)),
         'cliffords': dict(param_name='cliffords', unit='',
                           label='Nr. Cliffords',
                           dimension=1),
@@ -66,7 +66,10 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
         try:
             self.interleaved_gate = interleaved_gate
             if self.interleaved_gate is not None:
-                self.kw_for_sweep_points['nr_seeds'] += [
+                self.kw_for_sweep_points['nr_seeds'] = [
+                    dict(param_name='seeds', unit='',
+                         label='Seeds', dimension=0,
+                         values_func=lambda ns: np.random.randint(0, 1e8, ns)),
                     dict(param_name='seeds_irb', unit='',
                          label='Seeds', dimension=0,
                          values_func=lambda ns: np.random.randint(0, 1e8, ns))]
@@ -113,6 +116,9 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
                 self.sequences, self.mc_points = \
                     self.sequences[0].interleave_sequences(
                         [self.sequences, seqs_irb])
+                self.exp_metadata['interleaved_gate'] = self.interleaved_gate
+            self.exp_metadata['gate_decomposition'] = self.gate_decomposition
+            self.exp_metadata['identical_pulses'] = self.identical_pulses
 
             self.add_processing_pipeline()
             self.autorun(**kw)
@@ -133,8 +139,8 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
         :param kw: keyword_arguments passed to analysis functions;
             see docstrings there
         """
-        self.analysis = pla.extract_data_hdf(**kw)  # returns a dict
-        pla.process_pipeline(self.analysis, **kw)
+        self.analysis = pla.extract_data_hdf()  # returns a dict
+        pla.process_pipeline(self.analysis)
 
 
 class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
@@ -189,7 +195,7 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
                 'values', 1)
             seeds = task['sweep_points'].get_sweep_params_property(
                 'values', 0)
-            if not self.classified:
+            if len(self.cal_points.states) != 0:
                 pp.add_node('rotate_iq', keys_in='raw',
                             meas_obj_names=task['qb'],
                             num_keys_out=1)
@@ -207,7 +213,7 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
                         keys_out=None, d=2,
                         keys_in=f'previous average_data',
                         keys_in_std=f'previous get_std_deviation')
-        self.exp_metadata.update({'processing_pipe': pp})
+        self.exp_metadata.update({'processing_pipeline': pp})
 
 
 class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
@@ -299,7 +305,7 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
             rb_block_list += [self.sequential_blocks(f'rb_block{i}', seq_blocks)]
 
         return self.simultaneous_blocks_align_end(
-            f'sim_rb_{clifford}_{sp1d_idx}', rb_block_list)
+            f'sim_rb_{sp2d_idx}_{sp1d_idx}', rb_block_list)
 
     def add_processing_pipeline(self):
         """
@@ -311,7 +317,7 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
                 'values', 1)
             seeds = task['sweep_points'].get_sweep_params_property(
                 'values', 0)
-            if not self.classified:
+            if len(self.cal_points.states) != 0:
                 pp.add_node('rotate_iq', keys_in='raw',
                             meas_obj_names=[task['qb_1'], task['qb_2']],
                             num_keys_out=1)
@@ -330,4 +336,4 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
                         keys_out=None, d=2,
                         keys_in=f'previous average_data',
                         keys_in_std=f'previous get_std_deviation')
-        self.exp_metadata.update({'processing_pipe': pp})
+        self.exp_metadata.update({'processing_pipeline': pp})
