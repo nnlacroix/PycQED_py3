@@ -333,11 +333,7 @@ class CalibBuilder(MultiTaskingExperiment):
 
     @staticmethod
     def add_default_ramsey_sweep_points(sweep_points, **kw):
-        if sweep_points is None:
-            sweep_points = [{}, {}]
-        sweep_points = SweepPoints(from_dict_list=sweep_points)
-        if len(sweep_points) == 1:
-            sweep_points.add_sweep_dimension()
+        sweep_points = SweepPoints(from_dict_list=sweep_points, min_length=2)
         if len(sweep_points[0]) > 0:
             nr_phases = sweep_points.length(0) // 2
         else:
@@ -350,7 +346,6 @@ class CalibBuilder(MultiTaskingExperiment):
                 'deg')
         sweep_points.update(hard_sweep_dict + [{}])
         return sweep_points
-
 
 
 class CPhase(CalibBuilder):
