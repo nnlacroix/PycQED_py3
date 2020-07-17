@@ -2502,9 +2502,6 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
     exp_metadata.update({
         'preparation_params': prep_params,
         'cal_points': repr(cp),
-        'cal_states_rotations':
-             {qbr.name: {'g': 0, 'e': 1, 'f': 2}} if
-             (len(cal_states) != 0 and not classified) else None,
         'rotate': len(cal_states) != 0,
         'data_to_fit': {qbr.name: 'pe'},
         'sweep_points': sweep_points,
@@ -2889,7 +2886,6 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
     else:
         old_dyn_phases = deepcopy(basis_rot_par())
 
-    print(old_dyn_phases)
     # check whether qubits are connected
     dev.check_connection(qbc, qbt)
 

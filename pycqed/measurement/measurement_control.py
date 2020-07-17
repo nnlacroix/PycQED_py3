@@ -689,8 +689,7 @@ class MeasurementControl(Instrument):
                 dim_sp = {spn: sp.find_parameter(spn) for spn in
                           mospm[mo]}
                 for i in range(len(labels)):
-                    spi = [spn for spn, dim in dim_sp.items() if dim
-                           == i]
+                    spi = [spn for spn, dim in dim_sp.items() if dim == i]
                     if len(spi):
                         labels[i] = sp.get_sweep_params_property(
                             'label', i, spi[0])

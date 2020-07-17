@@ -279,12 +279,14 @@ class SweepPoints(list):
 
     def find_parameter(self, param_name):
         """
-        Returns the first dimension in which a given sweep parameter is found
+        Returns the index of the first dimension in which a given sweep
+        parameter is found.
 
         :param param_name: (str) name of the sweep parameter
 
-        :return: (int or None) the first dimension in which the parameter if
-            found or None if no parameter with the given name exists.
+        :return: (int or None) the index of the first dimension in which the
+            parameter if found or None if no parameter with the given name
+            exists.
         """
         for dim in range(len(self)):
             if param_name in self[dim]:
