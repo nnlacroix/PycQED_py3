@@ -158,6 +158,8 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
             len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2):
             number of subplots along y
+        key_suffix (str, default: ''): suffix for the key name under which
+            the created plot dict is saved
 
     Assumptions:
         - if len(keys_in) > 1, this function will plot the data corresponding to
@@ -231,7 +233,9 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
 
         # plot cal points
         for ii, cal_pts_idxs in enumerate(qb_cal_indxs.values()):
-            plot_dict_name_cal = list(qb_cal_indxs)[ii] + '_' + keyi
+            plot_dict_name_cal = list(qb_cal_indxs)[ii] + '_' + keyi + \
+                                 hlp_mod.get_param('key_suffix', data_dict,
+                                                   default_value='', **params)
             plot_dicts[plot_dict_name_cal+'_line'] = {
                 'fig_id': figure_name,
                 'ax_id': axids[i],
@@ -277,7 +281,7 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
     if params.get('do_plotting', False):
         # do plotting
         plot(data_dict, keys_in=plot_names_cal, **params)
-    return figure_name
+    return plot_dicts
 
 
 def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
@@ -304,6 +308,8 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
             len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2):
             number of subplots along y
+        key_suffix (str, default: ''): suffix for the key name under which
+            the created plot dict is saved
 
     Assumptions:
         - all the data corresponding to keys_in are plotted on the same figure!
@@ -327,16 +333,14 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
 
     # get the sweep points information
     sp_name = params.get('sp_name', mospm[mobjn][0])
-    sweep_info = [v for d in sp for k, v in d.items() if sp_name == k]
-    if len(sweep_info) == 0:
-        raise KeyError(f'sp_name={sp_name} not found.')
-
     # get x-axis information
     xvals = params.get('xvals', None)
     if xvals is None:
-        xvals = deepcopy(sweep_info[0][0])
-    xlabel = sweep_info[0][2]
-    xunit = sweep_info[0][1]
+        xvals = deepcopy(sp.get_sweep_params_property('values', 'all', sp_name))
+    xlabel = sp.get_sweep_params_property('label', 'all', sp_name)
+    xunit = sp.get_sweep_params_property('unit', 'all', sp_name)
+    xerr_key = params.get('xerr_key', '')
+    xerr = hlp_mod.get_param(xerr_key, data_dict)
 
     # get y-axis information
     ylabel = params.get('ylabel', None)
@@ -345,11 +349,13 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
             ylabel = r'$|f\rangle$ state population' if 'f,' in cp.states else \
                      r'$|e\rangle$ state population'
     yunit = params.get('yunit', '')
+    yerr_key = params.get('yerr_key', '')
+    yerr = hlp_mod.get_param(yerr_key, data_dict)
 
     # get more plotting aspect information
     data_labels = params.get('data_labels', ['data']*len(data_to_proc_dict))
     if len(data_labels) != len(data_to_proc_dict):
-        raise ValueError('Lenght of "data_labels" does not equal the number '
+        raise ValueError('Length of "data_labels" does not equal the number '
                          'of traces to plot')
     plotsize = get_default_plot_params(set=False)['figure.figsize']
     plotsize = (plotsize[0], 1.5*plotsize[1])
@@ -374,8 +380,16 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
         yvals = hlp_mod.get_msmt_data(yvals, cp, mobjn)
         if ylabel is None:
             ylabel = hlp_mod.get_latex_prob_label(keyi)
+        smax = 40
+        if len(ylabel) > smax:
+            k = len(ylabel) // smax
+            ylabel = '\n'.join([ylabel[i*smax:(i+1)*smax] for i in range(k)] \
+                               + [ylabel[-(len(ylabel) % smax):]])
 
-        plot_dict_name = figure_name + keyi
+        plot_dict_name = figure_name + keyi + hlp_mod.get_param('key_suffix',
+                                                                data_dict,
+                                                                default_value='',
+                                                                **params)
         plot_dicts[plot_dict_name] = {
             'plotfn': 'plot_line',
             'fig_id': figure_name,
@@ -386,9 +400,11 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
             'xvals': xvals,
             'xlabel': xlabel,
             'xunit': xunit,
+            'xerr': xerr,
             'yvals': yvals,
             'ylabel': ylabel,
             'yunit': yunit,
+            'yerr': yerr,
             'setlabel': data_labels[i],
             'title': default_figure_title(data_dict, mobjn),
             'linestyle': params.get('linestyle', 'none'),
@@ -408,7 +424,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
     if params.get('do_plotting', False):
         # do plotting
         plot(data_dict, keys_in=plot_dict_names, **params)
-    return figure_name
+    return plot_dicts
 
 
 def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
@@ -432,6 +448,8 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
             len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2):
             number of subplots along y
+        key_suffix (str, default: ''): suffix for the key name under which
+            the created plot dict is saved
 
     Assumptions:
         - all the data corresponding to keys_in are plotted on the same figure!
@@ -500,7 +518,10 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
             zlabel = hlp_mod.get_latex_prob_label(keyi)
         zlabel = f'{zlabel} {zunit}'
 
-        plot_dict_name = figure_name + keyi
+        plot_dict_name = figure_name + keyi + hlp_mod.get_param('key_suffix',
+                                                                data_dict,
+                                                                default_value='',
+                                                                **params)
         for sp_info in sweep_info:
             plot_dict_name += '_' + sp_info[2]
             plot_dicts[plot_dict_name] = {
@@ -532,7 +553,7 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
     if params.get('do_plotting', False):
         # do plotting
         plot(data_dict, keys_in=plot_dict_names, **params)
-    return figure_name
+    return plot_dicts
 
 
 def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
@@ -560,6 +581,9 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
             len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2):
             number of subplots along y
+        key_suffix (str, default: ''): suffix for the key name under which
+            the created plot dict is saved
+        figname_suffix (str, default: ''): suffix for the figure name name
 
     Assumptions:
         - all the data corresponding to keys_in are plotted on the same figure!
@@ -589,14 +613,10 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
 
     # get the sweep points information
     sp_name = params.get('sp_name', mospm[mobjn][0])
-    sweep_info = [v for d in sp for k, v in d.items() if sp_name == k]
-    if len(sweep_info) == 0:
-        raise KeyError(f'{sp_name} not found.')
-
     # get x-axis information
     xvals = hlp_mod.get_param('xvals', params)
-    xlabel = sweep_info[0][2]
-    xunit = sweep_info[0][1]
+    xlabel = sp.get_sweep_params_property('label', 'all', sp_name)
+    xunit = sp.get_sweep_params_property('unit', 'all', sp_name)
 
     # get more plotting aspect information
     data_labels = params.get('data_labels', ['data']*len(data_to_proc_dict))
@@ -616,19 +636,28 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     # get figure name
     if figure_name is None:
         figure_name = 'raw_data'
+    figure_name += '_' + hlp_mod.get_param(
+        'figname_suffix', data_dict, default_value='', **params)
     if mobjn not in figure_name:
-        figure_name += mobjn
+        figure_name += '_' + mobjn
+
 
     # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
     plot_dict_names = []
     for i, keyi in enumerate(data_to_proc_dict):
         if xvals is None:
-            physical_swpts = deepcopy(sweep_info[0][0])
+            physical_swpts = deepcopy(sp.get_sweep_params_property(
+                'values', 'all', sp_name))
             cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts, cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         yvals = data_to_proc_dict[keyi]
         ylabel = keyi.split('.')[-1]
+        smax = 25
+        if len(ylabel) > smax:
+            k = len(ylabel) // smax
+            ylabel = '\n'.join([ylabel[i*smax:(i+1)*smax] for i in range(k)] \
+                               + [ylabel[-(len(ylabel) % smax):]])
         yunit = hlp_mod.get_param('yunit', params,
                                   default_value=hlp_mod.get_param(
                                       'value_units', data_dict,
@@ -636,7 +665,9 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         if isinstance(yunit, list):
             yunit = yunit[0]
 
-        plot_dict_name = figure_name + '_' + keyi
+        plot_dict_name = figure_name + '_' + keyi + hlp_mod.get_param(
+            'key_suffix', data_dict, default_value='', **params)
+
         plot_dicts[plot_dict_name] = {
             'plotfn': 'plot_line',
             'fig_id': figure_name,
@@ -670,7 +701,7 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     if params.get('do_plotting', False):
         # do plotting
         plot(data_dict, keys_in=plot_dict_names, **params)
-    return figure_name
+    return plot_dicts
 
 
 def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
@@ -695,6 +726,8 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         nrows (int, default: 2 if len(data_to_proc_dict) == 2 else
             len(data_to_proc_dict) // 2 + len(data_to_proc_dict) % 2):
             number of subplots along y
+        key_suffix (str, default: ''): suffix for the key name under which
+            the created plot dict is saved
 
     Assumptions:
         - all the data corresponding to keys_in are plotted on the same figure!
@@ -768,7 +801,8 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             zunit = zunit[0]
         zlabel = f'{keyi.split(".")[-1]} {zunit}'
 
-        plot_dict_name = figure_name + '_' + keyi
+        plot_dict_name = figure_name + '_' + keyi + hlp_mod.get_param(
+            'key_suffix', data_dict, default_value='', **params)
         for sp_info in sweep_info:
             plot_dict_name += '_' + sp_info[2]
             plot_dicts[plot_dict_name] = {
@@ -800,7 +834,7 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     if params.get('do_plotting', False):
         # do plotting
         plot(data_dict, keys_in=plot_dict_names, **params)
-    return figure_name
+    return plot_dicts
 
 
 def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
@@ -819,6 +853,8 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
         params_to_print (dict, default: None): list of parameter names that
             exist in the fit_res object and whose value should be displayed as
             textbox in the plot.
+        key_suffix (str, default: ''): suffix for the key name under which
+            the created plot dict is saved
 
     Assumptions:
         - fit_dicts exists in fit_dicts
@@ -835,12 +871,14 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
         fit_names = list(fit_dicts)
     for fit_name in fit_names:
         fit_dict = hlp_mod.get_param(fit_name, fit_dicts, raise_error=True)
+        dict_key = fit_name + hlp_mod.get_param(
+            'key_suffix', data_dict, default_value='', **params)
         fit_res = fit_dict['fit_res']
         plot_params = hlp_mod.get_param('plot_params', fit_dict,
                                         default_value={})
         plot_params.update(hlp_mod.get_param('plot_params', params,
                                              default_value={}))
-        plot_dicts[fit_name] = {
+        plot_dicts[dict_key] = {
             'fig_id': figure_name,
             'plotfn': 'plot_fit',
             'fit_res': fit_res,
@@ -851,7 +889,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
             'legend_ncol': 2,
             'legend_bbox_to_anchor': (1, -0.15),
             'legend_pos': 'upper right'}
-        plot_dicts[fit_name].update(plot_params)
+        plot_dicts[dict_key].update(plot_params)
 
         pois = hlp_mod.get_param('params_to_print', fit_dict, **params)
         if pois is not None:
@@ -864,7 +902,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
                 textstr += '' if i == 0 else '\n'
                 textstr += f'{poi[2]}={params_val*scale_factor:.3f}' \
                            f'$\\pm${params_stderr*scale_factor:.3f} {unit}'
-            plot_dicts[fit_name + '_textstr'] = {
+            plot_dicts[dict_key + '_textstr'] = {
                 'fig_id': figure_name,
                 'ypos': -0.2,
                 'xpos': -0.05,
