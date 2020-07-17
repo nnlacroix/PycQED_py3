@@ -266,10 +266,10 @@ class MeasurementControl(Instrument):
                             start_idx:start_idx+self.xlen, 0])
                     self.measure_hard()
         else:
-            raise Exception('Sweep and Detector functions not '
-                            + 'of the same type. \nAborting measurement')
             print(self.sweep_function.sweep_control)
             print(self.detector_function.detector_control)
+            raise Exception('Sweep and Detector functions not '
+                            + 'of the same type. \nAborting measurement')
 
         self.check_keyboard_interrupt()
         self.update_instrument_monitor()
