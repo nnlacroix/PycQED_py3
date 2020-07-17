@@ -1681,10 +1681,10 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
 
         plot_dict = {
             'axid': "ptable",
-            'plotfn': self.plot_colorx,
+            'plotfn': self.plot_colorxy,
             'xvals': np.arange(len(self.observables))[obs_filter],
-            'yvals': np.array(len(self.observables)*[ylist]),
-            'zvals': plt_data,
+            'yvals': ylist,
+            'zvals': plt_data.T,
             'xlabel': "Channels",
             'ylabel': "Segments",
             'zlabel': "Counts",
