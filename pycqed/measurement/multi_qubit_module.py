@@ -2889,7 +2889,6 @@ def measure_dynamic_phases(dev, qbc, qbt, cz_pulse_name, hard_sweep_params=None,
     else:
         old_dyn_phases = deepcopy(basis_rot_par())
 
-    print(old_dyn_phases)
     # check whether qubits are connected
     dev.check_connection(qbc, qbt)
 

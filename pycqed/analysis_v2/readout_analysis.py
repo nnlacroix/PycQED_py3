@@ -1679,9 +1679,6 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
 
         plt_data = plt_data[obs_filter]
 
-        print(plt_data.shape)
-        print(len(ylist))
-
         plot_dict = {
             'axid': "ptable",
             'plotfn': self.plot_colorxy,
@@ -1789,19 +1786,16 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
                 self.options_dict.get('cal_points'), self.n_readouts,
                 self.raw_data_dict['value_names']
             )
-            print(1)
         except (KeyError, ValueError):
             cal_points_list = convert_channel_names_to_index(
                 self.get_param_value('cal_points'), self.n_readouts,
                 list(self.channel_map.keys())
             )
-            print(2)
         self.proc_data_dict['cal_points_list'] = cal_points_list
         
         means = np.zeros((len(cal_points_list), len(observables)))
         cal_readouts = set()
         for i, cal_point in enumerate(cal_points_list):
-            print(f'i, cal_point = {i}, {cal_point}')
             for j, cal_point_chs in enumerate(cal_point):
                 if j == 0:
                     readout_list = cal_point_chs
@@ -2146,7 +2140,6 @@ def convert_channel_names_to_index(cal_points, nr_segments, value_names,
         cal_points_list in the converted format
     """
 
-    print(cal_points, nr_segments, value_names, n_reset_reps)
     if isinstance(value_names, str):
         value_names = [value_names]
     cal_points_list = []
