@@ -631,20 +631,20 @@ def get_rb_leakage_ibm_textstr(data_dict, fit_res=None, **params):
         textstr += f'$\pm$ {100*p_stderr:.3f}%'
 
     L_value = hlp_mod.get_param(
-        f'{keys_out_container}.Google-style leakage value', data_dict,
+        f'{keys_out_container}.IBM-style leakage value', data_dict,
         raise_error=True)
     textstr += f'\nL = {100*L_value:.4f}%'
     L_stderr = hlp_mod.get_param(
-        f'{keys_out_container}.Google-style leakage stderr', data_dict)
+        f'{keys_out_container}.IBM-style leakage stderr', data_dict)
     if L_stderr is not None:
         textstr += f'$\pm$ {100*L_stderr:.3f}%'
 
     S_value = hlp_mod.get_param(
-        f'{keys_out_container}.Google-style seepage value', data_dict,
+        f'{keys_out_container}.IBM-style seepage value', data_dict,
         raise_error=True)
     textstr += f'\nS = {100*S_value:.4f}%'
     S_stderr = hlp_mod.get_param(
-        f'{keys_out_container}.Google-style seepage stderr', data_dict)
+        f'{keys_out_container}.IBM-style seepage stderr', data_dict)
     if S_stderr is not None:
         textstr += f'$\pm$ {100*S_stderr:.3f}%'
     return textstr
