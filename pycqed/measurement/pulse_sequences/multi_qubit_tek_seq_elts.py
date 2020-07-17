@@ -15,6 +15,7 @@ from pycqed.measurement.gate_set_tomography.gate_set_tomography import \
 from pycqed.measurement.waveform_control import pulsar as ps
 import pycqed.measurement.waveform_control.segment as segment
 from pycqed.analysis_v2 import tomography_qudev as tomo
+from pycqed.measurement.waveform_control.block import Block
 
 station = None
 kernel_dir = 'kernels/'
@@ -2265,8 +2266,8 @@ def ro_dynamic_phase_seq(hard_sweep_dict, qbp_name, qbr_names,
 
 def n_qubit_rabi_seq(qubit_names, operation_dict, sweep_points, cal_points,
                      upload=True, n=1, for_ef=False,
-                     last_ge_pulse=False, prep_params=dict()):
-    '''
+                     last_ge_pulse=False, prep_params=None):
+    """
     Rabi sequence for n qubits.
     Args:
         qubit_names:     list of qubit names
@@ -2283,7 +2284,9 @@ def n_qubit_rabi_seq(qubit_names, operation_dict, sweep_points, cal_points,
         sequence (Sequence): sequence object
         segment_indices (list): array of range of n_segments including
             calibration_segments. To be used as sweep_points for the MC.
-    '''
+    """
+    if prep_params is None:
+        prep_params = dict()
 
     seq_name = 'n_qubit_Rabi_sequence'
 
@@ -2297,15 +2300,19 @@ def n_qubit_rabi_seq(qubit_names, operation_dict, sweep_points, cal_points,
                 rabi_ops += ["X180 " + qbn]  # append ge pulse
 
         rabi_pulses = [deepcopy(operation_dict[op]) for op in rabi_ops]
-        rabi_pulses[0]['ref_pulse'] = 'segment_start'
+        rabi_pulses[0]['ref_pulse'] = 'start'
         for i in np.arange(1 if for_ef else 0, n + 1 if for_ef else n):
             rabi_pulses[i]["name"] = f"Rabi_{i-1 if for_ef else i}_{qbn}"
 
         pulse_list += rabi_pulses
+    block = Block('main', pulse_list)
+    block.set_end_after_all_pulses()
+    pulse_list = block.build()
     pulse_list += generate_mux_ro_pulse_list(qubit_names, operation_dict)
 
     params_to_sweep = {
-        f'Rabi_{i}_{qbn}.amplitude': list(sweep_points[0].values())[j][0]
+        f'main-|-Rabi_{i}_{qbn}.amplitude': list(sweep_points[0].values())[
+            j][0]
         for i in range(n) for j, qbn in enumerate(qubit_names)}
     swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
     swept_pulses_with_prep = \
@@ -2328,8 +2335,8 @@ def n_qubit_rabi_seq(qubit_names, operation_dict, sweep_points, cal_points,
 
 def n_qubit_ramsey_seq(qubit_names, operation_dict, sweep_points, cal_points,
                        artificial_detuning=0, upload=True, for_ef=False,
-                       last_ge_pulse=False, prep_params=dict()):
-    '''
+                       last_ge_pulse=False, prep_params=None):
+    """
     Ramsey sequence for n qubits.
     Args:
         qubit_names:     list of qubit names
@@ -2347,7 +2354,9 @@ def n_qubit_ramsey_seq(qubit_names, operation_dict, sweep_points, cal_points,
         sequence (Sequence): sequence object
         segment_indices (list): array of range of n_segments including
             calibration_segments. To be used as sweep_points for the MC.
-    '''
+    """
+    if prep_params is None:
+        prep_params = dict()
 
     seq_name = 'n_qubit_Ramsey_sequence'
 
@@ -2361,19 +2370,22 @@ def n_qubit_ramsey_seq(qubit_names, operation_dict, sweep_points, cal_points,
                 ramsey_ops += ["X180 " + qbn]  # append ge pulse
 
         ramsey_pulses = [deepcopy(operation_dict[op]) for op in ramsey_ops]
-        ramsey_pulses[0]['ref_pulse'] = 'segment_start'
+        ramsey_pulses[0]['ref_pulse'] = 'start'
         ramsey_pulses[2 if for_ef else 1]["name"] = f"Ramsey_{qbn}"
         ramsey_pulses[2 if for_ef else 1]["ref_point"] = 'start'
 
         pulse_list += ramsey_pulses
+    block = Block('main', pulse_list)
+    block.set_end_after_all_pulses()
+    pulse_list = block.build()
     pulse_list += generate_mux_ro_pulse_list(qubit_names, operation_dict)
 
     params_to_sweep = {}
     for j, qbn in enumerate(qubit_names):
-        times = list(sweep_points[0].values())[j][0]
-        params_to_sweep.update({f'Ramsey_{qbn}.pulse_delay': times})
+        times = np.asarray(list(sweep_points[0].values())[j][0])
+        params_to_sweep.update({f'main-|-Ramsey_{qbn}.pulse_delay': times})
         params_to_sweep.update({
-            f'Ramsey_{qbn}.phase':
+            f'main-|-Ramsey_{qbn}.phase':
                 ((times-times[0])*artificial_detuning*360) % 360})
     swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
     swept_pulses_with_prep = \
@@ -2396,8 +2408,8 @@ def n_qubit_ramsey_seq(qubit_names, operation_dict, sweep_points, cal_points,
 
 def n_qubit_qscale_seq(qubit_names, operation_dict, sweep_points, cal_points,
                        upload=True, for_ef=False,
-                       last_ge_pulse=False, prep_params=dict()):
-    '''
+                       last_ge_pulse=False, prep_params=None):
+    """
     DRAG pulse calibration sequence for n qubits.
     Args:
         qubit_names:     list of qubit names
@@ -2414,7 +2426,9 @@ def n_qubit_qscale_seq(qubit_names, operation_dict, sweep_points, cal_points,
         sequence (Sequence): sequence object
         segment_indices (list): array of range of n_segments including
             calibration_segments. To be used as sweep_points for the MC.
-    '''
+    """
+    if prep_params is None:
+        prep_params = dict()
 
     seq_name = 'n_qubit_qscale_sequence'
 
@@ -2434,17 +2448,20 @@ def n_qubit_qscale_seq(qubit_names, operation_dict, sweep_points, cal_points,
             qscale_ops = add_suffix(qscale_ops, " " + qbn)
 
             qscale_pulses = [deepcopy(operation_dict[op]) for op in qscale_ops]
-            qscale_pulses[0]['ref_pulse'] = 'segment_start'
+            qscale_pulses[0]['ref_pulse'] = 'start'
             # name and reference swept pulse
             for i in range(len(base_ops)):
                 idx = (1 if for_ef else 0) + i
                 qscale_pulses[idx]["name"] = f"Qscale_{i}_{qbn}"
             pulse_list += qscale_pulses
+        block = Block('main', pulse_list)
+        block.set_end_after_all_pulses()
+        pulse_list = block.build()
         pulse_list += generate_mux_ro_pulse_list(qubit_names, operation_dict)
 
         params_to_sweep = {
-            f'Qscale_*_{qbn}.motzoi': list(sweep_points[0].values())[j][0]
-            for j, qbn in enumerate(qubit_names)}
+            f'main-|-Qscale_*_{qbn}.motzoi': list(sweep_points[0].values())[
+                j][0] for j, qbn in enumerate(qubit_names)}
         swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
         swept_pulses_with_prep = \
             [add_preparation_pulses(p, operation_dict, qubit_names,
@@ -2480,8 +2497,8 @@ def n_qubit_qscale_seq(qubit_names, operation_dict, sweep_points, cal_points,
 
 def n_qubit_t1_seq(qubit_names, operation_dict, sweep_points, cal_points,
                    upload=True, for_ef=False, last_ge_pulse=False,
-                   prep_params=dict()):
-    '''
+                   prep_params=None):
+    """
     T1 sequence for n qubits.
     Args:
         qubit_names:     list of qubit names
@@ -2497,7 +2514,9 @@ def n_qubit_t1_seq(qubit_names, operation_dict, sweep_points, cal_points,
         sequence (Sequence): sequence object
         segment_indices (list): array of range of n_segments including
             calibration_segments. To be used as sweep_points for the MC.
-    '''
+    """
+    if prep_params is None:
+        prep_params = dict()
 
     seq_name = 'n_qubit_T1_sequence'
 
@@ -2511,24 +2530,26 @@ def n_qubit_t1_seq(qubit_names, operation_dict, sweep_points, cal_points,
                 t1_ops += ["X180 " + qbn]  # append ge pulse
 
         t1_pulses = [deepcopy(operation_dict[op]) for op in t1_ops]
-        t1_pulses[0]['ref_pulse'] = 'segment_start'
+        t1_pulses[0]['ref_pulse'] = 'start'
         if for_ef and last_ge_pulse:
             t1_pulses[-1]['name'] = f"delayed_pulse_{qbn}"
 
         pulse_list += t1_pulses
+    block = Block('main', pulse_list)
+    block.set_end_after_all_pulses()
+    pulse_list = block.build()
     pulse_list += generate_mux_ro_pulse_list(qubit_names, operation_dict)
-    if not (for_ef and last_ge_pulse):
-        pulse_list[-len(qubit_names)]["name"] = f"delayed_pulse"
 
     params_to_sweep = {}
     for j, qbn in enumerate(qubit_names):
         delay_times = list(sweep_points[0].values())[j][0]
         if for_ef and last_ge_pulse:
             delays = np.array(delay_times)
-            params_to_sweep.update({f'delayed_pulse_{qbn}.pulse_delay': delays})
+            params_to_sweep.update({f'main-|-delayed_pulse_{qbn}.pulse_delay':
+                                        delays})
         else:
             delays = np.array(delay_times) + pulse_list[-1]["pulse_delay"]
-            params_to_sweep.update({f'delayed_pulse.pulse_delay': delays})
+            params_to_sweep.update({f'main-|-end.pulse_delay': delays})
 
     swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
     swept_pulses_with_prep = \
@@ -2551,8 +2572,8 @@ def n_qubit_t1_seq(qubit_names, operation_dict, sweep_points, cal_points,
 
 def n_qubit_echo_seq(qubit_names, operation_dict, sweep_points, cal_points,
                      artificial_detuning=0, upload=True, for_ef=False,
-                     last_ge_pulse=False, prep_params=dict()):
-    '''
+                     last_ge_pulse=False, prep_params=None):
+    """
     Echo sequence for n qubits.
     Args:
         qubit_names:     list of qubit names
@@ -2570,7 +2591,9 @@ def n_qubit_echo_seq(qubit_names, operation_dict, sweep_points, cal_points,
         sequence (Sequence): sequence object
         segment_indices (list): array of range of n_segments including
             calibration_segments. To be used as sweep_points for the MC.
-    '''
+    """
+    if prep_params is None:
+        prep_params = dict()
 
     seq_name = 'n_qubit_Ramsey_sequence'
 
@@ -2587,22 +2610,26 @@ def n_qubit_echo_seq(qubit_names, operation_dict, sweep_points, cal_points,
                 echo_ops += ["X180 " + qbn]  # append ge pulse
 
         echo_ops = [deepcopy(operation_dict[op]) for op in echo_ops]
-        echo_ops[0]['ref_pulse'] = 'segment_start'
+        echo_ops[0]['ref_pulse'] = 'start'
         echo_ops[2 if for_ef else 1]["name"] = f"Echo_pi_{qbn}"
         echo_ops[2 if for_ef else 1]["ref_point"] = 'start'
         echo_ops[3 if for_ef else 2]["name"] = f"Echo_pihalf_{qbn}"
         echo_ops[3 if for_ef else 2]["ref_point"] = 'start'
 
         pulse_list += echo_ops
+    block = Block('main', pulse_list)
+    block.set_end_after_all_pulses()
+    pulse_list = block.build()
     pulse_list += generate_mux_ro_pulse_list(qubit_names, operation_dict)
 
     params_to_sweep = {}
     for j, qbn in enumerate(qubit_names):
-        times = list(sweep_points[0].values())[j][0]
-        params_to_sweep.update({f'Echo_pi_{qbn}.pulse_delay': times/2})
-        params_to_sweep.update({f'Echo_pihalf_{qbn}.pulse_delay': times/2})
+        times = np.asarray(list(sweep_points[0].values())[j][0])
+        params_to_sweep.update({f'main-|-Echo_pi_{qbn}.pulse_delay': times/2})
+        params_to_sweep.update({f'main-|-Echo_pihalf_{qbn}.pulse_delay':
+                                    times/2})
         params_to_sweep.update({
-            f'Echo_pihalf_{qbn}.phase':
+            f'main-|-Echo_pihalf_{qbn}.phase':
                 ((times-times[0])*artificial_detuning*360) % 360})
     swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
     swept_pulses_with_prep = \
