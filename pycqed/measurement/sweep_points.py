@@ -272,6 +272,16 @@ class SweepPoints(list):
         return n
 
     def update(self, sweep_points):
+        """
+        Updates the sweep dictionaries of all dimensions with the sweep
+        dictionaries passed as sweep_points. Non-exisiting
+        parameters and required additional dimensions are added if needed.
+
+        :param sweep_points: (SweepPoints) a SweepPoints object containing
+            the sweep points to be updated.
+
+        :return:
+        """
         while len(self) < len(sweep_points):
             self.add_sweep_dimension()
         for d, u in zip(self, sweep_points):
