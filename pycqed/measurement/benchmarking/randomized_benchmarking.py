@@ -333,7 +333,7 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
                         meas_obj_names=[task['qb_1'], task['qb_2']],)
             pp.add_node('rb_analysis',
                         meas_obj_names=[task['qb_1'], task['qb_2']],
-                        keys_out=None, d=2,
+                        keys_out=None, d=4,
                         keys_in=f'previous average_data',
                         keys_in_std=f'previous get_std_deviation')
         self.exp_metadata.update({'processing_pipeline': pp})
