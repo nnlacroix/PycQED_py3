@@ -894,6 +894,8 @@ def parity_single_round_seq(ancilla_qubit_name, data_qubit_names, CZ_map,
     if cal_points is not None:
         seq.extend(cal_points.create_segments(operation_dict, **prep_params))
 
+    [seq.repeat_ro(f"RO {qbn}", operation_dict) for qbn in qb_names]
+
     if upload:
        ps.Pulsar.get_instance().program_awgs(seq)
 
