@@ -52,6 +52,7 @@ class T1FrequencySweep(CalibBuilder):
 
         """
         try:
+            self.experiment_name = 'T1_frequency_sweep'
             if task_list is None:
                 if sweep_points is None or qubits is None:
                     raise ValueError('Please provide either "sweep_points" '
@@ -188,14 +189,6 @@ class T1FrequencySweep(CalibBuilder):
 
         return self.sequential_blocks(f't1 flux pulse {qubit_name}',
                                       [pb, pp, fp])
-
-    def guess_label(self, **kw):
-        """
-        Default measurement label.
-        """
-        if kw.get('experiment_name', None) is None:
-            kw['experiment_name'] = 'T1_frequency_sweep'
-        return super().guess_label(**kw)
 
     def run_analysis(self, **kw):
         """
