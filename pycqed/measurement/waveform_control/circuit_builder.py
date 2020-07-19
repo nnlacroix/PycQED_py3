@@ -583,8 +583,11 @@ class CircuitBuilder:
         from pprint import pprint
         simultaneous = Block(block_name, [])
         simultaneous_end_pulses = []
-        block_durations = [self.get_ops_duration(pulses=block.build())
-                           for block in blocks]
+        if len(blocks) > 1:
+            block_durations = [self.get_ops_duration(pulses=block.build())
+                               for block in blocks]
+        else:  # duration does not matter
+            block_durations = [0] * len(blocks)
         for i, block in enumerate(blocks):
             resolved_pulses = block.build(ref_pulse=f"start")
             if i != np.argmax(block_durations):
