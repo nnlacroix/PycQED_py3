@@ -1878,8 +1878,23 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
                  'basis_rotation': {},
                  'operation_type': 'RO'}
     dummy_ro_2 = {'pulse_type': 'GaussFilteredCosIQPulse',
-                 'I_channel': 'UHF2_ch1',
-                 'Q_channel': 'UHF2_ch2',
+                 'I_channel': 'UHF3_ch1',
+                 'Q_channel': 'UHF3_ch2',
+                 'amplitude': 0.00001,
+                 'pulse_length': 50e-09,
+                 'pulse_delay': 0,
+                 'mod_frequency': 900.0e6,
+                 'phase': 0,
+                 'phi_skew': 0,
+                 'alpha': 1,
+                 'gaussian_filter_sigma': 1e-09,
+                 'nr_sigma': 2,
+                 'phase_lock': True,
+                 'basis_rotation': {},
+                 'operation_type': 'RO'}
+    dummy_ro_3 = {'pulse_type': 'GaussFilteredCosIQPulse',
+                 'I_channel': 'UHF4_ch1',
+                 'Q_channel': 'UHF4_ch2',
                  'amplitude': 0.00001,
                  'pulse_length': 50e-09,
                  'pulse_delay': 0,
@@ -2044,6 +2059,13 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
                 all_pulses[-1]['ref_point'] = 'start'
 
                 all_pulses.append(deepcopy(dummy_ro_2))
+                all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
+                                                 f'_{m}_tomo_{t}'
+                all_pulses[-1]['ref_pulse'] = f'first_ro_{round}' + \
+                                              f'_loop_{m}_tomo_{t}'
+                all_pulses[-1]['ref_point'] = 'start'
+
+                all_pulses.append(deepcopy(dummy_ro_3))
                 all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
                                                  f'_{m}_tomo_{t}'
                 all_pulses[-1]['ref_pulse'] = f'first_ro_{round}' + \
