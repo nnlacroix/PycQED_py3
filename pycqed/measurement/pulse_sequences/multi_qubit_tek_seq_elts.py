@@ -34,11 +34,12 @@ def n_qubit_off_on(pulse_pars_list, RO_pars_list, return_seq=False,
     RO_pars_list_presel = deepcopy(RO_pars_list)
     
     for i, RO_pars in enumerate(RO_pars_list):
-        RO_pars['pulse_name'] = 'RO_{}'.format(i)
+        RO_pars['name'] = 'RO_{}'.format(i)
         RO_pars['element_name'] = 'RO'
         if i != 0:
             RO_pars['ref_point'] = 'start'
     for i, RO_pars_presel in enumerate(RO_pars_list_presel):
+        RO_pars_presel['ref_pulse'] = RO_pars_list[-1]['name']
         RO_pars_presel['ref_point'] = 'start'
         RO_pars_presel['element_name'] = 'RO_presel'
         RO_pars_presel['pulse_delay'] = -RO_spacing
