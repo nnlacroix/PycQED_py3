@@ -3562,7 +3562,7 @@ def measure_pygsti(qubits, f_LO, pygsti_gateset=None,
     return MC
 
 
-def measure_multi_parity_multi_round(ancilla_qubits, data_qubits,
+def measure_multi_parity_multi_round(dev, ancilla_qubits, data_qubits,
                                      parity_map, CZ_map,
                                      prep=None, upload=True, prep_params=None,
                                      mode='tomo',
@@ -3617,7 +3617,7 @@ def measure_multi_parity_multi_round(ancilla_qubits, data_qubits,
                                  parity_map,
                                  CZ_map,
                                  prep,
-                                 operation_dict=get_operation_dict(qubits),
+                                 operation_dict=dev.get_operation_dict(),
                                  mode=mode,
                                  parity_seperation=parity_seperation,
                                  rots_basis=rots_basis,
