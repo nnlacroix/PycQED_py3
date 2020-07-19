@@ -6016,7 +6016,9 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             self.numeric_params = list(self.params_dict)
 
         self.qb_names = qb_names
-        super().__init__(auto=auto, **kwargs)
+        super().__init__(**kwargs)
+        if auto:
+            self.run_analysis()
 
     def extract_data(self):
         super().extract_data()
@@ -6140,13 +6142,11 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
                         'ax_id': ax_id,
                         'plotfn': self.plot_line,
                         'xvals': tbase,
-                        'xunit': 's',
                         "marker": "",
                         'yvals': func(ttrace*modulation),
                         'ylabel': 'Voltage, $V$',
                         'yunit': 'V',
                         "sharex": True,
-                        "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
                         "setdesc": label + f"_{state}",
                         "setlabel": "",
                         "do_legend":True,
@@ -6171,7 +6171,7 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
                         'yvals': func(weights * modulation),
                         'ylabel': 'Voltage, $V$ (arb.u.)',
                         "sharex": True,
-                        "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
+                        "xrange": (0, self.get_param_value('tmax', 1200e-9, 0)),
                         "setdesc": label + f"_{i+1}",
                         "do_legend": True,
                         "legend_pos": "upper right",
