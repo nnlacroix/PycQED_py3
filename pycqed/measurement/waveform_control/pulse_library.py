@@ -247,23 +247,20 @@ class GaussianFilteredPiecewiseConstPulse(pulse.Pulse):
         codeword (int or 'no_codeword'): The codeword that the pulse belongs in.
             Defaults to 'no_codeword'.
     """
-
-    def __init__(self, name, element_name, channels, lengths, amplitudes,
-                 gaussian_filter_sigma=0, codeword='no_codeword', **kw):
-        self.name = name
-        self.element_name = element_name
-        self.codeword = codeword
-        self.channels = channels
-        self._t0 = None
-
-        self.lengths = lengths
-        self.amplitudes = amplitudes
-        self.gaussian_filter_sigma = gaussian_filter_sigma
-
-        assert len(lengths) == len(channels)
-        assert len(amplitudes) == len(channels)
-        for l, a in zip(lengths, amplitudes):
-            assert len(l) == len(a)
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values. These
+        parameters are set upon calling the super().__init__ method.
+        """
+        params = {
+            'pulse_type': 'GaussianFilteredPiecewiseConstPulse',
+            'channels': None,
+            'lengths': None,
+            'amplitudes': 0,
+            'gaussian_filter_sigma': 0,
+        }
+        return params
 
     @property
     def length(self):
@@ -273,12 +270,18 @@ class GaussianFilteredPiecewiseConstPulse(pulse.Pulse):
         return max_len
 
     def _check_dimensions(self):
-        assert len(self.lengths) == len(self.channels)
-        assert len(self.amplitudes) == len(self.channels)
+        if len(self.lengths) != len(self.channels):
+            raise ValueError("Lengths list doesn't match channels list")
+        if len(self.amplitudes) != len(self.channels):
+            raise ValueError("Amplitudes list doesn't match channels list")
         for chan_lens, chan_amps in zip(self.lengths, self.amplitudes):
-            assert len(chan_lens) == len(chan_amps)
+            if len(chan_lens) != len(chan_amps):
+                raise ValueError("One of the amplitudes lists doesn't match "
+                                 "the corresponding lengths list")
 
     def chan_wf(self, channel, t):
+        self._check_dimensions()
+
         t0 = self.algorithm_time()
         idx = self.channels.index(channel)
         wave = np.zeros_like(t)
@@ -323,30 +326,12 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
     The zero area is achieved by adjusting the lengths for the intermediate
     pulses.
     """
-
     def __init__(self, name, element_name, **kw):
-        GaussianFilteredPiecewiseConstPulse.__init__(
-            self, name, element_name, [], [], [], **kw)
-        pulse.Pulse.__init__(self, name, element_name, **kw)
-
-        for par in ['amplitude', 'amplitude2', 'amplitude_offset',
-                    'amplitude_offset2', 'pulse_length', 'trans_amplitude',
-                    'trans_amplitude2', 'trans_length', 'buffer_length_start',
-                    'buffer_length_end', 'channel_relative_delay']:
-            self.add_value_change_callback(par, self._update_lengths_amps)
-        for par in ['channel', 'channel2']:
-            self.add_value_change_callback(par, self._update_channels)
-
-        self._update_lengths_amps()
-        self._update_channels()
+        super().__init__(name, element_name, **kw)
+        self._update_lengths_amps_channels()
 
     @classmethod
     def pulse_params(cls):
-        """
-        Returns a dictionary of pulse parameters and initial values.
-        These parameters are set upon calling the
-        super().__init__ method.
-        """
         params = {
             'pulse_type': 'NZTransitionControlledPulse',
             'channel': None,
@@ -366,10 +351,8 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
         }
         return params
 
-    def _update_channels(self):
+    def _update_lengths_amps_channels(self):
         self.channels = [self.channel, self.channel2]
-
-    def _update_lengths_amps(self):
         self.lengths = []
         self.amplitudes = []
 
@@ -394,19 +377,16 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
                 #                      'parameters such that "abs(trans_len * '
                 #                      'trans_amplitude) > abs('
                 #                      'pulse_length * amplitude_offset)".')
+                # if np.abs(tl * ta) < np.abs(ml * ao):
+                #     raise ValueError('NZTCPulse: Pick the pulse parameters '
+                #                      'such that "trans_len * trans_amplitude < '
+                #                      'pulse_length * amplitude_offset".')
                 self.lengths.append([bs + d, ml / 2, (tl - ml * ao / ta) / 2,
                                      (tl + ml * ao / ta) / 2, ml / 2, be - d])
 
-    def add_value_change_callback(self, param, callback):
-        def getter(self):
-            return getattr(self, '_' + param)
-
-        def setter(self, value):
-            setattr(self, '_' + param, value)
-            callback()
-
-        setattr(self, '_' + param, getattr(self, param))
-        setattr(self.__class__, param, property(getter, setter))
+    def chan_wf(self, channel, t):
+        self._update_lengths_amps_channels()
+        return super().chan_wf(channel, t)
 
 
 class BufferedSquarePulse(pulse.Pulse):
