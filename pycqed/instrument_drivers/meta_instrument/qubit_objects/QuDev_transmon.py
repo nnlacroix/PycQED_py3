@@ -3518,7 +3518,7 @@ class QuDev_transmon(Qubit):
 
     def measure_T1_freq_sweep(self, flux_lengths, cz_pulse_name=None,
                               freqs=None, amplitudes=None,
-                              analyze=True,cal_states='auto', cal_points=False,
+                              analyze=True,cal_states='auto', cal_points=True,
                               upload=True, label=None,n_cal_points_per_state=2,
                               exp_metadata=None, all_fits=False,
                               prep_params=None):
