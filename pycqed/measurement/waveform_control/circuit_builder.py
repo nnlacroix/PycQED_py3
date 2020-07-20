@@ -497,17 +497,10 @@ class CircuitBuilder:
                                           pulse_modifs=pulse_modifs).build()
 
         seg = Segment('Segment 1', pulses)
-        seg.resolve_segment()
-        wfs = seg.waveforms()
-        duration = 0
-        for i, instr in enumerate(wfs):
-            for elem_name, v in wfs[instr].items():
-                for k, wf_per_ch in v.items():
-                    for n_wf, (ch, wf) in enumerate(wf_per_ch.items()):
-                        tvals = seg.tvals([
-                            f"{instr}_{ch}"], elem_name[1])[f"{instr}_{ch}"]
-                        duration = max(tvals) if max(tvals) > duration \
-                            else duration
+        seg.resolve_timing()
+        # Using that seg.resolved_pulses was sorted by seg.resolve_timing()
+        pulse = seg.resolved_pulses[-1]
+        duration = pulse.pulse_obj.algorithm_time() + pulse.pulse_obj.length
         return duration
 
     def block_from_ops(self, block_name, operations, fill_values=None,
@@ -648,8 +641,11 @@ class CircuitBuilder:
         from pprint import pprint
         simultaneous = Block(block_name, [])
         simultaneous_end_pulses = []
-        block_durations = [self.get_ops_duration(pulses=block.build())
-                           for block in blocks]
+        if len(blocks) > 1:
+            block_durations = [self.get_ops_duration(pulses=block.build())
+                               for block in blocks]
+        else:  # duration does not matter
+            block_durations = [0] * len(blocks)
         for i, block in enumerate(blocks):
             resolved_pulses = block.build(ref_pulse=f"start")
             if i != np.argmax(block_durations):
@@ -745,7 +741,7 @@ class CircuitBuilder:
             op_codes = [p['op_code'] for p in body_block.pulses if 'op_code'
                         in p]
             all_ro_qubits += [qb for qb in self.qb_names if f'RO {qb}' in
-                            op_codes and qb not in all_ro_qubits]
+                              op_codes and qb not in all_ro_qubits]
             all_ro_op_codes += [f'RO {qb}' for qb in all_ro_qubits if qb not
                                 in ro_qubits]
         prep = self.initialize(init_state=init_state, qb_names=all_ro_qubits)
@@ -760,7 +756,8 @@ class CircuitBuilder:
                                                       [prep, body_block, ro])
                 else:
                     this_body_block = body_block_func(
-                        j, i, sweep_points, **kw.get('body_block_func_kw', {}))
+                        j, i, sweep_points=sweep_points,
+                        **kw.get('body_block_func_kw', {}))
                     segblock = self.sequential_blocks(
                         'segblock', [prep, this_body_block, ro])
                 seq.add(Segment(f'seg{j}', segblock.build(

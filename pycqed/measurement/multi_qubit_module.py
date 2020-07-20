@@ -2498,8 +2498,8 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
         det_get_values_kws=det_get_values_kws)[det_name]
     MC.set_detector_function(det_func)
 
-    exp_metadata.update({'leakage_qbname': qbc.name,
-                         'cphase_qbname': qbt.name,
+    exp_metadata.update({'leakage_qbnames': [qbc.name],
+                         'cphase_qbnames': [qbt.name],
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'classified_ro': classified,
@@ -2531,11 +2531,11 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
                           'plot_all_probs': plot_all_probs,
                           'channel_map': channel_map})
         cphases = flux_pulse_tdma.proc_data_dict[
-            'analysis_params_dict']['cphase']['val']
+            'analysis_params_dict'][f'cphase_{qbt.name}']['val']
         population_losses = flux_pulse_tdma.proc_data_dict[
-            'analysis_params_dict']['population_loss']['val']
+            'analysis_params_dict'][f'population_loss_{qbt.name}']['val']
         leakage = flux_pulse_tdma.proc_data_dict[
-            'analysis_params_dict']['leakage']['val']
+            'analysis_params_dict'][f'leakage_{qbc.name}']['val']
         return cphases, population_losses, leakage, flux_pulse_tdma
     else:
         return
