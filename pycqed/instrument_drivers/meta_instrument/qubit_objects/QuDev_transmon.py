@@ -3615,7 +3615,7 @@ class QuDev_transmon(Qubit):
         if analyze:
             try:
                 tda.T1FrequencySweepAnalysis(qb_names=[self.name],
-                            options_dict=dict(TwoD=False, all_fits=all_fits))
+                            options_dict=dict(TwoD=True, all_fits=all_fits))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=False)
 
