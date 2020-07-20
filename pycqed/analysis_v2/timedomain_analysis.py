@@ -3405,8 +3405,6 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                                'flux pulse length.')
             self.lengths[qbn] = self.sp.get_sweep_params_property(
                 'values', 0, len_key[0])
-            print(self.sp.get_sweep_params_property(
-                'values', 0, len_key[0]))
 
             amp_key = [pn for pn in self.mospm[qbn] if 'amp' in pn]
             if len(len_key) == 0:
