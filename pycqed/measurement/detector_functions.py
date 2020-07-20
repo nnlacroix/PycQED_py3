@@ -140,10 +140,10 @@ class SumDetector(Detector_Function):
         self.detector.prepare(**kw)
 
     def get_values(self):
-        return np.array(self.detector.get_values())[self.idxs].sum(axis=0)
+        return [np.array(self.detector.get_values())[self.idxs].sum(axis=0)]
 
     def acquire_data_point(self):
-        return np.array(self.acquire_data_point())[self.idxs].sum(axis=0)
+        return [np.array(self.detector.acquire_data_point())[self.idxs].sum(axis=0)]
 
     def finish(self):
         self.detector.finish()
