@@ -1910,7 +1910,9 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
                                  parity_loops=1,
                                  cal_points=None,
                                  prep_params=None,
-                                 upload=True):
+                                 upload=True,
+                                 max_acq_length=1e-6,
+                                 ):
     seq_name = 'Multi_Parity_{}_round_sequence'.format(parity_loops)
     qb_names = ancilla_qubit_names + data_qubit_names
 
@@ -1993,12 +1995,12 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
             op = 'CZ ' + anc_name + ' ' + dqb
             op = CZ_map.get(op, [op])
             ops = parity_ops+op
-            if n==1 and anc_name=='qb4':
+            if n==1 and parity_map[i]['type'] == 'X':
                 ops.append('Y180 ' + anc_name)
                 ops.append('Z180 ' + parity_map[i]['data'][-1])
                 ops.append('Z180 ' + parity_map[i]['data'][-2])
                 print('ECHO')
-            elif n==0 and (anc_name=='qb3' or anc_name=='qb5'):
+            elif n==0 and parity_map[i]['type'] == 'Z':
                 ops.append('Y180 ' + anc_name)
                 ops.append('Z180 ' + parity_map[i]['data'][-1])
                 print('ECHO')
@@ -2139,8 +2141,8 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
             pulse['element_name'] = f'drive_tomo_{t}'
             pulse['ref_pulse'] = f'first_ro_{rounds}' + \
                                  f'_loop_{parity_loops-1}_tomo_{t}'
-            pulse['pulse_delay'] = 200e-9 # to account for UHF deadtime
-            pulse['ref_point'] = 'end'
+            pulse['pulse_delay'] = max_acq_length + 5e-9 # account for UHF deadtime
+            pulse['ref_point'] = 'start'
         all_pulses += end_pulses
         all_pulses += generate_mux_ro_pulse_list(qb_names, operation_dict)
         all_pulsess.append(all_pulses)
