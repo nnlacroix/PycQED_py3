@@ -107,18 +107,36 @@ class IndexDetector(Detector_Function):
         self.detector = detector
         self.index = index
         self.name = detector.name + '[{}]'.format(index)
-        self.value_names = [detector.value_names[index]]
-        self.value_units = [detector.value_units[index]]
-        self.detector_control = detector.detector_control
+        if isinstance(self.index, tuple):
+            self.value_names = [detector.value_names[index[0]]]
+            self.value_units = [detector.value_units[index[0]]]
+            self.detector_control = 'soft'
+        else:
+            self.value_names = [detector.value_names[index]]
+            self.value_units = [detector.value_units[index]]
+            self.detector_control = detector.detector_control
+
 
     def prepare(self, **kw):
         self.detector.prepare(**kw)
 
     def get_values(self):
-        return self.detector.get_values()[self.index]
+        if isinstance(self.index, tuple):
+            v = self.detector.get_values()
+            for i in self.index:
+                v = v[i]
+            return v
+        else:
+            return self.detector.get_values()[self.index]
 
     def acquire_data_point(self):
-        return self.detector.acquire_data_point()[self.index]
+        if isinstance(self.index, tuple):
+            v = self.detector.get_values()
+            for i in self.index:
+                v = v[i]
+            return v
+        else:
+            return self.detector.acquire_data_point()[self.index]
 
     def finish(self):
         self.detector.finish()
