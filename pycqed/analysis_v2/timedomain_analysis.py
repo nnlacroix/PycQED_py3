@@ -309,6 +309,17 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 self.proc_data_dict['sweep_points_2D_dict'] = \
                     {qbn: {sspn[i]: self.raw_data_dict['soft_sweep_points'][i]
                            for i in range(len(sspn))} for qbn in self.qb_names}
+        if self.get_param_value('percentage_done', 100) < 100:
+            # This indicated an interrupted measurement.
+            # Remove non-measured sweep points in that case.
+            # raw_data_dict['soft_sweep_points'] is obtained in
+            # BaseDataAnalysis.add_measured_data(), and its length should
+            # always correspond to the actual number of measured soft sweep
+            # points.
+            ssl = len(self.raw_data_dict['soft_sweep_points'])
+            for sps in self.proc_data_dict['sweep_points_2D_dict'].values():
+                for k, v in sps.items():
+                    sps[k] = v[:ssl]
 
     def create_meas_results_per_qb(self):
         measured_RO_channels = list(self.raw_data_dict['measured_data'])
@@ -842,7 +853,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             plot_name_suffix = ''
                             plot_cal_points = (
                                 not self.options_dict.get('TwoD', False))
-                            data_axis_label = ''
+                            data_axis_label = '{} state population'.format(
+                                self.get_latex_prob_label(data_key))
                         self.prepare_projected_data_plot(
                             fig_name, data, qb_name=qb_name,
                             data_label=data_label,
