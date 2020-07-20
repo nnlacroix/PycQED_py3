@@ -844,7 +844,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             plot_name_suffix = ''
                             plot_cal_points = (
                                 not self.options_dict.get('TwoD', False))
-                            data_axis_label = ''
+                            data_axis_label = '{} state population'.format(
+                                self.get_latex_prob_label(data_key))
                         self.prepare_projected_data_plot(
                             fig_name, data, qb_name=qb_name,
                             data_label=data_label,
