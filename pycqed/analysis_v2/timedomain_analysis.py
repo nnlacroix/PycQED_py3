@@ -271,7 +271,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 raise ValueError('Please provide "meas_obj_sweep_points_map."')
             self.proc_data_dict['sweep_points_dict'] = \
                 {qbn: {'sweep_points': self.sp.get_sweep_params_property(
-                    'values', 1, self.mospm[qbn])[0]}
+                    'values', 0, self.mospm[qbn])[0]}
                  for qbn in self.qb_names}
         else:
             self.proc_data_dict['sweep_points_dict'] = \
@@ -775,7 +775,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         sweep_unit = self.get_param_value('sweep_unit')
         if self.sp is not None:
             _, xunit, xlabel = self.sp.get_sweep_params_description(
-                param_names=self.mospm[qb_name], dimension=1)[0]
+                param_names=self.mospm[qb_name], dimension=0)[0]
         elif hard_sweep_params is not None:
             xlabel = list(hard_sweep_params)[0]
             xunit = list(hard_sweep_params.values())[0][
@@ -903,7 +903,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             qb_name].items():
                         if self.sp is not None:
                             yunit = self.sp.get_sweep_params_property(
-                                'unit', dimension=2, param_names=pn)
+                                'unit', dimension=1, param_names=pn)
                         self.plot_dicts[f'{plot_name}_{ro_channel}_{pn}'] = {
                             'fig_id': plot_name + '_' + pn,
                             'ax_id': ax_id,
@@ -1017,7 +1017,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     qb_name].items():
                 if self.sp is not None:
                     yunit = self.sp.get_sweep_params_property(
-                        'unit', dimension=2, param_names=pn)
+                        'unit', dimension=1, param_names=pn)
                 self.plot_dicts[f'{plot_dict_name}_{pn}'] = {
                     'plotfn': self.plot_colorxy,
                     'fig_id': fig_name + '_' + pn,
