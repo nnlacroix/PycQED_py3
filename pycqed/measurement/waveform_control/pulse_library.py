@@ -302,6 +302,8 @@ class GaussianFilteredPiecewiseConstPulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
         idx = self.channels.index(channel)
         chan_lens = self.lengths[idx]
