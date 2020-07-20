@@ -704,7 +704,8 @@ class UHFQC_scope_detector(Hard_Detector):
         self.scope.finish()
 
     def get_values(self):
-        self.scope.set('scopeModule/averager/restart', 1)
+        # self.scope.set('scopeModule/averager/restart', 1)
+        self.UHFQC.scopes_0_single(1)
         self.UHFQC.scopes_0_enable(1)
         self.scope.subscribe(f'/{self.UHFQC.devname}/scopes/0/wave')
         self.scope.execute()
