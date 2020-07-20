@@ -201,6 +201,8 @@ class SSB_DRAG_pulse_with_cancellation(SSB_DRAG_pulse):
     def hashables(self, tstart, channel):
         if channel in [self.I_channel, self.Q_channel]:
             return super().hashables(tstart, channel)
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         for (i, q), cpars in self.cancellation_params.items():
             if channel != i and channel != q:
                 continue
