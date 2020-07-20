@@ -123,7 +123,7 @@ class MeasurementControl(Instrument):
         self._persist_ylabs = None
         self._analysis_display = None
 
-        self.exp_metadata = None
+        self.exp_metadata = {}
         self._plotmon_axes_info = None
         self._persist_plotmon_axes_info = None
 
@@ -198,6 +198,8 @@ class MeasurementControl(Instrument):
             if exp_metadata is not None:
                 self.exp_metadata = deepcopy(exp_metadata)
                 self.save_exp_metadata(exp_metadata, self.data_object)
+            else:
+                self.exp_metadata = {}
             try:
                 self.check_keyboard_interrupt()
                 self.get_measurement_begintime()
