@@ -24,6 +24,8 @@ import lmfit
 import h5py
 from pycqed.measurement.hdf5_data import write_dict_to_hdf5
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
+from pycqed.measurement.sweep_points import SweepPoints
+from pycqed.measurement.calibration_points import CalibrationPoints
 import copy
 import logging
 log = logging.getLogger(__name__)
@@ -182,6 +184,8 @@ class BaseDataAnalysis(object):
             'save_figs', True)
         self.options_dict['close_figs'] = self.options_dict.get(
             'close_figs', close_figs)
+
+
         ####################################################
         # These options relate to what analysis to perform #
         ####################################################
@@ -207,13 +211,74 @@ class BaseDataAnalysis(object):
             self.save_fit_results()
             self.analyze_fit_results()  # analyzing the results of the fits
 
-        self.prepare_plots()  # specify default plots
-        if not self.extract_only:
-            self.plot(key_list='auto')  # make the plots
+        delegate_plotting = self.check_plotting_delegation()
+        if not delegate_plotting:
+            self.prepare_plots()  # specify default plots
+            if not self.extract_only:
+                self.plot(key_list='auto')  # make the plots
 
-        if self.options_dict.get('save_figs', False):
-            self.save_figures(close_figs=self.options_dict.get(
-                'close_figs', False))
+            if self.options_dict.get('save_figs', False):
+                self.save_figures(close_figs=self.options_dict.get(
+                    'close_figs', False))
+
+    def create_job(self, *args, **kwargs):
+        """
+        Create a job string representation of the analysis to be processed
+        by an AnalysisDaemon.
+        Args:
+            *args: all arguments passed to the analysis init
+            **kwargs: all keyword arguments passed to the analysis init
+
+        Returns:
+
+        """
+        sep = ', ' if len(args) > 0 else ""
+        class_name = self.__class__.__name__
+
+        # prevent the job from calling itself in a loop
+        options_dict = copy.deepcopy(kwargs.get('options_dict', {}))
+        if options_dict is None:
+            options_dict = {}
+        options_dict.pop('delegate_plotting', None)
+        kwargs['options_dict'] = options_dict
+
+        # prepare import
+        import_lines = f"from {self.__module__} import {class_name}\n"
+
+        # if timestamp wasn't specified, specify it for the job
+        if not "t_start" in kwargs or kwargs["t_start"] is None:
+            kwargs["t_start"] = self.timestamps[0]
+        if (not "t_stop" in kwargs or kwargs["t_stop"] is None) and \
+                len(self.timestamps) > 1:
+            kwargs['t_stop'] = self.timestamps[-1]
+        kwargs_list = [f'{k}={v if not isinstance(v, str) else repr(v)}'
+                          for k, v in kwargs.items()]
+
+        job_lines = f"{class_name}({', '.join(args)}{sep}{', '.join(kwargs_list)})"
+        self.job = f"{import_lines}{job_lines}"
+
+    def check_plotting_delegation(self):
+        """
+        Check whether the plotting and saving of figures should be delegated to an
+        analysis Daemon.
+        Returns:
+
+        """
+        if self.get_param_value("delegate_plotting", False):
+            if len(self.timestamps) == 1:
+                f = self.raw_data_dict['folder']
+            else:
+                f = self.raw_data_dict[0]['folder']
+            self.write_job(f, self.job)
+            return True
+        return False
+
+    @staticmethod
+    def write_job(folder, job, job_name="analysis.job"):
+        filepath = os.path.join(folder, job_name)
+
+        with open(filepath, "w") as f:
+            f.write(job)
 
     @staticmethod
     def get_hdf_datafile_param_value(group, param_name):
@@ -328,7 +393,8 @@ class BaseDataAnalysis(object):
         return raw_data_dict
 
     @staticmethod
-    def add_measured_data(raw_data_dict, compression_factor=1):
+    def add_measured_data(raw_data_dict, compression_factor=1,
+                          sweep_points=None, cal_points=None, prep_params=None):
         """
         Formats measured data based on the raw data dictionary and the
         soft and hard sweep points.
@@ -337,20 +403,25 @@ class BaseDataAnalysis(object):
                 "measured_data" key will be added.
             compression_factor: compression factor of soft sweep points
                 into hard sweep points for the measurement (for 2D sweeps only).
-                The data will be reshaped such that it appears without the compression
-                in "measured_data".
+                The data will be reshaped such that it appears without the
+                compression in "measured_data".
                 If given, it assumes that hard_sweep_points (hsp) and
-                soft_sweep_points (ssp) are indices rather than parameter values,
-                which can be decompressed without any additional information needed.
+                soft_sweep_points (ssp) are indices rather than parameter
+                values, which can be decompressed without any additional
+                information needed.
                 e.g. a sequences with 5 hsp and 4 ssp could be compressed with a
-                compression factor of 2, which means that 2 sequences corresponding
-                to 2 ssp would be  compressed into one single sequence with 10 hsp,
-                and the measured sequence would therefore have 10 hsp and 2ssp.
-                For the decompression, the data will be reshaped to
-                (10/2, 2*2) = (5, 4) to correspond to the initial soft/hard sweep point
-                sizes.
+                compression factor of 2, which means that 2 sequences
+                corresponding to 2 ssp would be  compressed into one single
+                sequence with 10 hsp, and the measured sequence would therefore
+                have 10 hsp and 2ssp. For the decompression, the data will be
+                reshaped to (10/2, 2*2) = (5, 4) to correspond to the initial
+                soft/hard sweep point sizes.
+            sweep_points (SweepPoints class instance): containing the
+                sweep points information for the measurement
+            cal_points (CalibrationPoints class instance): containing the
+                calibration points information for the measurement
 
-        Returns:
+        Returns: raw_data_dict with the key measured_data updated.
 
         """
         if 'measured_data' in raw_data_dict and \
@@ -362,19 +433,45 @@ class BaseDataAnalysis(object):
             if not isinstance(value_names, list):
                 value_names = [value_names]
 
-            sweep_points = measured_data[:-len(value_names)]
-            if sweep_points.shape[0] > 1:
-                hsp = np.unique(sweep_points[0])
-                ssp = np.unique(sweep_points[1:])
+            mc_points = measured_data[:-len(value_names)]
+            # sp, num_cal_segments and hybrid_measurement are needed for a
+            # hybrid measurement: conceptually a 2D measurement that was
+            # compressed along the 1st sweep dimension and the measurement was
+            # run in 1D mode (so only 1 column of sweep points in hdf5 file)
+            # CURRENTLY ONLY WORKS WITH SweepPoints CLASS INSTANCES
+            hybrid_measurement = False
+            if mc_points.shape[0] > 1:
+                hsp = np.unique(mc_points[0])
+                ssp = np.unique(mc_points[1:])
                 # if needed, decompress the data (assumes hsp and ssp are indices)
                 if compression_factor != 1:
                     hsp = hsp[:int(len(hsp) / compression_factor)]
                     ssp = np.arange(len(ssp) * compression_factor)
                 raw_data_dict['hard_sweep_points'] = hsp
                 raw_data_dict['soft_sweep_points'] = ssp
-
+            elif sweep_points is not None:
+                # deal with hybrid measurements
+                sp = SweepPoints(from_dict_list=sweep_points)
+                if mc_points.shape[0] == 1 and len(sp) > 1:
+                    hybrid_measurement = True
+                    if prep_params is None:
+                        prep_params = dict()
+                    # get length of hard sweep points (1st sweep dimension)
+                    len_dim_1_sp = len(sp.get_sweep_params_property('values', 0))
+                    if 'active' in prep_params.get('preparation_type', 'wait'):
+                        reset_reps = prep_params.get('reset_reps', 1)
+                        len_dim_1_sp *= reset_reps+1
+                    elif "preselection" in prep_params.get('preparation_type',
+                                                           'wait'):
+                        len_dim_1_sp *= 2
+                    hsp = np.arange(len_dim_1_sp)
+                    # get length of soft sweep points (2nd sweep dimension)
+                    dim_2_sp = sp.get_sweep_params_property('values', 1)
+                    ssp = np.arange(len(dim_2_sp))
+                    raw_data_dict['hard_sweep_points'] = hsp
+                    raw_data_dict['soft_sweep_points'] = ssp
             else:
-                raw_data_dict['hard_sweep_points'] = np.unique(sweep_points[0])
+                raw_data_dict['hard_sweep_points'] = np.unique(mc_points[0])
 
             data = measured_data[-len(value_names):]
             if data.shape[0] != len(value_names):
@@ -383,7 +480,27 @@ class BaseDataAnalysis(object):
                 if 'soft_sweep_points' in raw_data_dict:
                     hsl = len(raw_data_dict['hard_sweep_points'])
                     ssl = len(raw_data_dict['soft_sweep_points'])
-                    measured_data = np.reshape(data[i], (ssl, hsl)).T
+                    if hybrid_measurement:
+                        idx_dict_1 = next(iter(cal_points.get_indices(
+                            cal_points.qb_names, prep_params).values()))
+                        num_cal_segments = len([i for j in idx_dict_1.values()
+                                                for i in j])
+                        # take out CalibrationPoints from the end of each
+                        # segment, and reshape the remaining data based on the
+                        # hard (1st dimension) and soft (1st dimension)
+                        # sweep points
+                        data_no_cp = data[i][:len(data[i])-num_cal_segments]
+                        measured_data = np.reshape(data_no_cp, (ssl, hsl)).T
+                        if num_cal_segments > 0:
+                            # add back ssl number of copies of the cal points
+                            # at the end of each soft sweep slice
+                            cal_pts = data[i][-num_cal_segments:]
+                            cal_pts_arr = np.reshape(np.repeat(cal_pts, ssl),
+                                                     (num_cal_segments, ssl))
+                            measured_data = np.concatenate([measured_data,
+                                                            cal_pts_arr])
+                    else:
+                        measured_data = np.reshape(data[i], (ssl, hsl)).T
                 else:
                     measured_data = data[i]
                 raw_data_dict['measured_data'][ro_ch] = measured_data
@@ -425,9 +542,15 @@ class BaseDataAnalysis(object):
             if len(self.raw_data_dict['exp_metadata']) == 0:
                 self.raw_data_dict['exp_metadata'] = {}
             self.metadata = self.raw_data_dict['exp_metadata']
+            cp = CalibrationPoints.from_string(self.get_param_value(
+                'cal_points', default_value=
+                CalibrationPoints.from_string(repr(CalibrationPoints([], [])))))
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
-                self.get_param_value('compression_factor', 1))
+                self.get_param_value('compression_factor', 1),
+                self.get_param_value('sweep_points'),
+                cp, self.get_param_value('preparation_params',
+                                         default_value=dict()))
         else:
             temp_dict_list = []
             self.metadata = [rd['exp_metadata'] for
@@ -671,7 +794,7 @@ class BaseDataAnalysis(object):
                         d = self._convert_dict_rec(copy.deepcopy(fit_res))
                         write_dict_to_hdf5(d, entry_point=fr_group)
                 except Exception as e:
-                    data_file.clsoe()
+                    data_file.close()
                     raise e
 
     def save_processed_data(self, key=None, overwrite=True):
