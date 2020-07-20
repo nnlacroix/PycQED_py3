@@ -80,7 +80,10 @@ def get_param_from_metadata_group(timestamp=None, param_name=None,
         if param_name in group:
             group = group[param_name]
             param_value = OrderedDict()
-            param_value = read_dict_from_hdf5(param_value, group)
+            if isinstance(group, h5py._hl.dataset.Dataset):
+                param_value = list(np.array(group).flatten())
+            else:
+                param_value = read_dict_from_hdf5(param_value, group)
         elif param_name in group.attrs:
             param_value = get_hdf_param_value(group, param_name)
         else:
