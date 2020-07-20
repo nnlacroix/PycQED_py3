@@ -5280,7 +5280,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 'legend_pos': legend_pos}
 
             if self.do_fitting and 'projected' not in figure_name:
-                k = 'fit_{}{}_{}'.format(
+                k = 'fit_{}{}_{}_'.format(
                     'on' if row % 2 == 0 else 'off', row, qbn)
 
                 if qbn in self.ramsey_qbnames:
@@ -5342,7 +5342,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 phases = np.unique(self.proc_data_dict['sweep_points_dict'][
                                        qbn]['msmt_sweep_points'])
                 data = self.proc_data_dict['data_to_fit_reshaped'][qbn][row, :]
-                key = 'fit_{}{}_{}'.format(labels[row % 2], row, qbn)
+                key = 'fit_{}{}_{}_'.format(labels[row % 2], row, qbn)
                 if qbn in self.ramsey_qbnames:
                     # fit ramsey qb results to a cosine
                     model = lmfit.Model(fit_mods.CosFunc)
@@ -5369,7 +5369,6 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                         # fit leakage qb results to a constant
                         model = lmfit.models.ConstantModel()
                         guess_pars = model.guess(data=data, x=phases)
-
                         self.fit_dicts[key] = {
                             'fit_fn': model.func,
                             'fit_xvals': {'x': phases},
@@ -5380,7 +5379,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
         for cp_qbn in self.ramsey_qbnames:
             # get phase differences and population losses
-            keys = [k for k in list(self.fit_dicts.keys()) if cp_qbn in k]
+            keys = [k for k in list(self.fit_dicts.keys()) if f'{cp_qbn}_' in k]
             fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
             # phase_diffs
             phases = np.array([fr.best_values['phase'] for fr in fit_res_objs])
@@ -5432,7 +5431,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 leakage_increase_errs = np.zeros(len(leakage))
             else:
                 keys = [k for k in list(self.fit_dicts.keys()) if
-                        lk_qbn in k]
+                        f'{lk_qbn}_' in k]
                 fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
 
                 lines = np.array([fr.best_values['c'] for fr
