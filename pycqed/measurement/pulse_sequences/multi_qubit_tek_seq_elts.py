@@ -1916,53 +1916,18 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
     seq_name = 'Multi_Parity_{}_round_sequence'.format(parity_loops)
     qb_names = ancilla_qubit_names + data_qubit_names
 
-    # dummy pulses
-    dummy_ro_1 = {'pulse_type': 'GaussFilteredCosIQPulse',
-                 'I_channel': 'UHF1_ch1',
-                 'Q_channel': 'UHF1_ch2',
-                 'amplitude': 0.00001,
+    # Dummy pulses are used to make sure that all UHFs are triggered even if
+    # only part of the qubits are read out.
+    # First get all RO pulses, then throw away all except one per channel pair.
+    dummy_pulses = [deepcopy(operation_dict['RO ' + qbn]) for qbn in qb_names]
+    dummy_pulses = {(p['I_channel'], p['Q_channel']): p for p in dummy_pulses}
+    for p in dummy_pulses.values():
+        p.update({'amplitude': 0.00001,
                  'pulse_length': 50e-09,
                  'pulse_delay': 0,
                  'mod_frequency': 900.0e6,
-                 'phase': 0,
-                 'phi_skew': 0,
-                 'alpha': 1,
-                 'gaussian_filter_sigma': 1e-09,
-                 'nr_sigma': 2,
-                 'phase_lock': True,
-                 'basis_rotation': {},
-                 'operation_type': 'RO'}
-    dummy_ro_2 = {'pulse_type': 'GaussFilteredCosIQPulse',
-                 'I_channel': 'UHF3_ch1',
-                 'Q_channel': 'UHF3_ch2',
-                 'amplitude': 0.00001,
-                 'pulse_length': 50e-09,
-                 'pulse_delay': 0,
-                 'mod_frequency': 900.0e6,
-                 'phase': 0,
-                 'phi_skew': 0,
-                 'alpha': 1,
-                 'gaussian_filter_sigma': 1e-09,
-                 'nr_sigma': 2,
-                 'phase_lock': True,
-                 'basis_rotation': {},
-                 'operation_type': 'RO'}
-    dummy_ro_3 = {'pulse_type': 'GaussFilteredCosIQPulse',
-                 'I_channel': 'UHF4_ch1',
-                 'Q_channel': 'UHF4_ch2',
-                 'amplitude': 0.00001,
-                 'pulse_length': 50e-09,
-                 'pulse_delay': 0,
-                 'mod_frequency': 900.0e6,
-                 'phase': 0,
-                 'phi_skew': 0,
-                 'alpha': 1,
-                 'gaussian_filter_sigma': 1e-09,
-                 'nr_sigma': 2,
-                 'phase_lock': True,
-                 'basis_rotation': {},
-                 'operation_type': 'RO'}
-
+                 'op_code': ''})
+    print(dummy_pulses)
     echo_pulses = [('Y180' + 's ' + dqb)
                    for n, dqb in enumerate(data_qubit_names)]
 
@@ -2105,27 +2070,15 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
 
                         first_readout[round] = False
 
-                # more hacking for dummy
-                all_pulses.append(deepcopy(dummy_ro_1))
-                all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
-                                                 f'_{m}_tomo_{t}'
-                all_pulses[-1]['ref_pulse'] = f'first_ro_{round}' + \
-                                              f'_loop_{m}_tomo_{t}'
-                all_pulses[-1]['ref_point'] = 'start'
+                # Add dummy pulses for all UHFs
+                for p in dummy_pulses.values():
+                    all_pulses.append(deepcopy(p))
+                    all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
+                                                     f'_{m}_tomo_{t}'
+                    all_pulses[-1]['ref_pulse'] = f'first_ro_{round}' + \
+                                                  f'_loop_{m}_tomo_{t}'
+                    all_pulses[-1]['ref_point'] = 'start'
 
-                all_pulses.append(deepcopy(dummy_ro_2))
-                all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
-                                                 f'_{m}_tomo_{t}'
-                all_pulses[-1]['ref_pulse'] = f'first_ro_{round}' + \
-                                              f'_loop_{m}_tomo_{t}'
-                all_pulses[-1]['ref_point'] = 'start'
-
-                all_pulses.append(deepcopy(dummy_ro_3))
-                all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
-                                                 f'_{m}_tomo_{t}'
-                all_pulses[-1]['ref_pulse'] = f'first_ro_{round}' + \
-                                              f'_loop_{m}_tomo_{t}'
-                all_pulses[-1]['ref_point'] = 'start'
             # if  (m!=parity_loops-1)  or ( (parity_loops%2==0)
             #                               and  m==parity_loops-1):
             if m != parity_loops - 1:
