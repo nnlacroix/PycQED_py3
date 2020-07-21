@@ -1054,14 +1054,18 @@ class Segment:
                                              if f"{instr}_{ch}" in qb_chs}
                                     for qbi, qb_name in match.items():
                                         ax[qbi, 0].set_title(qb_name)
-                                        ax[qbi, 0].plot(tvals * 1e6, wf,
-                                                      label=f"{elem_name[1]}_{k}_{ch}",
-                                                      **plot_kwargs)
+                                        ax[qbi, 0].plot(
+                                            tvals * 1e6, wf,
+                                            label=f"{elem_name[1]}"
+                                                  f"_{k}_{instr}_{ch}",
+                                            **plot_kwargs)
                                         if demodulate: # filling
-                                            ax[qbi, 0].fill_between(tvals * 1e6, wf,
-                                                            label=f"{elem_name[1]}_{k}_{ch}",
-                                                            alpha=0.05,
-                                                            **plot_kwargs)
+                                            ax[qbi, 0].fill_between(
+                                                tvals * 1e6, wf,
+                                                label=f"{elem_name[1]}_"
+                                                      f"{k}_{instr}_{ch}",
+                                                alpha=0.05,
+                                                **plot_kwargs)
 
 
             # formatting
