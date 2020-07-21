@@ -1081,7 +1081,7 @@ class Segment:
                     a.legend(loc=[1.02, 0], prop={'size': 8})
                 a.set_ylabel('Voltage (V)')
             ax[-1, 0].set_xlabel('time ($\mu$s)')
-            fig.suptitle(f'{self.name}')
+            fig.suptitle(f'{self.name}', y=1.01)
             plt.tight_layout()
             if savefig:
                 plt.savefig(f'{self.name}.png')
