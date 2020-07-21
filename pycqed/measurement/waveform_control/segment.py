@@ -1025,7 +1025,9 @@ class Segment:
             if prop_cycle is not None:
                 for a in ax[:,0]:
                     a.set_prop_cycle(**prop_cycle)
-            for i, instr in enumerate(wfs):
+            sorted_keys = sorted(wfs.keys()) if instruments is None \
+                else [i for i in instruments if i in wfs]
+            for i, instr in enumerate(sorted_keys):
                 # plotting
                 for elem_name, v in wfs[instr].items():
                     for k, wf_per_ch in v.items():
