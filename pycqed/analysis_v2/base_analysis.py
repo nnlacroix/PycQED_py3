@@ -460,7 +460,7 @@ class BaseDataAnalysis(object):
                     if prep_params is None:
                         prep_params = dict()
                     # get length of hard sweep points (1st sweep dimension)
-                    len_dim_1_sp = len(sp.get_sweep_params_property('values', 1))
+                    len_dim_1_sp = len(sp.get_sweep_params_property('values', 0))
                     if 'active' in prep_params.get('preparation_type', 'wait'):
                         reset_reps = prep_params.get('reset_reps', 1)
                         len_dim_1_sp *= reset_reps+1
@@ -469,7 +469,7 @@ class BaseDataAnalysis(object):
                         len_dim_1_sp *= 2
                     hsp = np.arange(len_dim_1_sp)
                     # get length of soft sweep points (2nd sweep dimension)
-                    dim_2_sp = sp.get_sweep_params_property('values', 2)
+                    dim_2_sp = sp.get_sweep_params_property('values', 1)
                     ssp = np.arange(len(dim_2_sp))
                     raw_data_dict['hard_sweep_points'] = hsp
                     raw_data_dict['soft_sweep_points'] = ssp
