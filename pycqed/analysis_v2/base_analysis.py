@@ -1530,14 +1530,7 @@ class BaseDataAnalysis(object):
                                len(plot_xvals))
             plot_yvals_step = (abs(self._globalmax(plot_yvals) - self._globalmin(plot_yvals)) /
                                len(plot_yvals))
-
-            # # print(plot_xvals)
-            # print(plot_yvals)
-            #
-            # plot_xvals_step = (plot_xvals[-1] - plot_xvals[0]) / (
-            #             len(plot_xvals) - 1)
-            # plot_yvals_step = (plot_yvals[-1] - plot_yvals[0]) / (
-            #             len(plot_yvals) - 1)
+            # plot_yvals_step = plot_yvals[1]-plot_yvals[0]
 
         if plot_zrange is not None:
             fig_clim = plot_zrange
