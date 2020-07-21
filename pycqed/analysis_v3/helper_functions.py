@@ -230,34 +230,6 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                                   update_key=update_key,
                                   replace_value=replace_value)
 
-        if len(file_par.split('.')) == 1:
-            par_name = file_par.split('.')[0]
-            for group_name in data_file.keys():
-                if par_name in list(data_file[group_name].attrs):
-                    add_param(all_keys[-1],
-                              get_hdf_param_value(data_file[group_name],
-                                                  par_name),
-                              epd, append_value=append_value,
-                              update_value=update_value,
-                              replace_value=replace_value)
-        else:
-            group_name = '/'.join(file_par.split('.')[:-1])
-            par_name = file_par.split('.')[-1]
-            if group_name in data_file:
-                if par_name in list(data_file[group_name].attrs):
-                    add_param(all_keys[-1],
-                              get_hdf_param_value(data_file[group_name],
-                                                  par_name),
-                              epd, append_value=append_value,
-                              update_value=update_value,
-                              replace_value=replace_value)
-                elif par_name in list(data_file[group_name].keys()):
-                    add_param(all_keys[-1],
-                              read_dict_from_hdf5(
-                                  {}, data_file[group_name][par_name]),
-                              epd, append_value=append_value,
-                              update_value=update_value,
-                              replace_value=replace_value)
             if all_keys[-1] not in epd:
                 log.warning(f'Parameter {file_par} was not found.')
                 epd[all_keys[-1]] = 0
