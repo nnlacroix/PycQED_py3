@@ -1031,7 +1031,9 @@ class Segment:
                 # plotting
                 for elem_name, v in wfs[instr].items():
                     for k, wf_per_ch in v.items():
-                        for n_wf, (ch, wf) in enumerate(wf_per_ch.items()):
+                        sorted_chans = sorted(wf_per_ch.keys())
+                        for n_wf, ch in enumerate(sorted_chans):
+                            wf = wf_per_ch[ch]
                             if channels is None or \
                                     ch in channels.get(instr, []):
                                 tvals = \
