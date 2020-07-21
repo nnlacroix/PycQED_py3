@@ -1027,11 +1027,15 @@ class Segment:
             if prop_cycle is not None:
                 for a in ax[:,0]:
                     a.set_prop_cycle(**prop_cycle)
-            for i, instr in enumerate(wfs):
+            sorted_keys = sorted(wfs.keys()) if instruments is None \
+                else [i for i in instruments if i in wfs]
+            for i, instr in enumerate(sorted_keys):
                 # plotting
                 for elem_name, v in wfs[instr].items():
                     for k, wf_per_ch in v.items():
-                        for n_wf, (ch, wf) in enumerate(wf_per_ch.items()):
+                        sorted_chans = sorted(wf_per_ch.keys())
+                        for n_wf, ch in enumerate(sorted_chans):
+                            wf = wf_per_ch[ch]
                             if channels is None or \
                                     ch in channels.get(instr, []):
                                 tvals = \
@@ -1052,14 +1056,18 @@ class Segment:
                                              if f"{instr}_{ch}" in qb_chs}
                                     for qbi, qb_name in match.items():
                                         ax[qbi, 0].set_title(qb_name)
-                                        ax[qbi, 0].plot(tvals * 1e6, wf,
-                                                      label=f"{elem_name[1]}_{k}_{ch}",
-                                                      **plot_kwargs)
+                                        ax[qbi, 0].plot(
+                                            tvals * 1e6, wf,
+                                            label=f"{elem_name[1]}"
+                                                  f"_{k}_{instr}_{ch}",
+                                            **plot_kwargs)
                                         if demodulate: # filling
-                                            ax[qbi, 0].fill_between(tvals * 1e6, wf,
-                                                            label=f"{elem_name[1]}_{k}_{ch}",
-                                                            alpha=0.05,
-                                                            **plot_kwargs)
+                                            ax[qbi, 0].fill_between(
+                                                tvals * 1e6, wf,
+                                                label=f"{elem_name[1]}_"
+                                                      f"{k}_{instr}_{ch}",
+                                                alpha=0.05,
+                                                **plot_kwargs)
 
 
             # formatting
@@ -1075,7 +1083,7 @@ class Segment:
                     a.legend(loc=[1.02, 0], prop={'size': 8})
                 a.set_ylabel('Voltage (V)')
             ax[-1, 0].set_xlabel('time ($\mu$s)')
-            fig.suptitle(f'{self.name}')
+            fig.suptitle(f'{self.name}', y=1.01)
             plt.tight_layout()
             if savefig:
                 plt.savefig(f'{self.name}.png')
