@@ -3494,48 +3494,49 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
         rdd = self.raw_data_dict
 
         for qb in self.qb_names:
+            for p, param_values in enumerate([self.amps, self.freqs]):
+                if param_values is None:
+                    continue
+                suffix = '_amp' if p == 0 else '_freq'
+                # Plot T1 vs flux pulse amplitude
+                mask = pdd['mask'][qb]
+                label = f'T1_fit_{qb}{suffix}'
+                xvals = param_values[qb][mask]
+                xlabel = r'Flux pulse amplitude' if p == 0 else \
+                    r'Derived qubit frequency'
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
+                    'plotfn': self.plot_line,
+                    'linestyle': '-',
+                    'xvals': xvals,
+                    'yvals': pdd['T1'][qb][mask],
+                    'yerr': pdd['T1_err'][qb][mask],
+                    'xlabel': xlabel,
+                    'xunit': 'V' if p == 0 else 'Hz',
+                    'ylabel': r'T1',
+                    'yunit': 's',
+                    'color': 'blue',
+                }
 
-            # Plot T1 vs flux pulse amplitude
-            mask = pdd['mask'][qb]
-            label = f'T1_fit_{qb}'
-            xvals = self.amps[qb][mask] if self.freqs[qb] is None else \
-                self.freqs[qb][mask]
-            xlabel = r'Flux pulse amplitude' if self.freqs[qb] is None else \
-                r'Derived qubit frequency'
-            self.plot_dicts[label] = {
-                'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
-                'plotfn': self.plot_line,
-                'linestyle': '-',
-                'xvals': xvals,
-                'yvals': pdd['T1'][qb][mask],
-                'yerr': pdd['T1_err'][qb][mask],
-                'xlabel': xlabel,
-                'xunit': 'V' if self.freqs[qb] is None else 'Hz',
-                'ylabel': r'T1',
-                'yunit': 's',
-                'color': 'blue',
-            }
-
-            # Plot rotated integrated average in dependece of flux pulse
-            # amplitude and length
-            label = f'T1_color_plot_{qb}'
-            xvals = self.amps[qb][mask] if self.freqs[qb] is None else \
-                self.freqs[qb][mask]
-            xlabel = r'Flux pulse amplitude' if self.freqs[qb] is None else \
-                r'Derived qubit frequency'
-            self.plot_dicts[label] = {
-                'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
-                'plotfn': self.plot_colorxy,
-                'linestyle': '-',
-                'xvals': xvals,
-                'yvals': self.lengths[qb],
-                'zvals': np.transpose(pdd['data_reshaped_no_cp'][qb]),
-                'xlabel': xlabel,
-                'xunit': 'V' if self.freqs[qb] is None else 'Hz',
-                'ylabel': r'Flux pulse length',
-                'yunit': 's',
-                'zlabel': r'Excited state population'
-            }
+                # Plot rotated integrated average in dependece of flux pulse
+                # amplitude and length
+                label = f'T1_color_plot_{qb}{suffix}'
+                xvals = param_values[qb][mask]
+                xlabel = r'Flux pulse amplitude' if p == 0 else \
+                    r'Derived qubit frequency'
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
+                    'plotfn': self.plot_colorxy,
+                    'linestyle': '-',
+                    'xvals': xvals,
+                    'yvals': self.lengths[qb],
+                    'zvals': np.transpose(pdd['data_reshaped_no_cp'][qb]),
+                    'xlabel': xlabel,
+                    'xunit': 'V' if p == 0 else 'Hz',
+                    'ylabel': r'Flux pulse length',
+                    'yunit': 's',
+                    'zlabel': r'Excited state population'
+                }
 
             # Plot all fits in single figure
             if not self.options_dict.get('all_fits', False):
@@ -3545,12 +3546,10 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
             for i in range(len(self.amps[qb])):
                 color = colormap(i/(len(self.amps[qb])-1))
                 label = f'exp_fit_{qb}_amp_{i}'
-                freqs = self.freqs[qb] is not None
-                fitid = (self.amps[qb] if self.freqs[qb] is None
-                         else self.freqs[qb])[i]
+                fitid = param_values[qb][i]
                 self.plot_dicts[label] = {
                     'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
-                    'ax_id': f'T1_fits_{qb}',
+                    'fig_id': f'T1_fits_{qb}',
                     'xlabel': r'Flux pulse length',
                     'xunit': 's',
                     'ylabel': r'Excited state population',
@@ -3558,7 +3557,7 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                     'fit_res': self.fit_res[label],
                     'plot_init': self.options_dict.get('plot_init', False),
                     'color': color,
-                    'setlabel': f'freq={fitid:.4f}' if freqs
+                    'setlabel': f'freq={fitid:.4f}' if p == 1
                                         else f'amp={fitid:.4f}',
                     'do_legend': False,
                     'legend_bbox_to_anchor': (1, 1),
@@ -3567,13 +3566,13 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
 
                 label = f'freq_scatter_{qb}_{i}'
                 self.plot_dicts[label] = {
-                    'ax_id': f'T1_fits_{qb}',
+                    'fig_id': f'T1_fits_{qb}',
                     'plotfn': self.plot_line,
                     'xvals': self.lengths[qb],
                     'linestyle': '',
-                    'yvals': pdd['data_reshaped_no_cp'][qb][i,:],
+                    'yvals': pdd['data_reshaped_no_cp'][qb][i, :],
                     'color': color,
-                    'setlabel': f'freq={fitid:.4f}' if freqs
+                    'setlabel': f'freq={fitid:.4f}' if p == 1
                                         else f'amp={fitid:.4f}',
                 }
 
