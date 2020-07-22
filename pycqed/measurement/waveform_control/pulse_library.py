@@ -260,9 +260,10 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
                                      tl / 2, ml / 2, be - d])
             else:
                 if np.abs(tl * ta) < np.abs(ml * ao):
-                    raise ValueError('NZTCPulse: Pick the pulse parameters '
-                                     'such that "trans_len * trans_amplitude < '
-                                     'pulse_length * amplitude_offset".')
+                    raise ValueError(
+                        'NZTCPulse: Pick the pulse parameters such that '
+                        '`abs(trans_len * trans_amplitude) >= abs(pulse_length'
+                        ' * amplitude_offset)`.')
                 self.lengths.append([bs + d, ml / 2, (tl - ml * ao / ta) / 2,
                                      (tl + ml * ao / ta) / 2, ml / 2, be - d])
 
