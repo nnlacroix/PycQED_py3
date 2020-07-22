@@ -1845,6 +1845,128 @@ def measure_measurement_induced_dephasing(qb_dephased, qb_targeted, phases, amps
     tda.MeasurementInducedDephasingAnalysis(qb_names=[qb.name for qb in qb_dephased])
 
 
+def measure_drive_cancellation(
+        dev, driven_qubit, ramsey_qubits, sweep_points,
+        phases=None, n_pulses=1, pulse='X180',
+        n_cal_points_per_state=2, cal_states='auto', prep_params=None,
+        exp_metadata=None, label=None, upload=True, analyze=True):
+        """
+        Sweep pulse cancellation parameters and measure Ramsey on qubits the
+        cancellation is for.
+
+        Args:
+            dev: The Device object used for the measurement
+            driven_qubit: The qubit object corresponding to the desired
+                target of the pulse that is being cancelled.
+            ramsey_qubits: A list of qubit objects corresponding to the
+                undesired targets of the pulse that is being cancelled.
+            sweep_points: A SweepPoints object that describes the pulse
+                parameters to sweep. The sweep point keys should be of the form
+                `qb.param`, where `qb` is the name of the qubit the cancellation
+                is for and `param` is a parameter in the pulses
+                cancellation_params dict. For example to sweep the amplitude of
+                the cancellation pulse on qb1, you could configure the sweep
+                points as `SweepPoints('qb1.amplitude', np.linspace(0, 1, 21))`.
+            phases: An array of Ramsey phases in degrees.
+            n_pulses: Number of pulse repetitions done between the Ramsey
+                pulses. Useful for amplification of small errors. Defaults to 1.
+            pulse: Operation name (without qb name) that will be done between
+                the Ramsey pulses. Defaults to 'X180'.
+            n_cal_points_per_state: Number of calibration measurements per
+                calibration state. Defaults to 2.
+            cal_states:
+                List of qubit states to use for calibration. Defaults to 'auto'.
+            prep_params: Perparation parameters dictionary specifying the type
+                of state preparation.
+            exp_metadata: A dictionary of extra metadata to save with the
+                experiment.
+            label: Overwrite the default measuremnt label.
+            upload: Whether the experimental sequence should be uploaded.
+                Defaults to true.
+            analyze: Whether the analysis will be run. Defaults to True.
+
+        """
+        if phases is None:
+            phases = np.linspace(0, 360, 3, endpoint=False)
+
+        if isinstance(driven_qubit, str):
+            driven_qubit = dev.get_qb(driven_qubit)
+        ramsey_qubits = [dev.get_qb(qb) if isinstance(qb, str) else qb
+                         for qb in ramsey_qubits]
+        ramsey_qubit_names = [qb.name for qb in ramsey_qubits]
+
+        MC = dev.instr_mc.get_instr()
+        if label is None:
+            label = f'drive_{driven_qubit.name}_cancel_'\
+                    f'{list(sweep_points[0].keys())}'
+
+        if prep_params is None:
+            prep_params = dev.get_prep_params(ramsey_qubits)
+
+        sweep_points.add_sweep_dimension()
+        sweep_points.add_sweep_parameter('phase', phases, 'deg', 'Ramsey phase')
+
+        if exp_metadata is None:
+            exp_metadata = {}
+
+        for qb in [driven_qubit] + ramsey_qubits:
+            qb.prepare(drive='timedomain')
+
+        cal_states = CalibrationPoints.guess_cal_states(cal_states,
+                                                        for_ef=False)
+        cp = CalibrationPoints.multi_qubit(
+            [qb.name for qb in ramsey_qubits], cal_states,
+            n_per_state=n_cal_points_per_state)
+        operation_dict = dev.get_operation_dict()
+
+        drive_op_code = pulse + ' ' + driven_qubit.name
+        # We get sweep_vals for only one dimension since drive_cancellation_seq
+        # turns 2D sweep points into 1D-SegmentHardSweep.
+        # FIXME: in the future, this should rather be implemented via
+        # sequence.compress_2D_sweep
+        seq, sweep_vals = mqs.drive_cancellation_seq(
+            drive_op_code, ramsey_qubit_names, operation_dict, sweep_points,
+            n_pulses=n_pulses, prep_params=prep_params, cal_points=cp,
+            upload=False)
+
+        [seq.repeat_ro(f"RO {qbn}", operation_dict)
+         for qbn in ramsey_qubit_names]
+
+        sweep_func = awg_swf.SegmentHardSweep(
+                sequence=seq, upload=upload,
+                parameter_name='segment_index')
+        MC.set_sweep_function(sweep_func)
+        MC.set_sweep_points(sweep_vals)
+
+        det_func = get_multiplexed_readout_detector_functions(
+            ramsey_qubits,
+            nr_averages=max([qb.acq_averages() for qb in ramsey_qubits]))\
+            ['int_avg_det']
+        MC.set_detector_function(det_func)
+
+        # !!! Watch out with the call below. See docstring for this function
+        # to see the assumptions it makes !!!
+        meas_obj_sweep_points_map = sweep_points.get_meas_obj_sweep_points_map(
+            [qb.name for qb in ramsey_qubits])
+        exp_metadata.update({
+            'ramsey_qubit_names': ramsey_qubit_names,
+            'preparation_params': prep_params,
+            'cal_points': repr(cp),
+            'sweep_points': sweep_points,
+            'meas_obj_sweep_points_map': meas_obj_sweep_points_map,
+            'meas_obj_value_names_map':
+                get_meas_obj_value_names_map(ramsey_qubits, det_func),
+            'rotate': len(cp.states) != 0,
+            'data_to_fit': {qbn: 'pe' for qbn in ramsey_qubit_names}
+        })
+
+        MC.run(label, exp_metadata=exp_metadata)
+
+        if analyze:
+            return tda.DriveCrosstalkCancellationAnalysis(
+                qb_names=ramsey_qubit_names, options_dict={'TwoD': True})
+
+
 def calibrate_n_qubits(qubits, f_LO, sweep_points_dict, sweep_params=None,
                        artificial_detuning=None,
                        cal_points=True, no_cal_points=4, upload=True,
