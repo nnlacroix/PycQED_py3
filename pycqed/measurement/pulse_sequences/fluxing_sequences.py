@@ -131,7 +131,7 @@ def Ramsey_with_flux_pulse_meas_seq(thetas, qb, X90_separation, verbose=False,
 def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
                       cz_pulse_name, cal_points=None,
                       upload=False, prep_params=None,
-                      prepend_pulse_dicts=None):
+                      nr_cz_gates=1, prepend_pulse_dicts=None):
     '''
     Performs a Ramsey with interleaved Flux pulse
     Sequence
@@ -151,6 +151,8 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
     :param cal_points: (CalibrationPoints object)
     :param upload: (bool) whether to upload to AWGs
     :param prep_params: (dict) preparation parameters
+    :param nr_cz_gates: (int) number of two-qubit gates to insert between
+        Ramsey pulses
     :param prepend_pulse_dicts: (list) list of pulse dictionaries to prepend
         to each segment
     '''
@@ -171,7 +173,7 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
     for i, p in enumerate(ge_half_end):
         p['name'] = f'pi_half_end_{qb_names[i]}'
         p['element_name'] = 'pi_half_end'
-        p['ref_pulse'] = 'flux'
+        p['ref_pulse'] = 'flux_{}'.format(nr_cz_gates-1)
 
     ro_pulses = generate_mux_ro_pulse_list(qb_names, operation_dict)
 
@@ -188,8 +190,12 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
 
     pulse_list += Block("ge_half_start pulses", ge_half_start).build()
 
-    flux_pulse['name'] = 'flux'
-    pulse_list += [flux_pulse] + ge_half_end + ro_pulses
+    flux_pulses = []
+    for n in range(nr_cz_gates):
+        fp = deepcopy(flux_pulse)
+        fp['name'] = 'flux_{}'.format(n)
+        flux_pulses.append(fp)
+    pulse_list += flux_pulses + ge_half_end + ro_pulses
     hsl = len(list(hard_sweep_dict.values())[0]['values'])
 
     params_to_set = [param 
@@ -200,16 +206,18 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
         raise ValueError('Unknown flux pulse amplitude control parameter. '
                          'Cannot do measurement without flux pulse.')
 
-    params = {f'flux.{param_to_set}':
-              np.concatenate(
-                             [flux_pulse[param_to_set] * np.ones(hsl // 2),
-                              np.zeros(hsl // 2)]) for param_to_set in params_to_set
-              }
+    params = {}
+    for i, flux_pulse in enumerate(flux_pulses):
+        params.update({f'flux_{i}.{param_to_set}':
+                  np.concatenate(
+                                 [flux_pulse[param_to_set] * np.ones(hsl // 2),
+                                  np.zeros(hsl // 2)]) for param_to_set in params_to_set
+                  })
 
-    if 'aux_channels_dict' in flux_pulse:
-        params.update({'flux.aux_channels_dict': np.concatenate([
-            [flux_pulse['aux_channels_dict']] * (hsl // 2),
-             [{}] * (hsl // 2)])})
+        if 'aux_channels_dict' in flux_pulse:
+            params.update({f'flux_{i}.aux_channels_dict': np.concatenate([
+                [flux_pulse['aux_channels_dict']] * (hsl // 2),
+                 [{}] * (hsl // 2)])})
     for qb_name in qb_names:
         params.update({f'pi_half_end_{qb_name}.{k}': v['values']
                        for k, v in hard_sweep_dict.items()})
