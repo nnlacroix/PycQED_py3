@@ -52,8 +52,8 @@ class SSB_DRAG_pulse(pulse.Pulse):
     @classmethod
     def pulse_params(cls):
         """
-        Returns a dictionary of pulse parameters and initial values. These parameters are set upon calling the
-        super().__init__ method.
+        Returns a dictionary of pulse parameters and initial values. These
+        parameters are set upon calling the super().__init__ method.
         """
         params = {
             'pulse_type': 'SSB_DRAG_pulse',
@@ -76,14 +76,14 @@ class SSB_DRAG_pulse(pulse.Pulse):
 
     @property
     def length(self):
-        return self.sigma*self.nr_sigma
+        return self.sigma * self.nr_sigma
 
     def chan_wf(self, channel, tvals):
         half = self.nr_sigma * self.sigma / 2
         tc = self.algorithm_time() + half
 
-        gauss_env = np.exp(-0.5 * (tvals - tc)**2 / self.sigma**2)
-        gauss_env -= np.exp(-0.5 * half**2 / self.sigma**2)
+        gauss_env = np.exp(-0.5 * (tvals - tc) ** 2 / self.sigma ** 2)
+        gauss_env -= np.exp(-0.5 * half ** 2 / self.sigma ** 2)
         gauss_env *= self.amplitude * (tvals - tc >= -half) * (
                 tvals - tc < half)
         deriv_gauss_env = -self.motzoi * (tvals - tc) * gauss_env / self.sigma
@@ -113,6 +113,272 @@ class SSB_DRAG_pulse(pulse.Pulse):
         return hashlist
 
 
+class SSB_DRAG_pulse_with_cancellation(SSB_DRAG_pulse):
+    """
+    SSB Drag pulse with copies with scaled amp. and offset phase on extra
+    channels intended for interferometrically cancelling on-device crosstalk.
+
+    Args:
+        name (str): Name of the pulse, used for referencing to other pulses in a
+            sequence. Typically generated automatically by the `Segment` class.
+        element_name (str): Name of the element the pulse should be played in.
+        I_channel (str): In-phase output channel name.
+        Q_channel (str): Quadrature output channel name.
+        codeword (int or 'no_codeword'): The codeword that the pulse belongs in.
+            Defaults to 'no_codeword'.
+        amplitude (float): Pulse amplitude in Volts. Defaults to 0.1 V.
+        sigma (float): Pulse width standard deviation in seconds. Defaults to
+            250 ns.
+        nr_sigma (float): Pulse clipping length in units of pulse sigma. Total
+            pulse length will be `nr_sigma*sigma`. Defaults to 4.
+        motzoi (float): Amplitude of the derivative quadrature in units of
+            pulse sigma. Defautls to 0.
+        mod_frequency (float): Pulse modulation frequency in Hz. Defaults to
+            1 MHz.
+        phase (float): Pulse modulation phase in degrees. Defaults to 0.
+        phaselock (bool): The phase reference time is the start of the algorithm
+            if True and the middle of the pulse otherwise. Defaults to True.
+        alpha (float): Ratio of the I_channel and Q_channel output. Defaults to
+            1.
+        phi_skew (float): Phase offset between I_channel and Q_channel, in
+            addition to the nominal 90 degrees. Defaults to 0.
+        cancellation_params (dict): a parameter dictionary for cancellation
+            drives. The keys of the dictionary should be tuples of I- and Q-
+            channel names for the cancellation and the values should be
+            dictionaries of parameter values. Possible parameters to override
+            are 'amplitude', 'phase', 'delay', 'mod_frequency', 'phi_skew',
+            'alpha' and 'phaselock'. Cancellation amplitude is a scaling factor
+            for the main pulse amplitude and phase is a phase offset. The delay
+            is relative to the main pulse.
+    """
+
+    @classmethod
+    def pulse_params(cls):
+        params = super().pulse_params()
+        params.update({'cancellation_params': {}})
+        return params
+
+    @property
+    def channels(self):
+        channels = super().channels
+        for i, q in self.cancellation_params.keys():
+            channels += [i, q]
+        return channels
+
+    def chan_wf(self, channel, tvals):
+        if channel in [self.I_channel, self.Q_channel]:
+            return super().chan_wf(channel, tvals)
+        iq_idx = -1
+        for (i, q), p in self.cancellation_params.items():
+            if channel in [i, q]:
+                iq_idx = [i, q].index(channel)
+                cpars = p
+                break
+        if iq_idx == -1:
+            return np.zeros_like(tvals)
+
+        half = self.nr_sigma * self.sigma / 2
+        tc = self.algorithm_time() + half + cpars.get('delay', 0.0)
+
+        gauss_env = np.exp(-0.5 * (tvals - tc) ** 2 / self.sigma ** 2)
+        gauss_env -= np.exp(-0.5 * half ** 2 / self.sigma ** 2)
+        gauss_env *= self.amplitude * (tvals - tc >= -half) * (
+                tvals - tc < half)
+        gauss_env *= cpars.get('amplitude', 1.0)
+        deriv_gauss_env = -self.motzoi * (tvals - tc) * gauss_env / self.sigma
+
+        return apply_modulation(
+            gauss_env, deriv_gauss_env, tvals,
+            cpars.get('mod_frequency', self.mod_frequency),
+            phase=self.phase + cpars.get('phase', 0.0),
+            phi_skew=cpars.get('phi_skew', self.phi_skew),
+            alpha=cpars.get('alpha', self.alpha),
+            tval_phaseref=0 if cpars.get('phaselock', self.phaselock)
+                else tc)[iq_idx]
+
+    def hashables(self, tstart, channel):
+        if channel in [self.I_channel, self.Q_channel]:
+            return super().hashables(tstart, channel)
+        for (i, q), cpars in self.cancellation_params.items():
+            if channel != i and channel != q:
+                continue
+            hashlist = [type(self), self.algorithm_time() - tstart]
+            hashlist += [channel == i]
+            hashlist += [self.amplitude*cpars.get('amplitude', 1.0)]
+            hashlist += [self.sigma]
+            hashlist += [self.nr_sigma, self.motzoi]
+            hashlist += [cpars.get('mod_frequency', self.mod_frequency)]
+            phase = self.phase + cpars.get('phase', 0)
+            phase += 360 * cpars.get('phaselock', self.phaselock) * \
+                     cpars.get('mod_frequency', self.mod_frequency) * (
+                        self.algorithm_time() + self.nr_sigma * self.sigma / 2 +
+                        + cpars.get('delay', 0.0))
+            hashlist += [cpars.get('alpha', self.alpha)]
+            hashlist += [cpars.get('phi_skew', self.phi_skew), phase]
+            hashlist += [cpars.get('delay', 0)]
+            return hashlist
+        return []
+
+
+class GaussianFilteredPiecewiseConstPulse(pulse.Pulse):
+    """
+    The base class for different Gaussian-filtered piecewise constant pulses.
+
+    To avoid clipping of the Gaussian-filtered rising and falling edges, the
+    pulse should start and end with zero-amplitude buffer segments.
+
+    Args:
+        name (str): The name of the pulse, used for referencing to other pulses
+            in a sequence. Typically generated automatically by the `Segment`
+            class.
+        element_name (str): Name of the element the pulse should be played in.
+        channels (list of str): Channel names this pulse is played on
+        lengths (list of list of float): For each channel, a list of the
+            lengths of the pulse segments. Must satisfy
+            `len(lengths) == len(channels)`.
+        amplitudes (list of list of float): The amplitudes of all pulse
+            segments. The shape must match that of `lengths`.
+        gaussian_filter_sigma (float): The width of the gaussian filter sigma
+            of the pulse.
+        codeword (int or 'no_codeword'): The codeword that the pulse belongs in.
+            Defaults to 'no_codeword'.
+    """
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values. These
+        parameters are set upon calling the super().__init__ method.
+        """
+        params = {
+            'pulse_type': 'GaussianFilteredPiecewiseConstPulse',
+            'channels': None,
+            'lengths': None,
+            'amplitudes': 0,
+            'gaussian_filter_sigma': 0,
+        }
+        return params
+
+    @property
+    def length(self):
+        max_len = 0
+        for channel_lengths in self.lengths:
+            max_len = max(max_len, np.sum(channel_lengths))
+        return max_len
+
+    def _check_dimensions(self):
+        if len(self.lengths) != len(self.channels):
+            raise ValueError("Lengths list doesn't match channels list")
+        if len(self.amplitudes) != len(self.channels):
+            raise ValueError("Amplitudes list doesn't match channels list")
+        for chan_lens, chan_amps in zip(self.lengths, self.amplitudes):
+            if len(chan_lens) != len(chan_amps):
+                raise ValueError("One of the amplitudes lists doesn't match "
+                                 "the corresponding lengths list")
+
+    def chan_wf(self, channel, t):
+        self._check_dimensions()
+
+        t0 = self.algorithm_time()
+        idx = self.channels.index(channel)
+        wave = np.zeros_like(t)
+
+        if self.gaussian_filter_sigma > 0:
+            timescale = 1 / (np.sqrt(2) * self.gaussian_filter_sigma)
+        else:
+            timescale = 0
+
+        for seg_len, seg_amp in zip(self.lengths[idx], self.amplitudes[idx]):
+            t1 = t0 + seg_len
+            if self.gaussian_filter_sigma > 0:
+                wave += 0.5 * seg_amp * (sp.special.erf((t - t0) * timescale) -
+                                         sp.special.erf((t - t1) * timescale))
+            else:
+                wave += seg_amp * (t >= t0) * (t < t1)
+            t0 = t1
+        return wave
+
+    def hashables(self, tstart, channel):
+        if channel not in self.channels:
+            return []
+        hashlist = [type(self), self.algorithm_time() - tstart]
+        idx = self.channels.index(channel)
+        chan_lens = self.lengths[idx]
+        chan_amps = self.amplitudes[idx]
+        hashlist += [len(chan_lens)]
+        hashlist += list(chan_lens.copy())
+        hashlist += list(chan_amps.copy())
+        hashlist += [self.gaussian_filter_sigma]
+        return hashlist
+
+
+class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
+    """
+    A zero-area pulse shape that allows to control the accumulated phase when
+    transitioning from the first pulse half to the second pulse half, by having
+    an additional, low-amplitude segment between the two main pulse-halves.
+
+    The zero area is achieved by adjusting the lengths for the intermediate
+    pulses.
+    """
+    def __init__(self, name, element_name, **kw):
+        super().__init__(name, element_name, **kw)
+        self._update_lengths_amps_channels()
+
+    @classmethod
+    def pulse_params(cls):
+        params = {
+            'pulse_type': 'NZTransitionControlledPulse',
+            'channel': None,
+            'channel2': None,
+            'amplitude': 0,
+            'amplitude2': 0,
+            'amplitude_offset': 0,
+            'amplitude_offset2': 0,
+            'pulse_length': 0,
+            'trans_amplitude': 0,
+            'trans_amplitude2': 0,
+            'trans_length': 0,
+            'buffer_length_start': 30e-9,
+            'buffer_length_end': 30e-9,
+            'channel_relative_delay': 0,
+            'gaussian_filter_sigma': 1e-9,
+        }
+        return params
+
+    def _update_lengths_amps_channels(self):
+        self.channels = [self.channel, self.channel2]
+        self.lengths = []
+        self.amplitudes = []
+
+        for ma, ta, ao, d in [
+            (self.amplitude, self.trans_amplitude, self.amplitude_offset,
+             -self.channel_relative_delay/2),
+            (self.amplitude2, self.trans_amplitude2, self.amplitude_offset2,
+             self.channel_relative_delay/2),
+        ]:
+            ml = self.pulse_length
+            tl = self.trans_length
+            bs = self.buffer_length_start
+            be = self.buffer_length_end
+            self.amplitudes.append([0, ma + ao, ta, -ta, -ma + ao, 0])
+
+            if ta == 0:
+                self.lengths.append([bs + d, ml / 2, tl / 2,
+                                     tl / 2, ml / 2, be - d])
+            else:
+                if np.abs(tl * ta) < np.abs(ml * ao):
+                    raise ValueError(
+                        'NZTCPulse: Pick the pulse parameters such that '
+                        '`abs(trans_len * trans_amplitude) >= abs(pulse_length'
+                        ' * amplitude_offset)`.')
+                self.lengths.append([bs + d, ml / 2, (tl - ml * ao / ta) / 2,
+                                     (tl + ml * ao / ta) / 2, ml / 2, be - d])
+
+    def chan_wf(self, channel, t):
+        self._update_lengths_amps_channels()
+        return super().chan_wf(channel, t)
+
+
 class BufferedSquarePulse(pulse.Pulse):
     def __init__(self,
                  element_name,
@@ -136,7 +402,8 @@ class BufferedSquarePulse(pulse.Pulse):
     @classmethod
     def pulse_params(cls):
         """
-        Returns a dictionary of pulse parameters and initial values. These parameters are set upon calling the
+        Returns a dictionary of pulse parameters and initial values. These
+        parameters are set upon calling the
         super().__init__ method.
         """
         params = {
