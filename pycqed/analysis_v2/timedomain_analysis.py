@@ -3360,22 +3360,23 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
             }
 
             if self.do_fitting:
-                if self.options_dict.get('scatter', False):
-                    label = f'freq_scatter_{qb}'
+                if self.options_dict.get('scatter', True):
+                    label = f'freq_scatter_{qb}_scatter'
                     self.plot_dicts[label] = {
                         'title': rdd['measurementstring'] +
                         '\n' + rdd['timestamp'],
                         'ax_id': f'data_2d_{qb}',
                         'plotfn': self.plot_line,
                         'linestyle': '',
+                        'marker': 'o',
                         'xvals': pdd['filtered_amps'][qb],
                         'yvals': pdd['filtered_center'][qb],
                         'xlabel': r'Flux pulse amplitude',
                         'xunit': 'V',
                         'ylabel': r'Qubit drive frequency',
                         'yunit': 'Hz',
-                        'color': 'purple'
-                        }
+                        'color': 'purple',
+                    }
 
                 amps = pdd['sweep_points_dict'][qb]['sweep_points'][
                                      :-self.num_cal_points]
@@ -3387,10 +3388,11 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
                     'ax_id': f'data_2d_{qb}',
                     'plotfn': self.plot_line,
                     'linestyle': '-',
+                    'marker': '',
                     'xvals': amps,
                     'yvals': fit_mods.Qubit_dac_to_freq(amps,
                             **self.fit_res[f'freq_fit_{qb}'].best_values),
-                    'color': 'red'
+                    'color': 'red',
                 }
 
 class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
