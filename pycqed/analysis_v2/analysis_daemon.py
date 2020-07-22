@@ -73,7 +73,7 @@ class AnalysisDaemon:
     def check_job(self):
         """
         Checks whether new jobs have been found and processes them
-        Returns: True is a job was found and processed (done or failed),
+        Returns: True if a job was found and processed (done or failed),
             False otherwise.
 
         """
