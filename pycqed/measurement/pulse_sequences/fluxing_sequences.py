@@ -192,13 +192,11 @@ def dynamic_phase_seq(qb_names, hard_sweep_dict, operation_dict,
     pulse_list += [flux_pulse] + ge_half_end + ro_pulses
     hsl = len(list(hard_sweep_dict.values())[0]['values'])
 
-    if 'amplitude' in flux_pulse and 'amplitude2' not in flux_pulse:
-        params_to_set = ['amplitude']
-    elif 'dv_dphi' in flux_pulse:
-        params_to_set = ['dv_dphi']
-    elif 'amplitude' in flux_pulse and 'amplitude2' in flux_pulse:
-        params_to_set = ['amplitude', 'amplitude2']
-    else:
+    params_to_set = [param 
+        for param in ['amplitude', 'amplitude2', 'dv_dphi', 'trans_amplitude', 
+            'trans_amplitude2', 'amplitude_offset', 'amplitude_offset2'] 
+        if param in flux_pulse]
+    if len(params_to_set) == 0:
         raise ValueError('Unknown flux pulse amplitude control parameter. '
                          'Cannot do measurement without flux pulse.')
 
@@ -344,13 +342,14 @@ def chevron_seqs(qbc_name, qbt_name, qbr_name, hard_sweep_dict, soft_sweep_dict,
         max_flux_length = max(hard_sweep_dict['pulse_length']['values'])
         ro_pulses[0]['ref_pulse'] = 'chevron_pi_qbc'
         ro_pulses[0]['pulse_delay'] = num_cz_gates * \
-            (max_flux_length + flux_pulse.get('buffer_length_start', 0) + \
-            flux_pulse.get('buffer_length_end', 0) + \
+            (max_flux_length + flux_pulse.get('buffer_length_start', 0) +
+            flux_pulse.get('buffer_length_end', 0) +
             # applies to FLIP gate only. An additional buffer, that can be used to make sure the FPs have rising edges
             # at different times.
-            nr_flux_buffer*flux_pulse.get('flux_buffer_length', 0) + \
-            nr_flux_buffer*flux_pulse.get('flux_buffer_length2', 0))
-
+            nr_flux_buffer*flux_pulse.get('flux_buffer_length', 0) +
+            nr_flux_buffer*flux_pulse.get('flux_buffer_length2', 0) +
+            # applies to transition-controlled gate only
+            flux_pulse.get('trans_length', 0))
     ssl = len(list(soft_sweep_dict.values())[0]['values'])
     sequences = []
     for i in range(ssl):
@@ -430,9 +429,10 @@ def fluxpulse_scope_sequence(
     ro_pulse['pulse_delay'] = ro_pulse_delay
     if ro_pulse_delay == 'auto':
         ro_pulse['ref_point'] = 'middle'
-        ro_pulse['pulse_delay'] = flux_pulse['pulse_length'] - np.min(delays) + \
-                                  flux_pulse.get('buffer_length_end', 0)
-
+        ro_pulse['pulse_delay'] = \
+            flux_pulse['pulse_length'] - np.min(delays) + \
+            flux_pulse.get('buffer_length_end', 0) + \
+            flux_pulse.get('trans_length', 0)
 
     pulses = [ge_pulse, flux_pulse, ro_pulse]
     swept_pulses = sweep_pulse_params(
@@ -500,7 +500,8 @@ def fluxpulse_amplitude_sequence(amplitudes,
 
 
     ro_pulse['pulse_delay'] = flux_pulse['pulse_length'] - delay + \
-                              flux_pulse.get('buffer_length_end', 0)
+                              flux_pulse.get('buffer_length_end', 0) + \
+                              flux_pulse.get('trans_length', 0)
 
     pulses = [ge_pulse, flux_pulse, ro_pulse]
     swept_pulses = sweep_pulse_params(pulses,
@@ -838,7 +839,9 @@ def cphase_seqs(qbc_name, qbt_name, hard_sweep_dict, soft_sweep_dict,
         # applies to FLIP gate only. An additional buffer, that can be used to make sure the FPs have rising edges at
         # different times.
         nr_flux_buffer*flux_pulse.get('flux_buffer_length', 0) +
-        nr_flux_buffer*flux_pulse.get('flux_buffer_length2', 0))
+        nr_flux_buffer*flux_pulse.get('flux_buffer_length2', 0) +
+        # applies to NZTC gate only
+        flux_pulse.get('trans_length', 0))
     # # ensure the delay is commensurate with 16/2.4e9
     # comm_const = (16/2.4e9)
     # if delay % comm_const > 1e-15:
