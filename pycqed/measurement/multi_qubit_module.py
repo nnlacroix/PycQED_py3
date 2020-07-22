@@ -646,7 +646,7 @@ def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
 
         for state in states:
             # create sequence
-            name = 'timetrace_{}_{}'.format(state, qb_names)
+            name = f'timetrace_{state}{get_multi_qubit_msmt_suffix(qubits)}'
             if isinstance(state, str) and len(state) == 1:
                 # same state for all qubits, e.g. "e"
                 cp = CalibrationPoints.multi_qubit(qb_names, state,
