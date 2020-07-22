@@ -6317,6 +6317,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             gm = GM(n_components=n_qb_states,
                     covariance_type=cov_type,
                     random_state=0,
+                    weights_init=[1 / n_qb_states] * n_qb_states,
                     means_init=[mu for _, mu in
                                 self.proc_data_dict['analysis_params']
                                     ['means'][qb_name].items()])
@@ -6486,16 +6487,26 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                     # plot means and std dev
                     means = pdd['analysis_params']['means'][qbn]
                     try:
+                        clf_means = pdd['analysis_params'][
+                            'classifier_params'][qbn]['means_']
+                    except Exception as e: # not a gmm model--> no clf_means.
+                        clf_means = []
+                    try:
                         covs = self._get_covariances(self.clf_[qbn])
                     except Exception as e: # not a gmm model--> no cov.
                         covs = []
 
                     for i, mean in enumerate(means.values()):
                         main_ax.scatter(mean[0], mean[1], color='w', s=80)
+                        if len(clf_means):
+                            main_ax.scatter(clf_means[i][0], clf_means[i][1],
+                                                      color='k', s=80)
                         if len(covs) != 0:
-                            self.plot_std(mean, covs[i],
+                            self.plot_std(clf_means[i] if len(clf_means)
+                                          else mean,
+                                          covs[i],
                                           n_std=1, ax=main_ax,
-                                          edgecolor='w', linestyle='--',
+                                          edgecolor='k', linestyle='--',
                                           linewidth=1)
 
                 # plot thresholds and mapping
