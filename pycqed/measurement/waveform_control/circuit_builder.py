@@ -215,7 +215,7 @@ class CircuitBuilder:
         :param qb_names (list or 'all'): list of qubits on which init should be
             applied. Defaults to all qubits.
         :param prep_params: preparation parameters
-        :return: init segment
+        :return: init block
         """
         if block_name is None:
             block_name = f"Initialization_{qb_names}"
