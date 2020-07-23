@@ -709,22 +709,39 @@ class CircuitBuilder:
                               op_codes and qb not in all_ro_qubits]
             all_ro_op_codes += [f'RO {qb}' for qb in all_ro_qubits if qb not
                                 in ro_qubits]
-        prep = self.initialize(init_state=init_state, qb_names=all_ro_qubits)
+        sweep_dim_init = sweep_points.find_parameter('initialize')
+        sweep_dim_final = sweep_points.find_parameter('finalize')
+        if sweep_dim_init is None:
+            prep = self.initialize(init_state=init_state,
+                                   qb_names=all_ro_qubits)
+        if sweep_dim_final is None:
+            final = Block('Finalization', [])
 
         seqs = []
         for i in range(nr_sp_list[1]):
             this_seq_name = seq_name + (f'_{i}' if sweep_dims == 2 else '')
             seq = Sequence(this_seq_name)
             for j in range(nr_sp_list[0]):
+                dims = j, i
+                if sweep_dim_init is not None:
+                    prep = self.initialize(
+                        init_state=sweep_points.get_sweep_params_property(
+                            'values', 'all', 'initialize')[dims[sweep_dim_init]],
+                        qb_names=all_ro_qubits)
                 if body_block is not None:
-                    segblock = self.sequential_blocks('segblock',
-                                                      [prep, body_block, ro])
+                    this_body_block =  body_block
                 else:
                     this_body_block = body_block_func(
                         j, i, sweep_points=sweep_points,
                         **kw.get('body_block_func_kw', {}))
-                    segblock = self.sequential_blocks(
-                        'segblock', [prep, this_body_block, ro])
+                if sweep_dim_final is not None:
+                    final = self.finalize(
+                        init_state=sweep_points.get_sweep_params_property(
+                            'values', 'all', 'finalize')[dims[sweep_dim_final]],
+                        qb_names=all_ro_qubits)
+
+                segblock = self.sequential_blocks(
+                        'segblock', [prep, this_body_block, final, ro])
                 seq.add(Segment(f'seg{j}', segblock.build(
                     sweep_dicts_list=sweep_points, sweep_index_list=[j, i])))
             if cal_points is not None:
