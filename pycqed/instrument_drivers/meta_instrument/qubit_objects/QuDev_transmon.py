@@ -230,7 +230,6 @@ class QuDev_transmon(Qubit):
                            label='SSRO correction matrix.',
                            docstring=("Matrix of measured vs prepared qubit "
                                       "states."),
-                           initial_value=np.eye(3),
                            parameter_class=ManualParameter)
 
         # qubit drive pulse parameters
