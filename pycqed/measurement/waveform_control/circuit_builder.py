@@ -554,8 +554,8 @@ class CircuitBuilder:
             to be executed in parallel to the others.
             block_align (str or float): at which point the simultaneous
                 blocks should be aligned ('start', 'middle', 'end', or a float
-                between 0.0 and 1.0 to determing the position relative to
-                the duration of the longest blocks). Default: 'start'
+                between 0.0 and 1.0 that determines the alignment point of each
+                block relative to the duration the block). Default: 'start'
         """
 
         simultaneous = Block(block_name, [])
