@@ -250,6 +250,20 @@ class CircuitBuilder:
         block.set_end_after_all_pulses()
         return block
 
+    def finalize(self, init_state='0', qb_names='all', simultaneous=True,
+                 block_name=None):
+        """
+        Applies the specified final rotation to the specified qubits.
+        This is basically the same initialize, but without preparation.
+        For parameters, see initialize().
+        :return: finalization block
+        """
+        if block_name is None:
+            block_name = f"Finalialization_{qb_names}"
+        return self.initialize(init_state=init_state, qb_names=qb_names,
+                               simultaneous=simultaneous,
+                               prep_params=None, block_name=block_name)
+
     def prepare(self, qb_names='all', ref_pulse='start',
                 preparation_type='wait', post_ro_wait=1e-6,
                 ro_separation=1.5e-6, reset_reps=3, final_reset_pulse=False,
