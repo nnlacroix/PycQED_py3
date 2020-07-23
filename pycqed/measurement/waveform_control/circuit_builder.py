@@ -625,7 +625,7 @@ class CircuitBuilder:
     def sweep_n_dim(self, sweep_points, body_block=None, body_block_func=None,
                     cal_points=None, init_state='0', seq_name='Sequence',
                     ro_kwargs=None, return_segments=False, ro_qubits='all',
-                    **kw):
+                    repeat_ro=True, **kw):
         """
         Creates a sequence or a list of segments by doing an N-dim sweep
         over the given operations based on the sweep_points.
@@ -650,6 +650,8 @@ class CircuitBuilder:
         :param kw: keyword arguments
             body_block_func_kw (dict, default: {}): keyword arguments for the
                 body_block_func
+        :param repeat_ro: (bool) set repeat pattern for readout pulses
+            (default: True)
         :return:
             - if return_segments==True:
                 1D: list of segments, number of 1d sweep points or
@@ -717,9 +719,10 @@ class CircuitBuilder:
                 return segs, nr_sp_list
 
         # repeat UHF seqZ code
-        for s in seqs:
-            for ro_op in all_ro_op_codes:
-                s.repeat_ro(ro_op, self.operation_dict)
+        if repeat_ro:
+            for s in seqs:
+                for ro_op in all_ro_op_codes:
+                    s.repeat_ro(ro_op, self.operation_dict)
 
         if sweep_dims == 1:
             return seqs, [np.arange(seqs[0].n_acq_elements())]
