@@ -700,7 +700,7 @@ class CircuitBuilder:
             nr_sp_list.append(1)
 
         ro = self.mux_readout(**ro_kwargs, qb_names=ro_qubits)
-        all_ro_qubits = copy(ro_qubits)
+        _, all_ro_qubits = self.get_qubits(ro_qubits)
         all_ro_op_codes = [p['op_code'] for p in ro.pulses]
         if body_block is not None:
             op_codes = [p['op_code'] for p in body_block.pulses if 'op_code'
