@@ -21,7 +21,8 @@ class CircuitBuilder:
             instrument settings)
     """
 
-    STD_INIT = {'0': 'I', '1': 'X180', '+': 'Y90', '-': 'mY90'}
+    STD_INIT = {'0': ['I'], '1': ['X180'], '+': ['Y90'], '-': ['mY90'],
+                'g': ['I'], 'e': ['X180'], 'f': ['X180', 'X180_ef']}
 
     def __init__(self, dev=None, qubits=None, operation_dict=None,
                  filter_qb_names=None, **kw):
@@ -237,8 +238,7 @@ class CircuitBuilder:
             # Allowing for a list of pulses here makes it possible to,
             # e.g., initialize in the f-level.
             if not isinstance(init, list):
-                init = [init]
-            init = [self.STD_INIT.get(op, op) for op in init]
+                init = self.STD_INIT.get(init, [init])
             if init != ['I']:
                 init = [f"{op} {qbn}" for op in init]
                 # We just want the pulses, but we can use block_from_ops as
