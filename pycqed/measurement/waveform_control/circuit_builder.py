@@ -234,14 +234,21 @@ class CircuitBuilder:
         pulses.extend(self.prepare(qb_names, ref_pulse="start",
                                    **prep_params).build())
         for i, (qbn, init) in enumerate(zip(qb_names, init_state)):
-            # add qb name and "s" for reference to start of previous pulse
-            op = self.STD_INIT.get(init, init)
-            if op != 'I':
-                op += f"{'s' if len(pulses) != 0 and simultaneous else ''} " + \
-                      qbn
-                pulse = self.get_pulse(op)
-                pulses.append(pulse)
-        return Block(block_name, pulses)
+            # Allowing for a list of pulses here makes it possible to,
+            # e.g., initialize in the f-level.
+            if not isinstance(init, list):
+                init = [init]
+            init = [self.STD_INIT.get(op, op) for op in init]
+            if init != ['I']:
+                init = [f"{op} {qbn}" for op in init]
+                # We just want the pulses, but we can use block_from_ops as
+                # a helper to get multiple pulses
+                tmp_block = self.block_from_ops('tmp_block', init)
+                tmp_block.pulses[0]['ref_pulse'] = 'start'
+                pulses += tmp_block.pulses
+        block = Block(block_name, pulses)
+        block.set_end_after_all_pulses()
+        return block
 
     def prepare(self, qb_names='all', ref_pulse='start',
                 preparation_type='wait', post_ro_wait=1e-6,
