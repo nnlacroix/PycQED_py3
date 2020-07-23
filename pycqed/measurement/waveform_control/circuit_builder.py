@@ -562,10 +562,6 @@ class CircuitBuilder:
         execution of the given :blocks:. Ensures that any pulse or block
         following the created block will occur after the longest given block.
 
-        Note that within each of the given blocks, it is assumed that the
-        pulse listed last in the block is the one that occurs last.
-        TODO: We might want to relax this assumption in a future version!
-
         Args:
             block_name (string): name of the block that is created
             blocks (iterable): iterable where each element is a block that has
@@ -582,6 +578,7 @@ class CircuitBuilder:
             # saves computation time in Segment.resolve_timing
             block_align = None
         for block in blocks:
+            block.set_end_after_all_pulses()
             simultaneous.extend(block.build(
                 ref_pulse=f"start", block_start=dict(block_align=block_align)))
             simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
