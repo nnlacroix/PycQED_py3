@@ -556,7 +556,7 @@ class CircuitBuilder:
                                   ro_kwargs=ro_kwargs))
         return seq
 
-    def simultaneous_blocks(self, block_name, blocks):
+    def simultaneous_blocks(self, block_name, blocks, block_align='start'):
         """
         Creates a block with name :block_name: that consists of the parallel
         execution of the given :blocks:. Ensures that any pulse or block
@@ -570,13 +570,23 @@ class CircuitBuilder:
             block_name (string): name of the block that is created
             blocks (iterable): iterable where each element is a block that has
             to be executed in parallel to the others.
+            block_align (str or float): at which point the simultaneous
+                blocks should be aligned ('start', 'middle', 'end', or a float
+                between 0.0 and 1.0 to determing the position relative to
+                the duration of the longest blocks). Default: 'start'
         """
 
         simultaneous = Block(block_name, [])
         simultaneous_end_pulses = []
+        if block_align == 'start':
+            # saves computation time in Segment.resolve_timing
+            block_align = None
         for block in blocks:
-            simultaneous.extend(block.build(ref_pulse=f"start"))
+            simultaneous.extend(block.build(
+                ref_pulse=f"start", block_start=dict(block_align=block_align)))
             simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
+        # the name of the simultaneous_end_pulse is used in
+        # Segment.resolve_timing and should not be changed
         simultaneous.extend([{"name": f"simultaneous_end_pulse",
                               "pulse_type": "VirtualPulse",
                               "pulse_delay": 0,
@@ -767,3 +777,20 @@ class CircuitBuilder:
         else:
             return seqs, [np.arange(seqs[0].n_acq_elements()),
                           np.arange(nr_sp_list[1])]
+
+#     def block_with_tomo(self, indices, sweep_points, block):
+#         basis_rot = sweep_points.get_sweep_params_property('values', 'all',
+#                                                            'basis_rots')
+#
+#         basis_rots[indices[sweep_dim]]
+#
+#         return self.sequential_blocks([tomoprep, block, tomo_end_pulse])
+#
+#
+# body_block_func=block_with_tomo,
+# body_block_func_kw={'block': block, 'basis_rots': ['I', 'X90'], 'sweep_dim': 0}
+#
+#
+# def create_tomo_sweep_points(qb_names, basis_rots):
+#
+
