@@ -176,7 +176,8 @@ class MultiTaskingExperiment(QuantumExperiment):
                     self.add_to_meas_obj_sweep_points_map(mo, k)
         return task
 
-    def parallel_sweep(self, preprocessed_task_list=(), block_func=None, **kw):
+    def parallel_sweep(self, preprocessed_task_list=(), block_func=None,
+                       block_align='start', **kw):
         """
         Calls a block creation function for each task in a task list,
         puts these blocks in parallel and sweeps over the given sweep points.
@@ -203,7 +204,8 @@ class MultiTaskingExperiment(QuantumExperiment):
                     prefix, [k for l in params_to_prefix for k in l])
             parallel_blocks.append(new_block)
 
-        self.all_main_blocks = self.simultaneous_blocks('all', parallel_blocks)
+        self.all_main_blocks = self.simultaneous_blocks('all', parallel_blocks,
+                                                        block_align=block_align)
         if len(self.sweep_points[1]) == 0:
             # with this dummy soft sweep, exactly one sequence will be created
             # and the data format will be the same as for a true soft sweep
