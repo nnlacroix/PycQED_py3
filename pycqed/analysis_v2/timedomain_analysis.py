@@ -309,15 +309,17 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 self.proc_data_dict['sweep_points_2D_dict'] = \
                     {qbn: {sspn[i]: self.raw_data_dict['soft_sweep_points'][i]
                            for i in range(len(sspn))} for qbn in self.qb_names}
-        # remove non-measured sweep points in that case in case the
-        # measurement was cancelled
-        # raw_data_dict['soft_sweep_points'] is obtained in
-        # BaseDataAnalysis.add_measured_data(), and its length should
-        # always correspond to the actual number of measured soft sweep points.
-        ssl = len(self.raw_data_dict['soft_sweep_points'])
-        for sps in self.proc_data_dict['sweep_points_2D_dict'].values():
-            for k, v in sps.items():
-                sps[k] = v[:ssl]
+        if self.get_param_value('percentage_done', 100) < 100:
+            # This indicated an interrupted measurement.
+            # Remove non-measured sweep points in that case.
+            # raw_data_dict['soft_sweep_points'] is obtained in
+            # BaseDataAnalysis.add_measured_data(), and its length should
+            # always correspond to the actual number of measured soft sweep
+            # points.
+            ssl = len(self.raw_data_dict['soft_sweep_points'])
+            for sps in self.proc_data_dict['sweep_points_2D_dict'].values():
+                for k, v in sps.items():
+                    sps[k] = v[:ssl]
 
     def create_meas_results_per_qb(self):
         measured_RO_channels = list(self.raw_data_dict['measured_data'])
@@ -851,7 +853,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             plot_name_suffix = ''
                             plot_cal_points = (
                                 not self.options_dict.get('TwoD', False))
-                            data_axis_label = ''
+                            data_axis_label = '{} state population'.format(
+                                self.get_latex_prob_label(data_key))
                         self.prepare_projected_data_plot(
                             fig_name, data, qb_name=qb_name,
                             data_label=data_label,
@@ -6015,7 +6018,9 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             self.numeric_params = list(self.params_dict)
 
         self.qb_names = qb_names
-        super().__init__(auto=auto, **kwargs)
+        super().__init__(**kwargs)
+        if auto:
+            self.run_analysis()
 
     def extract_data(self):
         super().extract_data()
@@ -6139,13 +6144,11 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
                         'ax_id': ax_id,
                         'plotfn': self.plot_line,
                         'xvals': tbase,
-                        'xunit': 's',
                         "marker": "",
                         'yvals': func(ttrace*modulation),
                         'ylabel': 'Voltage, $V$',
                         'yunit': 'V',
                         "sharex": True,
-                        "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
                         "setdesc": label + f"_{state}",
                         "setlabel": "",
                         "do_legend":True,
@@ -6170,7 +6173,7 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
                         'yvals': func(weights * modulation),
                         'ylabel': 'Voltage, $V$ (arb.u.)',
                         "sharex": True,
-                        "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
+                        "xrange": (0, self.get_param_value('tmax', 1200e-9, 0)),
                         "setdesc": label + f"_{i+1}",
                         "do_legend": True,
                         "legend_pos": "upper right",

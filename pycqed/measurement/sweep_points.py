@@ -272,6 +272,16 @@ class SweepPoints(list):
         return n
 
     def update(self, sweep_points):
+        """
+        Updates the sweep dictionaries of all dimensions with the sweep
+        dictionaries passed as sweep_points. Non-exisiting
+        parameters and required additional dimensions are added if needed.
+
+        :param sweep_points: (SweepPoints) a SweepPoints object containing
+            the sweep points to be updated.
+
+        :return:
+        """
         while len(self) < len(sweep_points):
             self.add_sweep_dimension()
         for d, u in zip(self, sweep_points):
@@ -279,12 +289,14 @@ class SweepPoints(list):
 
     def find_parameter(self, param_name):
         """
-        Returns the first dimension in which a given sweep parameter is found
+        Returns the index of the first dimension in which a given sweep
+        parameter is found.
 
         :param param_name: (str) name of the sweep parameter
 
-        :return: (int or None) the first dimension in which the parameter if
-            found or None if no parameter with the given name exists.
+        :return: (int or None) the index of the first dimension in which the
+            parameter if found or None if no parameter with the given name
+            exists.
         """
         for dim in range(len(self)):
             if param_name in self[dim]:
