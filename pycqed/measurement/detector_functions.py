@@ -1355,7 +1355,8 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
 
             if ro_corrected_stored_mtx:
                 # correct data with matrices from state_prob_mtx_list
-                if state_prob_mtx_list is not None:
+                if state_prob_mtx_list is not None and \
+                        state_prob_mtx_list[i] is not None
                     clf_data = (np.linalg.inv(
                         state_prob_mtx_list[i]).T @ clf_data.T).T
                     log.info('Data corrected based on previously-measured '
