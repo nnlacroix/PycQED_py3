@@ -160,10 +160,10 @@ class QuDev_transmon(Qubit):
 
         # acquisition parameters
         self.add_parameter('acq_I_channel', initial_value=0,
-                           vals=vals.Enum(0, 1, 2, 3, 4, 5, 6, 7, 8),
+                           vals=vals.Enum(0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
                            parameter_class=ManualParameter)
         self.add_parameter('acq_Q_channel', initial_value=1,
-                           vals=vals.Enum(0, 1, 2, 3, 4, 5, 6, 7, 8, None),
+                           vals=vals.Enum(0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
                            parameter_class=ManualParameter)
         self.add_parameter('acq_averages', initial_value=1024,
                            vals=vals.Ints(0, 1000000),
@@ -252,7 +252,10 @@ class QuDev_transmon(Qubit):
         self.add_operation('X180')
         self.add_pulse_parameter('X180', 'ge_pulse_type', 'pulse_type',
                                  initial_value='SSB_DRAG_pulse',
-                                 vals=vals.Enum('SSB_DRAG_pulse'))
+                                 vals=vals.Enum(
+                                     'SSB_DRAG_pulse',
+                                     'SSB_DRAG_pulse_with_cancellation'
+                                 ))
         self.add_pulse_parameter('X180', 'ge_I_channel', 'I_channel',
                                  initial_value=None, vals=vals.Strings())
         self.add_pulse_parameter('X180', 'ge_Q_channel', 'Q_channel',
@@ -277,6 +280,9 @@ class QuDev_transmon(Qubit):
                                  initial_value=1, vals=vals.Numbers())
         self.add_pulse_parameter('X180', 'ge_X_phase', 'phase',
                                  initial_value=0, vals=vals.Numbers())
+        self.add_pulse_parameter('X180', 'ge_cancellation_params',
+                                 'cancellation_params', initial_value={},
+                                 vals=vals.Dict())
 
         # qubit 2nd excitation drive pulse parameters
         self.add_parameter('ef_freq', label='Qubit ef drive frequency',
@@ -285,7 +291,10 @@ class QuDev_transmon(Qubit):
         self.add_operation('X180_ef')
         self.add_pulse_parameter('X180_ef', 'ef_pulse_type', 'pulse_type',
                                  initial_value='SSB_DRAG_pulse',
-                                 vals=vals.Enum('SSB_DRAG_pulse'))
+                                 vals=vals.Enum(
+                                     'SSB_DRAG_pulse',
+                                     'SSB_DRAG_pulse_with_cancellation'
+                                 ))
         self.add_pulse_parameter('X180_ef', 'ef_amp180', 'amplitude',
                                  initial_value=0.001, vals=vals.Numbers())
         self.add_pulse_parameter('X180_ef', 'ef_amp90_scale', 'amp90_scale',
@@ -300,6 +309,10 @@ class QuDev_transmon(Qubit):
                                  initial_value=0, vals=vals.Numbers())
         self.add_pulse_parameter('X180_ef', 'ef_X_phase', 'phase',
                                  initial_value=0, vals=vals.Numbers())
+        self.add_pulse_parameter('X180_ef', 'ef_cancellation_params',
+                                 'cancellation_params', initial_value={},
+                                 vals=vals.Dict())
+
 
         # add qubit spectroscopy parameters
         self.add_parameter('spec_power', unit='dBm', initial_value=-20,
