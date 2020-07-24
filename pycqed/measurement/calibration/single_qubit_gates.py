@@ -3,6 +3,7 @@ from copy import copy
 from copy import deepcopy
 import traceback
 from pycqed.measurement.calibration.two_qubit_gates import CalibBuilder
+from pycqed.measurement.calibration.two_qubit_gates import MultiTaskingExperiment
 import pycqed.measurement.sweep_functions as swf
 from pycqed.measurement.waveform_control.block import Block, ParametricValue
 from pycqed.measurement.sweep_points import SweepPoints
@@ -459,3 +460,89 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
             for qb in self.meas_obj_names:
                 qb.fit_ge_freq_from_flux_pulse_amp(
                     self.analysis.fit_res[f'freq_fit_{qb.name}'].best_values)
+
+
+class Rabi(MultiTaskingExperiment):
+
+    kw_for_sweep_points = {
+        'amps': dict(param_name='amplitude', unit='V',
+                     label='Pulse Amplitude', dimension=0)
+    }
+
+    def __init__(self, task_list=None, sweep_points=None, qubits=None,
+                 amps=None, n=1, TwoD_msmt=False, **kw):
+        try:
+            if task_list is None:
+                if qubits is None:
+                    raise ValueError('Please provide either "qubits" or '
+                                     '"task_list"')
+                task_list = [{'qb': qb.name} for qb in qubits]
+            else:
+                for task in task_list:
+                    if not isinstance(task['qb'], str):
+                        task['qb'] = task['qb'].name
+
+            super().__init__(task_list, qubits=qubits,
+                             sweep_points=sweep_points,
+                             amps=amps, **kw)
+
+            self.TwoD_msmt = TwoD_msmt
+
+            self.preprocessed_task_list = self.preprocess_task_list(**kw)
+            self.resolve_nr_rabi_pulses(self.preprocessed_task_list, n)
+
+            self.experiment_name = 'Rabi_ef' if kw.get('for_ef', False) \
+                else 'Rabi'
+            if self.do_n_rabi:
+                self.experiment_name = 'n' + self.experiment_name
+
+            self.sequences, self.mc_points = self.parallel_sweep(
+                self.preprocessed_task_list, self.rabi_block,
+                block_align='end', **kw)
+            if not TwoD_msmt:
+                self.mc_points = [self.mc_points[0]]
+
+            # self.exp_metadata.update({
+            #     'nr_rabi_pulses': self.nr_rabi_pulses,
+            # })
+
+            self.autorun(**kw)
+
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def resolve_nr_rabi_pulses(self, preprocessed_task_list,
+                               global_nr_rabi_pulses):
+        self.do_n_rabi = False
+        for task in preprocessed_task_list:
+            nr_rabi_pulses = task.pop('n', global_nr_rabi_pulses)
+            self.do_n_rabi = nr_rabi_pulses > 1
+            task['nr_rabi_pulses'] = nr_rabi_pulses
+
+    def rabi_block(self, qb, sweep_points, nr_rabi_pulses, **kw):
+
+        rabi_block = self.block_from_ops(f'rabi_{qb}',
+                                         nr_rabi_pulses*[f'X180 {qb}'])
+        # create parameteric values
+        for sweep_dict in sweep_points:
+            for param_name in sweep_dict:
+                for pulse_dict in rabi_block.pulses:
+                    if param_name in pulse_dict:
+                        pulse_dict[param_name] = ParametricValue(param_name)
+
+        return rabi_block
+
+
+
+
+
+
+
+
+
+
+
+
+
+
