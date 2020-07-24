@@ -1,3 +1,4 @@
+import itertools
 import numpy as np
 from copy import copy
 from copy import deepcopy
@@ -791,3 +792,58 @@ class CircuitBuilder:
 # def create_tomo_sweep_points(qb_names, basis_rots):
 #
 
+    def tomography_pulses(self, tomo_qubits=None,
+                          basis_rots=('I', 'X90', 'Y90'), all_rots=True):
+
+        """
+        Generates a complete list of tomography pulse lists for tomo_qubits.
+        :param tomo_qubits: None, list of qubit names, or of qubits indices in
+            self.get_qubits(). I None, then tomo_qubit = self.get_qubits()[1].
+            If list of indices, they will be sorted.
+            This parameter is only relevant if basis_rots is not a list of
+            lists/tuples.
+        :param basis_rots: list of strings or list of lists/tuples of strings,
+            where the strings are pycqed pulse names.
+        :param all_rots: bool specifying whether to take all possible
+            combinations of basis_rots for tomo_qubits, or not.
+            This parameter is only relevant if basis_rots is not a list of
+            lists/tuples.
+        :return:
+            If list of lists/tuples, this function will do nothing and will
+                just return basis_rots unmodified. Hence, the lists/tuples of
+                strings must contain pulse names for each qubit in the
+                experiment (i.e. self.get_qubits()).
+
+            If list of strings, this function will return all possible
+                combinations of basis_rots for tomo_qubits if all_rots, else it
+                will return list with len(basis_rots) lists with
+                len(tomo_qubits) repetitions of each pulse in basis_rots
+                (i.e. all qubits get the same pulses).
+        """
+
+        if not isinstance(basis_rots[0], str):
+            return basis_rots
+
+        all_qubit_names = self.get_qubits()[1]
+        if tomo_qubits is None:
+            tomo_qubits = all_qubit_names
+        if isinstance(tomo_qubits[0], str):
+            tomo_qubits = [all_qubit_names.index(i) for i in tomo_qubits]
+        # sort qubit indices to ensure that basis_rots are always applied on
+        # qubits in ascending order as defined by self.get_qubits().
+        tomo_qubits.sort()
+
+        if all_rots:
+            basis_rots = list(itertools.product(basis_rots,
+                                                repeat=len(tomo_qubits)))
+        else:
+            basis_rots = [len(tomo_qubits) * [br] for br in basis_rots]
+
+        basis_rots_all_qbs = len(basis_rots) * ['']
+        for i, br in enumerate(basis_rots):
+            temp = len(all_qubit_names)*['I']
+            for ti in range(len(tomo_qubits)):
+                temp[tomo_qubits[ti]] = br[ti]
+            basis_rots_all_qbs[i] = temp
+
+        return basis_rots_all_qbs
