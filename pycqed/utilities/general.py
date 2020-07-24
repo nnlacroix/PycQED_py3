@@ -18,6 +18,7 @@ import subprocess
 from functools import reduce  # forward compatibility for Python 3
 import operator
 import string
+from collections import OrderedDict  # for eval in load_settings
 log = logging.getLogger(__name__)
 
 digs = string.digits + string.ascii_letters
@@ -696,3 +697,38 @@ def temporary_value(*param_value_pairs):
             log.debug('Exited TemporaryValueContext')
     
     return TemporaryValueContext(*param_value_pairs)
+
+
+def configure_qubit_mux_drive(qubits, lo_freqs_dict):
+    mwgs_set = set()
+    for qb in qubits:
+        qb_ge_mwg = qb.instr_ge_lo()
+        if qb_ge_mwg not in lo_freqs_dict:
+            raise ValueError(
+                f'{qb_ge_mwg} for {qb.name} not found in lo_freqs_dict.')
+        else:
+            qb.ge_mod_freq(qb.ge_freq()-lo_freqs_dict[qb_ge_mwg])
+            if qb_ge_mwg not in mwgs_set:
+                qb.instr_ge_lo.get_instr().frequency(lo_freqs_dict[qb_ge_mwg])
+                mwgs_set.add(qb_ge_mwg)
+
+
+def configure_qubit_mux_readout(qubits, lo_freqs_dict):
+    mwgs_set = set()
+    idx = {}
+    for lo in lo_freqs_dict:
+        idx[lo] = 0
+
+    for i, qb in enumerate(qubits):
+        qb_ro_mwg = qb.instr_ro_lo()
+        if qb_ro_mwg not in lo_freqs_dict:
+            raise ValueError(
+                f'{qb_ro_mwg} for {qb.name} not found in lo_freqs_dict.')
+        else:
+            qb.ro_mod_freq(qb.ro_freq() - lo_freqs_dict[qb_ro_mwg])
+            qb.acq_I_channel(2 * idx[qb_ro_mwg])
+            qb.acq_Q_channel(2 * idx[qb_ro_mwg] + 1)
+            idx[qb_ro_mwg] += 1
+            if qb_ro_mwg not in mwgs_set:
+                qb.instr_ro_lo.get_instr().frequency(lo_freqs_dict[qb_ro_mwg])
+                mwgs_set.add(qb_ro_mwg)

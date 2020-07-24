@@ -2405,7 +2405,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             self.proc_data_dict['rho'] = rho_ls
             if self.options_dict.get('mle', False):
                 rho_mle = tomo.mle_tomography(
-                    all_mus, all_Fs, None,
+                    all_mus, all_Fs,
                     all_Omegas if self.get_param_value('use_covariance_matrix', False) else None,
                     rho_guess=rho_ls)
                 self.proc_data_dict['rho_mle'] = rho_mle
@@ -3539,22 +3539,23 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
             }
 
             if self.do_fitting:
-                if self.options_dict.get('scatter', False):
-                    label = f'freq_scatter_{qb}'
+                if self.options_dict.get('scatter', True):
+                    label = f'freq_scatter_{qb}_scatter'
                     self.plot_dicts[label] = {
                         'title': rdd['measurementstring'] +
                         '\n' + rdd['timestamp'],
                         'ax_id': f'data_2d_{qb}',
                         'plotfn': self.plot_line,
                         'linestyle': '',
+                        'marker': 'o',
                         'xvals': pdd['filtered_amps'][qb],
                         'yvals': pdd['filtered_center'][qb],
                         'xlabel': r'Flux pulse amplitude',
                         'xunit': 'V',
                         'ylabel': r'Qubit drive frequency',
                         'yunit': 'Hz',
-                        'color': 'purple'
-                        }
+                        'color': 'purple',
+                    }
 
                 amps = pdd['sweep_points_dict'][qb]['sweep_points'][
                                      :-self.num_cal_points]
@@ -3566,10 +3567,11 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
                     'ax_id': f'data_2d_{qb}',
                     'plotfn': self.plot_line,
                     'linestyle': '-',
+                    'marker': '',
                     'xvals': amps,
                     'yvals': fit_mods.Qubit_dac_to_freq(amps,
                             **self.fit_res[f'freq_fit_{qb}'].best_values),
-                    'color': 'red'
+                    'color': 'red',
                 }
 
 class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
@@ -6108,7 +6110,9 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             self.numeric_params = list(self.params_dict)
 
         self.qb_names = qb_names
-        super().__init__(auto=auto, **kwargs)
+        super().__init__(**kwargs)
+        if auto:
+            self.run_analysis()
 
     def extract_data(self):
         super().extract_data()
@@ -6232,13 +6236,11 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
                         'ax_id': ax_id,
                         'plotfn': self.plot_line,
                         'xvals': tbase,
-                        'xunit': 's',
                         "marker": "",
                         'yvals': func(ttrace*modulation),
                         'ylabel': 'Voltage, $V$',
                         'yunit': 'V',
                         "sharex": True,
-                        "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
                         "setdesc": label + f"_{state}",
                         "setlabel": "",
                         "do_legend":True,
@@ -6263,7 +6265,7 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
                         'yvals': func(weights * modulation),
                         'ylabel': 'Voltage, $V$ (arb.u.)',
                         "sharex": True,
-                        "xrange": (0, self.get_param_value('tmax', 400e-9, 0)),
+                        "xrange": (0, self.get_param_value('tmax', 1200e-9, 0)),
                         "setdesc": label + f"_{i+1}",
                         "do_legend": True,
                         "legend_pos": "upper right",
@@ -6496,6 +6498,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
             gm = GM(n_components=n_qb_states,
                     covariance_type=cov_type,
                     random_state=0,
+                    weights_init=[1 / n_qb_states] * n_qb_states,
                     means_init=[mu for _, mu in
                                 self.proc_data_dict['analysis_params']
                                     ['means'][qb_name].items()])
@@ -6665,16 +6668,26 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                     # plot means and std dev
                     means = pdd['analysis_params']['means'][qbn]
                     try:
+                        clf_means = pdd['analysis_params'][
+                            'classifier_params'][qbn]['means_']
+                    except Exception as e: # not a gmm model--> no clf_means.
+                        clf_means = []
+                    try:
                         covs = self._get_covariances(self.clf_[qbn])
                     except Exception as e: # not a gmm model--> no cov.
                         covs = []
 
                     for i, mean in enumerate(means.values()):
                         main_ax.scatter(mean[0], mean[1], color='w', s=80)
+                        if len(clf_means):
+                            main_ax.scatter(clf_means[i][0], clf_means[i][1],
+                                                      color='k', s=80)
                         if len(covs) != 0:
-                            self.plot_std(mean, covs[i],
+                            self.plot_std(clf_means[i] if len(clf_means)
+                                          else mean,
+                                          covs[i],
                                           n_std=1, ax=main_ax,
-                                          edgecolor='w', linestyle='--',
+                                          edgecolor='k', linestyle='--',
                                           linewidth=1)
 
                 # plot thresholds and mapping
