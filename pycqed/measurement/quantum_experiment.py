@@ -135,6 +135,7 @@ class QuantumExperiment(CircuitBuilder):
         self.compression_seg_lim = compression_seg_lim
         self.channels_to_upload = []
         self.timestamp = None
+        self.analysis = None
 
         # detector and sweep functions
         default_df_kwargs = {'det_get_values_kws':
@@ -145,12 +146,15 @@ class QuantumExperiment(CircuitBuilder):
         self.df_kwargs = default_df_kwargs if df_kwargs is None else df_kwargs
         if df_name is not None:
             self.df_name = df_name
+            if 'classif' in df_name:
+                self.classified = True
         else:
             self.df_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
         self.df = None
 
         self.exp_metadata.update(kw)
-        self.exp_metadata.update({'classified_ro': self.classified})
+        self.exp_metadata.update({'classified_ro': self.classified,
+                                  'cz_pulse_name': self.cz_pulse_name})
 
     def create_meas_objs_list(self, meas_objs=None, **kwargs):
         """

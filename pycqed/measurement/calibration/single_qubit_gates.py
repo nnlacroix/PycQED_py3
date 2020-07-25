@@ -48,30 +48,34 @@ class T1FrequencySweep(CalibBuilder):
         Assumptions:
          - assumes there is one task for each qubit. If task_list is None, it
           will internally create it.
-         - the entry "qubits_to_measure" in each task should contain one qubit
-         name.
+         - the entry "qb" in each task should contain one qubit name.
 
         """
         try:
+            self.experiment_name = 'T1_frequency_sweep'
             if task_list is None:
                 if sweep_points is None or qubits is None:
                     raise ValueError('Please provide either "sweep_points" '
                                      'and "qubits," or "task_list" containing '
                                      'this information.')
-                task_list = [{'qubits_to_measure': qb.name} for qb in qubits]
+                task_list = [{'qb': qb.name} for qb in qubits]
+            for task in task_list:
+                if not isinstance(task['qb'], str):
+                    task['qb'] = task['qb'].name
 
-            super().__init__(task_list, qubits=qubits, **kw)
+            super().__init__(task_list, qubits=qubits,
+                             sweep_points=sweep_points, **kw)
 
             self.analysis = None
             self.data_to_fit = {qb: 'pe' for qb in self.meas_obj_names}
             self.sweep_points = SweepPoints(
-                from_dict_list=[{}, {}] if sweep_points is None
-                else sweep_points)
+                from_dict_list=[{}, {}] if self.sweep_points is None
+                else self.sweep_points)
             self.add_amplitude_sweep_points()
 
-            preprocessed_task_list = self.preprocess_task_list(self.sweep_points)
+            self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.sequences, self.mc_points = \
-                self.parallel_sweep(preprocessed_task_list,
+                self.parallel_sweep(self.preprocessed_task_list,
                                     self.t1_flux_pulse_block, **kw)
             self.exp_metadata.update({
                 'global_PCA': len(self.cal_points.states) == 0
@@ -82,7 +86,7 @@ class T1FrequencySweep(CalibBuilder):
                 kw['compression_seg_lim'] = \
                     np.product([len(s) for s in self.mc_points]) \
                     + len(self.cal_points.states)
-            self.autorun()
+            self.autorun(**kw)
         except Exception as x:
             self.exception = x
             traceback.print_exc()
@@ -113,7 +117,7 @@ class T1FrequencySweep(CalibBuilder):
             else:
                 qubit_freqs = None
             if qubit_freqs is not None:
-                qubits, _ = self.get_qubits(task['qubits_to_measure'])
+                qubits, _ = self.get_qubits(task['qb'])
                 if qubits is None:
                     raise KeyError('qubit_freqs specified in sweep_points, '
                                    'but no qubit objects available, so that '
@@ -141,11 +145,11 @@ class T1FrequencySweep(CalibBuilder):
             task['sweep_points'] = sweep_points
         return task_list
 
-    def t1_flux_pulse_block(self, qubits_to_measure, sweep_points,
+    def t1_flux_pulse_block(self, qb, sweep_points,
                             prepend_pulse_dicts=None, **kw):
         """
         Function that constructs the experiment block for one qubit
-        :param qubits_to_measure: name or list with the name of the qubit
+        :param qb: name or list with the name of the qubit
             to measure. This function expect only one qubit to measure!
         :param sweep_points: SweepPoints class instance
         :param prepend_pulse_dicts: dictionary of pulses to prepend
@@ -154,7 +158,7 @@ class T1FrequencySweep(CalibBuilder):
         :return: precompiled block
         """
 
-        qubit_name = qubits_to_measure
+        qubit_name = qb
         if isinstance(qubit_name, list):
             qubit_name = qubit_name[0]
         hard_sweep_dict, soft_sweep_dict = sweep_points
@@ -186,14 +190,6 @@ class T1FrequencySweep(CalibBuilder):
         return self.sequential_blocks(f't1 flux pulse {qubit_name}',
                                       [pb, pp, fp])
 
-    def guess_label(self, **kw):
-        """
-        Default measurement label.
-        """
-        if kw.get('experiment_name', None) is None:
-            kw['experiment_name'] = 'T1_frequency_sweep'
-        return super().guess_label(**kw)
-
     def run_analysis(self, **kw):
         """
         Runs analysis and stores analysis instance in self.analysis.
@@ -204,7 +200,8 @@ class T1FrequencySweep(CalibBuilder):
         self.all_fits = kw.get('all_fits', True)
         self.analysis = tda.T1FrequencySweepAnalysis(
             qb_names=self.meas_obj_names,
-            options_dict=dict(TwoD=False, all_fits=self.all_fits))
+            options_dict=dict(TwoD=True, all_fits=self.all_fits,
+                              global_PCA=not len(self.cal_points.states)))
 
 
 class ParallelLOSweepExperiment(CalibBuilder):
@@ -215,15 +212,15 @@ class ParallelLOSweepExperiment(CalibBuilder):
             if not 'prefix' in task:
                 task['prefix'] = f"{task['qb']}_"
 
-        super().__init__(task_list, **kw)
+        super().__init__(task_list, sweep_points=sweep_points, **kw)
         self.lo_offsets = {}
         self.lo_sweep_points = []
         self.analysis = {}
 
-        preprocessed_task_list = self.preprocess_task_list(sweep_points)
+        self.preprocessed_task_list = self.preprocess_task_list(**kw)
         self.resolve_lo_sweep_points(**kw)
         self.sequences, self.mc_points = self.parallel_sweep(
-            preprocessed_task_list, self.sweep_block, **kw)
+            self.preprocessed_task_list, self.sweep_block, **kw)
 
     def resolve_lo_sweep_points(self, freq_sp_suffix='freq', **kw):
         all_freqs = self.sweep_points.get_sweep_params_property('values', 1,
@@ -293,11 +290,20 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         Returns: None
 
     """
+    kw_for_task_keys = ['ro_pulse_delay']
+    kw_for_sweep_points = {
+        'freqs': dict(param_name='freq', unit='Hz',
+                      label=r'drive frequency, $f_d$',
+                      dimension=1),
+        'delays': dict(param_name='delay', unit='s',
+                       label=r'delay, $\tau$',
+                       dimension=0),
+    }
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
             self.experiment_name = 'Flux_scope'
-            super().__init__(task_list, sweep_points, **kw)
+            super().__init__(task_list, sweep_points=sweep_points, **kw)
             self.autorun(**kw)
         except Exception as x:
             self.exception = x
@@ -329,30 +335,28 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         if ro_pulse_delay is None:
             ro_pulse_delay = 100e-9
         pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
-                        'attr=element_name': 'default'}
+                        'attr=element_name,op_code=X180': 'FPS_Pi_el'}
         b = self.block_from_ops(f'ge_flux {qb}',
-                                [f'X180 {qb}', flux_op_code, f'RO {qb}'],
+                                [f'X180 {qb}', flux_op_code],
                                 pulse_modifs=pulse_modifs)
         fp = b.pulses[1]
         fp['ref_point'] = 'middle'
         offs = fp.get('buffer_length_start', 0)
         fp['pulse_delay'] = ParametricValue(
             'delay', func=lambda x, o=offs: -(x + o))
-        ro = b.pulses[2]
-        ro['ref_pulse'] = f'FPS_Pi'
+
         if ro_pulse_delay == 'auto':
-            ro['ref_point'] = 'middle'
-            ro['pulse_delay'] = \
+            delay = \
                 fp['pulse_length'] - np.min(
                     sweep_points.get_sweep_params_property(
                         'values', dimension=0, param_names='delay')) + \
                 fp.get('buffer_length_end', 0) + fp.get('trans_length', 0)
+            b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'middle',
+                                'pulse_delay': delay})
         else:
-            ro['ref_point'] = 'end'
-            ro['pulse_delay'] = ro_pulse_delay
+            b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'end',
+                                'pulse_delay': ro_pulse_delay})
 
-        self.cal_states_rotations.update(self.cal_points.get_rotations(
-            qb_names=qb, **kw))
         self.data_to_fit.update({qb: 'pe'})
 
         return b
@@ -362,12 +366,9 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         Runs analysis and stores analysis instances in self.analysis.
         :param kw:
         """
-        tda.MultiQubit_TimeDomain_Analysis(qb_names=self.meas_obj_names,
-                                           options_dict=dict(TwoD=True))
-        for task in self.task_list:
-            qb_name = task['qb']
-            self.analysis[qb_name] = ma.FluxPulse_Scope_Analysis(
-                qb_name=qb_name)
+        self.analysis = tda.FluxPulseScopeAnalysis(
+            qb_names=self.meas_obj_names,
+            options_dict=dict(TwoD=True, global_PCA=True,))
 
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
@@ -387,11 +388,20 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         Returns: None
 
     """
+    kw_for_task_keys = ['delay']
+    kw_for_sweep_points = {
+        'freqs': dict(param_name='freq', unit='Hz',
+                      label=r'drive frequency, $f_d$',
+                      dimension=1),
+        'amps': dict(param_name='amplitude', unit='V',
+                       label=r'flux pulse amplitude',
+                       dimension=0),
+    }
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
             self.experiment_name = 'Flux_amplitude'
-            super().__init__(task_list, sweep_points, **kw)
+            super().__init__(task_list, sweep_points=sweep_points, **kw)
             self.exp_metadata.update({"global_PCA": True})
             self.autorun(**kw)
 
@@ -399,8 +409,7 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
             self.exception = x
             traceback.print_exc()
 
-    def sweep_block(self, qb, flux_op_code=None, delay=None,
-                                  **kw):
+    def sweep_block(self, qb, flux_op_code=None, delay=None, **kw):
         """
         Performs X180 pulse on top of a fluxpulse
         :param qb: (str) the name of the qubit
@@ -413,9 +422,9 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         if flux_op_code is None:
             flux_op_code = f'FP {qb}'
         pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
-                        'attr=element_name': 'default'}
+                        'attr=element_name,op_code=X180': 'FPS_Pi_el'}
         b = self.block_from_ops(f'ge_flux {qb}',
-                                 [f'X180 {qb}', flux_op_code, f'RO {qb}'],
+                                 [f'X180 {qb}', flux_op_code],
                                  pulse_modifs=pulse_modifs)
         fp = b.pulses[1]
         fp['ref_point'] = 'middle'
@@ -424,15 +433,8 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         fp['pulse_delay'] = -fp.get('buffer_length_start', 0) - delay
         fp['amplitude'] = ParametricValue('amplitude')
 
-        ro = b.pulses[2]
-        ro['ref_pulse'] = f'FPS_Pi'
-        ro['ref_point'] = 'middle'
-        ro['pulse_delay'] = fp['pulse_length'] - delay + \
-                                  fp.get('buffer_length_end', 0) + \
-                                  fp.get('trans_length', 0)
+        b.set_end_after_all_pulses()
 
-        self.cal_states_rotations.update(self.cal_points.get_rotations(
-            qb_names=qb, **kw))
         self.data_to_fit.update({qb: 'pe'})
 
         return b
@@ -445,15 +447,11 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         if analysis_kwargs is None:
             analysis_kwargs = {}
 
-        for task in self.task_list:
-            qb_name = task['qb']
-            self.analysis[qb_name] = tda.FluxAmplitudeSweepAnalysis(
-                qb_names=[qb_name], options_dict=dict(TwoD=True),
-                t_start=self.timestamp, **analysis_kwargs)
+        self.analysis = tda.FluxAmplitudeSweepAnalysis(
+            qb_names=self.meas_obj_names, options_dict=dict(TwoD=True),
+            t_start=self.timestamp, **analysis_kwargs)
 
         if self.update:
-            for qb in self.qubits:
-                if qb.name in self.analysis:
-                    qb.fit_ge_freq_from_flux_pulse_amp(
-                        self.analysis[qb.name].fit_res[
-                            f'freq_fit_{qb.name}'].best_values)
+            for qb in self.meas_obj_names:
+                qb.fit_ge_freq_from_flux_pulse_amp(
+                    self.analysis.fit_res[f'freq_fit_{qb.name}'].best_values)

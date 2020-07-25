@@ -6647,7 +6647,8 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         if len(self.exp_metadata) != 0:
             try:
                 self.delays = self.exp_metadata['sweep_points_dict'][self.qb_name]
-                self.freqs = self.exp_metadata['sweep_points_dict_2D'][self.qb_name]
+                self.freqs = self.exp_metadata['sweep_points_dict_2D'][
+                    self.qb_name][:len(self.sweep_points_2D)]
                 cp = self.exp_metadata.get('cal_points', None)
                 if cp is not None:
                     cp = CalibrationPoints.from_string(cp)
@@ -6825,9 +6826,10 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         if plot:
             fig, ax = plt.subplots()
             if return_stds:
-                ax.errorbar(delays/1e-9, fitted_freqs/1e6, yerr=fitted_stds/1e6)
+                ax.errorbar(delays/1e-9, self.fitted_freqs/1e6,
+                            yerr=fitted_stds/1e6)
             else:
-                ax.plot(delays/1e-9, fitted_freqs/1e6)
+                ax.plot(delays/1e-9, self.fitted_freqs/1e6)
             ax.set_xlabel(r'delay, $\tau$ (ns)')
             ax.set_ylabel(r'fitted qubit frequency, $f_q$ (MHz)')
             plt.show()

@@ -234,12 +234,13 @@ class BaseDataAnalysis(object):
         """
         sep = ', ' if len(args) > 0 else ""
         class_name = self.__class__.__name__
+        kwargs = copy.copy(kwargs)
 
         # prevent the job from calling itself in a loop
         options_dict = copy.deepcopy(kwargs.get('options_dict', {}))
         if options_dict is None:
             options_dict = {}
-        options_dict.pop('delegate_plotting', None)
+        options_dict['delegate_plotting'] = False
         kwargs['options_dict'] = options_dict
 
         # prepare import
@@ -696,7 +697,7 @@ class BaseDataAnalysis(object):
         # initialize everything to an empty dict if not overwritten
         self.fit_dicts = OrderedDict()
 
-    def run_fitting(self):
+    def run_fitting(self, keys_to_fit='all'):
         '''
         This function does the fitting and saving of the parameters
         based on the fit_dict options.
@@ -705,7 +706,11 @@ class BaseDataAnalysis(object):
         '''
         if self.fit_res is None:
             self.fit_res = {}
+        if keys_to_fit == 'all':
+            keys_to_fit = list(self.fit_dicts)
         for key, fit_dict in self.fit_dicts.items():
+            if key not in keys_to_fit:
+                continue
             guess_dict = fit_dict.get('guess_dict', None)
             guess_pars = fit_dict.get('guess_pars', None)
             guessfn_pars = fit_dict.get('guessfn_pars', {})
