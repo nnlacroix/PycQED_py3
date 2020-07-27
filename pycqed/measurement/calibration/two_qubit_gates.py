@@ -279,6 +279,7 @@ class MultiTaskingExperiment(QuantumExperiment):
             if isinstance(vals, dict):
                 vals = [vals]
             for v in vals:
+                v = copy(v)
                 values_func = v.pop('values_func', None)
                 if k in task and task[k] is not None:
                     if values_func is not None:
@@ -289,6 +290,7 @@ class MultiTaskingExperiment(QuantumExperiment):
                         values = task[k]
                     task['sweep_points'].add_sweep_parameter(
                         values=values, **v)
+
 
 class CalibBuilder(MultiTaskingExperiment):
     def __init__(self, task_list, **kw):

@@ -439,17 +439,10 @@ class CircuitBuilder:
                                           pulse_modifs=pulse_modifs).build()
 
         seg = Segment('Segment 1', pulses)
-        seg.resolve_segment()
-        wfs = seg.waveforms()
-        duration = 0
-        for i, instr in enumerate(wfs):
-            for elem_name, v in wfs[instr].items():
-                for k, wf_per_ch in v.items():
-                    for n_wf, (ch, wf) in enumerate(wf_per_ch.items()):
-                        tvals = seg.tvals([
-                            f"{instr}_{ch}"], elem_name[1])[f"{instr}_{ch}"]
-                        duration = max(tvals) if max(tvals) > duration \
-                            else duration
+        seg.resolve_timing()
+        # Using that seg.resolved_pulses was sorted by seg.resolve_timing()
+        pulse = seg.resolved_pulses[-1]
+        duration = pulse.pulse_obj.algorithm_time() + pulse.pulse_obj.length
         return duration
 
     def block_from_ops(self, block_name, operations, fill_values=None,

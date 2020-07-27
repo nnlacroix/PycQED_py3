@@ -391,7 +391,7 @@ def calculate_minimal_readout_spacing(qubits, ro_slack=10e-9, drive_pulses=0):
     return ro_spacing
 
 
-def measure_multiplexed_readout(qubits, liveplot=False,
+def measure_multiplexed_readout(dev, qubits, liveplot=False,
                                 shots=5000,
                                 RO_spacing=None, preselection=True,
                                 thresholds=None, thresholded=False,
@@ -437,7 +437,8 @@ def measure_multiplexed_readout(qubits, liveplot=False,
         [qb.name for qb in qubits])))
 
     if analyse and thresholds is not None:
-        channel_map = {qb.name: qb.int_log_det.value_names[0]+' '+qb.instr_uhf() for qb in qubits}
+        channel_map = {qb.name: qb.int_log_det.value_names[0]+' '+qb.instr_uhf()
+                       for qb in qubits}
         ra.Multiplexed_Readout_Analysis(options_dict=dict(
             n_readouts=(2 if preselection else 1) * 2 ** len(qubits),
             thresholds=thresholds,
@@ -3580,7 +3581,7 @@ def measure_pygsti(qubits, f_LO, pygsti_gateset=None,
     return MC
 
 
-def measure_multi_parity_multi_round(ancilla_qubits, data_qubits,
+def measure_multi_parity_multi_round(dev, ancilla_qubits, data_qubits,
                                      parity_map, CZ_map,
                                      prep=None, upload=True, prep_params=None,
                                      mode='tomo',
@@ -3630,19 +3631,21 @@ def measure_multi_parity_multi_round(ancilla_qubits, data_qubits,
     MC = ancilla_qubits[0].instr_mc.get_instr()
 
     seq, sweep_points = mqs.multi_parity_multi_round_seq(
-                                 [qb.name for qb in ancilla_qubits],
-                                 [qb.name for qb in data_qubits],
-                                 parity_map,
-                                 CZ_map,
-                                 prep,
-                                 operation_dict=get_operation_dict(qubits),
-                                 mode=mode,
-                                 parity_seperation=parity_seperation,
-                                 rots_basis=rots_basis,
-                                 parity_loops=parity_loops,
-                                 cal_points=cal_points,
-                                 prep_params=prep_params,
-                                 upload=upload)
+        [qb.name for qb in ancilla_qubits],
+        [qb.name for qb in data_qubits],
+        parity_map,
+        CZ_map,
+        prep,
+        operation_dict=dev.get_operation_dict(),
+        mode=mode,
+        parity_seperation=parity_seperation,
+        rots_basis=rots_basis,
+        parity_loops=parity_loops,
+        cal_points=cal_points,
+        prep_params=prep_params,
+        upload=upload,
+        max_acq_length=max([qb.acq_length() for qb in qubits])
+    )
 
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
         sequence=seq, upload=False, parameter_name='Tomography'))

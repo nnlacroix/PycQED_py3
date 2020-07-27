@@ -49,17 +49,20 @@ class T1FrequencySweep(CalibBuilder):
         Assumptions:
          - assumes there is one task for each qubit. If task_list is None, it
           will internally create it.
-         - the entry "qubits_to_measure" in each task should contain one qubit
-         name.
+         - the entry "qb" in each task should contain one qubit name.
 
         """
         try:
+            self.experiment_name = 'T1_frequency_sweep'
             if task_list is None:
                 if sweep_points is None or qubits is None:
                     raise ValueError('Please provide either "sweep_points" '
                                      'and "qubits," or "task_list" containing '
                                      'this information.')
-                task_list = [{'qubits_to_measure': qb.name} for qb in qubits]
+                task_list = [{'qb': qb.name} for qb in qubits]
+            for task in task_list:
+                if not isinstance(task['qb'], str):
+                    task['qb'] = task['qb'].name
 
             super().__init__(task_list, qubits=qubits,
                              sweep_points=sweep_points, **kw)
@@ -115,7 +118,7 @@ class T1FrequencySweep(CalibBuilder):
             else:
                 qubit_freqs = None
             if qubit_freqs is not None:
-                qubits, _ = self.get_qubits(task['qubits_to_measure'])
+                qubits, _ = self.get_qubits(task['qb'])
                 if qubits is None:
                     raise KeyError('qubit_freqs specified in sweep_points, '
                                    'but no qubit objects available, so that '
@@ -143,11 +146,11 @@ class T1FrequencySweep(CalibBuilder):
             task['sweep_points'] = sweep_points
         return task_list
 
-    def t1_flux_pulse_block(self, qubits_to_measure, sweep_points,
+    def t1_flux_pulse_block(self, qb, sweep_points,
                             prepend_pulse_dicts=None, **kw):
         """
         Function that constructs the experiment block for one qubit
-        :param qubits_to_measure: name or list with the name of the qubit
+        :param qb: name or list with the name of the qubit
             to measure. This function expect only one qubit to measure!
         :param sweep_points: SweepPoints class instance
         :param prepend_pulse_dicts: dictionary of pulses to prepend
@@ -156,7 +159,7 @@ class T1FrequencySweep(CalibBuilder):
         :return: precompiled block
         """
 
-        qubit_name = qubits_to_measure
+        qubit_name = qb
         if isinstance(qubit_name, list):
             qubit_name = qubit_name[0]
         hard_sweep_dict, soft_sweep_dict = sweep_points
@@ -188,14 +191,6 @@ class T1FrequencySweep(CalibBuilder):
         return self.sequential_blocks(f't1 flux pulse {qubit_name}',
                                       [pb, pp, fp])
 
-    def guess_label(self, **kw):
-        """
-        Default measurement label.
-        """
-        if kw.get('experiment_name', None) is None:
-            kw['experiment_name'] = 'T1_frequency_sweep'
-        return super().guess_label(**kw)
-
     def run_analysis(self, **kw):
         """
         Runs analysis and stores analysis instance in self.analysis.
@@ -206,7 +201,8 @@ class T1FrequencySweep(CalibBuilder):
         self.all_fits = kw.get('all_fits', True)
         self.analysis = tda.T1FrequencySweepAnalysis(
             qb_names=self.meas_obj_names,
-            options_dict=dict(TwoD=False, all_fits=self.all_fits))
+            options_dict=dict(TwoD=True, all_fits=self.all_fits,
+                              global_PCA=not len(self.cal_points.states)))
 
 
 class ParallelLOSweepExperiment(CalibBuilder):

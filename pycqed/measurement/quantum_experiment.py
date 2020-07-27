@@ -146,6 +146,8 @@ class QuantumExperiment(CircuitBuilder):
         self.df_kwargs = default_df_kwargs if df_kwargs is None else df_kwargs
         if df_name is not None:
             self.df_name = df_name
+            if 'classif' in df_name:
+                self.classified = True
         else:
             self.df_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
         self.df = None

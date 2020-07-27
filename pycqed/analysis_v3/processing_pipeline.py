@@ -232,9 +232,14 @@ class ProcessingPipeline(list):
     """
     Creates a processing pipeline for analysis_v3.
     """
-    def __init__(self, node_name=None, from_dict_list=None, **node_params):
+    def __init__(self, node_name=None, from_dict_list=None,
+                 global_keys_out_container='', **node_params):
         super().__init__()
+        self.global_keys_out_container = global_keys_out_container
         if node_name is not None:
+            if 'keys_out_container' not in node_params:
+                node_params['keys_out_container'] = \
+                    self.global_keys_out_container
             node_params['node_name'] = node_name
             self.append(node_params)
         elif from_dict_list is not None:
@@ -253,12 +258,12 @@ class ProcessingPipeline(list):
             if node_params.get('was_resolved', False):
                 # if node was already resolved, just add it
                 self.append(node_params)
-                return
+                continue
 
             try:
                 if 'keys_in' not in node_params:
-                    raise KeyError('Each node dictionary must contain the key '
-                                   '"keys_in".')
+                    self.append(node_params)
+                    continue
                 meas_obj_names_raw = node_params['meas_obj_names']
                 if isinstance(meas_obj_names_raw, str):
                     meas_obj_names_raw = [meas_obj_names_raw]
@@ -274,7 +279,8 @@ class ProcessingPipeline(list):
                     # mobjn is a string!
                     new_node_params = deepcopy(node_params)
                     new_node_params['meas_obj_names'] = mobj_name
-                    # get the value names corresponding to the measued object name
+                    # get the value names corresponding to the measued
+                    # object name
                     if not joint_processing:
                         mobj_value_names = meas_obj_value_names_map[mobj_name]
                     # get keys_in and any other key in node_params that
@@ -282,11 +288,21 @@ class ProcessingPipeline(list):
                     for k, v in new_node_params.items():
                         if 'keys_in' in k:
                             keys = self.process_keys_in(
-                                v, mobj_name, mobj_value_names, node_idx=i)
+                                v, mobj_name, mobj_value_names,
+                                node_idx=i)
                             new_node_params[k] = keys
                     # get keys_out
-                    keys_out = self.process_keys_out(keys_out_container=mobj_name,
-                                                     **new_node_params)
+                    keys_out_container = new_node_params.pop(
+                        'keys_out_container', mobj_name)
+                    if mobj_name not in keys_out_container:
+                        keys_out_container = \
+                            f'{mobj_name}.{keys_out_container}' \
+                                if len(keys_out_container) > 0 else \
+                                f'{mobj_name}'
+                    keys_out = self.process_keys_out(
+                        keys_out_container=keys_out_container,
+                        **new_node_params)
+                    new_node_params['keys_out_container'] = keys_out_container
                     if keys_out is not None:
                         new_node_params['keys_out'] = keys_out
                     # add flag that this node has been resolved
@@ -299,6 +315,8 @@ class ProcessingPipeline(list):
                 raise e
 
     def add_node(self, node_name, **node_params):
+        if 'keys_out_container' not in node_params:
+            node_params['keys_out_container'] = self.global_keys_out_container
         node_params['node_name'] = node_name
         self.append(node_params)
 
@@ -328,7 +346,8 @@ class ProcessingPipeline(list):
                     # a space
                     keys_in_split = keyi.split(' ')
                     if len(keys_in_split) > 1:
-                        keys_in_suffix = f'{mobj_name}.{keys_in_split[-1]}'
+                        keys_in_suffix = ' '.join(keys_in_split[1:])
+                        keys_in_suffix = f'{mobj_name}.{keys_in_suffix}'
                         keys_in0 = hlp_mod.get_sublst_with_all_strings_of_list(
                             lst_to_search=hlp_mod.flatten_list(prev_keys_out),
                             lst_to_match=mobj_value_names)

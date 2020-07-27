@@ -127,7 +127,7 @@ class MeasurementControl(Instrument):
         self._persist_ylabs = None
         self._analysis_display = None
 
-        self.exp_metadata = None
+        self.exp_metadata = {}
         self._plotmon_axes_info = None
         self._persist_plotmon_axes_info = None
 
@@ -202,6 +202,8 @@ class MeasurementControl(Instrument):
             if exp_metadata is not None:
                 self.exp_metadata = deepcopy(exp_metadata)
                 self.save_exp_metadata(exp_metadata, self.data_object)
+            else:
+                self.exp_metadata = {}
             try:
                 self.check_keyboard_interrupt()
                 self.get_measurement_begintime()
@@ -689,8 +691,7 @@ class MeasurementControl(Instrument):
                 dim_sp = {spn: sp.find_parameter(spn) for spn in
                           mospm[mo]}
                 for i in range(len(labels)):
-                    spi = [spn for spn, dim in dim_sp.items() if dim
-                           == i]
+                    spi = [spn for spn, dim in dim_sp.items() if dim == i]
                     if len(spi):
                         labels[i] = sp.get_sweep_params_property(
                             'label', i, spi[0])
