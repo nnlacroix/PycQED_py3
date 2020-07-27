@@ -974,28 +974,31 @@ class Segment:
 
     def plot(self, instruments=None, channels=None, legend=True,
              delays=None, savefig=False, prop_cycle=None, frameon=True,
-             channel_map=None, plot_kwargs=None, axes=None, demodulate=False):
+             channel_map=None, plot_kwargs=None, axes=None, demodulate=False,
+             show_and_close=True):
         """
         Plots a segment. Can only be done if the segment can be resolved.
-        :param instruments (list): instruments for which pulses have to be plotted.
-            defaults to all.
+        :param instruments (list): instruments for which pulses have to be
+            plotted. Defaults to all.
         :param channels (list):  channels to plot. defaults to all.
-        :param delays (dict): keys are instruments, values are additional delays.
-            if passed, the delay is substracted to the time values of this
-            instrument, such that the pulses are plotted at timing when they
-            physically occur.
+        :param delays (dict): keys are instruments, values are additional
+            delays. If passed, the delay is substracted to the time values of
+            this instrument, such that the pulses are plotted at timing when
+            they physically occur.
         :param savefig: save the plot
-        :param channel_map (dict): indicates which instrument channels correspond to
-            whichqubits. Keys = qb names, values = list of channels. eg.
-            dict(qb2=['AWG8_ch3', "UHF_ch1"]). If provided, will plot each qubit
-            on individual subplots.
+        :param channel_map (dict): indicates which instrument channels
+            correspond to which qubits. Keys = qb names, values = list of
+            channels. eg. dict(qb2=['AWG8_ch3', "UHF_ch1"]). If provided,
+            will plot each qubit on individual subplots.
         :param prop_cycle (dict):
         :param frameon (dict, bool):
-        :param axes (array or axis): 2D array of matplotlib axes. if single axes,
-            will be converted internally to array.
-        :param demodulate (bool): plot only envelope of pulses by temporarily setting
-            modulation and phase to 0. Need to recompile the sequence
-        :return:
+        :param axes (array or axis): 2D array of matplotlib axes. if single
+            axes, will be converted internally to array.
+        :param demodulate (bool): plot only envelope of pulses by temporarily
+            setting modulation and phase to 0. Need to recompile the sequence
+        :param show_and_close: (bool) show and close the plot (default: True)
+        :return: The figure and axes objects if show_and_close is False,
+            otherwise no return value.
         """
         import matplotlib.pyplot as plt
         if delays is None:
@@ -1014,7 +1017,8 @@ class Segment:
                         if hasattr(pulse, "phase"):
                             pulse.phase = 0
             wfs = self.waveforms(awgs=instruments, channels=None)
-            n_instruments = len(wfs) if channel_map is None else len(channel_map)
+            n_instruments = len(wfs) if channel_map is None else \
+                len(channel_map)
             if axes is not None:
                 if np.ndim(axes) == 0:
                     axes = [[axes]]
@@ -1027,11 +1031,15 @@ class Segment:
             if prop_cycle is not None:
                 for a in ax[:,0]:
                     a.set_prop_cycle(**prop_cycle)
-            for i, instr in enumerate(wfs):
+            sorted_keys = sorted(wfs.keys()) if instruments is None \
+                else [i for i in instruments if i in wfs]
+            for i, instr in enumerate(sorted_keys):
                 # plotting
                 for elem_name, v in wfs[instr].items():
                     for k, wf_per_ch in v.items():
-                        for n_wf, (ch, wf) in enumerate(wf_per_ch.items()):
+                        sorted_chans = sorted(wf_per_ch.keys())
+                        for n_wf, ch in enumerate(sorted_chans):
+                            wf = wf_per_ch[ch]
                             if channels is None or \
                                     ch in channels.get(instr, []):
                                 tvals = \
@@ -1039,28 +1047,35 @@ class Segment:
                                     f"{instr}_{ch}"] - delays.get(instr, 0)
                                 if channel_map is None:
                                     # plot per device
-                                    ax[i, 0].plot(tvals * 1e6, wf,
-                                                  label=f"{elem_name[1]}_{k}_{ch}",
-                                                  **plot_kwargs)
+                                    ax[i, 0].set_title(instr)
+                                    ax[i, 0].plot(
+                                        tvals * 1e6, wf,
+                                        label=f"{elem_name[1]}_{k}_{ch}",
+                                        **plot_kwargs)
                                 else:
                                     # plot on each qubit subplot which includes
                                     # this channel in the channel map
-                                    match = [i for i, (_, qb_chs) in
-                                                     enumerate(channel_map.items())
-                                                     if f"{instr}_{ch}" in qb_chs]
-                                    for qbi in match:
-                                        ax[qbi, 0].plot(tvals * 1e6, wf,
-                                                      label=f"{elem_name[1]}_{k}_{ch}",
-                                                      **plot_kwargs)
+                                    match = {i: qb_name
+                                             for i, (qb_name, qb_chs) in
+                                             enumerate(channel_map.items())
+                                             if f"{instr}_{ch}" in qb_chs}
+                                    for qbi, qb_name in match.items():
+                                        ax[qbi, 0].set_title(qb_name)
+                                        ax[qbi, 0].plot(
+                                            tvals * 1e6, wf,
+                                            label=f"{elem_name[1]}"
+                                                  f"_{k}_{instr}_{ch}",
+                                            **plot_kwargs)
                                         if demodulate: # filling
-                                            ax[qbi, 0].fill_between(tvals * 1e6, wf,
-                                                            label=f"{elem_name[1]}_{k}_{ch}",
-                                                            alpha=0.05,
-                                                            **plot_kwargs)
-
+                                            ax[qbi, 0].fill_between(
+                                                tvals * 1e6, wf,
+                                                label=f"{elem_name[1]}_"
+                                                      f"{k}_{instr}_{ch}",
+                                                alpha=0.05,
+                                                **plot_kwargs)
 
             # formatting
-            for a in ax[:,0]:
+            for a in ax[:, 0]:
                 if isinstance(frameon, bool):
                     frameon = {k: frameon for k in ['top', 'bottom',
                                                     "right", "left"]}
@@ -1072,15 +1087,20 @@ class Segment:
                     a.legend(loc=[1.02, 0], prop={'size': 8})
                 a.set_ylabel('Voltage (V)')
             ax[-1, 0].set_xlabel('time ($\mu$s)')
-            fig.suptitle(f'{self.name}')
+            fig.suptitle(f'{self.name}', y=1.01)
             plt.tight_layout()
             if savefig:
                 plt.savefig(f'{self.name}.png')
-            # plt.show()
-            return fig, ax
+            if show_and_close:
+                plt.show()
+                plt.close(fig)
+                return
+            else:
+                return fig, ax
         except Exception as e:
             log.error(f"Could not plot: {self.name}")
             raise e
+
     def __repr__(self):
         string_repr = f"---- {self.name} ----\n"
 
