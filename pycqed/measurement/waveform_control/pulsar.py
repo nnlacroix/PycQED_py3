@@ -46,7 +46,7 @@ class UHFQCPulsar:
     _supportedAWGtypes = (UHFQC, dummy_UHFQC)
     
     _uhf_sequence_string_template = (
-        "const WINT_EN   = 0x01ff0000;\n"
+        "const WINT_EN   = 0x03ff0000;\n"
         "const WINT_TRIG = 0x00000010;\n"
         "const IAVG_TRIG = 0x00000020;\n"
         "var RO_TRIG;\n"
