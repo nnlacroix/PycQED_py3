@@ -972,7 +972,8 @@ class Segment:
 
     def plot(self, instruments=None, channels=None, legend=True,
              delays=None, savefig=False, prop_cycle=None, frameon=True,
-             channel_map=None, plot_kwargs=None, axes=None, demodulate=False):
+             channel_map=None, plot_kwargs=None, axes=None, demodulate=False,
+             show_and_close=True):
         """
         Plots a segment. Can only be done if the segment can be resolved.
         :param instruments (list): instruments for which pulses have to be
@@ -993,7 +994,9 @@ class Segment:
             axes, will be converted internally to array.
         :param demodulate (bool): plot only envelope of pulses by temporarily
             setting modulation and phase to 0. Need to recompile the sequence
-        :return:
+        :param show_and_close: (bool) show and close the plot (default: True)
+        :return: The figure and axes objects if show_and_close is False,
+            otherwise no return value.
         """
         import matplotlib.pyplot as plt
         if delays is None:
@@ -1086,7 +1089,12 @@ class Segment:
             plt.tight_layout()
             if savefig:
                 plt.savefig(f'{self.name}.png')
-            return fig, ax
+            if show_and_close:
+                plt.show()
+                plt.close(fig)
+                return
+            else:
+                return fig, ax
         except Exception as e:
             log.error(f"Could not plot: {self.name}")
             raise e
