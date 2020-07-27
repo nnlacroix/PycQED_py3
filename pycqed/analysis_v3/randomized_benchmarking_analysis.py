@@ -130,7 +130,7 @@ def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
         sp = sp_mod.SweepPoints(from_dict_list=sp)
         sp_vals_list = sp.get_sweep_params_property('values', 0, 'all')
         for j, sp_vals in enumerate(sp_vals_list):
-            sp_all_vals_list[j][i::2] = sp_vals
+            sp_all_vals_list[j][i::nr_exp] = sp_vals
 
     sweep_points = sp_mod.SweepPoints()
     for i, sp_name in enumerate(sp0.get_sweep_dimension(0)):
