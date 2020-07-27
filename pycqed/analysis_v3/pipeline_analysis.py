@@ -147,12 +147,13 @@ def combine_metadata_list(data_dict, update_value=True, append_value=True,
     data_dict['exp_metadata_list'] = metadata
     if isinstance(metadata, list):
         metadata_list = deepcopy(metadata)
-        metadata = metadata_list[0]
+        metadata0 = metadata_list[0]
+        metadata = deepcopy(metadata0)
         for i, md_dict in enumerate(metadata_list[1:]):
             for key, value in md_dict.items():
                 if key in metadata:
-                    if not hlp_mod.check_equal(metadata[key], value):
-                        if isinstance(metadata[key], dict) and update_value:
+                    if not hlp_mod.check_equal(metadata0[key], value):
+                        if isinstance(metadata0[key], dict) and update_value:
                             if not isinstance(value, dict):
                                 raise ValueError(
                                     f'The value corresponding to {key} in  '
@@ -160,7 +161,8 @@ def combine_metadata_list(data_dict, update_value=True, append_value=True,
                                     f'Cannot update_value.')
                             metadata[key].update(value)
                         elif append_value:
-                            metadata[key] = [metadata[key]]
+                            if i == 0:
+                                metadata[key] = [metadata[key]]
                             if not isinstance(value, list):
                                 value = [value]
                             metadata[key].append(value)
