@@ -1395,7 +1395,8 @@ class UHFQC_classifier_detector(UHFQC_Base):
                     clf_data, (self.nr_shots, self.nr_sweep_points,
                                clf_data.shape[-1]))
                 clf_data = np.mean(clf_data, axis=0)
-            if state_prob_mtx_list is not None:
+            if state_prob_mtx_list is not None and state_prob_mtx_list[i] is \
+                    not None:
                 clf_data = np.linalg.inv(
                     state_prob_mtx_list[i]).T @ clf_data.T
                 log.info('Data corrected based on state_prob_mtx.')
