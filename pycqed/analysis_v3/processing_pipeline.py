@@ -237,7 +237,9 @@ class ProcessingPipeline(list):
         super().__init__()
         self.global_keys_out_container = global_keys_out_container
         if node_name is not None:
-            node_params['keys_out_container'] = self.global_keys_out_container
+            if 'keys_out_container' not in node_params:
+                node_params['keys_out_container'] = \
+                    self.global_keys_out_container
             node_params['node_name'] = node_name
             self.append(node_params)
         elif from_dict_list is not None:
@@ -313,7 +315,8 @@ class ProcessingPipeline(list):
                 raise e
 
     def add_node(self, node_name, **node_params):
-        node_params['keys_out_container'] = self.global_keys_out_container
+        if 'keys_out_container' not in node_params:
+            node_params['keys_out_container'] = self.global_keys_out_container
         node_params['node_name'] = node_name
         self.append(node_params)
 
