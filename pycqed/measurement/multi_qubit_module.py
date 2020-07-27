@@ -408,10 +408,11 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
         RO_spacing += UHFQC.qas_0_integration_length() / 1.8e9
         RO_spacing += 50e-9  # for slack
         RO_spacing = np.ceil(RO_spacing * 225e6 / 3) / 225e6 * 3
-
+    
+    operation_dict = dev.get_operation_dict(qubits=qubits)
     sf = awg_swf2.n_qubit_off_on(
-        [qb.get_ge_pars() for qb in qubits],
-        [qb.get_ro_pars() for qb in qubits],
+        [operation_dict['X180 ' + qb.name] for qb in qubits],
+        [operation_dict['RO ' + qb.name] for qb in qubits],
         preselection=preselection,
         parallel_pulses=True,
         RO_spacing=RO_spacing)
