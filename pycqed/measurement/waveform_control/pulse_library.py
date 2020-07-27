@@ -384,10 +384,6 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
         return super().chan_wf(channel, t)
 
 
-        setattr(self, '_' + param, getattr(self, param))
-        setattr(self.__class__, param, property(getter, setter))
-
-
 class BufferedSquarePulse(pulse.Pulse):
     def __init__(self,
                  element_name,
