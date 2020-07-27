@@ -998,28 +998,31 @@ class Segment:
 
     def plot(self, instruments=None, channels=None, legend=True,
              delays=None, savefig=False, prop_cycle=None, frameon=True,
-             channel_map=None, plot_kwargs=None, axes=None, demodulate=False):
+             channel_map=None, plot_kwargs=None, axes=None, demodulate=False,
+             show_and_close=True):
         """
         Plots a segment. Can only be done if the segment can be resolved.
-        :param instruments (list): instruments for which pulses have to be plotted.
-            defaults to all.
+        :param instruments (list): instruments for which pulses have to be
+            plotted. Defaults to all.
         :param channels (list):  channels to plot. defaults to all.
-        :param delays (dict): keys are instruments, values are additional delays.
-            if passed, the delay is substracted to the time values of this
-            instrument, such that the pulses are plotted at timing when they
-            physically occur.
+        :param delays (dict): keys are instruments, values are additional
+            delays. If passed, the delay is substracted to the time values of
+            this instrument, such that the pulses are plotted at timing when
+            they physically occur.
         :param savefig: save the plot
-        :param channel_map (dict): indicates which instrument channels correspond to
-            whichqubits. Keys = qb names, values = list of channels. eg.
-            dict(qb2=['AWG8_ch3', "UHF_ch1"]). If provided, will plot each qubit
-            on individual subplots.
+        :param channel_map (dict): indicates which instrument channels
+            correspond to which qubits. Keys = qb names, values = list of
+            channels. eg. dict(qb2=['AWG8_ch3', "UHF_ch1"]). If provided,
+            will plot each qubit on individual subplots.
         :param prop_cycle (dict):
         :param frameon (dict, bool):
-        :param axes (array or axis): 2D array of matplotlib axes. if single axes,
-            will be converted internally to array.
-        :param demodulate (bool): plot only envelope of pulses by temporarily setting
-            modulation and phase to 0. Need to recompile the sequence
-        :return:
+        :param axes (array or axis): 2D array of matplotlib axes. if single
+            axes, will be converted internally to array.
+        :param demodulate (bool): plot only envelope of pulses by temporarily
+            setting modulation and phase to 0. Need to recompile the sequence
+        :param show_and_close: (bool) show and close the plot (default: True)
+        :return: The figure and axes objects if show_and_close is False,
+            otherwise no return value.
         """
         import matplotlib.pyplot as plt
         if delays is None:
@@ -1038,7 +1041,8 @@ class Segment:
                         if hasattr(pulse, "phase"):
                             pulse.phase = 0
             wfs = self.waveforms(awgs=instruments, channels=None)
-            n_instruments = len(wfs) if channel_map is None else len(channel_map)
+            n_instruments = len(wfs) if channel_map is None else \
+                len(channel_map)
             if axes is not None:
                 if np.ndim(axes) == 0:
                     axes = [[axes]]
@@ -1068,9 +1072,10 @@ class Segment:
                                 if channel_map is None:
                                     # plot per device
                                     ax[i, 0].set_title(instr)
-                                    ax[i, 0].plot(tvals * 1e6, wf,
-                                                  label=f"{elem_name[1]}_{k}_{ch}",
-                                                  **plot_kwargs)
+                                    ax[i, 0].plot(
+                                        tvals * 1e6, wf,
+                                        label=f"{elem_name[1]}_{k}_{ch}",
+                                        **plot_kwargs)
                                 else:
                                     # plot on each qubit subplot which includes
                                     # this channel in the channel map
@@ -1093,9 +1098,8 @@ class Segment:
                                                 alpha=0.05,
                                                 **plot_kwargs)
 
-
             # formatting
-            for a in ax[:,0]:
+            for a in ax[:, 0]:
                 if isinstance(frameon, bool):
                     frameon = {k: frameon for k in ['top', 'bottom',
                                                     "right", "left"]}
@@ -1111,12 +1115,16 @@ class Segment:
             plt.tight_layout()
             if savefig:
                 plt.savefig(f'{self.name}.png')
-            plt.show()
-            plt.close(fig)
-            return fig, ax
+            if show_and_close:
+                plt.show()
+                plt.close(fig)
+                return
+            else:
+                return fig, ax
         except Exception as e:
             log.error(f"Could not plot: {self.name}")
             raise e
+
     def __repr__(self):
         string_repr = f"---- {self.name} ----\n"
 
