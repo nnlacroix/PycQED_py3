@@ -246,11 +246,11 @@ class Segment:
                     simultaneous_end_pulse = ref_pulses_dict_all[
                         n[:n[:-len('-|-start')].rfind('-|-') + 3] +
                         'simultaneous_end_pulse']
-                    t0 = p.block_align * (
+                    Delta_t = p.block_align * (
                             simultaneous_end_pulse.pulse_obj.algorithm_time() -
                             end_pulse.pulse_obj.algorithm_time())
-                    if abs(p.pulse_obj.algorithm_time() - t0) > 1e-14:
-                        p.delay += t0 - p.pulse_obj.algorithm_time()
+                    if abs(Delta_t) > 1e-14:
+                        p.delay += Delta_t
                         re_resolve = True
                     p.block_align = None
             if re_resolve:
