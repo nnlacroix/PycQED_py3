@@ -391,7 +391,7 @@ def calculate_minimal_readout_spacing(qubits, ro_slack=10e-9, drive_pulses=0):
     return ro_spacing
 
 
-def measure_multiplexed_readout(qubits, liveplot=False,
+def measure_multiplexed_readout(dev, qubits, liveplot=False,
                                 shots=5000,
                                 RO_spacing=None, preselection=True,
                                 thresholds=None, thresholded=False,
@@ -408,10 +408,11 @@ def measure_multiplexed_readout(qubits, liveplot=False,
         RO_spacing += UHFQC.qas_0_integration_length() / 1.8e9
         RO_spacing += 50e-9  # for slack
         RO_spacing = np.ceil(RO_spacing * 225e6 / 3) / 225e6 * 3
-
+    
+    operation_dict = dev.get_operation_dict(qubits=qubits)
     sf = awg_swf2.n_qubit_off_on(
-        [qb.get_ge_pars() for qb in qubits],
-        [qb.get_ro_pars() for qb in qubits],
+        [operation_dict['X180 ' + qb.name] for qb in qubits],
+        [operation_dict['RO ' + qb.name] for qb in qubits],
         preselection=preselection,
         parallel_pulses=True,
         RO_spacing=RO_spacing)
@@ -437,7 +438,8 @@ def measure_multiplexed_readout(qubits, liveplot=False,
         [qb.name for qb in qubits])))
 
     if analyse and thresholds is not None:
-        channel_map = {qb.name: qb.int_log_det.value_names[0]+' '+qb.instr_uhf() for qb in qubits}
+        channel_map = {qb.name: qb.int_log_det.value_names[0]+' '+qb.instr_uhf()
+                       for qb in qubits}
         ra.Multiplexed_Readout_Analysis(options_dict=dict(
             n_readouts=(2 if preselection else 1) * 2 ** len(qubits),
             thresholds=thresholds,
