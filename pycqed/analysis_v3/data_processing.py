@@ -560,7 +560,7 @@ def classify_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
     thresh_data_binary = np.stack(
         [data_to_proc_dict[keyi] >= th for keyi, th in
          zip(keys_in, threshold_list)], axis=1)
-    print(thresh_data_binary)
+
     # convert each row of thresh_data_binary into the decimal value whose
     # binary representation is given by the booleans in each row.
     # thresh_data_decimal is a 1d array of size nr_data_pts_per_ch
