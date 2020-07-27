@@ -234,12 +234,13 @@ class BaseDataAnalysis(object):
         """
         sep = ', ' if len(args) > 0 else ""
         class_name = self.__class__.__name__
+        kwargs = copy.copy(kwargs)
 
         # prevent the job from calling itself in a loop
         options_dict = copy.deepcopy(kwargs.get('options_dict', {}))
         if options_dict is None:
             options_dict = {}
-        options_dict.pop('delegate_plotting', None)
+        options_dict['delegate_plotting'] = False
         kwargs['options_dict'] = options_dict
 
         # prepare import
@@ -543,8 +544,7 @@ class BaseDataAnalysis(object):
                 self.raw_data_dict['exp_metadata'] = {}
             self.metadata = self.raw_data_dict['exp_metadata']
             cp = CalibrationPoints.from_string(self.get_param_value(
-                'cal_points', default_value=
-                CalibrationPoints.from_string(repr(CalibrationPoints([], [])))))
+                'cal_points', default_value=repr(CalibrationPoints([], []))))
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
                 self.get_param_value('compression_factor', 1),
