@@ -2413,10 +2413,10 @@ def calibrate_n_qubits(qubits, f_LO, sweep_points_dict, sweep_params=None,
 
 def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
                     cz_pulse_name, upload=True, label=None, qbr=None,
-                    classified=False, n_cal_points_per_state=2,
-                    num_cz_gates=1, cal_states='auto', prep_params=None,
-                    exp_metadata=None, analyze=True, return_seq=False,
-                    channels_to_upload=None):
+                    classified=False, n_cal_points_per_state=1,
+                    num_cz_gates=1, cal_states=('g', 'e', 'f'),
+                    prep_params=None, exp_metadata=None, analyze=True,
+                    return_seq=False, channels_to_upload=None):
 
     if isinstance(qbc, str):
         qbc = dev.get_qb(qbc)
