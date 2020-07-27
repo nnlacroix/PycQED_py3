@@ -362,11 +362,13 @@ class Sequence:
                 setattr(new_seq, k, deepcopy(v, memo))
         return new_seq
 
-    def plot(self, segments=None, **segment_plot_kwargs):
+    def plot(self, segments=None, show_and_close=True, **segment_plot_kwargs):
         """
         :param segments: list of segment names to plot
+        :param show_and_close: (bool) show and close the plots (default: True)
         :param segment_plot_kwargs:
-        :return:
+        :return: A list of tuples of figure and axes objects if show_and_close
+            is False, otherwise no return value.
         """
         plots = []
         if segments is None:
@@ -374,5 +376,9 @@ class Sequence:
         else:
             segments = [self.segments[s] for s in segments]
         for s in segments:
-            plots.append(s.plot(**segment_plot_kwargs))
-        return plots
+            plots.append(s.plot(show_and_close=show_and_close,
+                                **segment_plot_kwargs))
+        if show_and_close:
+            return
+        else:
+            return plots

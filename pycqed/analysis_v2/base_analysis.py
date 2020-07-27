@@ -545,8 +545,7 @@ class BaseDataAnalysis(object):
                 self.raw_data_dict['exp_metadata'] = {}
             self.metadata = self.raw_data_dict['exp_metadata']
             cp = CalibrationPoints.from_string(self.get_param_value(
-                'cal_points', default_value=
-                CalibrationPoints.from_string(repr(CalibrationPoints([], [])))))
+                'cal_points', default_value=repr(CalibrationPoints([], []))))
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
                 self.get_param_value('compression_factor', 1),
