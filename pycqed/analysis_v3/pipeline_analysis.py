@@ -109,7 +109,7 @@ def extract_data_hdf(timestamps=None, data_dict=None,
          'exp_metadata.sweep_parameter_units': 'sweep_parameter_units',
          'exp_metadata.value_names': 'value_names',
          'exp_metadata.value_units': 'value_units',
-         'measurementstrings': 'measurementstring'})
+         'exp_metadata.measurementstrings': 'measurementstring'})
     params_dict.update(params_dict_temp)
     hlp_mod.get_params_from_hdf_file(
         data_dict, params_dict=params_dict, numeric_params=numeric_params,
