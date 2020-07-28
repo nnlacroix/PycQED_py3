@@ -213,6 +213,7 @@ class QuantumExperiment(CircuitBuilder):
 
             # configure measurement control (mc_points, detector functions)
             mode = self._configure_mc()
+            print(mode, self.MC.get_sweep_points())
 
             self.guess_label(**kw)
 
@@ -451,6 +452,7 @@ class QuantumExperiment(CircuitBuilder):
             mmnt_mode = "2D"
         else:
             mmnt_mode = "1D"
+        print(self.MC.get_sweep_points())
         return mmnt_mode
 
     def _set_MC(self, MC=None):

@@ -1134,7 +1134,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         self.AWG = AWG
         self.integration_length = integration_length
         self.nr_shots = nr_shots
-        # to be used in MC.get_percdone()
+        # to be used in MC
         self.acq_data_len_scaling = self.nr_shots
 
         # 0/1/2 crosstalk supressed /digitized/raw
@@ -1298,6 +1298,10 @@ class UHFQC_classifier_detector(UHFQC_Base):
         self.prepare_function = prepare_function
         self.prepare_function_kwargs = prepare_function_kwargs
         self.get_values_function_kwargs = get_values_function_kwargs
+        if not self.get_values_function_kwargs.get('averaged', True):
+            # to be used in MC
+            self.acq_data_len_scaling = self.nr_shots
+            print(self.acq_data_len_scaling )
 
     def prepare(self, sweep_points):
         if self.AWG is not None:
