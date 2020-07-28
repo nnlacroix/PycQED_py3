@@ -588,7 +588,7 @@ def classify_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
     return data_dict
 
 
-def threshold_data(data_dict, keys_in, threshold_list, keys_out, **params):
+def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
     """
     Thresholds the data in data_dict specified by keys_in about the
     threshold values in threshold_list (one for each keyi in keys_in).
@@ -598,30 +598,43 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out, **params):
                     data_dict for the data to be processed
     :param keys_out: list of key names or dictionary keys paths in
                     data_dict for the processed data to be saved into
-    :param threshold_list: list of values around which to threshold each
-        data array corresponding to keys_in.
+    :param ro_thresholds: dict with keys meas_obj_names and values specifying
+        the thresholds around which the data array for each meas_obj
+        should be thresholded.
     :param params: keyword arguments.
 
     Assumptions:
-        - len(threshold_list) == len(keys_in)
-        - data arrays corresponding to keys_in must all have the same length
-        - the order of the values in threshold_list is important!
-        The thresholds are in the same order as the data corresponding to
-        the keys_in.
+        - this function must be used for one meas_obj only! Meaning:
+            - keys_in and keys_out have length 1
+            - meas_obj_names exists in either data_dict or params and has one
+                entry
     """
-    if not hasattr(threshold_list, '__iter__'):
-        threshold_list = [threshold_list]
+    if len(keys_in) != 1:
+        raise ValueError('keys_in must have length 1.')
+
+    mobjn = hlp_mod.get_measurement_properties(data_dict,
+                                               props_to_extract=['mobjn'],
+                                               enforce_one_meas_obj=True,
+                                               **params)
+    if ro_thresholds is None:
+        acq_classifier_params = hlp_mod.get_param(
+            f'{mobjn}.acq_classifier_params', data_dict, raise_error=True,
+            **params)
+        if 'thresholds' not in acq_classifier_params:
+            raise KeyError(f'thresholds does not exist in the '
+                           f'acq_classifier_params for {mobjn}.')
+        ro_thresholds = {mobjn: acq_classifier_params['thresholds'][0]}
 
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
-    if len(threshold_list) != len(data_to_proc_dict):
-        raise ValueError('threshold_list and keys_in do not have '
-                         'the same length.')
     keys_in = list(data_to_proc_dict)
     if len(keys_out) != len(keys_in):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
 
     # generate boolean array of size (nr_data_pts_per_ch, len(keys_in).
+    if mobjn not in ro_thresholds:
+        raise KeyError(f'{mobjn} not found in ro_thresholds={ro_thresholds}.')
+    threshold_list = [ro_thresholds[mobjn]]
     thresh_dat = np.stack(
         [data_to_proc_dict[keyi] >= th for keyi, th in
          zip(keys_in, threshold_list)], axis=1)
