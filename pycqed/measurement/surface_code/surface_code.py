@@ -154,7 +154,8 @@ class SurfaceCodeExperiment(qe_mod.QuantumExperiment):
             ops = []
             for a, ds in ancilla_steps.items():
                 ops += [f'Y180 {a}', f'Z180 {a}']
-                ops += [f'Z180 {d}' for d in ds[total_steps//2:]]
+                ops += [f'Z180 {d}' for d in ds[total_steps//2:]
+                            if d is not None]
 
             blocks = [self.block_from_ops(op, [op], pulse_modifs=pulse_modifs)
                       for op in ops]
@@ -169,6 +170,8 @@ class SurfaceCodeExperiment(qe_mod.QuantumExperiment):
             assert qubit_bases.get(pm['ancilla'], 'X') == 'X'
             qubit_bases[pm['ancilla']] = 'X'
             for qb in pm['data']:
+                if qb is None:
+                    continue
                 assert qubit_bases.get(qb, pm['type']) == pm['type']
                 qubit_bases[qb] = pm['type']
         ops_init = []
