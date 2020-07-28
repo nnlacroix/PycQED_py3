@@ -37,8 +37,9 @@ class SurfaceCodeExperiment(qe_mod.QuantumExperiment):
                                  for r in self.readout_rounds])
         self.skip_last_ancilla_readout = skip_last_ancilla_readout
         self.final_readout_delay = kw.get('final_readout_delay', 0)
+        self.mc_points_override = kw.get('mc_points_override', None)
         self._parse_initializations()
-        self.parse_finalizations(
+        self._parse_finalizations(
             basis_rots=kw.get('basis_rots', ('I', 'X90', 'Y90')))
         self.sweep_points = sp_mod.SweepPoints()
         self.sweep_points.add_sweep_parameter(
@@ -47,8 +48,10 @@ class SurfaceCodeExperiment(qe_mod.QuantumExperiment):
             'initialize', self.initializations, '', 'Init', dimension=1)
         self.sequences, self.mc_points = self.sweep_n_dim(
             self.sweep_points, self.main_block())
+        if self.mc_points_override is not None:
+            self.mc_points[0] = self.mc_points_override
 
-    def parse_finalizations(self, basis_rots):
+    def _parse_finalizations(self, basis_rots):
         if self.finalizations is None or self.finalizations == 'logical_z':
             self.finalizations = [len(self.data_qubits) * ['I']]
         elif self.finalizations == 'logical_x':
@@ -200,16 +203,23 @@ class SurfaceCodeExperiment(qe_mod.QuantumExperiment):
         element_name = f'readouts_{readout_round}_{cycle}'
         pulse_modifs = {'all': dict(element_name=element_name,
                                     ref_point='start')}
-        ro_block = self.block_from_ops(element_name,
-                                       [f'RO {a}' for a in ancillas],
+        ops = [f'RO {a}' for a in ancillas]
+        ops += [f'Acq {q}' for q in
+                self.readout_rounds[readout_round]['dummy_readout_qbs']]
+        if cycle == self.nr_cycles - 1:
+            ops += [f'Acq {q}' for q in
+                    self.readout_rounds[readout_round]\
+                        ['dummy_readout_qbs_last_cycle']]
+        ro_block = self.block_from_ops(element_name, ops,
                                        pulse_modifs=pulse_modifs)
 
         element_name = f'resets_{readout_round}_{cycle}'
-        pulse_modifs = {i: dict(element_name=element_name,
-                                codeword=i//len(ancillas),
-                                ref_point_new='end')
-                        for i in range(2*len(ancillas))}
         ops = [f'I {a}' for a in ancillas] + [f'X180 {a}' for a in ancillas]
+        pulse_modifs = {i: dict(
+            element_name=element_name,
+            codeword=i // len(ancillas),
+            ref_point='start')
+            for i in range(len(ops))}
         reset_block = self.block_from_ops(element_name, ops,
                                           pulse_modifs=pulse_modifs)
 
