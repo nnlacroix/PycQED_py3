@@ -184,23 +184,24 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
     data_file = h5py.File(h5filepath, h5mode)
 
     try:
-        if 'measurementstrings' in params_dict:
-            # assumed data_dict['measurementstrings'] is a list
-            if 'measurementstrings' in data_dict:
-                data_dict['measurementstrings'] += [os.path.split(folder)[1][7:]]
-            else:
-                data_dict['measurementstrings'] = [os.path.split(folder)[1][7:]]
-
         for save_par, file_par in params_dict.items():
             epd = data_dict
             all_keys = save_par.split('.')
             for i in range(len(all_keys)-1):
                 if all_keys[i] not in epd:
                     epd[all_keys[i]] = OrderedDict()
-                else:
-                    epd = epd[all_keys[i]]
+                epd = epd[all_keys[i]]
+
             if isinstance(epd, list):
                 epd = epd[-1]
+
+            if file_par == 'measurementstring':
+                add_param(all_keys[-1],
+                          [os.path.split(folder)[1][7:]],
+                          epd, append_value=True,
+                          update_value=False,
+                          replace_value=False)
+                continue
 
             if len(file_par.split('.')) == 1:
                 par_name = file_par.split('.')[0]
