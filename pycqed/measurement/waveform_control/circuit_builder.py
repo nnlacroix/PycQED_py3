@@ -263,7 +263,8 @@ class CircuitBuilder:
             block_name = f"Finalialization_{qb_names}"
         return self.initialize(init_state=init_state, qb_names=qb_names,
                                simultaneous=simultaneous,
-                               prep_params=None, block_name=block_name)
+                               prep_params={'preparation_type': 'wait'},
+                               block_name=block_name)
 
     def prepare(self, qb_names='all', ref_pulse='start',
                 preparation_type='wait', post_ro_wait=1e-6,
