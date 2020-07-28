@@ -644,6 +644,38 @@ def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
             update_value=params.get('update_value', False))
 
 
+def correlate_qubits(data_dict, keys_in, keys_out, **params):
+    """
+    Calculated the ZZ correlator of the arrays of shots indicated by keys_in
+    as follows:
+        - correlator = 0 if even number of 0's
+        - correlator = 1 if odd number of 0's
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+    :param keys_out: list with one entry specifying the key name or dictionary
+        key path in data_dict for the processed data to be saved into
+    :param params: keyword arguments.
+    :return:
+        Saves in data_dict, under keys_out[0], the np.array of correlated shots
+            with the same dimension as one of the arrays indicated by keys_in
+
+    Assumptions:
+        - data must be THRESHOLDED single shots (0's and 1's)
+        - all data arrays indicated by keys_in will be correlated
+    """
+    if len(keys_out) != 1:
+        raise ValueError('keys_out must have length 1.')
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+    all_data_arr = np.array(list(data_to_proc_dict.values()))
+    if not np.all(np.logical_or(all_data_arr == 0, all_data_arr == 1)):
+        raise ValueError('Not all shots have been thresholded.')
+    hlp_mod.add_param(
+        keys_out[0], np.sum(all_data_arr, axis=0) % 2, data_dict,
+        update_value=params.get('update_value', False))
+
+
 def probability_table(data_dict, keys_in, keys_out, **params):
     """
     Creates a general table of counts averaging out all but specified set of
