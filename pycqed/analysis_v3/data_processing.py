@@ -677,7 +677,6 @@ def correlate_qubits(data_dict, keys_in, keys_out, **params):
         update_value=params.get('update_value', False))
 
 
-def probability_table(data_dict, keys_in, keys_out, **params):
 def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
     """
     Creates a general table of counts averaging out all but specified set of
