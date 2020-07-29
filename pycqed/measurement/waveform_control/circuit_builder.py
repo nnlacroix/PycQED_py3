@@ -235,6 +235,7 @@ class CircuitBuilder:
         pulses = []
         pulses.extend(self.prepare(qb_names, ref_pulse="start",
                                    **prep_params).build())
+
         for i, (qbn, init) in enumerate(zip(qb_names, init_state)):
             # Allowing for a list of pulses here makes it possible to,
             # e.g., initialize in the f-level.
@@ -245,7 +246,8 @@ class CircuitBuilder:
                 # We just want the pulses, but we can use block_from_ops as
                 # a helper to get multiple pulses
                 tmp_block = self.block_from_ops('tmp_block', init)
-                tmp_block.pulses[0]['ref_pulse'] = 'start'
+                tmp_block.pulses[0]['ref_pulse'] = \
+                    f'Preparation_{qb_names}-|-end'
                 pulses += tmp_block.pulses
         block = Block(block_name, pulses)
         block.set_end_after_all_pulses()
@@ -401,6 +403,7 @@ class CircuitBuilder:
             preparation_pulses[0]['pulse_delay'] = -ro_separation
             block_end = dict(name='end', pulse_type="VirtualPulse",
                              ref_pulse='preselection_RO',
+                             ref_point='start',
                              pulse_delay=ro_separation)
             preparation_pulses += [block_end]
             return Block(block_name, preparation_pulses)
