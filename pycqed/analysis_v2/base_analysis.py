@@ -552,7 +552,7 @@ class BaseDataAnalysis(object):
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
                 self.get_param_value('compression_factor', 1),
-                self.get_param_value('sweep_points'),
+                SweepPoints.cast_init(self.get_param_value('sweep_points')),
                 cp, self.get_param_value('preparation_params',
                                          default_value=dict()))
         else:
