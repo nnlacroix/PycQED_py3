@@ -1391,7 +1391,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             raise ValueError(
                 'Trigger source for {} has to be "Dig1", "Dig2" or "DIO"!')
 
-        if codeword:
+        if codeword and not (w1 is None and w2 is None):
             playback_string.append('playWaveDIO();')
         else:
             if w1 is None and w2 is not None:
@@ -1455,9 +1455,11 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             # This hack is needed due to a bug on the HDAWG. 
             # Remove this if case once the bug is fixed.
             return [f'setWaveDIO({codeword}, zeros(1) + marker(1, 0), {w2});']
-        else:
+        elif not (w1 is None and w2 is None):
             return ['setWaveDIO({}, {});'.format(codeword, 
                         _zi_wavename_pair_to_argument(w1, w2))]
+        else:
+            return []
 
     def _zi_waves_to_wavenames(self, wave):
         wavenames = []

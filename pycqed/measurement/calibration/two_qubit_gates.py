@@ -49,8 +49,6 @@ class MultiTaskingExperiment(QuantumExperiment):
         self.exception = None
         self.all_main_blocks = []
         self.data_to_fit = {}
-        self.experiment_name = kw.pop(
-            'experiment_name', getattr(self, 'experiment_name', 'Experiment'))
 
         # The following is done because the respective call in the init of
         # QuantumExperiment does not capture all kw since many are explicit
@@ -75,15 +73,6 @@ class MultiTaskingExperiment(QuantumExperiment):
 
     def get_meas_objs_from_task(self, task):
         return self.find_qubits_in_tasks(self.qb_names, [task])
-
-    def guess_label(self, **kw):
-        if self.label is None:
-            self.label = self.experiment_name
-            if self.dev is not None:
-                self.label += self.dev.get_msmt_suffix(self.meas_obj_names)
-            else:
-                # guess_label is called from run_measurement -> we have qubits
-                self.label += mqm.get_multi_qubit_msmt_suffix(self.meas_objs)
 
     def run_measurement(self, **kw):
         # allow the user to overwrite the automatically generated list of
@@ -597,7 +586,7 @@ class DynamicPhase(CalibBuilder):
                 self.autorun(**kw)
 
             if self.update:
-                assert self.dev is not None, \
+                assert self.measurements[0].dev is not None, \
                     "Update only works with device object provided."
                 assert self.measurements[0].analyze, \
                     "Update is only allowed with analyze=True."
