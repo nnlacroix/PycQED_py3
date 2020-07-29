@@ -203,7 +203,7 @@ class CircuitBuilder:
         self.qb_names[i], self.qb_names[j] = self.qb_names[j], self.qb_names[i]
 
     def initialize(self, init_state='0', qb_names='all', prep_params=None,
-                   simultaneous=True, block_name=None):
+                   simultaneous=True, block_name=None, pulse_modifs=None):
         """
         Initializes the specified qubits with the corresponding init_state
         :param init_state (String or list): Can be one of the following
@@ -221,6 +221,8 @@ class CircuitBuilder:
             pulses should be applied simultaneously.
         :param block_name: (str, optional) a name to replace the
             automatically generated block name of the initialization block
+        :param pulse_modifs: (dict) Modification of pulses parameters.
+            See method block_from_ops.
         :return: init block
         """
         if block_name is None:
@@ -247,8 +249,9 @@ class CircuitBuilder:
             if init != ['I']:
                 init = [f"{op} {qbn}" for op in init]
                 # We just want the pulses, but we can use block_from_ops as
-                # a helper to get multiple pulses
-                tmp_block = self.block_from_ops('tmp_block', init)
+                # a helper to get multiple pulses and to process pulse_modifs
+                tmp_block = self.block_from_ops(
+                    'tmp_block', init, pulse_modifs=pulse_modifs)
                 if simultaneous:
                     tmp_block.pulses[0]['ref_pulse'] = 'start'
                 pulses += tmp_block.pulses
@@ -257,7 +260,7 @@ class CircuitBuilder:
         return block
 
     def finalize(self, init_state='0', qb_names='all', simultaneous=True,
-                 block_name=None):
+                 block_name=None, pulse_modifs=None):
         """
         Applies the specified final rotation to the specified qubits.
         This is basically the same initialize, but without preparation.
@@ -269,7 +272,8 @@ class CircuitBuilder:
         return self.initialize(init_state=init_state, qb_names=qb_names,
                                simultaneous=simultaneous,
                                prep_params={'preparation_type': 'wait'},
-                               block_name=block_name)
+                               block_name=block_name,
+                               pulse_modifs=pulse_modifs)
 
     def prepare(self, qb_names='all', ref_pulse='start',
                 preparation_type='wait', post_ro_wait=1e-6,
