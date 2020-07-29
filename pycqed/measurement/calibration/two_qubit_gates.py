@@ -565,6 +565,8 @@ class DynamicPhase(CalibBuilder):
                             new_task_list.append(new_task)
                     task_lists.append(new_task_list)
 
+                # device object will be needed for update
+                self.dev = kw.get('dev', None)
                 # children should not update
                 self.update = kw.pop('update', False)
                 self.measurements = [DynamicPhase(tl, sweep_points, **kw)
@@ -695,7 +697,7 @@ class DynamicPhase(CalibBuilder):
             op = self.get_cz_operation_name(**task)
             op_split = op.split(' ')
             self.dynamic_phase_analysis[task['prefix']] = \
-                tda.CZDynamicPhaseAnalysis(
+                tda.DynamicPhaseAnalysis(
                     qb_names=task['qubits_to_measure'],
                     options_dict={
                         'flux_pulse_length': self.dev.get_pulse_par(
@@ -710,8 +712,8 @@ class DynamicPhase(CalibBuilder):
             for qb_name in task['qubits_to_measure']:
                 self.dyn_phases[op][qb_name] = \
                     self.dynamic_phase_analysis[task['prefix']].proc_data_dict[
-                        'analysis_params_dict'][qb_name][
-                        'dynamic_phase']['val'] * 180 / np.pi
+                        'analysis_params_dict'][f"dynamic_phase_{qb_name}"][
+                        'val'] * 180 / np.pi
 
         return self.dyn_phases, self.dynamic_phase_analysis
 

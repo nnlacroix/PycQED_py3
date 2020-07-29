@@ -20,8 +20,8 @@ pla.search_modules.add(sys.modules[__name__])
 
 # Create pipelines
 
-def pipeline_interleaved_rb_irb(meas_obj_names, mospm, sweep_points,
-                                cal_points, dim_hilbert, nreps=1):
+def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
+                                        cal_points, dim_hilbert, nreps=1):
 
     sweep_points = sp_mod.SweepPoints(from_dict_list=sweep_points)
     if isinstance(cal_points, str):
@@ -80,20 +80,126 @@ def pipeline_interleaved_rb_irb(meas_obj_names, mospm, sweep_points,
     return processing_pipeline
 
 
+def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
+                                     cal_points, n_shots, dim_hilbert,
+                                     ro_thresholds=None, nreps=1):
+
+    sweep_points = sp_mod.SweepPoints(from_dict_list=sweep_points)
+    if isinstance(cal_points, str):
+        cal_points = cp_mod.CalibrationPoints.from_string(cal_points)
+    # n_segments = nr_seeds + nr_cal_segments
+    n_segments_subexp = nreps*(sweep_points.length(0) + len(cal_points.states))
+    n_segments_all = 2*n_segments_subexp
+    # n_sequences = nr_cliffords
+    n_sequences = sweep_points.length(1)
+    processing_pipeline = ppmod.ProcessingPipeline()
+    if nreps > 1:
+        processing_pipeline.add_node('combine_datasets_interleaved_msmt',
+                                     keys_in='raw',
+                                     n_shots=n_shots,
+                                     meas_obj_names=meas_obj_names)
+    keys_in = 'previous combine_datasets_interleaved_msmt' if nreps > 1 \
+        else 'raw'
+    processing_pipeline.add_node('threshold_data',
+                                 keys_in=keys_in,
+                                 ro_thresholds=ro_thresholds,
+                                 meas_obj_names=meas_obj_names)
+    processing_pipeline.add_node('correlate_qubits',
+                                 keys_in='previous threshold_data',
+                                 meas_obj_names=meas_obj_names,
+                                 joint_processing=True, num_keys_out=1,
+                                 keys_out_container='correlation_object',
+                                 add_mobjn_container=False)
+    processing_pipeline.add_node('average_data',
+                                 shape=(n_segments_all*n_sequences, n_shots),
+                                 keys_in='previous threshold_data',
+                                 meas_obj_names=meas_obj_names)
+    processing_pipeline.add_node('average_data',
+                                 shape=(n_segments_all*n_sequences, n_shots),
+                                 keys_in='previous correlate_qubits',
+                                 meas_obj_names=['correlation_object'])
+    meas_obj_names = deepcopy(meas_obj_names)
+    meas_obj_names += ['correlation_object']
+    for label in ['rb', 'irb']:
+        pp = ppmod.ProcessingPipeline(global_keys_out_container=label)
+        pp.add_node(f'{label}_data_from_interleaved_msmt',
+                    keys_in='previous average_data',
+                    meas_obj_names=meas_obj_names)
+        pp.add_node('average_data',
+                    shape=(n_sequences, n_segments_subexp),
+                    keys_in=f'previous {label}.{label}_data_'
+                            f'from_interleaved_msmt',
+                    meas_obj_names=meas_obj_names)
+        pp.add_node('get_std_deviation',
+                    shape=(n_sequences, n_segments_subexp),
+                    keys_in=f'previous {label}.{label}_data_'
+                            f'from_interleaved_msmt',
+                    meas_obj_names=meas_obj_names)
+        pp.add_node('rb_analysis',
+                    d=dim_hilbert,
+                    keys_in=f'previous {label}.average_data',
+                    keys_in_std=f'previous {label}.get_std_deviation',
+                    keys_out=None,
+                    meas_obj_names=meas_obj_names)
+        for mobjn in meas_obj_names:
+            cliffords = sweep_points.get_sweep_params_property(
+                'values', 1, mospm[mobjn][-1])
+            if mobjn in meas_obj_names[:-1]:
+                keys_in = 'previous combine_datasets_interleaved_msmt' \
+                    if nreps > 1 else 'raw'
+                pp.add_node('prepare_1d_raw_data_plot_dicts',
+                            sp_name=mospm[mobjn][-1],
+                            xvals=np.repeat(cliffords,
+                                            n_segments_all*n_shots),
+                            do_plotting=True,
+                            figname_suffix=f'shots_{label}',
+                            keys_in=keys_in,
+                            keys_out=None,
+                            meas_obj_names=mobjn)
+            pp.add_node('prepare_1d_raw_data_plot_dicts',
+                        sp_name=mospm[mobjn][-1],
+                        xvals=np.repeat(cliffords, n_segments_subexp),
+                        do_plotting=True,
+                        figname_suffix=f'{label}',
+                        keys_in=f'previous {label}.{label}_data_'
+                                f'from_interleaved_msmt',
+                        keys_out=None,
+                        meas_obj_names=mobjn)
+        processing_pipeline += pp
+
+    # calculate interleaved gate error
+    processing_pipeline.add_node('irb_gate_error',
+                                 meas_obj_names='correlation_object',
+                                 d=dim_hilbert)
+    return processing_pipeline
+
+
 # nodes related to extracting data
 def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
     """
-
-    :param data_dict:
-    :param keys_in:
-    :param keys_out:
-    :param params:
+    Combines the data from an interleaved RB/IRB measurement that was saved in
+    multiple files into one data set that would look as if it had all been
+    taken in one measurements (one file).
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+    :param keys_out: list of key names or dictionary keys paths in
+                    data_dict for the processed data to be saved into
+    :param params: keyword arguments:
+        Should contain 'exp_metadata_list', 'n_shots', 'mospm', 'rev_movnm',
+        'cp' if they are not in data_dict
+        ToDo: put n_shots info in the metadata (27.07.2020)
     :return:
 
     Assumptions:
+        - ASSUMES MEASUREMENT WAS SPLIT BY SEEDS NOT BY CLIFFORDS. Meaning that
+        each measurement file contains data for all the Cliffords in
+        sweep_points, but for a subset of the total seeds.
 
     """
     assert len(keys_in) == len(keys_out)
+    n_shots = hlp_mod.get_param('n_shots', data_dict, default_value=1, **params)
     mospm, rev_movnm, cp = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['mospm', 'rev_movnm', 'cp'], **params)
     metadata_list = hlp_mod.get_param('exp_metadata_list', data_dict,
@@ -109,12 +215,12 @@ def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
         data = data_to_proc_dict[keyi]
         if not isinstance(data, list):
             raise ValueError(f'Data corresponding to {keyi} is not a list.')
-        # take the segment_chunk for each clifford from each array in data list
-        # and concatenate them. Put all the nr_cliffords concatenations in the
-        # list data_combined
+        # take the segment_chunk * n_shots for each clifford from each array
+        # in data list and concatenate them. Put all the nr_cliffords
+        # concatenations in the list data_combined
         data_combined = [np.concatenate(
-            [d[j*segment_chunk:(j+1)*segment_chunk] for d in data])
-            for j in np.arange(2*nr_cliffords)]
+            [d[j*segment_chunk*n_shots:(j+1)*segment_chunk*n_shots]
+             for d in data]) for j in np.arange(2*nr_cliffords)]
         # concatenate all the lists in data_combined to get one complete
         # array of data
         data_combined = np.concatenate(data_combined)
@@ -130,7 +236,7 @@ def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
         sp = sp_mod.SweepPoints(from_dict_list=sp)
         sp_vals_list = sp.get_sweep_params_property('values', 0, 'all')
         for j, sp_vals in enumerate(sp_vals_list):
-            sp_all_vals_list[j][i::2] = sp_vals
+            sp_all_vals_list[j][i::nr_exp] = sp_vals
 
     sweep_points = sp_mod.SweepPoints()
     for i, sp_name in enumerate(sp0.get_sweep_dimension(0)):

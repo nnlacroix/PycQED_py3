@@ -559,7 +559,7 @@ def classify_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
     thresh_data_binary = np.stack(
         [data_to_proc_dict[keyi] >= th for keyi, th in
          zip(keys_in, threshold_list)], axis=1)
-    print(thresh_data_binary)
+
     # convert each row of thresh_data_binary into the decimal value whose
     # binary representation is given by the booleans in each row.
     # thresh_data_decimal is a 1d array of size nr_data_pts_per_ch
@@ -587,7 +587,7 @@ def classify_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
     return data_dict
 
 
-def threshold_data(data_dict, keys_in, threshold_list, keys_out, **params):
+def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
     """
     Thresholds the data in data_dict specified by keys_in about the
     threshold values in threshold_list (one for each keyi in keys_in).
@@ -597,30 +597,43 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out, **params):
                     data_dict for the data to be processed
     :param keys_out: list of key names or dictionary keys paths in
                     data_dict for the processed data to be saved into
-    :param threshold_list: list of values around which to threshold each
-        data array corresponding to keys_in.
+    :param ro_thresholds: dict with keys meas_obj_names and values specifying
+        the thresholds around which the data array for each meas_obj
+        should be thresholded.
     :param params: keyword arguments.
 
     Assumptions:
-        - len(threshold_list) == len(keys_in)
-        - data arrays corresponding to keys_in must all have the same length
-        - the order of the values in threshold_list is important!
-        The thresholds are in the same order as the data corresponding to
-        the keys_in.
+        - this function must be used for one meas_obj only! Meaning:
+            - keys_in and keys_out have length 1
+            - meas_obj_names exists in either data_dict or params and has one
+                entry
     """
-    if not hasattr(threshold_list, '__iter__'):
-        threshold_list = [threshold_list]
+    if len(keys_in) != 1:
+        raise ValueError('keys_in must have length 1.')
+
+    mobjn = hlp_mod.get_measurement_properties(data_dict,
+                                               props_to_extract=['mobjn'],
+                                               enforce_one_meas_obj=True,
+                                               **params)
+    if ro_thresholds is None:
+        acq_classifier_params = hlp_mod.get_param(
+            f'{mobjn}.acq_classifier_params', data_dict, raise_error=True,
+            **params)
+        if 'thresholds' not in acq_classifier_params:
+            raise KeyError(f'thresholds does not exist in the '
+                           f'acq_classifier_params for {mobjn}.')
+        ro_thresholds = {mobjn: acq_classifier_params['thresholds'][0]}
 
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
-    if len(threshold_list) != len(data_to_proc_dict):
-        raise ValueError('threshold_list and keys_in do not have '
-                         'the same length.')
     keys_in = list(data_to_proc_dict)
     if len(keys_out) != len(keys_in):
         raise ValueError('keys_out and keys_in do not have '
                          'the same length.')
 
     # generate boolean array of size (nr_data_pts_per_ch, len(keys_in).
+    if mobjn not in ro_thresholds:
+        raise KeyError(f'{mobjn} not found in ro_thresholds={ro_thresholds}.')
+    threshold_list = [ro_thresholds[mobjn]]
     thresh_dat = np.stack(
         [data_to_proc_dict[keyi] >= th for keyi, th in
          zip(keys_in, threshold_list)], axis=1)
@@ -629,6 +642,38 @@ def threshold_data(data_dict, keys_in, threshold_list, keys_out, **params):
         hlp_mod.add_param(
             keyo, thresh_dat[:, i].astype('int'), data_dict,
             update_value=params.get('update_value', False))
+
+
+def correlate_qubits(data_dict, keys_in, keys_out, **params):
+    """
+    Calculated the ZZ correlator of the arrays of shots indicated by keys_in
+    as follows:
+        - correlator = 0 if even number of 0's
+        - correlator = 1 if odd number of 0's
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+    :param keys_out: list with one entry specifying the key name or dictionary
+        key path in data_dict for the processed data to be saved into
+    :param params: keyword arguments.
+    :return:
+        Saves in data_dict, under keys_out[0], the np.array of correlated shots
+            with the same dimension as one of the arrays indicated by keys_in
+
+    Assumptions:
+        - data must be THRESHOLDED single shots (0's and 1's)
+        - all data arrays indicated by keys_in will be correlated
+    """
+    if len(keys_out) != 1:
+        raise ValueError('keys_out must have length 1.')
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+    all_data_arr = np.array(list(data_to_proc_dict.values()))
+    if not np.all(np.logical_or(all_data_arr == 0, all_data_arr == 1)):
+        raise ValueError('Not all shots have been thresholded.')
+    hlp_mod.add_param(
+        keys_out[0], np.sum(all_data_arr, axis=0) % 2, data_dict,
+        update_value=params.get('update_value', False))
 
 
 def probability_table(data_dict, keys_in, keys_out, **params):

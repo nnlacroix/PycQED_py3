@@ -408,10 +408,11 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
         RO_spacing += UHFQC.qas_0_integration_length() / 1.8e9
         RO_spacing += 50e-9  # for slack
         RO_spacing = np.ceil(RO_spacing * 225e6 / 3) / 225e6 * 3
-
+    
+    operation_dict = dev.get_operation_dict(qubits=qubits)
     sf = awg_swf2.n_qubit_off_on(
-        [qb.get_ge_pars() for qb in qubits],
-        [qb.get_ro_pars() for qb in qubits],
+        [operation_dict['X180 ' + qb.name] for qb in qubits],
+        [operation_dict['RO ' + qb.name] for qb in qubits],
         preselection=preselection,
         parallel_pulses=True,
         RO_spacing=RO_spacing)
@@ -2428,9 +2429,9 @@ def calibrate_n_qubits(qubits, f_LO, sweep_points_dict, sweep_params=None,
 def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
                     cz_pulse_name, upload=True, label=None, qbr=None,
                     classified=False, n_cal_points_per_state=1,
-                    num_cz_gates=1, cal_states='auto', prep_params=None,
-                    exp_metadata=None, analyze=True, return_seq=False,
-                    channels_to_upload=None, **kw):
+                    num_cz_gates=1, cal_states=('g', 'e', 'f'),
+                    prep_params=None, exp_metadata=None, analyze=True,
+                    return_seq=False, channels_to_upload=None, **kw):
 
     if isinstance(qbc, str):
         qbc = dev.get_qb(qbc)
@@ -2458,9 +2459,9 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
     for qb in [qbc, qbt]:
         qb.prepare(drive='timedomain')
 
-    cal_states = CalibrationPoints.guess_cal_states(cal_states, for_ef=True)
-    cp = CalibrationPoints.multi_qubit([qbr.name], cal_states,
-                                       n_per_state=n_cal_points_per_state)
+    cal_states = CalibrationPoints.guess_cal_states(cal_states)
+    cp = CalibrationPoints.single_qubit(qbr.name, cal_states,
+                                        n_per_state=n_cal_points_per_state)
 
     if prep_params is None:
         prep_params = dev.get_prep_params([qbc, qbt])

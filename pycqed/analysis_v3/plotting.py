@@ -119,14 +119,16 @@ def get_axes_geometry_from_figure(fig):
         get_gridspec().get_geometry()
 
 
-def default_figure_title(data_dict, meas_obj_name):
-    if len(data_dict['timestamps']) > 1:
-        title = f'{data_dict["timestamps"][0]} - ' \
-                f'{data_dict["timestamps"][-1]}' \
-                f'\n{data_dict["measurementstrings"][-1]}'
+def default_figure_title(data_dict, meas_obj_name, **params):
+    timestamps = hlp_mod.get_param('timestamps', data_dict, raise_error=True,
+                                   **params)
+    measurementstrings = hlp_mod.get_param('measurementstrings', data_dict,
+                                           raise_error=True, **params)
+    if len(timestamps) > 1:
+        title = f'{timestamps[0]} - {timestamps[-1]}' \
+                f'\n{measurementstrings[-1]}'
     else:
-        title = f'{data_dict["timestamps"][-1]} ' \
-                f'\n{data_dict["measurementstrings"][-1]}'
+        title = f'{timestamps[-1]}\n{measurementstrings[-1]}'
 
     if len(meas_obj_name.split('_')) > 1:
         title += f'\n{meas_obj_name}'
@@ -652,12 +654,13 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts, cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         yvals = data_to_proc_dict[keyi]
-        ylabel = keyi.split('.')[-1]
-        smax = 25
-        if len(ylabel) > smax:
-            k = len(ylabel) // smax
-            ylabel = '\n'.join([ylabel[i*smax:(i+1)*smax] for i in range(k)] \
-                               + [ylabel[-(len(ylabel) % smax):]])
+        # ylabel = keyi.split('.')[-1]
+        # smax = 25
+        # if len(ylabel) > smax:
+        #     k = len(ylabel) // smax
+        #     ylabel = '\n'.join([ylabel[i*smax:(i+1)*smax] for i in range(k)] \
+        #                        + [ylabel[-(len(ylabel) % smax):]])
+        ylabel = 'Data'
         yunit = hlp_mod.get_param('yunit', params,
                                   default_value=hlp_mod.get_param(
                                       'value_units', data_dict,
