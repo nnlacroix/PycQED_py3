@@ -569,7 +569,8 @@ class CircuitBuilder:
                                   ro_kwargs=ro_kwargs))
         return seq
 
-    def simultaneous_blocks(self, block_name, blocks, block_align='start'):
+    def simultaneous_blocks(self, block_name, blocks, block_align='start',
+                            set_end_after_all_pulses=True):
         """
         Creates a block with name :block_name: that consists of the parallel
         execution of the given :blocks:. Ensures that any pulse or block
@@ -578,11 +579,13 @@ class CircuitBuilder:
         Args:
             block_name (string): name of the block that is created
             blocks (iterable): iterable where each element is a block that has
-            to be executed in parallel to the others.
+                to be executed in parallel to the others.
             block_align (str or float): at which point the simultaneous
                 blocks should be aligned ('start', 'middle', 'end', or a float
                 between 0.0 and 1.0 that determines the alignment point of each
                 block relative to the duration the block). Default: 'start'
+            set_end_after_all_pulses (bool, default True): in all
+                blocks, correct the end pulse to happen after the last pulse.
         """
 
         simultaneous = Block(block_name, [])
@@ -591,7 +594,8 @@ class CircuitBuilder:
             # saves computation time in Segment.resolve_timing
             block_align = None
         for block in blocks:
-            block.set_end_after_all_pulses()
+            if set_end_after_all_pulses:
+                block.set_end_after_all_pulses()
             simultaneous.extend(block.build(
                 ref_pulse=f"start", block_start=dict(block_align=block_align)))
             simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
