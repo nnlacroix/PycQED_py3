@@ -655,7 +655,7 @@ class CircuitBuilder:
     def sweep_n_dim(self, sweep_points, body_block=None, body_block_func=None,
                     cal_points=None, init_state='0', seq_name='Sequence',
                     ro_kwargs=None, return_segments=False, ro_qubits='all',
-                    repeat_ro=True, **kw):
+                    repeat_ro=True, init_kwargs=None, final_kwargs=None, **kw):
         """
         Creates a sequence or a list of segments by doing an N-dim sweep
         over the given operations based on the sweep_points.
@@ -682,6 +682,10 @@ class CircuitBuilder:
                 body_block_func
         :param repeat_ro: (bool) set repeat pattern for readout pulses
             (default: True)
+        :param init_kwargs: Keyword arguments (dict) for the initialization,
+            see method initialize().
+        :param final_kwargs: Keyword arguments (dict) for the finalization,
+            see method finalize().
         :return:
             - if return_segments==True:
                 1D: list of segments, number of 1d sweep points or
@@ -701,6 +705,10 @@ class CircuitBuilder:
 
         if ro_kwargs is None:
             ro_kwargs = {}
+        if init_kwargs is None:
+            init_kwargs = {}
+        if final_kwargs is None:
+            final_kwargs = {}
 
         nr_sp_list = sweep_points.length()
         if sweep_dims == 1:
@@ -722,7 +730,7 @@ class CircuitBuilder:
         sweep_dim_final = sweep_points.find_parameter('finalize')
         if sweep_dim_init is None:
             prep = self.initialize(init_state=init_state,
-                                   qb_names=all_ro_qubits)
+                                   qb_names=all_ro_qubits, **init_kwargs)
         if sweep_dim_final is None:
             final = Block('Finalization', [])
 
@@ -736,7 +744,7 @@ class CircuitBuilder:
                     prep = self.initialize(
                         init_state=sweep_points.get_sweep_params_property(
                             'values', 'all', 'initialize')[dims[sweep_dim_init]],
-                        qb_names=all_ro_qubits)
+                        qb_names=all_ro_qubits, **init_kwargs)
                 if body_block is not None:
                     this_body_block =  body_block
                 else:
@@ -747,7 +755,7 @@ class CircuitBuilder:
                     final = self.finalize(
                         init_state=sweep_points.get_sweep_params_property(
                             'values', 'all', 'finalize')[dims[sweep_dim_final]],
-                        qb_names=all_ro_qubits)
+                        qb_names=all_ro_qubits, **final_kwargs)
 
                 segblock = self.sequential_blocks(
                         'segblock', [prep, this_body_block, final, ro])
