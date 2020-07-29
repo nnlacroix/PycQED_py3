@@ -6633,7 +6633,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         self.delay_ranges_exclude = delay_ranges_exclude
         self.rectangles_exclude = rectangles_exclude
 
-        super().__init__(TwoD=True, auto=False,qb_name=self.qb_name, **kw)
+        super().__init__(TwoD=True, auto=False, qb_name=self.qb_name, **kw)
         if auto:
             self.run_default_analysis()
 
