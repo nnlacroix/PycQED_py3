@@ -1015,7 +1015,7 @@ class GaussFilteredCosIQPulse(pulse.Pulse):
         hashlist += [self.mod_frequency, self.gaussian_filter_sigma]
         hashlist += [self.nr_sigma, self.pulse_length]
         phase = self.phase
-        phase += 360 * (not self.phase_lock) * self.mod_frequency \
+        phase += 360 * self.phase_lock * self.mod_frequency \
                  * self.algorithm_time()
         hashlist += [self.alpha, self.phi_skew, phase]
         return hashlist
