@@ -1001,7 +1001,7 @@ class DynamicPhase(CalibBuilder):
                 self.autorun(**kw)
 
             if self.update:
-                assert self.dev is not None, \
+                assert self.measurements[0].dev is not None, \
                     "Update only works with device object provided."
                 assert self.measurements[0].analyze, \
                     "Update is only allowed with analyze=True."
