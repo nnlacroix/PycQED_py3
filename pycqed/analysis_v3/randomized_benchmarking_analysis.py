@@ -67,6 +67,9 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
                         xvals=np.repeat(cliffords, n_segments),
                         do_plotting=True,
                         figname_suffix=f'{label}',
+                        ylabel='Probability, ' + ('$P(|ee\\rangle)$' if
+                            mobjn=='correlation_object' else '$P(|e\\rangle)$'),
+                        yunit='',
                         keys_in=f'previous {label}.{label}_data_'
                                 f'from_interleaved_msmt',
                         keys_out=None,
@@ -161,6 +164,9 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
                         xvals=np.repeat(cliffords, n_segments_subexp),
                         do_plotting=True,
                         figname_suffix=f'{label}',
+                        ylabel='Probability, ' + ('$P(|ee\\rangle)$' if
+                            mobjn=='correlation_object' else '$P(|e\\rangle)$'),
+                        yunit='',
                         keys_in=f'previous {label}.{label}_data_'
                                 f'from_interleaved_msmt',
                         keys_out=None,
