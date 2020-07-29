@@ -47,7 +47,12 @@ class SurfaceCodeExperiment(qe_mod.QuantumExperiment):
         self.sweep_points.add_sweep_parameter(
             'initialize', self.initializations, '', 'Init', dimension=1)
         self.sequences, self.mc_points = self.sweep_n_dim(
-            self.sweep_points, self.main_block())
+            self.sweep_points, self.main_block(), repeat_ro=False,
+            init_kwargs={'pulse_modifs': {'all': {
+                'element_name': 'init_element'}}},
+            final_kwargs={'pulse_modifs': {'all': {
+                'element_name': 'final_element'}}},
+        )
         if self.mc_points_override is not None:
             self.mc_points[0] = self.mc_points_override
 
