@@ -643,7 +643,6 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     if mobjn not in figure_name:
         figure_name += '_' + mobjn
 
-
     # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
     plot_dict_names = []
@@ -654,13 +653,8 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts, cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         yvals = data_to_proc_dict[keyi]
-        # ylabel = keyi.split('.')[-1]
-        # smax = 25
-        # if len(ylabel) > smax:
-        #     k = len(ylabel) // smax
-        #     ylabel = '\n'.join([ylabel[i*smax:(i+1)*smax] for i in range(k)] \
-        #                        + [ylabel[-(len(ylabel) % smax):]])
-        ylabel = 'Data'
+        ylabel = hlp_mod.get_param('ylabel', data_dict,
+                                   default_value=movnm[mobjn][0], **params)
         yunit = hlp_mod.get_param('yunit', params,
                                   default_value=hlp_mod.get_param(
                                       'value_units', data_dict,
@@ -796,13 +790,15 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts, cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         zvals = data_to_proc_dict[keyi]
+        zlabel = hlp_mod.get_param('ylabel', data_dict,
+                                   default_value=movnm[mobjn][0], **params)
         zunit = hlp_mod.get_param('zunit', params,
                                   default_value=hlp_mod.get_param(
                                       'value_units', data_dict,
                                       default_value='arb.'))
+        zlabel = f'{zlabel} {zunit}'
         if isinstance(zunit, list):
             zunit = zunit[0]
-        zlabel = f'{keyi.split(".")[-1]} {zunit}'
 
         plot_dict_name = figure_name + '_' + keyi + hlp_mod.get_param(
             'key_suffix', data_dict, default_value='', **params)
