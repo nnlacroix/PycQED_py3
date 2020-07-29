@@ -239,7 +239,7 @@ class Sequence:
                         if ch_name in merged_seqs[-1].repeat_patterns:
                             pattern_prev = \
                                 merged_seqs[-1].repeat_patterns[ch_name]
-                            if pattern_prev[1] != pattern[1]:
+                            if pattern_prev[1:] != pattern[1:]:
                                 raise NotImplementedError(
                                     f"The repeat patterns for channel: "
                                     f"{ch_name} do not have the same "
@@ -249,7 +249,7 @@ class Sequence:
                                     f"Set merge_repeat_patterns to False and "
                                     f"update the repeat patterns manually.")
                             pattern_updated = (pattern_prev[0] + pattern[0],
-                                               pattern_prev[1])
+                                               *pattern_prev[1:])
                             merged_seqs[-1].repeat_patterns[ch_name] = \
                                 pattern_updated
                         # add repeat pattern
