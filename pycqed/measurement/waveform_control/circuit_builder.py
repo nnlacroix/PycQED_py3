@@ -217,6 +217,10 @@ class CircuitBuilder:
         :param qb_names (list or 'all'): list of qubits on which init should be
             applied. Defaults to all qubits.
         :param prep_params: preparation parameters
+        :param simultaneous: (bool, default True) whether initialization
+            pulses should be applied simultaneously.
+        :param block_name: (str, optional) a name to replace the
+            automatically generated block name of the initialization block
         :return: init block
         """
         if block_name is None:
@@ -245,7 +249,8 @@ class CircuitBuilder:
                 # We just want the pulses, but we can use block_from_ops as
                 # a helper to get multiple pulses
                 tmp_block = self.block_from_ops('tmp_block', init)
-                tmp_block.pulses[0]['ref_pulse'] = 'start'
+                if simultaneous:
+                    tmp_block.pulses[0]['ref_pulse'] = 'start'
                 pulses += tmp_block.pulses
         block = Block(block_name, pulses)
         block.set_end_after_all_pulses()
