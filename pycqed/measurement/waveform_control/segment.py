@@ -1259,6 +1259,12 @@ class Segment:
                     + new_name
         # rename segment name
         self.name = new_name
+        new_acq_elements = set()
+        for el in self.acquisition_elements:
+            if el.endswith(f"_{old_name}"):
+                new_acq_elements.add(el[:-(len(old_name) + 1)] + '_' \
+                    + new_name)
+        self.acquisition_elements = new_acq_elements
 
     def __deepcopy__(self, memo):
         cls = self.__class__
