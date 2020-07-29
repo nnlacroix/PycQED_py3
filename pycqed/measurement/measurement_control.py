@@ -138,6 +138,10 @@ class MeasurementControl(Instrument):
                       datadir=self.datadir()) as self.data_object:
             self.save_instrument_settings(self.data_object)
 
+    def update_sweep_points(self):
+        sweep_points = self.get_sweep_points()
+        self.set_sweep_points(np.tile(sweep_points, self.acq_data_len_scaling))
+
     def run(self, name: str=None, exp_metadata: dict=None,
             mode: str='1D', disable_snapshot_metadata: bool=False, **kw):
         '''
@@ -178,6 +182,9 @@ class MeasurementControl(Instrument):
 
         # used in get_percdone to scale the length of acquired data
         self.acq_data_len_scaling = self.detector_function.acq_data_len_scaling
+
+        # update sweep_points based on self.acq_data_len_scaling
+        self.update_sweep_points()
 
         # needs to be defined here because of the with statement below
         return_dict = {}
@@ -366,9 +373,8 @@ class MeasurementControl(Instrument):
         ######################
         # DATA STORING BLOCK #
         ######################
-        if sweep_len == len_new_data:  # 1D sweep
-            self.dset[:, 0] = np.tile(self.get_sweep_points().T,
-                                      self.acq_data_len_scaling)
+        if sweep_len == len_new_data and self.mode == '1D':  # 1D sweep
+            self.dset[:, 0] = self.get_sweep_points()
         else:
             try:
                 if len(self.sweep_functions) != 1:
@@ -558,13 +564,11 @@ class MeasurementControl(Instrument):
         self.ylen = len(self.sweep_points_2D)
         if np.size(self.get_sweep_points()[0]) == 1:
             # create inner loop pts
-            self.sweep_pts_x = np.tile(self.get_sweep_points(),
-                                       self.acq_data_len_scaling)
+            self.sweep_pts_x = self.get_sweep_points()
             x_tiled = np.tile(self.sweep_pts_x, self.ylen)
             # create outer loop
             self.sweep_pts_y = self.sweep_points_2D
-            y_rep = np.repeat(self.sweep_pts_y,
-                              self.xlen * self.acq_data_len_scaling, axis=0)
+            y_rep = np.repeat(self.sweep_pts_y, self.xlen, axis=0)
             c = np.column_stack((x_tiled, y_rep))
             self.set_sweep_points(c)
             self.initialize_plot_monitor_2D()
