@@ -239,9 +239,6 @@ class CircuitBuilder:
                 f"qubits"
 
         pulses = []
-        if len(prep_params) != 0:
-            pulses.extend(self.prepare(qb_names, ref_pulse="start",
-                                       **prep_params).build())
         for i, (qbn, init) in enumerate(zip(qb_names, init_state)):
             # Allowing for a list of pulses here makes it possible to,
             # e.g., initialize in the f-level.
@@ -258,6 +255,10 @@ class CircuitBuilder:
                 pulses += tmp_block.pulses
         block = Block(block_name, pulses)
         block.set_end_after_all_pulses()
+        if len(prep_params) != 0:
+            block = self.sequential_blocks(
+                block_name, [self.prepare(qb_names, ref_pulse="start",
+                                          **prep_params), block])
         return block
 
     def finalize(self, init_state='0', qb_names='all', simultaneous=True,
