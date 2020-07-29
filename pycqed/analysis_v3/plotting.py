@@ -796,9 +796,9 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
                                   default_value=hlp_mod.get_param(
                                       'value_units', data_dict,
                                       default_value='arb.'))
-        zlabel = f'{zlabel} {zunit}'
         if isinstance(zunit, list):
             zunit = zunit[0]
+        zlabel = f'{zlabel} {zunit}'
 
         plot_dict_name = figure_name + '_' + keyi + hlp_mod.get_param(
             'key_suffix', data_dict, default_value='', **params)
