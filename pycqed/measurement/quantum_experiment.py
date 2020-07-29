@@ -134,6 +134,7 @@ class QuantumExperiment(CircuitBuilder):
         self.force_2D_sweep = force_2D_sweep
         self.compression_seg_lim = compression_seg_lim
         self.channels_to_upload = []
+        self.experiment_name = None
         self.timestamp = None
         self.analysis = None
 
@@ -240,8 +241,15 @@ class QuantumExperiment(CircuitBuilder):
 
         """
         if self.label is None:
+            if self.experiment_name is None:
+                self.experiment_name = self.sequences[0].name
+            self.label = self.experiment_name
             _, qb_names = self.get_qubits(self.qubits)
-            self.label = f'{self.sequences[0].name}_{",".join(qb_names)}'
+            if self.dev is not None:
+                self.label += self.dev.get_msmt_suffix(self.meas_obj_names)
+            else:
+                # guess_label is called from run_measurement -> we have qubits
+                self.label += mqm.get_multi_qubit_msmt_suffix(self.meas_objs)
 
     def run_analysis(self, analysis_class=None, **kwargs):
         """

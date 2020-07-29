@@ -79,6 +79,13 @@ class Pulse:
                     wfs_dict[c] = np.zeros_like(wfs_dict[c])
         return wfs_dict
 
+    def masked_channels(self):
+        channel_mask = getattr(self, 'channel_mask', None)
+        if channel_mask is None:
+            return self.channels
+        else:
+            return [ch for m, ch in zip(channel_mask, self.channels) if m]
+
     def pulse_area(self, channel, tvals):
         """
         Calculates the area of a pulse on the given channel and time-interval.
