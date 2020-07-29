@@ -647,7 +647,8 @@ class CircuitBuilder:
                               }])
         return simultaneous
 
-    def sequential_blocks(self, block_name, blocks):
+    def sequential_blocks(self, block_name, blocks,
+                          set_end_after_all_pulses=True):
         """
         Creates a block with name :block_name: that consists of the serial
         execution of the given :blocks:.
@@ -655,11 +656,15 @@ class CircuitBuilder:
         Args:
             block_name (string): name of the block that is created
             blocks (iterable): iterable where each element is a block that has
-            to be executed one after another.
+                to be executed one after another.
+            set_end_after_all_pulses (bool, default True): in all
+                blocks, correct the end pulse to happen after the last pulse.
         """
 
         sequential = Block(block_name, [])
         for block in blocks:
+            if set_end_after_all_pulses:
+                block.set_end_after_all_pulses()
             sequential.extend(block.build())
         return sequential
 
