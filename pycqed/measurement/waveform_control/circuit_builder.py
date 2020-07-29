@@ -239,8 +239,9 @@ class CircuitBuilder:
                 f"qubits"
 
         pulses = []
-        pulses.extend(self.prepare(qb_names, ref_pulse="start",
-                                   **prep_params).build())
+        if len(prep_params) != 0:
+            pulses.extend(self.prepare(qb_names, ref_pulse="start",
+                                       **prep_params).build())
         for i, (qbn, init) in enumerate(zip(qb_names, init_state)):
             # Allowing for a list of pulses here makes it possible to,
             # e.g., initialize in the f-level.
@@ -271,7 +272,7 @@ class CircuitBuilder:
             block_name = f"Finalialization_{qb_names}"
         return self.initialize(init_state=init_state, qb_names=qb_names,
                                simultaneous=simultaneous,
-                               prep_params={'preparation_type': 'wait'},
+                               prep_params={},
                                block_name=block_name,
                                pulse_modifs=pulse_modifs)
 
