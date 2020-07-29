@@ -777,22 +777,6 @@ class CircuitBuilder:
             return seqs, [np.arange(seqs[0].n_acq_elements()),
                           np.arange(nr_sp_list[1])]
 
-#     def block_with_tomo(self, indices, sweep_points, block):
-#         basis_rot = sweep_points.get_sweep_params_property('values', 'all',
-#                                                            'basis_rots')
-#
-#         basis_rots[indices[sweep_dim]]
-#
-#         return self.sequential_blocks([tomoprep, block, tomo_end_pulse])
-#
-#
-# body_block_func=block_with_tomo,
-# body_block_func_kw={'block': block, 'basis_rots': ['I', 'X90'], 'sweep_dim': 0}
-#
-#
-# def create_tomo_sweep_points(qb_names, basis_rots):
-#
-
     def tomography_pulses(self, tomo_qubits=None,
                           basis_rots=('I', 'X90', 'Y90'), all_rots=True):
 
