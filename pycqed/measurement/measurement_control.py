@@ -3,6 +3,7 @@ import logging
 log = logging.getLogger(__name__)
 import time
 from copy import deepcopy
+import traceback
 
 import numpy as np
 from scipy.optimize import fmin_powell
@@ -859,7 +860,7 @@ class MeasurementControl(Instrument):
                     self._mon_upd_time = time.time()
                     self.main_QtPlot.update_plot()
             except Exception as e:
-                log.warning(e)
+                log.warning(traceback.format_exc())
 
     def initialize_plot_monitor_2D(self):
         '''
@@ -912,7 +913,7 @@ class MeasurementControl(Instrument):
                     self.time_last_2Dplot_update = time.time()
                     self.secondary_QtPlot.update_plot()
             except Exception as e:
-                log.warning(e)
+                log.warning(traceback.format_exc())
 
     def initialize_plot_monitor_adaptive(self):
         '''
@@ -952,7 +953,7 @@ class MeasurementControl(Instrument):
                         self.time_last_ad_plot_update = time.time()
                         self.secondary_QtPlot.update_plot()
             except Exception as e:
-                log.warning(e)
+                log.warning(traceback.format_exc())
 
     def initialize_plot_monitor_adaptive_cma(self):
         '''
@@ -1151,7 +1152,7 @@ class MeasurementControl(Instrument):
                     self.time_last_ad_plot_update = time.time()
 
             except Exception as e:
-                log.warning(e)
+                log.warning(traceback.format_exc())
 
     def update_plotmon_2D_hard(self):
         '''
@@ -1186,7 +1187,7 @@ class MeasurementControl(Instrument):
                     self.time_last_2Dplot_update = time.time()
                     self.secondary_QtPlot.update_plot()
         except Exception as e:
-            log.warning(e)
+            log.warning(traceback.format_exc())
 
     def _set_plotting_interval(self, plotting_interval):
         if hasattr(self, 'main_QtPlot'):
