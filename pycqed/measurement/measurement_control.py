@@ -1616,7 +1616,7 @@ class MeasurementControl(Instrument):
         if hasattr(self, 'sweep_points'):
             return self.sweep_points
         else:
-            return self.sweep_functions[0].sweep_points
+            return getattr(self.sweep_functions[0], 'sweep_points', None)
 
     def set_adaptive_function_parameters(self, adaptive_function_parameters):
         """
