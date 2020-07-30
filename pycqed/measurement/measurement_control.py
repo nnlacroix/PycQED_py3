@@ -654,18 +654,22 @@ class MeasurementControl(Instrument):
             units = [u for u in sunits]
             sweep_vals = [[] for l in labels]
 
+            # The plotmon_axes_info created here will be updated
+            # multiple times inside the following try-except block in order to
+            # keep the results of as many steps as possible in case an
+            # execption occurs
             plotmon_axes_info[vn] = dict(
                 labels=labels,
                 units=units,
                 zlabel=zlabel,
                 zunit=zunit,
+                labels_2D=labels,
+                units_2D=units,
+                sweep_vals=sweep_vals,
+                lookup=[{}] * len(sweep_vals)
             )
 
             try:
-                # the plotmon_axes_info created above will be updated
-                # multiple times inside this try-except block in order to keep
-                # the results of as many steps as possible in case an
-                # execption occurs
                 if self.mode == '2D':
                     sweep_vals[0] = self.sweep_pts_x
                     sweep_vals[1] = self.sweep_pts_y
@@ -744,21 +748,24 @@ class MeasurementControl(Instrument):
 
                 plotmon_axes_info[vn].update(dict(labels=labels, units=units))
 
-                for i in range(len(labels)):
-                    if len(new_sweep_vals[i]) != len(sweep_vals[i]):
-                        # There seem to be multiple acquisition elements.
-                        # Fall back to sweep indices.
-                        new_sweep_vals[i] = range(len(sweep_vals[i]))
-                    # update label if sweep points look like sweep indices
-                    if len(new_sweep_vals[i]):
-                        try:
-                            np.testing.assert_equal(
-                                list(new_sweep_vals[i]),
-                                list(range(len(new_sweep_vals[i]))))
-                            labels[i] = 'sweep index'
-                            units[i] = ''
-                        except AssertionError:
-                            pass
+                try:
+                    for i in range(len(labels)):
+                        if len(new_sweep_vals[i]) != len(sweep_vals[i]):
+                            # There seem to be multiple acquisition elements.
+                            # Fall back to sweep indices.
+                            new_sweep_vals[i] = range(len(sweep_vals[i]))
+                        # update label if sweep points look like sweep indices
+                        if len(new_sweep_vals[i]):
+                            try:
+                                np.testing.assert_equal(
+                                    list(new_sweep_vals[i]),
+                                    list(range(len(new_sweep_vals[i]))))
+                                labels[i] = 'sweep index'
+                                units[i] = ''
+                            except AssertionError:
+                                pass
+                except:
+                    pass
 
                 plotmon_axes_info[vn].update(dict(labels=labels, units=units))
 
@@ -814,46 +821,49 @@ class MeasurementControl(Instrument):
 
     def initialize_plot_monitor(self):
         # new code
-        if self.main_QtPlot.traces != []:
-            self.main_QtPlot.clear()
-        self.curves = []
-        self._plotmon_axes_info = self._get_plotmon_axes_info()
-        j = 0
-        persist = self.persist_mode()
-        if persist:
-            try:
-                np.testing.assert_equal(self._persist_plotmon_axes_info,
-                                        self._plotmon_axes_info)
-            except AssertionError:
-                persist = False
-        for yi, vn in enumerate(self.detector_function.value_names):
-            axes_info = self._plotmon_axes_info[vn]
-            ylabel = axes_info['zlabel']
-            yunit = axes_info['zunit']
-            for xi, (xlabel, xunit) in enumerate(zip(axes_info['labels'],
-                                                     axes_info['units'])):
-                if persist:  # plotting persist first so new data on top
-                    yp = self._persist_dat[
-                        :, yi+len(self.sweep_function_names)]
-                    xp = self._persist_dat[:, xi]
-                    xp = [axes_info['lookup'][xi].get(xk, xk) for
-                         xk in xp]
-                    if len(xp) < self.plotting_max_pts():
-                        self.main_QtPlot.add(x=xp, y=yp,
-                                             subplot=j+1,
-                                             color=0.75,  # a grayscale value
-                                             symbol='o', symbolSize=5)
-                self.main_QtPlot.add(x=[0], y=[0],
-                                     xlabel=xlabel,
-                                     xunit=xunit,
-                                     ylabel=ylabel,
-                                     yunit=yunit,
-                                     subplot=j+1,
-                                     color=color_cycle[j % len(color_cycle)],
-                                     symbol='o', symbolSize=5)
-                self.curves.append(self.main_QtPlot.traces[-1])
-                j += 1
-            self.main_QtPlot.win.nextRow()
+        try:
+            if self.main_QtPlot.traces != []:
+                self.main_QtPlot.clear()
+            self.curves = []
+            self._plotmon_axes_info = self._get_plotmon_axes_info()
+            j = 0
+            persist = self.persist_mode()
+            if persist:
+                try:
+                    np.testing.assert_equal(self._persist_plotmon_axes_info,
+                                            self._plotmon_axes_info)
+                except AssertionError:
+                    persist = False
+            for yi, vn in enumerate(self.detector_function.value_names):
+                axes_info = self._plotmon_axes_info[vn]
+                ylabel = axes_info['zlabel']
+                yunit = axes_info['zunit']
+                for xi, (xlabel, xunit) in enumerate(zip(axes_info['labels'],
+                                                         axes_info['units'])):
+                    if persist:  # plotting persist first so new data on top
+                        yp = self._persist_dat[
+                            :, yi+len(self.sweep_function_names)]
+                        xp = self._persist_dat[:, xi]
+                        xp = [axes_info['lookup'][xi].get(xk, xk) for
+                             xk in xp]
+                        if len(xp) < self.plotting_max_pts():
+                            self.main_QtPlot.add(x=xp, y=yp,
+                                                 subplot=j+1,
+                                                 color=0.75,  # a grayscale value
+                                                 symbol='o', symbolSize=5)
+                    self.main_QtPlot.add(x=[0], y=[0],
+                                         xlabel=xlabel,
+                                         xunit=xunit,
+                                         ylabel=ylabel,
+                                         yunit=yunit,
+                                         subplot=j+1,
+                                         color=color_cycle[j % len(color_cycle)],
+                                         symbol='o', symbolSize=5)
+                    self.curves.append(self.main_QtPlot.traces[-1])
+                    j += 1
+                self.main_QtPlot.win.nextRow()
+        except Exception as e:
+            log.warning(traceback.format_exc())
 
     def update_plotmon(self, force_update=False):
         # Note: plotting_max_pts takes precendence over force update
@@ -903,26 +913,30 @@ class MeasurementControl(Instrument):
         works). It should be easy to extend this function for more vals.
         '''
         if self.live_plot_enabled():
-            self.time_last_2Dplot_update = time.time()
-            self._plotmon_axes_info = self._get_plotmon_axes_info()
-            sv = list(self._plotmon_axes_info.values())[0]['sweep_vals']
-            self.TwoD_array = np.empty(
-                [len(sv[1]), len(sv[0]),
-                 len(self.detector_function.value_names)])
-            self.TwoD_array[:] = np.NAN
-            self.secondary_QtPlot.clear()
-            for j, vn in enumerate(self.detector_function.value_names):
-                axes_info = self._plotmon_axes_info[vn]
-                self.secondary_QtPlot.add(
-                    x=axes_info['sweep_vals'][0], y=axes_info['sweep_vals'][1],
-                    z=self.TwoD_array[:, :, j],
-                    xlabel=axes_info['labels_2D'][0],
-                    xunit=axes_info['units_2D'][0],
-                    ylabel=axes_info['labels_2D'][1],
-                    yunit=axes_info['units_2D'][1],
-                    zlabel=axes_info['zlabel'], zunit=axes_info['zunit'],
-                    subplot=j+1, cmap='viridis'
-                )
+            try:
+                self.time_last_2Dplot_update = time.time()
+                self._plotmon_axes_info = self._get_plotmon_axes_info()
+                sv = list(self._plotmon_axes_info.values())[0]['sweep_vals']
+                self.TwoD_array = np.empty(
+                    [len(sv[1]), len(sv[0]),
+                     len(self.detector_function.value_names)])
+                self.TwoD_array[:] = np.NAN
+                self.secondary_QtPlot.clear()
+                for j, vn in enumerate(self.detector_function.value_names):
+                    axes_info = self._plotmon_axes_info[vn]
+                    self.secondary_QtPlot.add(
+                        x=axes_info['sweep_vals'][0],
+                        y=axes_info['sweep_vals'][1],
+                        z=self.TwoD_array[:, :, j],
+                        xlabel=axes_info['labels_2D'][0],
+                        xunit=axes_info['units_2D'][0],
+                        ylabel=axes_info['labels_2D'][1],
+                        yunit=axes_info['units_2D'][1],
+                        zlabel=axes_info['zlabel'], zunit=axes_info['zunit'],
+                        subplot=j+1, cmap='viridis'
+                    )
+            except Exception as e:
+                log.warning(traceback.format_exc())
 
     def update_plotmon_2D(self, force_update=False):
         '''
