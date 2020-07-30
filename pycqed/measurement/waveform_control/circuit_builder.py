@@ -571,11 +571,18 @@ class CircuitBuilder:
         return seq
 
     def simultaneous_blocks(self, block_name, blocks, block_align='start',
-                            set_end_after_all_pulses=True):
+                            set_end_after_all_pulses=False):
         """
         Creates a block with name :block_name: that consists of the parallel
         execution of the given :blocks:. Ensures that any pulse or block
         following the created block will occur after the longest given block.
+
+        CAUTION: For each of the given blocks, the end time of the block is
+        determined by the pulse listed last in the block, which is not
+        necessarily the one that ends last in terms of timing. To instead
+        determine the end time of the block based on the pulse that ends
+        last, set set_end_after_all_pulses to True (or adjust the end pulse
+        of each block before calling simultaneous_blocks).
 
         Args:
             block_name (string): name of the block that is created
@@ -585,7 +592,7 @@ class CircuitBuilder:
                 blocks should be aligned ('start', 'middle', 'end', or a float
                 between 0.0 and 1.0 that determines the alignment point of each
                 block relative to the duration the block). Default: 'start'
-            set_end_after_all_pulses (bool, default True): in all
+            set_end_after_all_pulses (bool, default False): in all
                 blocks, correct the end pulse to happen after the last pulse.
         """
 
@@ -653,16 +660,23 @@ class CircuitBuilder:
         return simultaneous
 
     def sequential_blocks(self, block_name, blocks,
-                          set_end_after_all_pulses=True):
+                          set_end_after_all_pulses=False):
         """
         Creates a block with name :block_name: that consists of the serial
         execution of the given :blocks:.
+
+        CAUTION: For each of the given blocks, the end time of the block is
+        determined by the pulse listed last in the block, which is not
+        necessarily the one that ends last in terms of timing. To instead
+        determine the end time of the block based on the pulse that ends
+        last, set set_end_after_all_pulses to True (or adjust the end pulse
+        of each block before calling sequential_blocks).
 
         Args:
             block_name (string): name of the block that is created
             blocks (iterable): iterable where each element is a block that has
                 to be executed one after another.
-            set_end_after_all_pulses (bool, default True): in all
+            set_end_after_all_pulses (bool, default False): in all
                 blocks, correct the end pulse to happen after the last pulse.
         """
 
