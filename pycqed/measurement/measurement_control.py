@@ -314,7 +314,7 @@ class MeasurementControl(Instrument):
         self.save_optimization_settings()
         self.adaptive_function = self.af_pars.pop('adaptive_function')
         if self.live_plot_enabled():
-            # self.initialize_plot_monitor()
+            self.initialize_plot_monitor()
             self.initialize_plot_monitor_adaptive()
         for sweep_function in self.sweep_functions:
             sweep_function.prepare()
@@ -628,8 +628,7 @@ class MeasurementControl(Instrument):
         '''
 
         movnm = self.exp_metadata.get('meas_obj_value_names_map', None)
-        mospm = self.exp_metadata.get('meas_obj_sweep_points_map',
-                                      None)
+        mospm = self.exp_metadata.get('meas_obj_sweep_points_map', None)
         sp = self.exp_metadata.get('sweep_points', None)
         if sp is not None:
             try:
@@ -658,6 +657,11 @@ class MeasurementControl(Instrument):
                 sweep_vals[1] = self.sweep_pts_y
             else:
                 sweep_vals[0] = self.get_sweep_points()
+                if sweep_vals[0] is None:
+                    sweep_vals[0] = []
+                if np.asarray(sweep_vals[0]).ndim == 2:
+                    sweep_vals = [sweep_vals[0][:, i] for i in
+                                  range(np.asarray(sweep_vals[0]).shape[1])]
 
             if cf != 1:
                 # if 2D sweep compression was used
@@ -701,34 +705,63 @@ class MeasurementControl(Instrument):
                         else:
                             new_sweep_vals[i] = tmp_sweep_vals
 
+            # update label if sweep points look like sweep indices
             for i in range(len(labels)):
-                diff = np.diff(new_sweep_vals[i])
-                # if the sweep_vals are not equidistant or if they look like
-                # sweep indices
-                if any([np.abs(d - diff[0]) / np.abs(diff[0]) > 1e-5 for d in
-                        diff]) or list(new_sweep_vals[i]) \
-                        == list(range(len(new_sweep_vals[i]))):
-                    # fall back to sweep indices
-                    labels[i] = 'sweep index'
-                    units[i] = ''
-                    new_sweep_vals[i] = range(len(new_sweep_vals[i]))
+                if len(new_sweep_vals[i]):
+                    try:
+                        np.testing.assert_equal(list(new_sweep_vals[i]), list(
+                            range(len(new_sweep_vals[i]))))
+                        labels[i] = 'sweep index'
+                        units[i] = ''
+                    except AssertionError:
+                        pass
 
             plotmon_axes_info[vn] = dict(
                 labels=labels,
                 units=units,
-                sweep_vals=new_sweep_vals,
                 zlabel=zlabel,
                 zunit=zunit,
-                lookup=[{t: n for t, n in zip(ts, ns)}
-                        for ts, ns in zip(sweep_vals, new_sweep_vals)]
             )
-            if cf != 1:
-                plotmon_axes_info[vn]['lookup'][0] = {
-                    k: v for k, v in zip(self.sweep_pts_x, np.tile(list(
-                        plotmon_axes_info[vn]['lookup'][0].values()), cf))}
-                plotmon_axes_info[vn]['lookup'][1] = {
-                    i: v for i, v in enumerate(
-                        plotmon_axes_info[vn]['lookup'][1].values())}
+
+            # create look up table for primary plotmon
+            try:
+                plotmon_axes_info[vn].update(dict(
+                    lookup=[{ t: n for t, n in zip(ts, ns)}
+                            for ts, ns in zip(sweep_vals, new_sweep_vals)]))
+                # if 2D sweep compression was used
+                if cf != 1:
+                    plotmon_axes_info[vn]['lookup'][0] = {
+                        k: v for k, v in zip(self.sweep_pts_x, np.tile(list(
+                            plotmon_axes_info[vn]['lookup'][0].values()), cf))}
+                    plotmon_axes_info[vn]['lookup'][1] = {
+                        i: v for i, v in enumerate(
+                            plotmon_axes_info[vn]['lookup'][1].values())}
+            except Exception:
+                # leave lookup table empty so that raw values are used
+                plotmon_axes_info[vn].update(
+                    dict(lookup=[{}] * len(sweep_vals)))
+
+            # create axes info for 2D plot in secondary plotmon
+            if self.mode == '2D':
+                new_sweep_vals_2D = deepcopy(new_sweep_vals)
+                labels_2D = deepcopy(labels)
+                units_2D = deepcopy(units)
+
+                for i in range(len(labels)):
+                    diff = np.diff(new_sweep_vals[i])
+                    # if the sweep_vals are not equidistant
+                    if any([np.abs(d - diff[0]) / np.abs(diff[0]) > 1e-5
+                            for d in diff]):
+                        # fall back to sweep indices in 2D plot
+                        new_sweep_vals_2D[i] = range(len(new_sweep_vals[i]))
+                        labels_2D[i] = 'sweep index'
+                        units_2D[i] = ''
+
+                plotmon_axes_info[vn].update(dict(
+                    labels_2D=labels_2D,
+                    units_2D=units_2D,
+                    sweep_vals=new_sweep_vals_2D,
+                ))
 
         return plotmon_axes_info
 
@@ -837,8 +870,10 @@ class MeasurementControl(Instrument):
                 self.secondary_QtPlot.add(
                     x=axes_info['sweep_vals'][0], y=axes_info['sweep_vals'][1],
                     z=self.TwoD_array[:, :, j],
-                    xlabel=axes_info['labels'][0], xunit=axes_info['units'][0],
-                    ylabel=axes_info['labels'][1], yunit=axes_info['units'][1],
+                    xlabel=axes_info['labels_2D'][0],
+                    xunit=axes_info['units_2D'][0],
+                    ylabel=axes_info['labels_2D'][1],
+                    yunit=axes_info['units_2D'][1],
                     zlabel=axes_info['zlabel'], zunit=axes_info['zunit'],
                     subplot=j+1, cmap='viridis'
                 )
