@@ -1824,11 +1824,11 @@ class QuDev_transmon(Qubit):
 
             s1 = swf.Hard_Sweep()
             s1.name = 'Amplitude ratio hardware sweep'
-            s1.label = r'Amplitude ratio, $\alpha$'
+            s1.parameter_name = r'Amplitude ratio, $\alpha$'
             s1.unit = ''
             s2 = swf.Hard_Sweep()
             s2.name = 'Phase skew hardware sweep'
-            s2.label = r'Phase skew, $\phi$'
+            s2.parameter_name = r'Phase skew, $\phi$'
             s2.unit = 'deg'
             MC.set_sweep_functions([s1, s2])
             MC.set_sweep_points(meas_grid.T)
