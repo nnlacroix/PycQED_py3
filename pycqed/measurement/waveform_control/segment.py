@@ -584,7 +584,8 @@ class Segment:
                         **self.trigger_pars)
                     i += 1
 
-                    trig_pulse.algorithm_time(trigger_pulse_time)
+                    trig_pulse.algorithm_time(trigger_pulse_time -
+                                              0.25/self.pulsar.clock(channel))
 
                     # Add trigger element and pulse to seg.elements
                     if trig_pulse.element_name in self.elements:
