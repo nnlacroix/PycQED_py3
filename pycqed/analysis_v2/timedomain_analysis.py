@@ -263,6 +263,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 raise ValueError('When providing "sweep_points", '
                                  '"meas_obj_sweep_points_map" has to be '
                                  'provided in addition.')
+            print(self.mospm)
             self.proc_data_dict['sweep_points_dict'] = \
                 {qbn: {'sweep_points': self.sp.get_sweep_params_property(
                     'values', 0, self.mospm[qbn])[0]}
