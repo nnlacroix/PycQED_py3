@@ -412,7 +412,8 @@ class CircuitBuilder:
             preparation_pulses[0]['pulse_delay'] = -ro_separation
             block_end = dict(name='end', pulse_type="VirtualPulse",
                              ref_pulse='preselection_RO',
-                             pulse_delay=ro_separation)
+                             pulse_delay=ro_separation,
+                             ref_point='start')
             preparation_pulses += [block_end]
             return Block(block_name, preparation_pulses)
 
