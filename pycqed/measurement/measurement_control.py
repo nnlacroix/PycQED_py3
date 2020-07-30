@@ -14,7 +14,7 @@ from pycqed.utilities.get_default_datadir import get_default_datadir
 
 # used for axis labels
 from pycqed.measurement import sweep_points as sp_mod
-from pycqed.measurement.calibration import calibration_points as cal_mod
+from pycqed.measurement.calibration import calibration_points as cp_mod
 
 # Used for auto qcodes parameter wrapping
 from pycqed.measurement import sweep_functions as swf
@@ -725,20 +725,43 @@ class MeasurementControl(Instrument):
                                 'unit', i, spi[0])
                             tmp_sweep_vals = sp.get_sweep_params_property(
                                 'values', i, spi[0])
-                            len_diff = len(new_sweep_vals[i]) - len(
-                                tmp_sweep_vals)
-                            if len_diff > 0:
-                                cp = cal_mod.CalibrationPoints
+                            if i == 0:
+                                # Add sweep points for cal states in the
+                                # hard sweep direction.
+                                # The following line is needed for eval.
+                                CalibrationPoints = cp_mod.CalibrationPoints
+                                try:
+                                    # Try to get number of cal points from
+                                    # metadata. This will allow us later on to
+                                    # detect cases with multiple acquisition
+                                    # elements.
+                                    n_cp = len(eval(self.exp_metadata[
+                                                        'cal_points']).states)
+                                except Exception:
+                                    # Guess number of cal states, which is
+                                    # correct as long as we are not dealing
+                                    # with multiple acquisition elements.
+                                    n_cp = len(new_sweep_vals[i]) - len(
+                                        tmp_sweep_vals)
+                            else:
+                                n_cp = 0
+
+                            if n_cp > 0:
+                                cp = cp_mod.CalibrationPoints
                                 new_sweep_vals[i] = \
                                     cp.extend_sweep_points_by_n_cal_pts(
-                                        len_diff, tmp_sweep_vals)
+                                        n_cp, tmp_sweep_vals)
                             else:
                                 new_sweep_vals[i] = tmp_sweep_vals
 
                 plotmon_axes_info[vn].update(dict(labels=labels, units=units))
 
-                # update label if sweep points look like sweep indices
                 for i in range(len(labels)):
+                    if len(new_sweep_vals[i]) != len(sweep_vals[i]):
+                        # There seem to be multiple acquisition elements.
+                        # Fall back to sweep indices.
+                        new_sweep_vals[i] = range(len(sweep_vals[i]))
+                    # update label if sweep points look like sweep indices
                     if len(new_sweep_vals[i]):
                         try:
                             np.testing.assert_equal(
@@ -751,7 +774,7 @@ class MeasurementControl(Instrument):
 
                 plotmon_axes_info[vn].update(dict(labels=labels, units=units))
 
-                # create look up table for primary plotmon
+                # create look up table for main plotmon
                 try:
                     plotmon_axes_info[vn].update(dict(lookup=[
                         {t: n for t, n in zip(ts, ns)}
