@@ -381,7 +381,8 @@ class CPhase(CalibBuilder):
             self.add_default_sweep_points(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.sequences, self.mc_points = self.parallel_sweep(
-                self.preprocessed_task_list, self.cphase_block, **kw)
+                self.preprocessed_task_list, self.cphase_block,
+                block_align='center', **kw)
 
             self.exp_metadata.update({
                 'cz_durations': self.cz_durations,
@@ -584,7 +585,8 @@ class DynamicPhase(CalibBuilder):
 
                 self.preprocessed_task_list = self.preprocess_task_list(**kw)
                 self.sequences, self.mc_points = self.parallel_sweep(
-                    self.preprocessed_task_list, self.dynamic_phase_block, **kw)
+                    self.preprocessed_task_list, self.dynamic_phase_block,
+                    block_align='center', **kw)
                 self.autorun(**kw)
 
             if self.update:
