@@ -67,9 +67,6 @@ class UHFQCPulsar:
         "}}\n"
     )
 
-    def __init__(self):
-        self.awg_str = ''
-
     def _create_awg_parameters(self, awg, channel_name_map):
         if not isinstance(awg, UHFQCPulsar._supportedAWGtypes):
             return super()._create_awg_parameters(awg, channel_name_map)
@@ -322,8 +319,7 @@ class UHFQCPulsar:
 
     def _upload_to_awg(self, obj):
         if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
-            return super()._upload_to_awg(obj, awg_sequence, waveforms,
-                                          repeat_pattern)
+            return super()._upload_to_awg(obj)
 
         obj.configure_awg_from_string(awg_nr=0,
                                       program_string=self.awg_str,
@@ -360,11 +356,6 @@ class HDAWG8Pulsar:
         "  {playback_string}\n"
         "}}\n"
     )
-
-    def __init__(self):
-        self.prev_dio_valid_polarity = None
-        self.ch_has_waveforms = None
-        self.awg_str = {}
 
     def _create_awg_parameters(self, awg, channel_name_map):
         if not isinstance(awg, HDAWG8Pulsar._supportedAWGtypes):
@@ -556,6 +547,8 @@ class HDAWG8Pulsar:
             _zi_clear_waves()
             self._zi_waves_cleared = True
 
+        self.awg_str = {}
+
         chids = [f'ch{i + 1}{m}' for i in range(8) for m in ['', 'm']]
         divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
 
@@ -639,10 +632,10 @@ class HDAWG8Pulsar:
                                             'waveforms. Using first waveform. '
                                             f'Ignoring element {element}.')
 
-                        ch_has_waveforms[ch1id] |= wave[0] is not None
-                        ch_has_waveforms[ch1mid] |= wave[1] is not None
-                        ch_has_waveforms[ch2id] |= wave[2] is not None
-                        ch_has_waveforms[ch2mid] |= wave[3] is not None
+                        self.ch_has_waveforms[ch1id] |= wave[0] is not None
+                        self.ch_has_waveforms[ch1mid] |= wave[1] is not None
+                        self.ch_has_waveforms[ch2id] |= wave[2] is not None
+                        self.ch_has_waveforms[ch2mid] |= wave[3] is not None
 
                     if not internal_mod:
                         playback_strings += self._zi_playback_string(
@@ -662,7 +655,7 @@ class HDAWG8Pulsar:
                         playback_strings += pb_string
                         interleaves += interleave_string
 
-            if not any([ch_has_waveforms[ch]
+            if not any([self.ch_has_waveforms[ch]
                         for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
                 continue
             awg_str = self._hdawg_sequence_string_template.format(
@@ -678,8 +671,7 @@ class HDAWG8Pulsar:
 
     def _upload_to_awg(self, obj):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
-            return super()._upload_to_awg(obj, awg_sequence, waveforms,
-                                          repeat_pattern)
+            return super()._upload_to_awg(obj)
 
         for awg_nr in self._hdawg_active_awgs():
             obj.configure_awg_from_string(awg_nr,
@@ -721,13 +713,6 @@ class AWG5014Pulsar:
     Defines the Tektronix AWG5014 specific functionality for the Pulsar class
     """
     _supportedAWGtypes = (Tektronix_AWG5014, VirtualAWG5014, )
-
-    def __init__(self):
-        self.pars = None
-        self.old_vals = None
-        self.filename = ''
-        self.awg_file = None
-        self.grp_has_waveforms = None
 
     def _create_awg_parameters(self, awg, channel_name_map):
         if not isinstance(awg, AWG5014Pulsar._supportedAWGtypes):
@@ -924,9 +909,11 @@ class AWG5014Pulsar:
                 raise NotImplementedError('Unknown parameter {}'.format(par))
         return g
 
-    def _prepare_awg_for_upload(self, obj, awg_sequence, waveforms, repeat_pattern=None):
+    def _prepare_awg_for_upload(self, obj, awg_sequence, waveforms,
+                                repeat_pattern=None):
         if not isinstance(obj, AWG5014Pulsar._supportedAWGtypes):
-            return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
+            return super()._prepare_awg_for_upload(obj, awg_sequence, waveforms,
+                                                   repeat_pattern)
 
         pars = {
             'ch{}_m{}_low'.format(ch + 1, m + 1)
@@ -1006,8 +993,7 @@ class AWG5014Pulsar:
 
     def _upload_to_awg(self, obj):
         if not isinstance(obj, AWG5014Pulsar._supportedAWGtypes):
-            return super()._upload_to_awg(obj, awg_sequence, waveforms,
-                                          repeat_pattern)
+            return super()._upload_to_awg(obj)
 
         obj.send_awg_file(self.filename, self.awg_file)
         obj.load_awg_file(self.filename)
@@ -1019,7 +1005,7 @@ class AWG5014Pulsar:
         for par in self.pars:
             obj.set(par, self.old_vals[par])
 
-        time.sleep(.1)
+        time.sleep(.01)
         # Waits for AWG to be ready
         obj.is_awg_ready()
 
@@ -1348,10 +1334,10 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for awg in awgs:
-                executor.submit(self._upload_to_awg, awg)
+                executor.submit(self._upload_to_awg, self.AWG_obj(awg=awg))
 
         for awg in awgs:
-            self._configure_awg_post_upload(awg)
+            self._configure_awg_post_upload(self.AWG_obj(awg=awg))
         self.num_seg = len(sequence.segments)
         self.AWGs_prequeried(False)
 
@@ -1394,6 +1380,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         Args:
             obj: the instance of the AWG to program
         """
+        print(obj)
+        print(type(obj))
         super()._configure_awg_post_upload(obj)
 
     def _hash_to_wavename(self, h):
