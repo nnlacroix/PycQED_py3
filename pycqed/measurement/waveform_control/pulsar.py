@@ -345,6 +345,11 @@ class HDAWG8Pulsar:
         "}}\n"
     )
 
+    def __init__(self):
+        self.prev_dio_valid_polarity = None
+        self.ch_has_waveforms = None
+        self.awg_str = {}
+
     def _create_awg_parameters(self, awg, channel_name_map):
         if not isinstance(awg, HDAWG8Pulsar._supportedAWGtypes):
             return super()._create_awg_parameters(awg, channel_name_map)
@@ -525,30 +530,31 @@ class HDAWG8Pulsar:
         else: 
             return 1
 
-    
-    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None):
+    def _prepare_awg_for_upload(self, obj, awg_sequence, waveforms,
+                                repeat_pattern=None):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
-            return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
-        
+            return super()._prepare_awg_for_upload(obj, awg_sequence,
+                                                   waveforms, repeat_pattern)
+
         if not self._zi_waves_cleared:
             _zi_clear_waves()
             self._zi_waves_cleared = True
-        
-        chids = [f'ch{i+1}{m}' for i in range(8) for m in ['','m']]
-        divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
-        
-        waves_to_upload = {h: divisor[chid]*waveforms[h][::divisor[chid]]
-                               for codewords in awg_sequence.values() 
-                                   if codewords is not None 
-                               for cw, chids in codewords.items() 
-                                   if cw != 'metadata'
-                               for chid, h in chids.items()}
-        self._zi_write_waves(waves_to_upload)
-        
-        ch_has_waveforms = {'ch{}{}'.format(i + 1, m): False 
-                                for i in range(8) for m in ['','m']}
 
-        for awg_nr in self._hdawg_active_awgs(obj):
+        chids = [f'ch{i + 1}{m}' for i in range(8) for m in ['', 'm']]
+        divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
+
+        waves_to_upload = {h: divisor[chid] * waveforms[h][::divisor[chid]]
+                           for codewords in awg_sequence.values()
+                           if codewords is not None
+                           for cw, chids in codewords.items()
+                           if cw != 'metadata'
+                           for chid, h in chids.items()}
+        self._zi_write_waves(waves_to_upload)
+
+        self.ch_has_waveforms = {'ch{}{}'.format(i + 1, m): False
+                                 for i in range(8) for m in ['', 'm']}
+
+        for awg_nr in self._hdawg_active_awgs():
             defined_waves = set()
             codeword_table = {}
             wave_definitions = []
@@ -556,10 +562,9 @@ class HDAWG8Pulsar:
             playback_strings = []
             interleaves = []
 
-            prev_dio_valid_polarity = obj.get(
+            self.prev_dio_valid_polarity = obj.get(
                 'awgs_{}_dio_valid_polarity'.format(awg_nr))
-            
-            added_cw = set()
+
             ch1id = 'ch{}'.format(awg_nr * 2 + 1)
             ch1mid = 'ch{}m'.format(awg_nr * 2 + 1)
             ch2id = 'ch{}'.format(awg_nr * 2 + 2)
@@ -568,15 +573,14 @@ class HDAWG8Pulsar:
 
             channels = [self._id_channel(chid, obj.name) for chid in chids]
 
-            codeword_el = set()
             if all([self.get(
-                f'{chan}_internal_modulation') for chan in channels]):
+                    f'{chan}_internal_modulation') for chan in channels]):
                 internal_mod = True
             elif not any([self.get(
-                f'{chan}_internal_modulation') for chan in channels]):
+                    f'{chan}_internal_modulation') for chan in channels]):
                 internal_mod = False
             else:
-                raise NotImplementedError('Internal modulation can only be' 
+                raise NotImplementedError('Internal modulation can only be'
                                           'specified per sub AWG!')
 
             counter = 1
@@ -587,9 +591,9 @@ class HDAWG8Pulsar:
                     playback_strings.append(f'// Segment {current_segment}')
                     continue
                 playback_strings.append(f'// Element {element}')
-                
+
                 metadata = awg_sequence[element].pop('metadata', {})
-                
+
                 nr_cw = len(set(awg_sequence[element].keys()) - \
                             {'no_codeword'})
 
@@ -603,10 +607,10 @@ class HDAWG8Pulsar:
                                 continue
                         chid_to_hash = awg_sequence[element][cw]
                         wave = tuple(chid_to_hash.get(ch, None)
-                                    for ch in [ch1id, ch1mid, ch2id, ch2mid])
+                                     for ch in [ch1id, ch1mid, ch2id, ch2mid])
                         wave_definitions += self._zi_wave_definition(wave,
-                                                                defined_waves)
-                        
+                                                                     defined_waves)
+
                         if nr_cw != 0:
                             w1, w2 = self._zi_waves_to_wavenames(wave)
                             if cw not in codeword_table:
@@ -625,40 +629,60 @@ class HDAWG8Pulsar:
                         ch_has_waveforms[ch2mid] |= wave[3] is not None
 
                     if not internal_mod:
-                        playback_strings += self._zi_playback_string(name=obj.name,
-                            device='hdawg', wave=wave, codeword=(nr_cw != 0))
+                        playback_strings += self._zi_playback_string(
+                            name=obj.name,
+                            device='hdawg',
+                            wave=wave,
+                            codeword=(nr_cw != 0))
                     else:
                         pb_string, interleave_string = \
-                            self._zi_interleaved_playback_string(name=obj.name, 
-                            device='hdawg', counter=counter, wave=wave, 
-                            codeword=(nr_cw != 0)) 
+                            self._zi_interleaved_playback_string(
+                                name=obj.name,
+                                device='hdawg',
+                                counter=counter,
+                                wave=wave,
+                                codeword=(nr_cw != 0))
                         counter += 1
                         playback_strings += pb_string
                         interleaves += interleave_string
-                
-            if not any([ch_has_waveforms[ch] 
-                    for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
+
+            if not any([ch_has_waveforms[ch]
+                        for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
                 continue
-            
             awg_str = self._hdawg_sequence_string_template.format(
-                wave_definitions='\n'.join(wave_definitions+interleaves),
+                wave_definitions='\n'.join(wave_definitions + interleaves),
                 codeword_table_defs='\n'.join(codeword_table_defs),
                 playback_string='\n  '.join(playback_strings))
+            self.awg_str.update({f'{awg_nr}': awg_str})
 
             # Hack needed to pass the sanity check of the ZI_base_instrument
-            # class in 
+            # class in
             obj._awg_needs_configuration[awg_nr] = False
             obj._awg_program[awg_nr] = True
 
-            obj.configure_awg_from_string(awg_nr, awg_str, timeout=600)
+    def _upload_to_awg(self, obj, awg_sequence, waveforms,
+                       repeat_pattern=None):
+        if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
+            return super()._upload_to_awg(obj, awg_sequence, waveforms,
+                                          repeat_pattern)
 
+        for awg_nr in self._hdawg_active_awgs():
+            obj.configure_awg_from_string(awg_nr,
+                                          self.awg_str[f'{awg_nr}'],
+                                          timeout=600)
+
+    def _configure_awg_post_upload(self, obj):
+        if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
+            return super()._configure_awg_post_upload(obj)
+
+        for awg_nr in self._hdawg_active_awgs():
             obj.set('awgs_{}_dio_valid_polarity'.format(awg_nr),
-                    prev_dio_valid_polarity)
+                    self.prev_dio_valid_polarity)
 
         for ch in range(8):
-            obj.set('sigouts_{}_on'.format(ch), ch_has_waveforms[f'ch{ch+1}'])
+            obj.set('sigouts_{}_on'.format(ch), self.ch_has_waveforms[f'ch{ch+1}'])
 
-        if any(ch_has_waveforms.values()):
+        if any(self.ch_has_waveforms.values()):
             self.awgs_with_waveforms(obj.name)
 
     def _is_awg_running(self, obj):
@@ -666,15 +690,16 @@ class HDAWG8Pulsar:
             return super()._is_awg_running(obj)
 
         return any([obj.get('awgs_{}_enable'.format(awg_nr)) for awg_nr in
-                    self._hdawg_active_awgs(obj)])
+                    self._hdawg_active_awgs()])
 
     def _clock(self, obj, cid):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
             return super()._clock(obj, cid)
         return obj.clock_freq()
 
-    def _hdawg_active_awgs(self, obj):
-        return [0,1,2,3]
+    @staticmethod
+    def _hdawg_active_awgs():
+        return [0, 1, 2, 3]
 
 class AWG5014Pulsar:
     """
