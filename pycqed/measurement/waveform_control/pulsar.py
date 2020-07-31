@@ -5,6 +5,7 @@
 import os
 import shutil
 import ctypes
+import concurrent.futures
 import numpy as np
 import logging
 from qcodes.instrument.base import Instrument
@@ -1277,14 +1278,20 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self._zi_waves_cleared = False
         self._hash_to_wavename_table = {}
 
+        awg_kw_list = []
         for awg in awgs:
+            awg_kw_dict = {
+                'obj': self.AWG_obj(awg=awg),
+                'awg_sequence': awg_sequences.get(awg, {}),
+                'waveforms': waveforms,
+            }
             if awg in repeat_dict.keys():
-                self._program_awg(self.AWG_obj(awg=awg),
-                                  awg_sequences.get(awg, {}), waveforms,
-                                  repeat_pattern=repeat_dict[awg])
-            else:
-                self._program_awg(self.AWG_obj(awg=awg),
-                                  awg_sequences.get(awg, {}), waveforms)
+                awg_kw_dict.update({'repeat_pattern': repeat_dict[awg]})
+            awg_kw_list.append(awg_kw_dict)
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            for awg_kws in awg_kw_list:
+                executor.submit(self._program_awg, **awg_kws)
         
         self.num_seg = len(sequence.segments)
         self.AWGs_prequeried(False)
