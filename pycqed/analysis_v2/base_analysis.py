@@ -27,6 +27,7 @@ from pycqed.measurement.hdf5_data import read_dict_from_hdf5
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import copy
+import traceback
 import logging
 log = logging.getLogger(__name__)
 log.addHandler(logging.StreamHandler())
@@ -203,23 +204,27 @@ class BaseDataAnalysis(object):
         This function is at the core of all analysis and defines the flow.
         This function is typically called after the __init__.
         """
-        self.extract_data()  # extract data specified in params dict
-        self.process_data()  # binning, filtering etc
-        if self.do_fitting:
-            self.prepare_fitting()  # set up fit_dicts
-            self.run_fitting()  # fitting to models
-            self.save_fit_results()
-            self.analyze_fit_results()  # analyzing the results of the fits
+        try:
+            self.extract_data()  # extract data specified in params dict
+            self.process_data()  # binning, filtering etc
+            if self.do_fitting:
+                self.prepare_fitting()  # set up fit_dicts
+                self.run_fitting()  # fitting to models
+                self.save_fit_results()
+                self.analyze_fit_results()  # analyzing the results of the fits
 
-        delegate_plotting = self.check_plotting_delegation()
-        if not delegate_plotting:
-            self.prepare_plots()  # specify default plots
-            if not self.extract_only:
-                self.plot(key_list='auto')  # make the plots
+            delegate_plotting = self.check_plotting_delegation()
+            if not delegate_plotting:
+                self.prepare_plots()  # specify default plots
+                if not self.extract_only:
+                    self.plot(key_list='auto')  # make the plots
 
-            if self.options_dict.get('save_figs', False):
-                self.save_figures(close_figs=self.options_dict.get(
-                    'close_figs', False))
+                if self.options_dict.get('save_figs', False):
+                    self.save_figures(close_figs=self.options_dict.get(
+                        'close_figs', False))
+        except Exception:
+            log.warning("Unhandled error during analysis!")
+            log.warning(traceback.format_exc())
 
     def create_job(self, *args, **kwargs):
         """
