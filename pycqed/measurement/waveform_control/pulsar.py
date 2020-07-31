@@ -1276,8 +1276,11 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         # prequery all AWG clock values and AWG amplitudes
         self.AWGs_prequeried(True)
 
+        log.info(f'Starting compilation of sequence {sequence.name}')
+        t0 = time.time()
         waveforms, awg_sequences = sequence.generate_waveforms_sequences()
-
+        log.info(f'Finished compilation of sequence {sequence.name} in '
+                 f'{time.time() - t0}')
 
 
         channels_used = self._channels_in_awg_sequences(awg_sequences)
@@ -1287,6 +1290,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self._hash_to_wavename_table = {}
 
         for awg in awgs:
+            log.info(f'Started programming {awg}')
+            t0 = time.time()
             if awg in repeat_dict.keys():
                 self._program_awg(self.AWG_obj(awg=awg),
                                   awg_sequences.get(awg, {}), waveforms,
@@ -1294,6 +1299,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             else:
                 self._program_awg(self.AWG_obj(awg=awg),
                                   awg_sequences.get(awg, {}), waveforms)
+            log.info(f'Finished programming {awg} in {time.time() - t0}')
         
         self.num_seg = len(sequence.segments)
         self.AWGs_prequeried(False)
