@@ -165,7 +165,8 @@ class MultiTaskingExperiment(QuantumExperiment):
                     self.add_to_meas_obj_sweep_points_map(mo, k)
         return task
 
-    def parallel_sweep(self, preprocessed_task_list=(), block_func=None, **kw):
+    def parallel_sweep(self, preprocessed_task_list=(), block_func=None,
+                       block_align='start', **kw):
         """
         Calls a block creation function for each task in a task list,
         puts these blocks in parallel and sweeps over the given sweep points.
@@ -192,7 +193,8 @@ class MultiTaskingExperiment(QuantumExperiment):
                     prefix, [k for l in params_to_prefix for k in l])
             parallel_blocks.append(new_block)
 
-        self.all_main_blocks = self.simultaneous_blocks('all', parallel_blocks)
+        self.all_main_blocks = self.simultaneous_blocks('all', parallel_blocks,
+                                                        block_align=block_align)
         if len(self.sweep_points[1]) == 0:
             # with this dummy soft sweep, exactly one sequence will be created
             # and the data format will be the same as for a true soft sweep
@@ -379,7 +381,8 @@ class CPhase(CalibBuilder):
             self.add_default_sweep_points(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.sequences, self.mc_points = self.parallel_sweep(
-                self.preprocessed_task_list, self.cphase_block, **kw)
+                self.preprocessed_task_list, self.cphase_block,
+                block_align='center', **kw)
 
             self.exp_metadata.update({
                 'cz_durations': self.cz_durations,
@@ -582,7 +585,8 @@ class DynamicPhase(CalibBuilder):
 
                 self.preprocessed_task_list = self.preprocess_task_list(**kw)
                 self.sequences, self.mc_points = self.parallel_sweep(
-                    self.preprocessed_task_list, self.dynamic_phase_block, **kw)
+                    self.preprocessed_task_list, self.dynamic_phase_block,
+                    block_align='center', **kw)
                 self.autorun(**kw)
 
             if self.update:

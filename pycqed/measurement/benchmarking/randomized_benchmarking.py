@@ -182,8 +182,8 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
                                  else i]])
             for i, task in enumerate(self.preprocessed_task_list)]
 
-        return self.simultaneous_blocks_align_end(f'sim_rb_{clifford}{sp1d_idx}',
-                                                  rb_block_list)
+        return self.simultaneous_blocks(f'sim_rb_{clifford}{sp1d_idx}',
+                                        rb_block_list, block_align='end')
 
     def add_processing_pipeline(self):
         """
@@ -304,8 +304,8 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
                         for qbn, gates in single_qb_gates.items()]))
             rb_block_list += [self.sequential_blocks(f'rb_block{i}', seq_blocks)]
 
-        return self.simultaneous_blocks_align_end(
-            f'sim_rb_{sp2d_idx}_{sp1d_idx}', rb_block_list)
+        return self.simultaneous_blocks(
+            f'sim_rb_{sp2d_idx}_{sp1d_idx}', rb_block_list, block_align='end')
 
     def add_processing_pipeline(self):
         """

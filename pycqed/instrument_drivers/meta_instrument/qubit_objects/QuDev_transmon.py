@@ -3603,7 +3603,8 @@ class QuDev_transmon(Qubit):
             name='Drive frequency',
             parameter_name='Drive frequency', unit='Hz'))
         MC.set_sweep_points_2D(sweep_points_2D)
-        MC.set_detector_function(self.int_avg_det)
+        det_func = self.int_avg_det
+        MC.set_detector_function(det_func)
         sweep_points = SweepPoints('delay', delays, unit='s',
                                    label=r'delay, $\tau$', dimension=0)
         sweep_points.add_sweep_parameter('freq', freqs, unit='Hz',
@@ -3616,6 +3617,8 @@ class QuDev_transmon(Qubit):
                              'sweep_points_dict_2D': {self.name: freqs},
                              'sweep_points': sweep_points,
                              'meas_obj_sweep_points_map': mospm,
+                             'meas_obj_value_names_map':
+                                 {self.name: det_func.value_names},
                              'use_cal_points': cal_points,
                              'preparation_params': prep_params,
                              'cal_points': repr(cp),
