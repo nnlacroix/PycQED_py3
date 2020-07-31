@@ -414,6 +414,7 @@ class ProcessingPipeline(list):
             assert len(keys_in) % num_keys_out == 0
             n = len(keys_in) // num_keys_out
 
+            mobj_name = node_params['meas_obj_names']
             keys_out = []
             for keyis in [keys_in[i*n: i*n + n] for i
                           in range(num_keys_out)]:
@@ -429,13 +430,13 @@ class ProcessingPipeline(list):
 
                 node_name_to_use = deepcopy(node_name)
                 if node_name_repeated:
-                    # find how many times was the node_name used and add
-                    # 1 to that
+                    # find how many times the node_name was used and add
+                    # that number to the node_name
                     num_previously_used = len(
                         hlp_mod.get_sublst_with_all_strings_of_list(
-                            lst_to_search=[node_name],
-                            lst_to_match=prev_keys_out))
-                    node_name_to_use = f'{node_name}{num_previously_used+1}'
+                            lst_to_search=prev_keys_out,
+                            lst_to_match=[f'{mobj_name}.{node_name}']))
+                    node_name_to_use = f'{node_name}{num_previously_used}'
 
                 keyo = f'{keys_out_container}.{node_name_to_use}'
                 if keyo in prev_keys_out:
@@ -444,7 +445,6 @@ class ProcessingPipeline(list):
                     keyo += [f'{keys_out_container}.'
                              f'{node_name_to_use} {keyo}']
                 else:
-                    mobj_name = node_params['meas_obj_names']
                     keyo = f'{keyo} ' \
                            f'{",".join(meas_obj_value_names_map[mobj_name])}'
                 keys_out += [keyo]
