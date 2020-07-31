@@ -547,8 +547,11 @@ class BaseDataAnalysis(object):
             if len(self.raw_data_dict['exp_metadata']) == 0:
                 self.raw_data_dict['exp_metadata'] = {}
             self.metadata = self.raw_data_dict['exp_metadata']
-            cp = CalibrationPoints.from_string(self.get_param_value(
-                'cal_points', default_value=repr(CalibrationPoints([], []))))
+            try:
+                cp = CalibrationPoints.from_string(self.get_param_value(
+                    'cal_points'))
+            except TypeError:
+                cp = CalibrationPoints([], [])
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
                 self.get_param_value('compression_factor', 1),
