@@ -67,6 +67,9 @@ class UHFQCPulsar:
         "}}\n"
     )
 
+    def __init__(self):
+        self.awg_str = ''
+
     def _create_awg_parameters(self, awg, channel_name_map):
         if not isinstance(awg, UHFQCPulsar._supportedAWGtypes):
             return super()._create_awg_parameters(awg, channel_name_map)
@@ -199,9 +202,11 @@ class UHFQCPulsar:
             raise NotImplementedError('Unknown parameter {}'.format(par))
         return g 
 
-    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None):
+    def _prepare_awg_for_upload(self, obj, awg_sequence, waveforms,
+                                repeat_pattern=None):
         if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
-            return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
+            return super()._prepare_awg_for_upload(obj, awg_sequence,
+                                                   waveforms, repeat_pattern)
 
         if not self._zi_waves_cleared:
             _zi_clear_waves()
@@ -277,7 +282,8 @@ class UHFQCPulsar:
                         el_played_list.append(el_cnt)
                     if n[0] > 1:
                         playback_strings.append('}')
-                    return int(n[0] * np.sum(el_played_list)), playback_strings, wave_definitions
+                    return (int(n[0] * np.sum(el_played_list)),
+                            playback_strings, wave_definitions)
                 else:
                     for k in range(n):
                         el_index = real_indicies[int(index)+k]
@@ -288,16 +294,13 @@ class UHFQCPulsar:
                         el_played = el_played + 1
                     return el_played, playback_strings, wave_definitions
 
-
-
-            el_played, playback_strings, wave_definitions = repeat_func(repeat_pattern, 0, 0,
-                                                  playback_strings, wave_definitions)
-
+            el_played, playback_strings, wave_definitions = repeat_func(
+                repeat_pattern, 0, 0, playback_strings, wave_definitions
+            )
 
             if int(el_played) != int(el_total):
                 log.error(el_played, ' is not ', el_total)
                 raise ValueError('Check number of sequences in repeat pattern')
-
 
         if not (ch_has_waveforms['ch1'] or ch_has_waveforms['ch2']):
             return
@@ -307,6 +310,7 @@ class UHFQCPulsar:
             wave_definitions='\n'.join(wave_definitions),
             playback_string='\n  '.join(playback_strings),
         )
+        self.awg_str = awg_str
 
         # Necessary hack to pass the UHFQC drivers sanity check 
         # in acquisition_initialize()
@@ -316,7 +320,20 @@ class UHFQCPulsar:
         obj._awg_needs_configuration[0] = False
         obj._awg_program[0] = True
 
-        obj.configure_awg_from_string(awg_nr=0, program_string=awg_str, timeout=600)
+    def _upload_to_awg(self, obj, awg_sequence, waveforms,
+                       repeat_pattern=None):
+        if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
+            return super()._upload_to_awg(obj, awg_sequence, waveforms,
+                                          repeat_pattern)
+
+        obj.configure_awg_from_string(awg_nr=0,
+                                      program_string=self.awg_str,
+                                      timeout=600)
+
+    def _configure_awg_post_upload(self, obj):
+        if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
+            return super()._configure_awg_post_upload(obj)
+        pass
 
     def _is_awg_running(self, obj):
         if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
@@ -707,6 +724,13 @@ class AWG5014Pulsar:
     """
     _supportedAWGtypes = (Tektronix_AWG5014, VirtualAWG5014, )
 
+    def __init__(self):
+        self.pars = None
+        self.old_vals = None
+        self.filename = ''
+        self.awg_file = None
+        self.grp_has_waveforms = None
+
     def _create_awg_parameters(self, awg, channel_name_map):
         if not isinstance(awg, AWG5014Pulsar._supportedAWGtypes):
             return super()._create_awg_parameters(awg, channel_name_map)
@@ -902,7 +926,7 @@ class AWG5014Pulsar:
                 raise NotImplementedError('Unknown parameter {}'.format(par))
         return g
 
-    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None):
+    def _prepare_awg_for_upload(self, obj, awg_sequence, waveforms, repeat_pattern=None):
         if not isinstance(obj, AWG5014Pulsar._supportedAWGtypes):
             return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
 
@@ -920,6 +944,9 @@ class AWG5014Pulsar:
         old_vals = {}
         for par in pars:
             old_vals[par] = obj.get(par)
+
+        self.old_vals = old_vals
+        self.pars = pars
 
         packed_waveforms = {}
         wfname_l = []
@@ -962,6 +989,7 @@ class AWG5014Pulsar:
                 obj.set('{}_state'.format(grp), grp_has_waveforms[grp])
             return None
 
+        self.grp_has_waveforms = grp_has_waveforms
         self.awgs_with_waveforms(obj.name)
 
         nrep_l = [1] * len(wfname_l)
@@ -970,23 +998,36 @@ class AWG5014Pulsar:
         wait_l = [1] * len(wfname_l)
         logic_jump_l = [0] * len(wfname_l)
 
-        filename = 'pycqed_pulsar.awg'
+        self.filename = 'pycqed_pulsar.awg'
 
-        awg_file = obj.generate_awg_file(packed_waveforms, np.array(wfname_l).transpose().copy(),
+        awg_file = obj.generate_awg_file(packed_waveforms,
+                                         np.array(wfname_l).transpose().copy(),
                                          nrep_l, wait_l, goto_l, logic_jump_l,
                                          self._awg5014_chan_cfg(obj.name))
-        obj.send_awg_file(filename, awg_file)
-        obj.load_awg_file(filename)
+        self.awg_file = awg_file
 
-        for par in pars:
-            obj.set(par, old_vals[par])
+    def _upload_to_awg(self, obj, awg_sequence, waveforms,
+                       repeat_pattern=None):
+        if not isinstance(obj, AWG5014Pulsar._supportedAWGtypes):
+            return super()._upload_to_awg(obj, awg_sequence, waveforms,
+                                          repeat_pattern)
+
+        obj.send_awg_file(self.filename, self.awg_file)
+        obj.load_awg_file(self.filename)
+
+    def _configure_awg_post_upload(self, obj):
+        if not isinstance(obj, AWG5014Pulsar._supportedAWGtypes):
+            return super()._configure_awg_post_upload(obj)
+
+        for par in self.pars:
+            obj.set(par, self.old_vals[par])
 
         time.sleep(.1)
         # Waits for AWG to be ready
         obj.is_awg_ready()
 
         for grp in ['ch1', 'ch2', 'ch3', 'ch4']:
-            obj.set('{}_state'.format(grp), 1*grp_has_waveforms[grp])
+            obj.set('{}_state'.format(grp), 1*self.grp_has_waveforms[grp])
 
         hardware_offsets = 0
         for grp in ['ch1', 'ch2', 'ch3', 'ch4']:
@@ -995,8 +1036,6 @@ class AWG5014Pulsar:
             if offset_mode == 'hardware':
                 hardware_offsets = 1
             obj.DC_output(hardware_offsets)
-
-        return awg_file
 
     def _is_awg_running(self, obj):
         if not isinstance(obj, AWG5014Pulsar._supportedAWGtypes):
