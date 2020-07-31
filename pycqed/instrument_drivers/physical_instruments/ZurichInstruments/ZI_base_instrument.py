@@ -1254,13 +1254,10 @@ class ZI_base_instrument(Instrument):
 
         t0 = time.time()
         success_and_ready = False
-        if not hasattr(self, 'compiler_statusstring'):
-            self.compiler_statusstring = ''
 
         # This check (and while loop) is added as a workaround for #9
         while not success_and_ready:
-            self.compiler_statusstring += ('\nConfiguring AWG {}...\n'.format(
-                awg_nr))
+            print('Configuring AWG {}...'.format(awg_nr))
 
             self._awgModule.set('awgModule/index', awg_nr)
             self._awgModule.set('awgModule/compiler/sourcestring', program_string)
@@ -1308,8 +1305,7 @@ class ZI_base_instrument(Instrument):
                  hash_val)
 
         t1 = time.time()
-        self.compiler_statusstring += (self._awgModule.get(
-            'awgModule/compiler/statusstring')
+        print(self._awgModule.get('awgModule/compiler/statusstring')
               ['compiler']['statusstring'][0] + ' in {:.2f}s'.format(t1-t0))
 
         # Check status
