@@ -1354,7 +1354,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for awg in awgs:
                 executor.submit(self._upload_to_awg,
-                                self.AWG_obj(awg=awg)
+                                self.AWG_obj(awg=awg),
                                 **awg_out_kw_dict[awg])
 
         for awg in awgs:
