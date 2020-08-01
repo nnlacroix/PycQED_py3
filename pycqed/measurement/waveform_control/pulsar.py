@@ -170,6 +170,9 @@ class UHFQCPulsar:
         self.add_parameter('{}_compensation_pulse_delay'.format(name), 
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
+        self.add_parameter('{}_compensation_pulse_gaussian_filter_sigma'.format(name),
+                           initial_value=0, unit='s',
+                           parameter_class=ManualParameter)
 
     @staticmethod
     def _uhfqc_setter(obj, id, par):
@@ -302,6 +305,11 @@ class UHFQCPulsar:
         if not (ch_has_waveforms['ch1'] or ch_has_waveforms['ch2']):
             return
         self.awgs_with_waveforms(obj.name)
+
+        # Ensure that all channels have something programmed
+        # Could also check here whether awg_sequence == {}
+        if playback_strings == []:
+            playback_strings.append('wait(100);')
         
         awg_str = self._uhf_sequence_string_template.format(
             wave_definitions='\n'.join(wave_definitions),
@@ -320,9 +328,9 @@ class UHFQCPulsar:
             'awg_str': awg_str
         }
 
-    def _upload_to_awg(self, obj):
+    def _upload_to_awg(self, obj, **kwargs):
         if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
-            return super()._upload_to_awg(obj)
+            return super()._upload_to_awg(obj, **kwargs)
 
         obj.configure_awg_from_string(awg_nr=0,
                                       program_string=kwargs['awg_str'],
@@ -464,6 +472,9 @@ class HDAWG8Pulsar:
                             parameter_class=ManualParameter,
                             vals=vals.Numbers(0., 1.), initial_value=0.5)
         self.add_parameter('{}_compensation_pulse_delay'.format(name), 
+                           initial_value=0, unit='s',
+                           parameter_class=ManualParameter)
+        self.add_parameter('{}_compensation_pulse_gaussian_filter_sigma'.format(name),
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
         self.add_parameter('{}_internal_modulation'.format(name), 
@@ -662,11 +673,12 @@ class HDAWG8Pulsar:
 
             if not any([ch_has_waveforms[ch]
                         for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
-                continue
-            awg_str = self._hdawg_sequence_string_template.format(
-                wave_definitions='\n'.join(wave_definitions + interleaves),
-                codeword_table_defs='\n'.join(codeword_table_defs),
-                playback_string='\n  '.join(playback_strings))
+                awg_str = 'wait(100);'
+            else:
+                awg_str = self._hdawg_sequence_string_template.format(
+                    wave_definitions='\n'.join(wave_definitions + interleaves),
+                    codeword_table_defs='\n'.join(codeword_table_defs),
+                    playback_string='\n  '.join(playback_strings))
             awg_str_dict.update({f'{awg_nr}': awg_str})
 
             # Hack needed to pass the sanity check of the ZI_base_instrument
@@ -674,11 +686,11 @@ class HDAWG8Pulsar:
             obj._awg_needs_configuration[awg_nr] = False
             obj._awg_program[awg_nr] = True
 
-            return {
-                'awg_str_dict': awg_str_dict,
-                'ch_has_waveforms': ch_has_waveforms,
-                'prev_dio_valid_polarity': prev_dio_valid_polarity,
-            }
+        return {
+            'awg_str_dict': awg_str_dict,
+            'ch_has_waveforms': ch_has_waveforms,
+            'prev_dio_valid_polarity': prev_dio_valid_polarity,
+        }
 
     def _upload_to_awg(self, obj, **kwargs):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
@@ -831,6 +843,9 @@ class AWG5014Pulsar:
         self.add_parameter('{}_compensation_pulse_delay'.format(name), 
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
+        self.add_parameter('{}_compensation_pulse_gaussian_filter_sigma'.format(name),
+                           initial_value=0, unit='s',
+                           parameter_class=ManualParameter)
     
     def _awg5014_create_marker_channel_parameters(self, id, name, awg):
         self.add_parameter('{}_id'.format(name), get_cmd=lambda _=id: _)
@@ -980,7 +995,7 @@ class AWG5014Pulsar:
 
         if not any(grp_has_waveforms.values()):
             for grp in ['ch1', 'ch2', 'ch3', 'ch4']:
-                obj.set('{}_state'.format(grp), grp_has_waveforms[grp])
+                obj.set(f'{grp}_state', grp_has_waveforms[grp])
             return None
 
         self.awgs_with_waveforms(obj.name)
@@ -1353,13 +1368,19 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for awg in awgs:
-                executor.submit(self._upload_to_awg,
-                                self.AWG_obj(awg=awg),
-                                **awg_out_kw_dict[awg])
+                if awg_out_kw_dict[awg] is not None:
+                    executor.submit(self._upload_to_awg,
+                                    self.AWG_obj(awg=awg),
+                                    **awg_out_kw_dict[awg])
+        # for awg in awgs:
+        #     if awg_out_kw_dict[awg] is not None:
+        #         self._upload_to_awg(self.AWG_obj(awg=awg),
+        #                             **awg_out_kw_dict[awg])
 
         for awg in awgs:
-            self._configure_awg_post_upload(self.AWG_obj(awg=awg),
-                                            **awg_out_kw_dict[awg])
+            if awg_out_kw_dict[awg] is not None:
+                self._configure_awg_post_upload(self.AWG_obj(awg=awg),
+                                                **awg_out_kw_dict[awg])
         self.num_seg = len(sequence.segments)
         self.AWGs_prequeried(False)
 
