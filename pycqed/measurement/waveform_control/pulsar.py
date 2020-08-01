@@ -307,7 +307,6 @@ class UHFQCPulsar:
             wave_definitions='\n'.join(wave_definitions),
             playback_string='\n  '.join(playback_strings),
         )
-        self.awg_str = awg_str
 
         # Necessary hack to pass the UHFQC drivers sanity check 
         # in acquisition_initialize()
@@ -317,17 +316,21 @@ class UHFQCPulsar:
         obj._awg_needs_configuration[0] = False
         obj._awg_program[0] = True
 
+        return {
+            'awg_str': awg_str
+        }
+
     def _upload_to_awg(self, obj):
         if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
             return super()._upload_to_awg(obj)
 
         obj.configure_awg_from_string(awg_nr=0,
-                                      program_string=self.awg_str,
+                                      program_string=kwargs['awg_str'],
                                       timeout=600)
 
-    def _configure_awg_post_upload(self, obj):
+    def _configure_awg_post_upload(self, obj, **kwargs):
         if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
-            return super()._configure_awg_post_upload(obj)
+            return super()._configure_awg_post_upload(obj, **kwargs)
         pass
 
     def _is_awg_running(self, obj):
@@ -547,7 +550,8 @@ class HDAWG8Pulsar:
             _zi_clear_waves()
             self._zi_waves_cleared = True
 
-        self.awg_str = {}
+        awg_str_dict = {}
+        prev_dio_valid_polarity = {}
 
         chids = [f'ch{i + 1}{m}' for i in range(8) for m in ['', 'm']]
         divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
@@ -560,8 +564,8 @@ class HDAWG8Pulsar:
                            for chid, h in chids.items()}
         self._zi_write_waves(waves_to_upload)
 
-        self.ch_has_waveforms = {'ch{}{}'.format(i + 1, m): False
-                                 for i in range(8) for m in ['', 'm']}
+        ch_has_waveforms = {'ch{}{}'.format(i + 1, m): False
+                            for i in range(8) for m in ['', 'm']}
 
         for awg_nr in self._hdawg_active_awgs():
             defined_waves = set()
@@ -571,8 +575,9 @@ class HDAWG8Pulsar:
             playback_strings = []
             interleaves = []
 
-            self.prev_dio_valid_polarity = obj.get(
-                'awgs_{}_dio_valid_polarity'.format(awg_nr))
+            prev_dio_valid_polarity.update(
+                {f'{awg_nr}': obj.get(f'awgs_{awg_nr}_dio_valid_polarity')}
+            )
 
             ch1id = 'ch{}'.format(awg_nr * 2 + 1)
             ch1mid = 'ch{}m'.format(awg_nr * 2 + 1)
@@ -617,8 +622,8 @@ class HDAWG8Pulsar:
                         chid_to_hash = awg_sequence[element][cw]
                         wave = tuple(chid_to_hash.get(ch, None)
                                      for ch in [ch1id, ch1mid, ch2id, ch2mid])
-                        wave_definitions += self._zi_wave_definition(wave,
-                                                                     defined_waves)
+                        wave_definitions += self._zi_wave_definition(
+                            wave, defined_waves)
 
                         if nr_cw != 0:
                             w1, w2 = self._zi_waves_to_wavenames(wave)
@@ -632,10 +637,10 @@ class HDAWG8Pulsar:
                                             'waveforms. Using first waveform. '
                                             f'Ignoring element {element}.')
 
-                        self.ch_has_waveforms[ch1id] |= wave[0] is not None
-                        self.ch_has_waveforms[ch1mid] |= wave[1] is not None
-                        self.ch_has_waveforms[ch2id] |= wave[2] is not None
-                        self.ch_has_waveforms[ch2mid] |= wave[3] is not None
+                        ch_has_waveforms[ch1id] |= wave[0] is not None
+                        ch_has_waveforms[ch1mid] |= wave[1] is not None
+                        ch_has_waveforms[ch2id] |= wave[2] is not None
+                        ch_has_waveforms[ch2mid] |= wave[3] is not None
 
                     if not internal_mod:
                         playback_strings += self._zi_playback_string(
@@ -662,34 +667,41 @@ class HDAWG8Pulsar:
                 wave_definitions='\n'.join(wave_definitions + interleaves),
                 codeword_table_defs='\n'.join(codeword_table_defs),
                 playback_string='\n  '.join(playback_strings))
-            self.awg_str.update({f'{awg_nr}': awg_str})
+            awg_str_dict.update({f'{awg_nr}': awg_str})
 
             # Hack needed to pass the sanity check of the ZI_base_instrument
             # class in
             obj._awg_needs_configuration[awg_nr] = False
             obj._awg_program[awg_nr] = True
 
-    def _upload_to_awg(self, obj):
+            return {
+                'awg_str_dict': awg_str_dict,
+                'ch_has_waveforms': ch_has_waveforms,
+                'prev_dio_valid_polarity': prev_dio_valid_polarity,
+            }
+
+    def _upload_to_awg(self, obj, **kwargs):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
-            return super()._upload_to_awg(obj)
+            return super()._upload_to_awg(obj, **kwargs)
 
         for awg_nr in self._hdawg_active_awgs():
             obj.configure_awg_from_string(awg_nr,
-                                          self.awg_str[f'{awg_nr}'],
+                                          kwargs['awg_str_dict'][f'{awg_nr}'],
                                           timeout=600)
 
-    def _configure_awg_post_upload(self, obj):
+    def _configure_awg_post_upload(self, obj, **kwargs):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
-            return super()._configure_awg_post_upload(obj)
+            return super()._configure_awg_post_upload(obj, **kwargs)
 
         for awg_nr in self._hdawg_active_awgs():
-            obj.set('awgs_{}_dio_valid_polarity'.format(awg_nr),
-                    self.prev_dio_valid_polarity)
+            obj.set(f'awgs_{awg_nr}_dio_valid_polarity',
+                    kwargs['prev_dio_valid_polarity'][f'{awg_nr}'])
 
         for ch in range(8):
-            obj.set('sigouts_{}_on'.format(ch), self.ch_has_waveforms[f'ch{ch+1}'])
+            obj.set(f'sigouts_{ch}_on',
+                    kwargs['ch_has_waveforms'][f'ch{ch+1}'])
 
-        if any(self.ch_has_waveforms.values()):
+        if any(kwargs['ch_has_waveforms'].values()):
             self.awgs_with_waveforms(obj.name)
 
     def _is_awg_running(self, obj):
@@ -930,9 +942,6 @@ class AWG5014Pulsar:
         for par in pars:
             old_vals[par] = obj.get(par)
 
-        self.old_vals = old_vals
-        self.pars = pars
-
         packed_waveforms = {}
         wfname_l = []
 
@@ -974,7 +983,6 @@ class AWG5014Pulsar:
                 obj.set('{}_state'.format(grp), grp_has_waveforms[grp])
             return None
 
-        self.grp_has_waveforms = grp_has_waveforms
         self.awgs_with_waveforms(obj.name)
 
         nrep_l = [1] * len(wfname_l)
@@ -983,34 +991,42 @@ class AWG5014Pulsar:
         wait_l = [1] * len(wfname_l)
         logic_jump_l = [0] * len(wfname_l)
 
-        self.filename = 'pycqed_pulsar.awg'
+        filename = 'pycqed_pulsar.awg'
 
         awg_file = obj.generate_awg_file(packed_waveforms,
                                          np.array(wfname_l).transpose().copy(),
                                          nrep_l, wait_l, goto_l, logic_jump_l,
                                          self._awg5014_chan_cfg(obj.name))
-        self.awg_file = awg_file
 
-    def _upload_to_awg(self, obj):
+        return {
+            'awg_file': awg_file,
+            'filename': filename,
+            'grp_has_waveforms': grp_has_waveforms,
+            'pars': pars,
+            'old_vals': old_vals,
+        }
+
+    def _upload_to_awg(self, obj, **kwargs):
         if not isinstance(obj, AWG5014Pulsar._supportedAWGtypes):
-            return super()._upload_to_awg(obj)
+            return super()._upload_to_awg(obj, **kwargs)
 
-        obj.send_awg_file(self.filename, self.awg_file)
-        obj.load_awg_file(self.filename)
+        obj.send_awg_file(kwargs['filename'], kwargs['awg_file'])
+        obj.load_awg_file(kwargs['filename'])
 
-    def _configure_awg_post_upload(self, obj):
+    def _configure_awg_post_upload(self, obj, **kwargs):
         if not isinstance(obj, AWG5014Pulsar._supportedAWGtypes):
-            return super()._configure_awg_post_upload(obj)
+            return super()._configure_awg_post_upload(obj, **kwargs)
 
-        for par in self.pars:
-            obj.set(par, self.old_vals[par])
+        for par in kwargs['pars']:
+            obj.set(par, kwargs['old_vals'][par])
 
         time.sleep(.01)
         # Waits for AWG to be ready
         obj.is_awg_ready()
 
         for grp in ['ch1', 'ch2', 'ch3', 'ch4']:
-            obj.set('{}_state'.format(grp), 1*self.grp_has_waveforms[grp])
+            obj.set('{}_state'.format(grp),
+                    1 * kwargs['grp_has_waveforms'][grp])
 
         hardware_offsets = 0
         for grp in ['ch1', 'ch2', 'ch3', 'ch4']:
@@ -1322,57 +1338,68 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self._zi_waves_cleared = False
         self._hash_to_wavename_table = {}
 
+        awg_out_kw_dict = {}
+
         for awg in awgs:
-            awg_kw_dict = {
+            awg_input_kw_dict = {
                 'obj': self.AWG_obj(awg=awg),
                 'awg_sequence': awg_sequences.get(awg, {}),
                 'waveforms': waveforms,
             }
             if awg in repeat_dict.keys():
-                awg_kw_dict.update({'repeat_pattern': repeat_dict[awg]})
-            self._prepare_awg_for_upload(**awg_kw_dict)
+                awg_input_kw_dict.update({'repeat_pattern': repeat_dict[awg]})
+            awg_out_kw = self._prepare_awg_for_upload(**awg_input_kw_dict)
+            awg_out_kw_dict.update({awg: awg_out_kw})
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for awg in awgs:
-                executor.submit(self._upload_to_awg, self.AWG_obj(awg=awg))
+                executor.submit(self._upload_to_awg,
+                                self.AWG_obj(awg=awg)
+                                **awg_out_kw_dict[awg])
 
         for awg in awgs:
-            self._configure_awg_post_upload(self.AWG_obj(awg=awg))
+            self._configure_awg_post_upload(self.AWG_obj(awg=awg),
+                                            **awg_out_kw_dict[awg])
         self.num_seg = len(sequence.segments)
         self.AWGs_prequeried(False)
 
     def _prepare_awg_for_upload(self, obj, awg_sequence, waveforms,
-                                repeat_pattern=None):
+                                repeat_pattern=None) -> dict:
         """
         Prepare the AWG for uploading (set parameters, generate compiled
         waveform files, etc.).
 
         Args:
             obj: the instance of the AWG to program
-            sequence: the `Sequence` object that determines the segment order,
-                      repetition and trigger wait
-            el_wfs: A dictionary from element name to a dictionary from channel
-                    id to the waveform.
-            loop: Boolean flag, whether the segments should be looped over.
-                  Default is `True`.
+            sequence: the `Sequence` object that determines the segment
+                      order, repetition and trigger wait
+            el_wfs: A dictionary from element name to a dictionary from
+                    channel id to the waveform.
+            loop: Boolean flag, whether the segments should be looped
+                  over. Default is `True`.
         """
 
         if repeat_pattern is not None:
-            super()._prepare_awg_for_upload(obj, awg_sequence, waveforms,
-                                            repeat_pattern=repeat_pattern)
+            output_args = super()._prepare_awg_for_upload(
+                obj, awg_sequence, waveforms,
+                repeat_pattern=repeat_pattern
+            )
         else:
-            super()._prepare_awg_for_upload(obj, awg_sequence, waveforms)
+            output_args = super()._prepare_awg_for_upload(obj,
+                                                          awg_sequence,
+                                                          waveforms)
+        return output_args
 
-    def _upload_to_awg(self, obj):
+    def _upload_to_awg(self, obj, **kwargs):
         """
         Upload waveforms to AWG
 
         Args:
             obj: the instance of the AWG to program
         """
-        super()._upload_to_awg(obj)
+        super()._upload_to_awg(obj, **kwargs)
 
-    def _configure_awg_post_upload(self, obj):
+    def _configure_awg_post_upload(self, obj, **kwargs):
         """
         Configure the AWG after uploading waveforms (e.g. make any final
         parameter changes)
@@ -1380,9 +1407,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         Args:
             obj: the instance of the AWG to program
         """
-        print(obj)
-        print(type(obj))
-        super()._configure_awg_post_upload(obj)
+        super()._configure_awg_post_upload(obj, **kwargs)
 
     def _hash_to_wavename(self, h):
         alphabet = 'abcdefghijklmnopqrstuvwxyz'
