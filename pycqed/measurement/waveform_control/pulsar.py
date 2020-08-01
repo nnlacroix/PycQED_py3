@@ -660,7 +660,7 @@ class HDAWG8Pulsar:
                         playback_strings += pb_string
                         interleaves += interleave_string
 
-            if not any([self.ch_has_waveforms[ch]
+            if not any([ch_has_waveforms[ch]
                         for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
                 continue
             awg_str = self._hdawg_sequence_string_template.format(
