@@ -506,10 +506,7 @@ def get_measurement_properties(data_dict, props_to_extract='all',
         elif 'sp' == prop:
             sp = get_param('sweep_points', data_dict, raise_error=raise_error,
                            **params)
-            if isinstance(sp, str):
-                sp = eval(sp)
-            if isinstance(sp[0], dict):
-                sp = sp_mod.SweepPoints(from_dict_list=sp)
+            sp = sp_mod.SweepPoints.cast_init(sp)
             props_to_return += [sp]
         elif 'mospm' == prop:
             meas_obj_sweep_points_map = get_param(

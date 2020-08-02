@@ -23,7 +23,7 @@ pla.search_modules.add(sys.modules[__name__])
 def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
                                         cal_points, dim_hilbert, nreps=1):
 
-    sweep_points = sp_mod.SweepPoints(from_dict_list=sweep_points)
+    sweep_points = sp_mod.SweepPoints.cast_init(sweep_points)
     if isinstance(cal_points, str):
         cal_points = cp_mod.CalibrationPoints.from_string(cal_points)
     # n_segments = nr_seeds + nr_cal_segments
@@ -87,7 +87,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
                                      cal_points, n_shots, dim_hilbert,
                                      ro_thresholds=None, nreps=1):
 
-    sweep_points = sp_mod.SweepPoints(from_dict_list=sweep_points)
+    sweep_points = sp_mod.SweepPoints.cast_init(sweep_points)
     if isinstance(cal_points, str):
         cal_points = cp_mod.CalibrationPoints.from_string(cal_points)
     # n_segments = nr_seeds + nr_cal_segments
@@ -212,7 +212,7 @@ def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
                                       raise_error=True, **params)
     sp_list = [hlp_mod.get_param('sweep_points', mdl, raise_error=True)
                for mdl in metadata_list]
-    sp0 = sp_mod.SweepPoints(from_dict_list=sp_list[0])
+    sp0 = sp_mod.SweepPoints.cast_init(sp_list[0])
     segment_chunk = sp0.length(0) + len(cp.states)
     nr_cliffords = sp0.length(1)
 
@@ -239,7 +239,7 @@ def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
                         in range(len(sp0.get_sweep_dimension(0)))]
 
     for i, sp in enumerate(sp_list):
-        sp = sp_mod.SweepPoints(from_dict_list=sp)
+        sp = sp_mod.SweepPoints.cast_init(sp)
         sp_vals_list = sp.get_sweep_params_property('values', 0, 'all')
         for j, sp_vals in enumerate(sp_vals_list):
             sp_all_vals_list[j][i::nr_exp] = sp_vals
