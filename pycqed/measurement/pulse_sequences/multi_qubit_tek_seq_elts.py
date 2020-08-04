@@ -2014,15 +2014,16 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
             op = 'CZ ' + anc_name + ' ' + dqb
             op = CZ_map.get(op, [op])
             ops = parity_ops+op
-            if n==1 and anc_name=='qb4':
-                ops.append('Y180 ' + anc_name)
-                ops.append('Z180 ' + parity_map[i]['data'][-1])
-                ops.append('Z180 ' + parity_map[i]['data'][-2])
-                print('ECHO')
-            elif n==0 and (anc_name=='qb3' or anc_name=='qb5'):
-                ops.append('Y180 ' + anc_name)
-                ops.append('Z180 ' + parity_map[i]['data'][-1])
-                print('ECHO')
+            # ops.append(f'X180s ' + parity_map[i]['data'][1])
+            # if n==1 and anc_name=='qb4':
+            #     ops.append('Y180 ' + anc_name)
+            #     ops.append('Z180 ' + parity_map[i]['data'][-1])
+            #     ops.append('Z180 ' + parity_map[i]['data'][-2])
+            #     print('ECHO')
+            # elif n==0 and (anc_name=='qb3' or anc_name=='qb5'):
+            #     ops.append('Y180 ' + anc_name)
+            #     ops.append('Z180 ' + parity_map[i]['data'][-1])
+            #     print('ECHO')
             parity_ops = ops
 
         parity_ops.append('I ' + anc_name)
@@ -2070,6 +2071,9 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
         if parity_map[k]['round'] > rounds:
             rounds = parity_map[k]['round']
 
+    dd_ops=[[['X180 qb2', 'X180 qb6'],['X180 qb1', 'X180 qb7']],[['X180 qb1'],['X180 qb6']],[['X180 qb2'],['X180 qb7']]]
+    # dd_pulses=[[deepcopy(operation_dict[op_name]) for op_name in dd_pulses_dummy] for dd_pulses_dummy in dd_ops]
+
     all_pulsess = []
     for t, end_sequence in enumerate(end_sequences):
         all_pulses = []
@@ -2095,7 +2099,7 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
             for k in range(len(parity_map)):
                 round = parity_map[k]['round']
                 anc_name = parity_map[k]['ancilla']
-
+                cz_count = 0
                 for i, op in enumerate(parity_ops_list[k]):
                     all_pulses.append(deepcopy(operation_dict[op]))
                     if op == 'I '+anc_name:
@@ -2109,8 +2113,31 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
                         all_pulses[-1]['element_name'] = f'drive_tomo_{t}'
                         # all_pulses[-1]['element_name'] = f'drive_{round}_loop' + \
                         #                                  f'_{m}_tomo_{t}'
+                        if cz_count == (len(parity_map[k]['data'])):
+                            all_pulses[-1]['ref_pulse'] = f'CZ_{t}_{k}_{cz_count-1}'
+                            cz_count = 0
+                            print('in loop')
+                        print('pulse type is: ' + all_pulses[-1]['pulse_type'])
+                        try:
+                            print('ref pulse is: ' + all_pulses[-1]['ref_pulse'])
+                        except KeyError:
+                            print('ref pulse does not exist')
                     elif 'CZ' in op:
                         all_pulses[-1]['element_name'] = f'flux_tomo_{t}'
+                        all_pulses[-1]['name'] = f'CZ_{t}_{k}_{cz_count}'
+                        if cz_count > 0:
+                            all_pulses[-1]['ref_pulse'] = f'CZ_{t}_{k}_{cz_count-1}'
+                        for dd_op in dd_ops[k][cz_count%2]:
+                            # if cz_count == 0:
+                                all_pulses.append(deepcopy(operation_dict[dd_op]))
+                                all_pulses[-1]['ref_pulse'] = f'CZ_{t}_{k}_{cz_count}'
+                                all_pulses[-1]['ref_point'] = 'middle'
+                                all_pulses[-1]['ref_point_new'] = 'middle'
+                                all_pulses[-1]['element_name'] = f'drive_tomo_{t}'
+                                # # print(dd_pulse)
+                                # dd_pulse['element_name'] = 'dd_pulse_test'
+                                # all_pulses.append(dd_pulse)
+                        cz_count += 1
                     if 'RO' in op:
                         all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
                                                          f'_{m}_tomo_{t}'
@@ -2123,7 +2150,6 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
                             all_pulses[-1]['ref_point'] = 'start'
 
                         first_readout[round] = False
-
                 # more hacking for dummy
                 all_pulses.append(deepcopy(dummy_ro_1))
                 all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
