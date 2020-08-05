@@ -747,12 +747,12 @@ def flatten_list(lst_of_lsts):
     :param lst_of_lsts: a list of lists
     :return: flattened list
     """
-    if all([isinstance(e, list) for e in lst_of_lsts]):
+    if all([isinstance(e, (list, tuple)) for e in lst_of_lsts]):
         return [e for l1 in lst_of_lsts for e in l1]
-    elif any([isinstance(e, list) for e in lst_of_lsts]):
+    elif any([isinstance(e, (list, tuple)) for e in lst_of_lsts]):
         l = []
         for e in lst_of_lsts:
-            if isinstance(e, list):
+            if isinstance(e, (list, tuple)):
                 l.extend(e)
             else:
                 l.append(e)
