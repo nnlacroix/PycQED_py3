@@ -14,11 +14,12 @@ from pycqed.analysis_v3 import data_processing as dat_proc_mod
 from pycqed.analysis_v3 import rabi_analysis as rabi_ana
 from pycqed.analysis_v3 import ramsey_analysis as ramsey_ana
 from pycqed.analysis_v3 import randomized_benchmarking_analysis as rb_ana
-from pycqed.analysis_v3 import processing_pipeline as ppmod
+from pycqed.analysis_v3 import processing_pipeline as pp_mod
 
 
 from importlib import reload
 def reload_anav3():
+    reload(pp_mod)
     reload(pla)
     reload(hlp_mod)
     reload(fit_module)
@@ -28,4 +29,3 @@ def reload_anav3():
     reload(rabi_ana)
     reload(ramsey_ana)
     reload(rb_ana)
-    reload(ppmod)
