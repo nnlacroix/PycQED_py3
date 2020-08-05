@@ -634,8 +634,7 @@ class MeasurementControl(Instrument):
         if sp is not None:
             try:
                 from numpy import array
-                sp = sp_mod.SweepPoints(
-                    from_dict_list=eval(sp) if isinstance(sp, str) else sp)
+                sp = sp_mod.SweepPoints.cast_init(sp)
             except Exception:
                 sp = None
         vnmom = None
