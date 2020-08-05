@@ -2,6 +2,7 @@
 File containing the BaseDataAnalyis class.
 """
 import h5py
+import traceback
 import numpy as np
 from copy import deepcopy
 from collections import OrderedDict
@@ -308,17 +309,22 @@ def process_pipeline(data_dict, processing_pipeline=None,
         log.warning('Processing pipeline may not have been resolved.')
 
     for node_params in processing_pipeline:
-        node = None
-        for module in search_modules:
-            try:
-                node = getattr(module, node_params["node_name"])
-                break
-            except AttributeError:
-                continue
-        if node is None:
-            raise KeyError(f'Node function "{node_params["node_name"]}" '
-                           f'not recognized')
-        node(data_dict, **node_params)
+        try:
+            node = None
+            for module in search_modules:
+                try:
+                    node = getattr(module, node_params["node_name"])
+                    break
+                except AttributeError:
+                    continue
+            if node is None:
+                raise KeyError(f'Node function "{node_params["node_name"]}" '
+                               f'not recognized')
+            node(data_dict, **node_params)
+        except Exception:
+            log.warning(
+                f'Unhandled error during node {node_params["node_name"]}!')
+            log.warning(traceback.format_exc())
 
     if save_figures and hlp_mod.get_param('figures', data_dict) is None:
         log.warning('save_figures is True but there are no figures to save.')
