@@ -118,7 +118,7 @@ def extract_data_hdf(timestamps=None, data_dict=None,
 
     # add entries in data_dict for each readout channel and its corresponding
     # data array.
-    add_measured_data_dict(data_dict)
+    add_measured_data_dict(data_dict, **params)
 
     return data_dict
 
@@ -210,11 +210,18 @@ def add_measured_data_hdf(data_dict, folder=None, append_data=False,
     return data_dict
 
 
-def add_measured_data_dict(data_dict):
+def add_measured_data_dict(data_dict, **params):
     metadata = hlp_mod.get_param('exp_metadata', data_dict, raise_error=True)
     if 'measured_data' in data_dict and 'value_names' in metadata:
         value_names = metadata['value_names']
-        data_dict.update({ro_ch: [] for ro_ch in value_names})
+        rev_movnm = hlp_mod.get_measurement_properties(
+            data_dict, props_to_extract=['rev_movnm'])
+        if rev_movnm is not None:
+            data_key = lambda ro_ch, rev_movnm=rev_movnm: f'{rev_movnm[ro_ch]}.{ro_ch}'
+        else:
+            data_key = lambda ro_ch: ro_ch
+        [hlp_mod.add_param(data_key(ro_ch), [], data_dict)
+         for ro_ch in value_names]
         measured_data = data_dict.pop('measured_data')
 
         if not isinstance(measured_data, list):
@@ -225,20 +232,36 @@ def add_measured_data_dict(data_dict):
             if data.shape[0] != len(value_names):
                 raise ValueError('Shape mismatch between data and ro channels.')
 
-            TwoD = hlp_mod.get_param('TwoD', data_dict, default_value=False)
-            sweep_points = meas_data[:-len(value_names)]
+            TwoD = hlp_mod.get_param('TwoD', data_dict, default_value=False,
+                                     **params)
+            compression_factor = hlp_mod.get_param('compression_factor',
+                                                   data_dict, default_value=1,
+                                                   **params)
+            mc_points = meas_data[:-len(value_names)]
             for i, ro_ch in enumerate(value_names):
-                if sweep_points.shape[0] > 1 and TwoD:
-                    hsl = len(np.unique(sweep_points[0]))
-                    ssl = len(np.unique(sweep_points[1:], axis=1)[0])
-                    meas_data = np.reshape(data[i], (ssl, hsl)).T
+                if mc_points.shape[0] > 1 and TwoD:
+                    hsp = np.unique(mc_points[0])
+                    ssp, counts = np.unique(mc_points[1:], return_counts=True)
+                    if counts[0] != len(hsp):
+                        # ssro data
+                        hsp = np.tile(hsp, counts[0]//len(hsp))
+                    # if needed, decompress the data
+                    # (assumes hsp and ssp are indices)
+                    if compression_factor != 1:
+                        hsp = hsp[:int(len(hsp) / compression_factor)]
+                        ssp = np.arange(len(ssp) * compression_factor)
+                    meas_data = np.reshape(data[i], (len(ssp), len(hsp))).T
                 else:
                     meas_data = data[i]
-                data_dict[ro_ch] += [meas_data]
+                hlp_mod.add_param(data_key(ro_ch), [meas_data], data_dict,
+                                  append_value=True)
 
         for ro_ch in value_names:
-            if len(data_dict[ro_ch]) == 1:
-                data_dict[ro_ch] = data_dict[ro_ch][0]
+            data = hlp_mod.pop_param(data_key(ro_ch), data_dict)
+            if len(data) == 1:
+                hlp_mod.add_param(data_key(ro_ch), data[0], data_dict)
+            else:
+                hlp_mod.add_param(data_key(ro_ch), np.array(data), data_dict)
     else:
         raise ValueError('"measured_data" was not added.')
     return data_dict

@@ -1,5 +1,6 @@
 import logging
 log = logging.getLogger(__name__)
+import re
 # import sys
 # this_module = sys.modules[__name__]
 
@@ -33,20 +34,28 @@ nodes.
 
 Instructions for use:
     Initialization
+        - from a list of dicts: ProcessingPipeline(from_dict_list=dict_list)
         - without any input arguments: ProcessingPipeline()
         - or with input parameters:
          ProcessingPipeline(node_name, **node_params), where node_name is
          the name of the node, and **node_params all the parameters
          required by the node including the necessary keys described above
+        ! Specify the keyword argument global_keys_out_container to prepend it 
+            to all the keys_out as global_keys_out_container.keyo.
         ! For ease of use, keys_in can also be specified as
             - 'raw': the raw data corresponding to the measured object
             - 'previous': the keys_out of the previous node dictionary
              for the measured object.
-            - 'previous measured_object_name.node_name': the keys_out of the
-             dictionary for the measured object which has the node_name
+            - 'previous node_name': the keys_out of the
+             dictionary for the measured object which has the node_name.
+             Use 'previous node_namei' where i is the i'th identical appearance
+             of node_name in the pipeline for that meas_obj.
         ! keys_out do not need to be specified by the user as they will be
          automatically constructed from the measured object name and the
          keys_in
+        ! use keys_out_container in the **node_params to prepend it to the 
+         keys_out of that node 
+
 
             Examples:
                 ProcessingPipeline('average_data',
@@ -347,7 +356,7 @@ class ProcessingPipeline(list):
             if keyi in mobj_value_names or keyi in prev_keys_out:
                 keys_in += [keyi]
             elif keyi == 'raw':
-                keys_in += mobj_value_names
+                keys_in += [f'{mobj_name}.{movn}' for movn in mobj_value_names]
             elif 'previous' in keyi:
                 if len(self) > 0:
                     # assumes that what comes after 'previous' is separated by
@@ -357,6 +366,7 @@ class ProcessingPipeline(list):
                         for mobjn in mobj_name.split(','):
                             keys_in_suffix = ' '.join(keys_in_split[1:])
                             keys_in_suffix = f'{mobjn}.{keys_in_suffix}'
+                            # keys_in += [keys_in_suffix]
                             keys_in0 = \
                                 hlp_mod.get_sublst_with_all_strings_of_list(
                                     lst_to_search=hlp_mod.flatten_list(
@@ -440,13 +450,32 @@ class ProcessingPipeline(list):
 
                 keyo = f'{keys_out_container}.{node_name_to_use}'
                 if keyo in prev_keys_out:
+                    # appends the keyi name
                     keyo = ','.join([keyi.split('.')[-1] for keyi
                                      in keyis_mod])
                     keyo += [f'{keys_out_container}.'
                              f'{node_name_to_use} {keyo}']
                 else:
-                    keyo = f'{keyo} ' \
-                           f'{",".join(meas_obj_value_names_map[mobj_name])}'
+                    # Append to keyo the channel names(s) that we passed in
+                    # keys_in (some nodes process the data corresponding to
+                    # only one or some subset of the meas_obj readout channels.
+                    mobj_name = node_params['meas_obj_names']
+                    suffix = ','.join(hlp_mod.flatten_list([re.findall(ch, k)
+                        for ch in meas_obj_value_names_map[mobj_name]
+                        for k in [keyi.split('.')[-1] for keyi in keyis_mod]]))
+                    if len(suffix):
+                        keyo = f'{keyo} {suffix}'
+                    else:
+                        # len(suffix) will be 0 if the channel name(s) for the
+                        # meas_obj is a joined string of several channel names
+                        # corresponding to other meas_objs. For example,
+                        # if we use a correlation_object, its channel name
+                        # will be for example, UHF1_raw w2 UHF1,UHF1_raw w8 UHF1
+                        # corresponding to the channel names of the two
+                        # correlated qubits.
+                        # In this case, just append the joined channel names
+                        keyo = f'{keyo} ' \
+                               f'{",".join(meas_obj_value_names_map[mobj_name])}'
                 keys_out += [keyo]
 
         return keys_out
