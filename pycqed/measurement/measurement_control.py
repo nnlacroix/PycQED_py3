@@ -633,7 +633,9 @@ class MeasurementControl(Instrument):
         sp = self.exp_metadata.get('sweep_points', None)
         if sp is not None:
             try:
-                sp = sp_mod.SweepPoints(from_dict_list=sp)
+                from numpy import array
+                sp = sp_mod.SweepPoints(
+                    from_dict_list=eval(sp) if isinstance(sp, str) else sp)
             except Exception:
                 sp = None
         vnmom = None
