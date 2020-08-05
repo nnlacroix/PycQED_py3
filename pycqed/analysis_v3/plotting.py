@@ -1,6 +1,7 @@
 import logging
 log = logging.getLogger(__name__)
 
+import re
 import numpy as np
 import numbers
 from inspect import signature
@@ -385,7 +386,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
         smax = 40
         if len(ylabel) > smax:
             k = len(ylabel) // smax
-            ylabel = '\n'.join([ylabel[i*smax:(i+1)*smax] for i in range(k)] \
+            ylabel = '\n'.join([ylabel[i*smax:(i+1)*smax] for i in range(k)]
                                + [ylabel[-(len(ylabel) % smax):]])
 
         plot_dict_name = figure_name + keyi + hlp_mod.get_param('key_suffix',
@@ -643,6 +644,11 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     if mobjn not in figure_name:
         figure_name += '_' + mobjn
 
+    data_transform_func = hlp_mod.get_param('data_transform_func',
+                                            data_dict,
+                                            default_value=lambda x: x,
+                                            **params)
+
     # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
     plot_dict_names = []
@@ -653,8 +659,13 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts, cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         yvals = data_to_proc_dict[keyi]
-        ylabel = hlp_mod.get_param('ylabel', data_dict,
-                                   default_value=movnm[mobjn][0], **params)
+        if yvals.ndim == 2:
+            yvals = yvals.T
+        yvals = data_transform_func(yvals)
+        ylabel = hlp_mod.get_param('ylabel', data_dict, **params)
+        if ylabel is None:
+            ylabel = ','.join(hlp_mod.flatten_list([re.findall(ch, keyi)
+                for ch in movnm[mobjn]]))
         yunit = hlp_mod.get_param('yunit', params,
                                   default_value=hlp_mod.get_param(
                                       'value_units', data_dict,
@@ -790,8 +801,10 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             cal_swpts = hlp_mod.get_cal_sweep_points(physical_swpts, cp, mobjn)
             xvals = np.concatenate([physical_swpts, cal_swpts])
         zvals = data_to_proc_dict[keyi]
-        zlabel = hlp_mod.get_param('ylabel', data_dict,
-                                   default_value=movnm[mobjn][0], **params)
+        zlabel = hlp_mod.get_param('ylabel', data_dict, **params)
+        if zlabel is None:
+            zlabel = ','.join(hlp_mod.flatten_list([re.findall(ch, keyi)
+                                                    for ch in movnm[mobjn]]))
         zunit = hlp_mod.get_param('zunit', params,
                                   default_value=hlp_mod.get_param(
                                       'value_units', data_dict,

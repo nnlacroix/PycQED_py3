@@ -561,19 +561,24 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
 
 
 def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
-    cp, mospm, mobjn = hlp_mod.get_measurement_properties(
-            data_dict, props_to_extract=['cp', 'mospm', 'mobjn'], **params)
+    cp, mospm, mobjn, movnm = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['cp', 'mospm', 'mobjn', 'movnm'], **params)
 
     plot_dicts = OrderedDict()
     keys_in_std = hlp_mod.get_param('keys_in_std', data_dict, raise_error=False,
                                     **params)
+    classified_msmt = any([v==3 for v in [len(chs) for chs in movnm.values()]])
     for keyi, keys in zip(keys_in, keys_in_std):
         figure_name = 'RB_' + keyi
         sp_name = mospm[mobjn][-1]
 
         # plot data
+        ylabel = 'Probability, $P(|ee\\rangle)$' if 'corr' in mobjn else None
+        if ylabel is None and not classified_msmt:
+            ylabel = 'Probability, $P(|e\\rangle)$'
         plot_module.prepare_1d_plot_dicts(data_dict=data_dict, keys_in=[keyi],
                                           figure_name=figure_name,
+                                          ylabel=ylabel,
                                           sp_name=sp_name, yerr_key=keys,
                                           do_plotting=False, **params)
 
