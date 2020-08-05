@@ -5366,9 +5366,14 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
 
         # Find leakage and ramsey qubit names
         self.leakage_qbnames = self.get_param_value('leakage_qbnames',
-                                            default_value=[])
+                                                    default_value=[])
         self.ramsey_qbnames = self.get_param_value('ramsey_qbnames',
                                                    default_value=[])
+        self.gates_list = self.get_param_value('gates_list', default_value=[])
+        if not len(self.gates_list):
+            leakage_qbnames_temp = len(self.ramsey_qbnames) * ['']
+            self.gates_list = [(qbl, qbr) for qbl, qbr in
+                               zip(leakage_qbnames_temp, self.ramsey_qbnames)]
 
         # Make sure data has the right shape (len(hard_sp), len(soft_sp))
         for qbn, data in self.proc_data_dict['data_to_fit'].items():
@@ -5681,7 +5686,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                               'plot_proj_data': False})
                     super().prepare_plots()
                     if qbn in self.ramsey_qbnames:
-                        textstr = '{} = \n\t{:.2f}'.format(
+                        textstr = '{} = \n{:.2f}'.format(
                             self.phase_key,
                             self.proc_data_dict['analysis_params_dict'][
                                 f'{self.phase_key}_{qbn}']['val'][0]*180/np.pi) + \
@@ -5692,7 +5697,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                           f'{self.phase_key}_{qbn}'][
                                           'stderr'][0] * 180 / np.pi) + \
                                   r'$^{\circ}$'
-                        textstr += '\nPopulation loss = \n\t' + \
+                        textstr += '\n\nContrast loss = \n' + \
                                    '{:.3f} $\\pm$ {:.3f}'.format(
                                        self.proc_data_dict[
                                            'analysis_params_dict'][
@@ -5704,31 +5709,36 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                         self.plot_dicts['text_msg_' + qbn] = {
                             'fig_id': '{}_{}_pe'.format(self.phase_key, qbn),
                             'ypos': -0.2,
-                            'xpos': -0.05,
+                            'xpos': -0.1,
                             'horizontalalignment': 'left',
                             'verticalalignment': 'top',
+                            'box_props': None,
                             'plotfn': self.plot_text,
                             'text_string': textstr}
-                    else:
-                        textstr = 'Leakage = {:.5f} $\\pm$ {:.5f}'.format(
-                            self.proc_data_dict['analysis_params_dict'][
-                                f'leakage_{qbn}']['val'][0],
-                            self.proc_data_dict['analysis_params_dict'][
-                                f'leakage_{qbn}']['stderr'][0])
-                        textstr += '\nLeakage increase = \n\t' \
-                                   '{:.5f} $\\pm$ {:.5f}'.format(
-                            self.proc_data_dict['analysis_params_dict'][
-                                f'leakage_increase_{qbn}']['val'][0],
-                            self.proc_data_dict['analysis_params_dict'][
-                                f'leakage_increase_{qbn}']['stderr'][0])
-                        self.plot_dicts['text_msg_' + qbn] = {
-                            'fig_id': figure_name,
-                            'ypos': -0.2,
-                            'xpos': -0.05,
-                            'horizontalalignment': 'left',
-                            'verticalalignment': 'top',
-                            'plotfn': self.plot_text,
-                            'text_string': textstr}
+                    # else:
+                        qbl = [gl[0] for gl in self.gates_list
+                               if qbn == gl[1]][0]
+                        if len(qbl):
+                            textstr = 'Leakage =\n{:.5f} $\\pm$ {:.5f}'.format(
+                                self.proc_data_dict['analysis_params_dict'][
+                                    f'leakage_{qbl}']['val'][0],
+                                self.proc_data_dict['analysis_params_dict'][
+                                    f'leakage_{qbl}']['stderr'][0])
+                            textstr += '\n\n$\\Delta$Leakage = \n' \
+                                       '{:.5f} $\\pm$ {:.5f}'.format(
+                                self.proc_data_dict['analysis_params_dict'][
+                                    f'leakage_increase_{qbl}']['val'][0],
+                                self.proc_data_dict['analysis_params_dict'][
+                                    f'leakage_increase_{qbl}']['stderr'][0])
+                            self.plot_dicts['text_msg_' + qbl] = {
+                                'fig_id': figure_name,
+                                'ypos': -0.2,
+                                'xpos': 0.175,
+                                'horizontalalignment': 'left',
+                                'verticalalignment': 'top',
+                                'box_props': None,
+                                'plotfn': self.plot_text,
+                                'text_string': textstr}
 
         # plot analysis results
         if self.do_fitting and len_ssp > 1:
@@ -5778,7 +5788,6 @@ class CPhaseLeakageAnalysis(MultiCZgate_Calib_Analysis):
     def process_data(self):
         super().process_data()
 
-        self.gates_list = self.get_param_value('gates_list', default_value=[])
         # Find leakage and ramsey qubit names
         # first try the legacy code
         leakage_qbname = self.get_param_value('leakage_qbname')
