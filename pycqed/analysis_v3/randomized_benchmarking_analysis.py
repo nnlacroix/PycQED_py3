@@ -130,7 +130,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
     :return: the unresolved ProcessingPipeline
     """
 
-    sweep_points = sp_mod.SweepPoints.cast_init(sweep_points)
+    sweep_points = sp_mod.SweepPoints(from_dict_list=sweep_points)
     if cal_points is None:
         num_cal_states = 0
     else:
