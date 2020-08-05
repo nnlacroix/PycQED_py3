@@ -21,13 +21,32 @@ pla.search_modules.add(sys.modules[__name__])
 # Create pipelines
 
 def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
-                                        cal_points, dim_hilbert, nreps=1):
-
+                                        dim_hilbert, cal_points=None, nreps=1):
+    """
+    Wrapper to create the standard processing pipeline for an interleaved RB/RIB
+        measurement, measured with a the classifier detector with qutrit readout
+    :param meas_obj_names: list of measured object names
+    :param mospm: meas_obj_sweep_points_map
+    :param sweep_points: SweepPoints object (of one file if the measurement
+        was split into several files)
+    :param dim_hilbert: dimension of Hilebert space. 4 for 2QB RB, 2 for 1QB RB
+    :param cal_points: CalibrationPoints object
+    :param nreps: int specifying the number of files to combine into one
+        measurement. IMPORTANT! This feature only works if the measurement was
+        split by seeds, not by cliffords. Meaning that each measurement file
+        contains data for all the Cliffords in sweep_points, but for a subset
+        of the total seeds.
+    :return: the unresolved ProcessingPipeline
+    """
     sweep_points = sp_mod.SweepPoints.cast_init(sweep_points)
-    if isinstance(cal_points, str):
-        cal_points = cp_mod.CalibrationPoints.from_string(cal_points)
+    if cal_points is None:
+        num_cal_states = 0
+    else:
+        if isinstance(cal_points, str):
+            cal_points = cp_mod.CalibrationPoints.from_string(cal_points)
+        num_cal_states = len(cal_points.states)
     # n_segments = nr_seeds + nr_cal_segments
-    n_segments = nreps*(sweep_points.length(0) + len(cal_points.states))
+    n_segments = nreps*(sweep_points.length(0) + num_cal_states)
     # n_sequences = nr_cliffords
     n_sequences = sweep_points.length(1)
     processing_pipeline = ppmod.ProcessingPipeline()
@@ -53,10 +72,8 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
                     meas_obj_names=meas_obj_names)
         pp.add_node('rb_analysis',
                     d=dim_hilbert,
-                    keys_in=f'previous {label}.average_data '
-                            f'{label}_data_from_interleaved_msmt',
-                    keys_in_std=f'previous {label}.get_std_deviation '
-                                f'{label}_data_from_interleaved_msmt',
+                    keys_in=f'previous {label}.average_data',
+                    keys_in_std=f'previous {label}.get_std_deviation',
                     keys_out=None,
                     meas_obj_names=meas_obj_names)
         for mobjn in meas_obj_names:
@@ -67,8 +84,8 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
                         xvals=np.repeat(cliffords, n_segments),
                         do_plotting=True,
                         figname_suffix=f'{label}',
-                        ylabel='Probability, ' + ('$P(|ee\\rangle)$' if
-                            mobjn=='correlation_object' else '$P(|e\\rangle)$'),
+                        ylabel='Probability, $P(|ee\\rangle)$' if
+                            mobjn=='correlation_object' else None,
                         yunit='',
                         keys_in=f'previous {label}.{label}_data_'
                                 f'from_interleaved_msmt',
@@ -84,14 +101,44 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
 
 
 def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
-                                     cal_points, n_shots, dim_hilbert,
-                                     ro_thresholds=None, nreps=1):
+                                     n_shots, dim_hilbert, cal_points=None,
+                                     ro_thresholds=None, nreps=1,
+                                     plot_all_shots=False):
+
+    """
+    Wrapper to create the standard processing pipeline for an interleaved RB/RIB
+        measurement, measured in SSRO.
+    WARNING: if you use plot_all_shots=True, disable data saving. It will try
+        to save a huge string of the large numpy array this node will generate.
+    :param meas_obj_names: list of measured object names
+    :param mospm: meas_obj_sweep_points_map
+    :param sweep_points: SweepPoints object (of one file if the measurement
+        was split into several files)
+    :param n_shots: number of shots
+    :param dim_hilbert: dimension of Hilebert space. 4 for 2QB RB, 2 for 1QB RB
+    :param cal_points: CalibrationPoints object
+    :param ro_thresholds: optional (the threshold_data node can also extract
+        them from the data_dict. See docstring there).
+        Dict with meas_obj_names as keys and their readout thresholds as values.
+    :param nreps: int specifying the number of files to combine into one
+        measurement. IMPORTANT! This feature only works if the measurement was
+        split by seeds, not by cliffords. Meaning that each measurement file
+        contains data for all the Cliffords in sweep_points, but for a subset
+        of the total seeds.
+    :param plot_all_shots: bool specifying whether to produce a raw plot of
+        of all the shots vs cliffords. SEE WARNING ABOVE.
+    :return: the unresolved ProcessingPipeline
+    """
 
     sweep_points = sp_mod.SweepPoints.cast_init(sweep_points)
-    if isinstance(cal_points, str):
-        cal_points = cp_mod.CalibrationPoints.from_string(cal_points)
+    if cal_points is None:
+        num_cal_states = 0
+    else:
+        if isinstance(cal_points, str):
+            cal_points = cp_mod.CalibrationPoints.from_string(cal_points)
+        num_cal_states = len(cal_points.states)
     # n_segments = nr_seeds + nr_cal_segments
-    n_segments_subexp = nreps*(sweep_points.length(0) + len(cal_points.states))
+    n_segments_subexp = nreps*(sweep_points.length(0) + num_cal_states)
     n_segments_all = 2*n_segments_subexp
     # n_sequences = nr_cliffords
     n_sequences = sweep_points.length(1)
@@ -147,7 +194,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
         for mobjn in meas_obj_names:
             cliffords = sweep_points.get_sweep_params_property(
                 'values', 1, mospm[mobjn][-1])
-            if mobjn in meas_obj_names[:-1]:
+            if plot_all_shots and mobjn in meas_obj_names[:-1]:
                 keys_in = 'previous combine_datasets_interleaved_msmt' \
                     if nreps > 1 else 'raw'
                 pp.add_node('prepare_1d_raw_data_plot_dicts',
@@ -219,8 +266,8 @@ def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     for keyi, keyo in zip(keys_in, keys_out):
         data = data_to_proc_dict[keyi]
-        if not isinstance(data, list):
-            raise ValueError(f'Data corresponding to {keyi} is not a list.')
+        if np.ndim(data) != 2:
+            raise ValueError(f'Data corresponding to {keyi} is not 2D.')
         # take the segment_chunk * n_shots for each clifford from each array
         # in data list and concatenate them. Put all the nr_cliffords
         # concatenations in the list data_combined

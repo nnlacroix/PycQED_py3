@@ -2,14 +2,15 @@ import logging
 log = logging.getLogger(__name__)
 
 import os
+import sys
 import h5py
 import lmfit
+import traceback
 import numpy as np
 from copy import deepcopy
 import matplotlib.pyplot as plt
 from collections import OrderedDict
 from pycqed.measurement import hdf5_data as h5d
-from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 
 
@@ -23,20 +24,31 @@ class Save:
     """
     def __init__(self, data_dict, savedir=None, save_processed_data=True,
                  save_figures=True, filename=None, **save_figs_params):
-        self.data_dict = data_dict
-        if savedir is None:
-            savedir = hlp_mod.get_param('folders', data_dict, raise_error=True)
-            savedir = savedir[-1]
-        self.savedir = savedir
-        if filename is None:
-            filename = 'AnalysisResults'
-        filename = data_dict['folders'][-1].split('\\')[-1] + \
-                   f'_{filename}.hdf'
-        self.filepath = self.savedir + '\\' + filename
-        if save_processed_data:
-            self.save_data_dict()
-        if save_figures:
-            self.save_figures(**save_figs_params)
+
+        opt = np.get_printoptions()
+        np.set_printoptions(threshold=sys.maxsize)
+        try:
+            self.data_dict = data_dict
+            if savedir is None:
+                savedir = hlp_mod.get_param('folders', data_dict,
+                                            raise_error=True)
+                savedir = savedir[-1]
+            self.savedir = savedir
+            if filename is None:
+                filename = 'AnalysisResults'
+            filename = data_dict['folders'][-1].split('\\')[-1] + \
+                       f'_{filename}.hdf'
+            self.filepath = self.savedir + '\\' + filename
+            if save_processed_data:
+                self.save_data_dict()
+            if save_figures:
+                self.save_figures(**save_figs_params)
+
+            np.set_printoptions(**opt)
+        except Exception:
+            np.set_printoptions(**opt)
+            log.warning("Unhandled error during init of analysis!")
+            log.warning(traceback.format_exc())
 
     def save_data_dict(self):
         """
@@ -54,34 +66,22 @@ class Save:
             for key, value in self.data_dict.items():
                 if key not in ['fit_dicts', 'plot_dicts', 'axes', 'figures',
                                'data_files']:
-                    if isinstance(value, np.ndarray):
-                        group_name = 'Raw Data'
-                        try:
-                            group = analysis_file.create_group(group_name)
-                        except ValueError:
-                            group = analysis_file[group_name]
-                        try:
-                            group.create_dataset(key, data=value)
-                        except RuntimeError:
-                            del group[key]
-                            group.create_dataset(key, data=value)
+                    try:
+                        group = analysis_file.create_group(key)
+                    except ValueError:
+                        del analysis_file[key]
+                        group = analysis_file.create_group(key)
+
+                    if isinstance(value, dict):
+                        h5d.write_dict_to_hdf5(value, entry_point=group)
+                    elif isinstance(value, np.ndarray):
+                        group.create_dataset(key, data=value)
                     else:
                         try:
-                            group = analysis_file.create_group(key)
-                        except ValueError:
-                            del analysis_file[key]
-                            group = analysis_file.create_group(key)
-
-                        if isinstance(value, dict):
-                            h5d.write_dict_to_hdf5(value, entry_point=group)
-                        elif isinstance(value, np.ndarray):
-                            group.create_dataset(key, data=value)
-                        else:
-                            try:
-                                val = repr(value)
-                            except KeyError:
-                                val = ''
-                            group.attrs[key] = val
+                            val = repr(value)
+                        except KeyError:
+                            val = ''
+                        group.attrs[key] = val
 
     def save_fit_results(self, analysis_file):
         """
