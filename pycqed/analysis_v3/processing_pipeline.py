@@ -151,7 +151,7 @@ nr_files = 10
 nr_cliffs = 8
 nr_seeds_per_file = 10
  
-pp = ppmod.ProcessingPipeline()
+pp = pp_mod.ProcessingPipeline()
 # average data for all measued objects
 pp.add_node('average_data', keys_in='raw',
             shape=(nr_files*nr_cliffs, nr_seeds_per_file), 
