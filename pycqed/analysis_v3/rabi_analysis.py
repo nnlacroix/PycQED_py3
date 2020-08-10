@@ -6,7 +6,7 @@ from collections import OrderedDict
 from pycqed.analysis_v3 import fitting as fit_module
 from pycqed.analysis_v3 import plotting as plot_module
 from pycqed.analysis_v3 import helper_functions as hlp_mod
-from pycqed.analysis_v3 import processing_pipeline as ppmod
+from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from copy import deepcopy
 
 import sys
@@ -16,7 +16,7 @@ pla.search_modules.add(sys.modules[__name__])
 
 # Create pipelines
 def rabi_iq_pipeline(meas_object_name):
-    pp = ppmod.ProcessingPipeline()
+    pp = pp_mod.ProcessingPipeline()
     pp.add_node('rotate_iq', keys_in='raw', meas_obj_names=meas_object_name)
     pp.add_node('rabi_analysis',
                 keys_in=f'previous {meas_object_name}.rotate_iq',
