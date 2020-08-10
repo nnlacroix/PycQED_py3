@@ -462,7 +462,7 @@ def add_param(name, value, data_dict, update_value=False, append_value=False,
             dd[all_keys[-1]] = value
         else:
             raise KeyError(f'{all_keys[-1]} already exists in data_dict and it'
-                           f' is unclear how to add it to the data_dict.')
+                           f' is unclear how to add it.')
     else:
         dd[all_keys[-1]] = value
 
