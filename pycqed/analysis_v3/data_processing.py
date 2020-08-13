@@ -4,10 +4,7 @@ log = logging.getLogger(__name__)
 import numpy as np
 from collections import OrderedDict
 from pycqed.analysis import analysis_toolbox as a_tools
-from pycqed.analysis_v3 import fitting as fit_module
-from pycqed.analysis_v3 import plotting as plot_module
 from pycqed.analysis_v3 import helper_functions as hlp_mod
-from copy import deepcopy
 from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 
 import sys
@@ -52,7 +49,7 @@ def filter_data(data_dict, keys_in, keys_out=None, **params):
     for keyo, keyi in zip(keys_out, list(data_to_proc_dict)):
         hlp_mod.add_param(
             keyo, data_filter_func(data_to_proc_dict[keyi]), data_dict,
-            update_value=params.get('update_value', False))
+            **params)
     return data_dict
 
 
@@ -635,7 +632,7 @@ def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
         raise KeyError(f'{mobjn} not found in ro_thresholds={ro_thresholds}.')
     threshold_list = [ro_thresholds[mobjn]]
     thresh_dat = np.stack(
-        [data_to_proc_dict[keyi] >= th for keyi, th in
+        [data_to_proc_dict[keyi] > th for keyi, th in
          zip(keys_in, threshold_list)], axis=1)
 
     for i, keyo, in enumerate(keys_out):
@@ -688,7 +685,7 @@ def probability_table(data_dict, keys_in, keys_out, **params):
     Expects:
         data_dict
         keys_in to specify keys in data_dict that corresponod to the
-            thresholeded shots for the qubits
+            thresholded shots for the qubits
         observables: List of observables. Observable is a dictionary with
             name of the qubit as key and boolean value indicating if it is
             selecting exited states. If the qubit is missing from the list
@@ -720,9 +717,18 @@ def probability_table(data_dict, keys_in, keys_out, **params):
             includes preselection readout results or if there was several
             readouts for a single readout then n_readouts has to include
             them.
+
+         params: keyword arguments: used if get_observables is called
+            preselection_shift (int, default: -1)
+            do_preselection (bool, default: False)
     Returns:
-        Saves in data_dict, under keys_out, and np.array of counts with
-            dimensions (n_readouts, len(observables))
+        Saves in data_dict, under keys_out, a dict with observables as keys and
+            np.array of normalized counts with size n_readouts as values
+
+    Assumptions:
+        - len(keys_out) == 1 -> one probability table is calculated
+        - !!! This function returns the transpose of the static method
+        probability_table in readout_analysis.py/MultiQubit_SingleShot_Analysis
     """
     if len(keys_out) != 1:
         raise ValueError(f'keys_out must have length one. {len(keys_in)} '
@@ -733,18 +739,16 @@ def probability_table(data_dict, keys_in, keys_out, **params):
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     n_readouts = hlp_mod.get_param('n_readouts', data_dict, raise_error=True,
                                    **params)
-    observables_dict = hlp_mod.get_param('observables', data_dict,
-                                         raise_error=True, **params)
-    observables = list(observables_dict.values())
-
-    res_e = {}
-    res_g = {}
+    observables = hlp_mod.get_param('observables', data_dict,
+                                    raise_error=True, **params)
 
     n_shots = next(iter(data_to_proc_dict.values())).shape[0]
     table = np.zeros((n_readouts, len(observables)))
-
-    for qubit, results in data_to_proc_dict.items():
-        res_e[qubit] = np.array(results).reshape((n_readouts, -1),
+    res_e = {}
+    res_g = {}
+    for keyi, results in data_to_proc_dict.items():
+        mobjn = keyi.split('.')[0]
+        res_e[mobjn] = np.array(results).reshape((n_readouts, -1),
                                                  order='F')
         # This makes copy, but allows faster AND later
         res_g[qubit] = np.logical_not(
@@ -767,17 +771,22 @@ def probability_table(data_dict, keys_in, keys_out, **params):
                     mask = np.logical_and(mask, res_g[qubit][seg])
             table[readout_n, state_n] = np.count_nonzero(mask)
 
-    hlp_mod.add_param(keys_out[0], table*n_readouts/n_shots, data_dict,
-                      update_value=params.get('update_value', False))
+    if keys_out is not None:
+        if len(keys_out) != 1:
+            raise ValueError(f'keys_out must have length one. {len(keys_out)} '
+                             f'entries were given.')
+        hlp_mod.add_param(keys_out[0], table, data_dict, **params)
+    else:
+        return table
 
 
-def measurement_operators_and_results(self, tomography_qubits=None):
+def calculate_meas_ops_and_covariations(
+        data_dict, observables, keys_out=None, meas_obj_names=None,
+        **params):
     """
-    Calculates and returns:
-        A tuple of
-            count tables for each data segment for the observables;
-            the measurement operators corresponding to each observable;
-            and the expected covariation matrix between the operators.
+    Calculates and adds to data_dict:
+        - the measurement operators corresponding to each observable;
+        - and the expected covariace matrix between the operators.
 
     If the calibration segments are passed, there must be a calibration
     segments for each of the computational basis states of the Hilber space.
@@ -792,106 +801,119 @@ def measurement_operators_and_results(self, tomography_qubits=None):
     observabele_idxs = [i for i in range(len(self.observables))
                         if i != preselection_obs_idx]
 
-    qubits = list(self.channel_map.keys())
-    if tomography_qubits is None:
-        tomography_qubits = qubits
-    d = 2**len(tomography_qubits)
-    data = self.proc_data_dict['probability_table']
-    data = data.T[observabele_idxs]
-    if not 'cal_points' in self.options_dict:
-        Fsingle = {None: np.array([[1, 0], [0, 1]]),
-                   True: np.array([[0, 0], [0, 1]]),
-                   False: np.array([[1, 0], [0, 0]])}
-        Fs = []
-        Omega = []
-        for obs in self.observables.values():
-            F = np.array([[1]])
-            nr_meas = 0
-            for qb in tomography_qubits:
-                # TODO: does not handle conditions on previous readouts
-                Fqb = Fsingle[obs.get(qb, None)]
-                # Kronecker product convention - assumed the same as QuTiP
-                F = np.kron(F, Fqb)
-                if qb in obs:
-                    nr_meas += 1
-            Fs.append(F)
-            # The variation is proportional to the number of qubits we have
-            # a condition on, assuming that all readout errors are small
-            # and equal.
-            Omega.append(nr_meas)
-        Omega = np.array(Omega)
-        return data, Fs, Omega
-    else:
-        means, covars = \
-            self.calibration_point_means_and_channel_covariations()
-        Fs = [np.diag(ms) for ms in means.T]
-        return data, Fs, covars
+    if meas_obj_names is None:
+        meas_obj_names = hlp_mod.get_measurement_properties(
+            data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+            **params)
+
+    Fs = []
+    Fsingle = {None: np.array([[1, 0], [0, 1]]),
+               True: np.array([[0, 0], [0, 1]]),
+               False: np.array([[1, 0], [0, 0]])}
+    Omega = []
+    for obs in observables.values():
+        F = np.array([[1]])
+        nr_meas = 0
+        for qb in meas_obj_names:
+            # TODO: does not handle conditions on previous readouts
+            Fqb = Fsingle[obs.get(qb, None)]
+            # Kronecker product convention - assumed the same as QuTiP
+            F = np.kron(F, Fqb)
+            if qb in obs:
+                nr_meas += 1
+        Fs.append(F)
+        # The variation is proportional to the number of qubits we have
+        # a condition on, assuming that all readout errors are small
+        # and equal.
+        Omega.append(nr_meas)
+    Omega = np.array(Omega)
+
+    hlp_mod.add_param(keys_out[0], Fs, data_dict, **params)
+    hlp_mod.add_param(keys_out[1], Omega, data_dict, **params)
 
 
-def calibration_point_means_and_channel_covariations(self):
-    observables = [v for k, v in self.observables.items() if k != 'pre']
+def calculate_meas_ops_and_covariations_cal_points(data_dict, keys_in,
+                                                   observables,
+                                                   keys_out=None,
+                                                   **params):
+    """
+
+    :param data_dict:
+    :param keys_in: should point to the thresholded shots
+    :param keys_out:
+    :param observables:
+    :param params: keyword argument
+        Must contain:
+         - probability_table is it is not in data_dict
+         - n_readouts if it is not in data_dict
+    :return:
+
+    Assumptions:
+        - all qubits in CalibrationPoints have the same cal point indices
+    """
+    if keys_out is None:
+        keys_out = ['measurement_ops', 'cov_matrix_meas_obs']
+    if len(keys_out) != 2:
+        raise ValueError(f'keys_out must have length 2. {len(keys_out)} '
+                         f'entries were given.')
+
+    prob_table = hlp_mod.get_param('probability_table', data_dict,
+                                   raise_error=True, **params)
+    prob_table = np.array(list(prob_table.values())).T
+    cp = hlp_mod.get_measurement_properties(data_dict, props_to_extract=['cp'],
+                                            **params)
+    meas_obj_names = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+        **params)
+    prep_params = hlp_mod.get_param('preparation_params', data_dict, **params)
+
     try:
-        preselection_obs_idx = list(self.observables.keys()).index('pre')
+        preselection_obs_idx = list(observables.keys()).index('pre')
     except ValueError:
         preselection_obs_idx = None
-    observabele_idxs = [i for i in range(len(self.observables))
-                        if i != preselection_obs_idx]
+    observable_idxs = [i for i in range(len(observables))
+                       if i != preselection_obs_idx]
 
     # calculate the mean for each reference state and each observable
-    try:
-        cal_points_list = convert_channel_names_to_index(
-            self.options_dict.get('cal_points'), self.n_readouts,
-            self.raw_data_dict['value_names']
-        )
-    except KeyError:
-        cal_points_list = convert_channel_names_to_index(
-            self.options_dict.get('cal_points'), self.n_readouts,
-            list(self.channel_map.keys())
-        )
-    self.proc_data_dict['cal_points_list'] = cal_points_list
-
-    means = np.zeros((len(cal_points_list), len(observables)))
-    cal_readouts = set()
-    for i, cal_point in enumerate(cal_points_list):
-        for j, cal_point_chs in enumerate(cal_point):
-            if j == 0:
-                readout_list = cal_point_chs
-            else:
-                if readout_list != cal_point_chs:
-                    raise Exception('Different readout indices for a '
-                                    'single reference state: {} and {}'
-                                    .format(readout_list, cal_point_chs))
-        cal_readouts.update(cal_point[0])
-
-        val_list = [self.proc_data_dict['probability_table'][idx_ro]
-                    [observabele_idxs] for idx_ro in cal_point[0]]
-        means[i] = np.mean(val_list, axis=0)
+    cp_indices = cp.get_indices(meas_obj_names, prep_params)
+    cal_readouts = hlp_mod.flatten_list(
+        [cp_indices[list(cp_indices)[0]].get(state, [])
+         for state in ['g', 'e', 'f', 'h']])
+    means = np.array([np.mean([prob_table[cal_idx][observable_idxs]], axis=0)
+                      for cal_idx in cal_readouts])
+    Fs = [np.diag(ms) for ms in means.T]
 
     # find the means for all the products of the operators and the average
     # covariation of the operators
-    prod_obss = []
+    observables_data ={k: v for k, v in observables.items() if k != 'pre'}
+    n_readouts = hlp_mod.get_param('n_readouts', data_dict, raise_error=True,
+                                   **params)
+    prod_obss = OrderedDict()
     prod_obs_idxs = {}
-    obs_products = np.zeros([self.n_readouts] + [len(observables)]*2)
-    for i, obsi in enumerate(observables):
-        for j, obsj in enumerate(observables):
+    obs_products = np.zeros([n_readouts] + [len(observables_data)]*2)
+    for i, obs in enumerate(observables_data):
+        obsi = observables_data[obs]
+        for j, obsj in enumerate(observables_data.values()):
             if i > j:
                 continue
-            obsp = self.observable_product(obsi, obsj)
+            obsp = hlp_mod.observable_product(obsi, obsj)
             if obsp is None:
                 obs_products[:, i, j] = 0
                 obs_products[:, j, i] = 0
             else:
                 prod_obs_idxs[(i, j)] = len(prod_obss)
                 prod_obs_idxs[(j, i)] = len(prod_obss)
-                prod_obss.append(obsp)
-    prod_prob_table = self.probability_table(
-        self.proc_data_dict['shots_thresholded'],
-        prod_obss, self.n_readouts)
+                prod_obss[obs] = obsp
+
+    prod_prob_table = calculate_probability_table(data_dict, keys_in=keys_in,
+                                                  observables=prod_obss,
+                                                  n_readouts=n_readouts)
+    prod_prob_table = np.array(list(prod_prob_table.values())).T
     for (i, j), k in prod_obs_idxs.items():
         obs_products[:, i, j] = prod_prob_table[:, k]
-    covars = -np.array([np.outer(ro, ro) for ro in self.proc_data_dict[
-                                                       'probability_table'][:,observabele_idxs]]) + obs_products
-    covars = np.mean(covars[list(cal_readouts)], 0)
+    Omega = -np.array([np.outer(ro, ro) for ro in
+                        prob_table[:, observable_idxs]]) + obs_products
+    Omega = np.mean(Omega[list(cal_readouts)], 0)
 
-    return means, covars
-
+    hlp_mod.add_param(keys_out[0], Fs, data_dict, **params)
+    hlp_mod.add_param(keys_out[1], Omega, data_dict, **params)

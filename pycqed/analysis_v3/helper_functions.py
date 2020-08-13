@@ -275,11 +275,11 @@ def get_data_to_process(data_dict, keys_in):
         all_keys = keyi.split('.')
         if len(all_keys) == 1:
             try:
-                if isinstance(data_dict[all_keys[0]], dict):
-                    data_to_proc_dict = {f'{keyi}.{k}': deepcopy(v) for k, v
-                                         in data_dict[all_keys[0]].items()}
-                else:
-                    data_to_proc_dict[keyi] = data_dict[all_keys[0]]
+                # if isinstance(data_dict[all_keys[0]], dict):
+                #     data_to_proc_dict = {f'{keyi}.{k}': deepcopy(v) for k, v
+                #                          in data_dict[all_keys[0]].items()}
+                # else:
+                data_to_proc_dict[keyi] = data_dict[all_keys[0]]
             except KeyError:
                 key_found = False
         else:
@@ -506,11 +506,7 @@ def get_measurement_properties(data_dict, props_to_extract='all',
         elif 'sp' == prop:
             sp = get_param('sweep_points', data_dict, raise_error=raise_error,
                            **params)
-            if isinstance(sp, str):
-                sp = eval(sp)
-            if isinstance(sp[0], dict):
-                sp = sp_mod.SweepPoints(from_dict_list=sp)
-            props_to_return += [sp]
+            props_to_return += [sp_mod.SweepPoints.cast_init(sp)]
         elif 'mospm' == prop:
             meas_obj_sweep_points_map = get_param(
                 'meas_obj_sweep_points_map', data_dict, raise_error=raise_error,
@@ -667,10 +663,41 @@ def get_reset_reps_from_data_dict(data_dict):
 
 
 def get_observables(data_dict, keys_out, preselection_shift=-1,
-                    use_preselection=False, **params):
+                    do_preselection=False, **params):
+    """
 
-    assert len(keys_out) == 1
-
+    :param data_dict:
+    :param keys_out:
+    :param preselection_shift:
+    :param do_preselection:
+    :param params:
+    :return: a dictionary with
+        name of the qubit as key and boolean value indicating if it is
+        selecting exited states. If the qubit is missing from the list
+        of states it is averaged out. Instead of just the qubit name, a
+        tuple of qubit name and a shift value can be passed, where the
+        shift value specifies the relative readout index for which the
+        state is checked.
+        Example qb2-qb4 state tomo with preselection:
+            {'pre': {('qb2', -1): False,
+                    ('qb4', -1): False}, # preselection conditions
+             '$\\| gg\\rangle$': {'qb2': False,
+                                  'qb4': False,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False},
+             '$\\| ge\\rangle$': {'qb2': False,
+                                  'qb4': True,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False},
+             '$\\| eg\\rangle$': {'qb2': True,
+                                  'qb4': False,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False},
+             '$\\| ee\\rangle$': {'qb2': True,
+                                  'qb4': True,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False}}
+    """
     mobj_names = get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
         **params)
@@ -683,7 +710,7 @@ def get_observables(data_dict, keys_out, preselection_shift=-1,
     observables = OrderedDict()
 
     # add preselection condition also as an observable
-    if use_preselection:
+    if do_preselection:
         observables["pre"] = preselection_condition
     # add all combinations
     for i, states in enumerate(combination_list):
@@ -691,10 +718,10 @@ def get_observables(data_dict, keys_out, preselection_shift=-1,
         obs_name = '$\| ' + name + '\\rangle$'
         observables[obs_name] = dict(zip(mobj_names, states))
         # add preselection condition
-        if use_preselection:
+        if do_preselection:
             observables[obs_name].update(preselection_condition)
 
-    add_param(keys_out[0], observables, data_dict)
+    add_param(keys_out[0], observables, data_dict, **params)
 
 
 ### functions that do NOT have the ana_v3 format for input parameters ###
