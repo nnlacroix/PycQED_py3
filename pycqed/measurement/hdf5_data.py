@@ -13,6 +13,7 @@ Contains:
 import os
 import time
 import h5py
+import qutip
 import numpy as np
 import logging
 log = logging.getLogger(__name__)
@@ -153,8 +154,12 @@ def write_dict_to_hdf5(data_dict: dict, entry_point, overwrite=False):
                 log.error(e)
                 log.error('Exception occurred while writing'
                       ' {}:{} of type {}'.format(key, item, type(item)))
-        elif isinstance(item, np.ndarray):
+        elif isinstance(item, (np.ndarray, qutip.qobj.Qobj)):
+            if isinstance(item, qutip.qobj.Qobj):
+                item = item.full()
             try:
+                print()
+                print(key)
                 entry_point.create_dataset(key, data=item)
             except RuntimeError:
                 if overwrite:
@@ -162,7 +167,6 @@ def write_dict_to_hdf5(data_dict: dict, entry_point, overwrite=False):
                     entry_point.create_dataset(key, data=item)
                 else:
                     raise
-
         elif item is None:
             # as h5py does not support saving None as attribute
             # I create special string, note that this can create
