@@ -5716,10 +5716,11 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                             'box_props': None,
                             'plotfn': self.plot_text,
                             'text_string': textstr}
-                    # else:
+
                         qbl = [gl[0] for gl in self.gates_list
-                               if qbn == gl[1]][0]
+                               if qbn == gl[1]]
                         if len(qbl):
+                            qbl = qbl[0]
                             textstr = 'Leakage =\n{:.5f} $\\pm$ {:.5f}'.format(
                                 self.proc_data_dict['analysis_params_dict'][
                                     f'leakage_{qbl}']['val'][0],
