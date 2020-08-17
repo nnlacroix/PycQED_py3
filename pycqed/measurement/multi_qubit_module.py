@@ -1992,6 +1992,141 @@ def measure_drive_cancellation(
                 qb_names=ramsey_qubit_names, options_dict={'TwoD': True})
 
 
+def measure_fluxline_crosstalk(
+        dev, target_qubit, crosstalk_qubits, amplitudes,
+        crosstalk_qubits_amplitudes=None, phases=None,
+        target_fluxpulse_length=500e-9, crosstalk_fluxpulse_length=None,
+        skip_qb_freq_fits=False, n_cal_points_per_state=2,
+        cal_states='auto', prep_params=None, label=None, upload=True,
+        analyze=True):
+    """
+    Applies a flux pulse on the target qubit with various amplitudes.
+    Measure the phase shift due to these pulses on the crosstalk qubit,s which
+    are measured in a Ramsey setting and fluxed to a more sensitive frequency.
+
+    Args:
+        dev: The Device object used for the measurement
+        target_qubit: the qubit to which a fluxpulse with varying amplitude
+            is applied
+        crosstalk_qubits: a list of qubits to do a Ramsey on.
+        amplitudes: A list of flux pulse amplitudes to apply to the target qubit
+        crosstalk_qubits_amplitudes: A dictionary from crosstalk qubit names
+            to flux pulse amplitudes that are applied to them to increase their
+            flux sensitivity. Missing amplitudes are set to 0.
+        phases: An array of Ramsey phases in degrees.
+        target_fluxpulse_length: length of the flux pulse on the target qubit.
+            Default: 500 ns.
+        crosstalk_fluxpulse_length: length of the flux pulses on the crosstalk
+            qubits. Default: target_fluxpulse_length + 50 ns.
+        n_cal_points_per_state: Number of calibration measurements per
+            calibration state. Defaults to 2.
+        cal_states:
+            List of qubit states to use for calibration. Defaults to 'auto'.
+        prep_params: Perparation parameters dictionary specifying the type
+            of state preparation.
+        label: Overwrite the default measuremnt label.
+        upload: Whether the experimental sequence should be uploaded.
+            Defaults to True.
+        analyze: Whether the analysis will be run. Defaults to True.
+
+    """
+    if phases is None:
+        phases = np.linspace(0, 360, 3, endpoint=False)
+    if crosstalk_fluxpulse_length is None:
+        crosstalk_fluxpulse_length = target_fluxpulse_length + 50e-9
+    if crosstalk_qubits_amplitudes is None:
+        crosstalk_qubits_amplitudes = {}
+
+    if isinstance(target_qubit, str):
+        target_qubit = dev.get_qb(target_qubit)
+    target_qubit_name = target_qubit.name
+    crosstalk_qubits = [dev.get_qb(qb) if isinstance(qb, str) else qb
+                     for qb in crosstalk_qubits]
+    crosstalk_qubits_names = [qb.name for qb in crosstalk_qubits]
+
+    MC = dev.instr_mc.get_instr()
+    if label is None:
+        label = f'fluxline_crosstalk_{target_qubit_name}_' + \
+                ''.join(crosstalk_qubits_names)
+
+    if prep_params is None:
+        prep_params = dev.get_prep_params(crosstalk_qubits)
+
+    sweep_points = SweepPoints('phase', phases, 'deg', 'Ramsey phase')
+    sweep_points.add_sweep_dimension()
+    sweep_points.add_sweep_parameter('target_amp', amplitudes, 'V',
+                                     'Target qubit flux pulse amplitude')
+
+    exp_metadata = {}
+
+    for qb in set(crosstalk_qubits) | {target_qubit}:
+        qb.prepare(drive='timedomain')
+
+    cal_states = CalibrationPoints.guess_cal_states(cal_states,
+                                                    for_ef=False)
+    cp = CalibrationPoints.multi_qubit(
+        [qb.name for qb in crosstalk_qubits], cal_states,
+        n_per_state=n_cal_points_per_state)
+    operation_dict = dev.get_operation_dict()
+
+    # We get sweep_vals for only one dimension since drive_cancellation_seq
+    # turns 2D sweep points into 1D-SegmentHardSweep.
+    # FIXME: in the future, this should rather be implemented via
+    # sequence.compress_2D_sweep
+    seq, sweep_vals = mqs.fluxline_crosstalk_seq(
+        target_qubit_name, crosstalk_qubits_names,
+        crosstalk_qubits_amplitudes, sweep_points, operation_dict,
+        crosstalk_fluxpulse_length=crosstalk_fluxpulse_length,
+        target_fluxpulse_length=target_fluxpulse_length,
+        prep_params=prep_params, cal_points=cp, upload=False)
+
+    [seq.repeat_ro(f"RO {qbn}", operation_dict)
+     for qbn in crosstalk_qubits_names]
+
+    sweep_func = awg_swf.SegmentHardSweep(
+        sequence=seq, upload=upload,
+        parameter_name='segment_index')
+    MC.set_sweep_function(sweep_func)
+    MC.set_sweep_points(sweep_vals)
+
+    det_func = get_multiplexed_readout_detector_functions(
+        crosstalk_qubits,
+        nr_averages=max([qb.acq_averages() for qb in crosstalk_qubits])) \
+        ['int_avg_det']
+    MC.set_detector_function(det_func)
+
+    # !!! Watch out with the call below. See docstring for this function
+    # to see the assumptions it makes !!!
+    meas_obj_sweep_points_map = sweep_points.get_meas_obj_sweep_points_map(
+        [qb.name for qb in crosstalk_qubits])
+    exp_metadata.update({
+        'target_qubit_name': target_qubit_name,
+        'crosstalk_qubits_names': crosstalk_qubits_names,
+        'crosstalk_qubits_amplitudes': crosstalk_qubits_amplitudes,
+        'target_fluxpulse_length': target_fluxpulse_length,
+        'crosstalk_fluxpulse_length': crosstalk_fluxpulse_length,
+        'skip_qb_freq_fits': skip_qb_freq_fits,
+        'preparation_params': prep_params,
+        'cal_points': repr(cp),
+        'sweep_points': sweep_points,
+        'meas_obj_sweep_points_map': meas_obj_sweep_points_map,
+        'meas_obj_value_names_map':
+            get_meas_obj_value_names_map(crosstalk_qubits, det_func),
+        'rotate': len(cp.states) != 0,
+        'data_to_fit': {qbn: 'pe' for qbn in crosstalk_qubits_names}
+    })
+
+    MC.run(label, exp_metadata=exp_metadata)
+
+    if analyze:
+        return tda.FluxlineCrosstalkAnalysis(
+            qb_names=crosstalk_qubits_names, options_dict={
+                'TwoD': True,
+                'skip_qb_freq_fits': skip_qb_freq_fits,
+            })
+
+
+
 def calibrate_n_qubits(qubits, f_LO, sweep_points_dict, sweep_params=None,
                        artificial_detuning=None,
                        cal_points=True, no_cal_points=4, upload=True,
