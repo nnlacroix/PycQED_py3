@@ -61,6 +61,10 @@ def extract_data_hdf(timestamps=None, data_dict=None,
     if data_dict is None:
         data_dict = OrderedDict()
 
+    # Add flag that this is an analysis_v3 data_dict. This is used by the
+    # Saving class.
+    data_dict['is_data_dict'] = True
+
     if timestamps is None:
         timestamps = hlp_mod.get_param('timestamps', data_dict)
     if timestamps is None:

@@ -31,6 +31,12 @@ def process_pipeline(data_dict, processing_pipeline=None, append_pipeline=False,
     under the key(s)/dictionary key path(s) specified in 'keys_out' in the
     the **node_params of each node.
     """
+
+    # Add flag that this is an analysis_v3 data_dict. This is used by the
+    # Saving class.
+    if 'is_data_dict' not in data_dict:
+        data_dict['is_data_dict'] = True
+
     if processing_pipeline is None:
         processing_pipeline = hlp_mod.get_param('processing_pipeline',
                                                 data_dict, raise_error=True)
@@ -39,9 +45,9 @@ def process_pipeline(data_dict, processing_pipeline=None, append_pipeline=False,
             hlp_mod.add_param('processing_pipeline', [node_params],
                               data_dict, append_value=True)
 
-    # instantiate a ProcessingPipeline instance in case it is an ordinary list
+    # Instantiate a ProcessingPipeline instance in case it is an ordinary list
     processing_pipeline = ProcessingPipeline(from_dict_list=processing_pipeline)
-    # resolve pipeline in case it wasn't resolved yet
+    # Resolve pipeline in case it wasn't resolved yet
     movnm = hlp_mod.get_param('meas_obj_value_names_map', data_dict, **params)
     if movnm is not None:
         processing_pipeline(movnm)

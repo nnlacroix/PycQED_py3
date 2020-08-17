@@ -72,48 +72,56 @@ class Save:
     def save_data_dict(self):
         """
         Saves to the HDF5 file AnalysisResults.hdf everything in data_dict
-        execept values corresponding to the keys "plot_dicts", "axes",
+        except values corresponding to the keys "plot_dicts", "axes",
         "figures", "data_files"
         """
         with h5py.File(self.filepath, 'a') as analysis_file:
-            if 'fit_dicts' in self.data_dict:
-                self.save_fit_results(analysis_file)
+            self.dump_to_file(self.data_dict, analysis_file)
 
-            # Iterate over all the fit result dicts as not to overwrite
-            # old/other analysis
-            for key, value in self.data_dict.items():
-                if key not in self.filter_keys:
-                    try:
-                        group = analysis_file.create_group(key)
-                    except ValueError:
-                        del analysis_file[key]
-                        group = analysis_file.create_group(key)
+    def dump_to_file(self, data_dict, entry_point):
+        if 'fit_dicts' in data_dict:
+            self.dump_fit_results(entry_point)
 
-                    if isinstance(value, dict):
+        # Iterate over all the fit result dicts as not to overwrite
+        # old/other analysis
+        for key, value in data_dict.items():
+            if key not in self.filter_keys:
+                try:
+                    group = entry_point.create_group(key)
+                except ValueError:
+                    del entry_point[key]
+                    group = entry_point.create_group(key)
+
+                if isinstance(value, dict):
+                    if value.get('is_data_dict', False):
+                        self.dump_to_file(value, group)
+                    else:
                         value_to_save = {k: v for k, v in value.items() if
                                          k not in self.filter_keys}
-                        h5d.write_dict_to_hdf5(value_to_save, entry_point=group)
-                    elif isinstance(value, np.ndarray):
-                        group.create_dataset(key, data=value)
-                    elif isinstance(value, qtp.qobj.Qobj):
-                        group.create_dataset(key, data=value.full())
-                    else:
-                        try:
-                            val = repr(value)
-                        except KeyError:
-                            val = ''
-                        group.attrs[key] = val
+                        h5d.write_dict_to_hdf5(value_to_save,
+                                               entry_point=group)
+                elif isinstance(value, np.ndarray):
+                    group.create_dataset(key, data=value)
+                elif isinstance(value, qtp.qobj.Qobj):
+                    group.create_dataset(key, data=value.full())
+                else:
+                    try:
+                        val = repr(value)
+                    except KeyError:
+                        val = ''
+                    group.attrs[key] = val
 
-    def save_fit_results(self, analysis_file):
+    def dump_fit_results(self, entry_point):
         """
         Saves the fit results from data_dict['fit_dicts']
-        :param analysis_file: HDF5 file object to save to
+        :param entry_point: HDF5 file object to save to or a group within
+            this file
         """
         try:
-            group = analysis_file.create_group('Fit Results')
+            group = entry_point.create_group('Fit Results')
         except ValueError:
             # If the analysis group already exists.
-            group = analysis_file['Fit Results']
+            group = entry_point['Fit Results']
 
         # Iterate over all the fit result dicts as not to overwrite
         # old/other analysis
