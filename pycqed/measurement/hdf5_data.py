@@ -158,8 +158,6 @@ def write_dict_to_hdf5(data_dict: dict, entry_point, overwrite=False):
             if isinstance(item, qutip.qobj.Qobj):
                 item = item.full()
             try:
-                print()
-                print(key)
                 entry_point.create_dataset(key, data=item)
             except RuntimeError:
                 if overwrite:
