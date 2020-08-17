@@ -1843,6 +1843,83 @@ def drive_cancellation_seq(
         sequence_name=sequence_name, upload=upload)
 
 
+def fluxline_crosstalk_seq(target_qubit_name, crosstalk_qubits_names,
+                           crosstalk_qubits_amplitudes, sweep_points,
+                           operation_dict, crosstalk_fluxpulse_length,
+                           target_fluxpulse_length, prep_params,
+                           cal_points, upload=True,
+                           sequence_name='fluxline_crosstalk_seq'):
+    """
+    Applies a flux pulse on the target qubit with various amplitudes.
+    Measure the phase shift due to these pulses on the crosstalk qubits which
+    are measured in a Ramsey setting and fluxed to a more sensitive frequency.
+
+    Args:
+        target_qubit_name: the qubit to which a fluxpulse with varying amplitude
+            is applied
+        crosstalk_qubits_names: a list of qubits to do a Ramsey on.
+        crosstalk_qubits_amplitudes: A dictionary from crosstalk qubit names
+            to flux pulse amplitudes that are applied to them to increase their
+            flux sensitivity. Missing amplitudes are set to 0.
+        sweep_points: A SweepPoints object, where the first sweep dimension is
+            over Ramsey phases and must be called 'phase' and the second sweep
+            dimenstion is over the target qubit pulse amplitudes and must be
+            called 'target_amp'.
+        operation_dict: A dictionary of pulse dictionaries corresponding to the
+            various operations that can be done.
+        target_fluxpulse_length: length of the flux pulse on the target qubit.
+        crosstalk_fluxpulse_length: length of the flux pulses on the crosstalk
+            qubits
+        prep_params: Perparation parameters dictionary specifying the type
+            of state preparation.
+        cal_points: CalibrationPoints object determining the used calibration
+            points
+        upload: Whether the experimental sequence should be uploaded.
+            Defaults to True.
+        sequence_name: Overwrite the sequence name. Defaults to
+            'fluxline_crosstalk_seq'.
+    """
+
+    interleaved_pulse_list_list = []
+    buffer_start = 0
+    buffer_end = 0
+    pi_len = 0
+    for qbn in crosstalk_qubits_names:
+        buffer_start = max(buffer_start,
+                           operation_dict[f'FP {qbn}']['buffer_length_start'])
+        buffer_end = max(buffer_end,
+                           operation_dict[f'FP {qbn}']['buffer_length_end'])
+        pi_len = max(pi_len, operation_dict[f'X180 {qbn}']['nr_sigma'] *
+                             operation_dict[f'X180 {qbn}']['sigma'])
+
+    for amp in sweep_points[1]['target_amp'][0]:
+        interleaved_pulse_list = []
+        for i, qbn in enumerate(crosstalk_qubits_names):
+            pulse = deepcopy(operation_dict[f'FP {qbn}'])
+            if i > 0:
+                pulse['ref_point'] = 'middle'
+                pulse['ref_point_new'] = 'middle'
+            pulse['amplitude'] = crosstalk_qubits_amplitudes.get(qbn, 0)
+            pulse['pulse_length'] = crosstalk_fluxpulse_length
+            pulse['buffer_length_start'] = buffer_start
+            pulse['buffer_length_end'] = buffer_end
+            interleaved_pulse_list += [pulse]
+        pulse = deepcopy(operation_dict[f'FP {target_qubit_name}'])
+        pulse['amplitude'] = amp
+        pulse['pulse_length'] = target_fluxpulse_length
+        pulse['ref_point'] = 'middle'
+        pulse['ref_point_new'] = 'middle'
+        interleaved_pulse_list += [pulse]
+        interleaved_pulse_list_list += [interleaved_pulse_list]
+
+    pihalf_spacing = buffer_start + crosstalk_fluxpulse_length + buffer_end + \
+        pi_len
+    return interleaved_pulse_list_list_equatorial_seq(
+        crosstalk_qubits_names, operation_dict, interleaved_pulse_list_list,
+        sweep_points[0]['phase'][0], pihalf_spacing=pihalf_spacing,
+        prep_params=prep_params, cal_points=cal_points,
+        sequence_name=sequence_name, upload=upload)
+
 def multi_parity_multi_round_seq(ancilla_qubit_names,
                                  data_qubit_names,
                                  parity_map,
