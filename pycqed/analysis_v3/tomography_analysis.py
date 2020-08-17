@@ -137,9 +137,6 @@ def state_tomography_analysis(data_dict, keys_in,
     # get number of readouts
     n_readouts = hlp_mod.get_param('n_readouts', data_dict, **params)
     if n_readouts is None:
-        if cp is None:
-            raise ValueError('Please provide either n_readouts or '
-                             'CalibrationPoints.')
         n_readouts = (do_preselection + 1) * (
                 len(basis_rots)**2 + (len(cp.states) if cp is not None else 0))
         hlp_mod.add_param('n_readouts', n_readouts, data_dict, **params)
@@ -180,7 +177,7 @@ def state_tomography_analysis(data_dict, keys_in,
                 data_dict, props_to_extract=['mobjn'],
                 enforce_one_meas_obj=False, **params)
             hlp_mod.add_param('cov_matrix_meas_obs',
-                              np.diag(np.ones(meas_obj_names**2)), data_dict,
+                              np.diag(np.ones(len(meas_obj_names)**2)), data_dict,
                               **params)
         else:
             if hlp_mod.get_param('cov_matrix_meas_obs', data_dict) is None:
