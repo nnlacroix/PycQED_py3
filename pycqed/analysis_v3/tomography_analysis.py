@@ -158,15 +158,27 @@ def state_tomography_analysis(data_dict, keys_in,
                                              observables=observables, **params)
 
     # get measurement_ops and cov_matrix_meas_obs
-    if cp is not None:
-        dat_proc_mod.calculate_meas_ops_and_covariations_cal_points(
-            data_dict, keys_in, n_readouts=n_readouts,
-            keys_out=['measurement_ops', 'cov_matrix_meas_obs'],
-            observables=observables, **params)
+    measurement_ops = hlp_mod.get_param('measurement_ops', data_dict, **params)
+    if measurement_ops is None:
+        if cp is not None:
+            dat_proc_mod.calculate_meas_ops_and_covariations_cal_points(
+                data_dict, keys_in, n_readouts=n_readouts,
+                keys_out=['measurement_ops', 'cov_matrix_meas_obs'],
+                observables=observables, **params)
+        else:
+            dat_proc_mod.calculate_meas_ops_and_covariations(
+                data_dict, keys_out=['measurement_ops', 'cov_matrix_meas_obs'],
+                observables=observables)
     else:
-        dat_proc_mod.calculate_meas_ops_and_covariations(
-            data_dict, keys_out=['measurement_ops', 'cov_matrix_meas_obs'],
-            observables=observables)
+        if hlp_mod.get_param('measurement_ops', data_dict) is None:
+            hlp_mod.add_param('measurement_ops', measurement_ops, data_dict,
+                              **params)
+        cov_matrix_meas_obs = hlp_mod.get_param('cov_matrix_meas_obs',
+                                                data_dict, **params)
+        if cov_matrix_meas_obs is not None and \
+                hlp_mod.get_param('cov_matrix_meas_obs', data_dict) is None:
+            hlp_mod.add_param('cov_matrix_meas_obs', measurement_ops, data_dict,
+                              **params)
 
     # get all measurement ops, measurement results, and covariance matrices
     all_msmt_ops_results_omegas(data_dict, observables, **params)
