@@ -665,12 +665,19 @@ def get_reset_reps_from_data_dict(data_dict):
 def get_observables(data_dict, keys_out=None, preselection_shift=-1,
                     do_preselection=False, **params):
     """
-
-    :param data_dict:
-    :param keys_out:
-    :param preselection_shift:
-    :param do_preselection:
-    :param params:
+    Creates the observables dictionary from meas_obj_names, preselection_shift,
+        and do_preselection.
+    :param data_dict: OrderedDict containing data to be processed and where
+        processed data is to be stored
+    :param keys_out: list with one entry specifying the key name or dictionary
+        key path in data_dict for the processed data to be saved into
+    :param preselection_shift: integer specifying which readout prior to the
+        current readout to be considered for preselection
+    :param do_preselection: bool specifying whether to do preselection on
+        the data.
+    :param params: keyword arguments
+        Expects to find either in data_dict or in params:
+            - meas_obj_names: list of measurement object names
     :return: a dictionary with
         name of the qubit as key and boolean value indicating if it is
         selecting exited states. If the qubit is missing from the list

@@ -675,25 +675,20 @@ def correlate_qubits(data_dict, keys_in, keys_out, **params):
 
 def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
     """
-    Creates a general table of counts averaging out all but specified set of
-    correlations.
-
-    This function has been check with a profiler and 85% of the time is
-    spent on comparison with the mask. Thus there is no trivial optimization
-    possible.
-
-    Expects:
-        data_dict
-        keys_in to specify keys in data_dict that correspond to the
-            thresholded shots for the qubits
-        observables: List of observables. Observable is a dictionary with
-            name of the qubit as key and boolean value indicating if it is
-            selecting exited states. If the qubit is missing from the list
-            of states it is averaged out. Instead of just the qubit name, a
-            tuple of qubit name and a shift value can be passed, where the
-            shift value specifies the relative readout index for which the
-            state is checked.
-            Example qb2-qb4 state tomo with preselection:
+    Creates a general table of normalized counts averaging out all but
+        specified set of correlations.
+    :param data_dict: OrderedDict containing data to be processed and where
+        processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+        data_dict for the data to be processed (thresholded shots)
+    :param observables: List of observables. Observable is a dictionary with
+        name of the qubit as key and boolean value indicating if it is
+        selecting exited states. If the qubit is missing from the list
+        of states it is averaged out. Instead of just the qubit name, a
+        tuple of qubit name and a shift value can be passed, where the
+        shift value specifies the relative readout index for which the
+        state is checked.
+        Example qb2-qb4 state tomo with preselection:
                 {'pre': {('qb2', -1): False,
                         ('qb4', -1): False}, # preselection conditions
                  '$\\| gg\\rangle$': {'qb2': False,
@@ -712,18 +707,15 @@ def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
                                       'qb4': True,
                                       ('qb2', -1): False,
                                       ('qb4', -1): False}}
-        n_readouts: Assumed to be the period in the list of shots between
-            experiments with the same prepared state. If shots_of_qubits
-            includes preselection readout results or if there was several
-            readouts for a single readout then n_readouts has to include
-            them.
-
-         params: keyword arguments: used if get_observables is called
-            preselection_shift (int, default: -1)
-            do_preselection (bool, default: False)
-    Returns:
-        Saves in data_dict, under keys_out, a dict with observables as keys and
-            np.array of normalized counts with size n_readouts as values
+    :param n_readouts: Assumed to be the period in the list of shots between
+        experiments with the same prepared state. If shots_of_qubits
+        includes preselection readout results or if there was several
+        readouts for a single readout then n_readouts has to include them.
+    :param params: keyword arguments: used if get_observables is called
+        - preselection_shift (int, default: -1)
+        - do_preselection (bool, default: False)
+    :return adds to data_dict, under keys_out, a dict with observables as keys
+        and np.array of normalized counts with size n_readouts as values
 
     Assumptions:
         - len(keys_out) == 1 -> one probability table is calculated
@@ -784,19 +776,23 @@ def calculate_meas_ops_and_covariations(
         data_dict, observables, keys_out=None, meas_obj_names=None,
         **params):
     """
-    Calculates and adds to data_dict:
-        - the measurement operators corresponding to each observable;
-        - and the expected covariace matrix between the operators.
-
-    If the calibration segments are passed, there must be a calibration
-    segments for each of the computational basis states of the Hilbert space.
-    If there are no calibration segments, perfect readout is assumed.
-
+    Calculates the measurement operators corresponding to each observable and
+        the expected covariance matrix between the operators from the
+        observables and meas_obj_names.
     :param data_dict: OrderedDict containing data to be processed and where
-                    processed data is to be stored
+        processed data is to be stored
+    :param observables: measurement observables, see docstring of hlp_mod.
+        get_observables. If not provided, it will default to hlp_mod.
+        get_observables. See required input params there.
     :param keys_out: list of key names or dictionary keys paths in
-                    data_dict for the processed data to be saved into
-
+        data_dict for the processed data to be saved into
+    :param meas_obj_names: list of measurement object names
+    :param params: keyword arguments: meas_obj_names can be passed here
+    :return: adds to data_dict:
+        - the measurement operators corresponding to each observable and the
+            expected covariance matrix between the operators under keys_out
+        - if keys_out is None, it will saves the aforementioned quantities
+            under  'measurement_ops' and 'cov_matrix_meas_obs'
     Assumptions:
      - len(keys_out) == 2
      - order in keys_out corresponds to [measurement_operators, covar_matrix]
@@ -838,21 +834,36 @@ def calculate_meas_ops_and_covariations(
     hlp_mod.add_param(keys_out[1], Omega, data_dict, **params)
 
 
-def calculate_meas_ops_and_covariations_cal_points(data_dict, keys_in,
-                                                   observables,
-                                                   keys_out=None,
-                                                   **params):
+def calculate_meas_ops_and_covariations_cal_points(
+        data_dict, keys_in, observables, keys_out=None, **params):
     """
-
-    :param data_dict:
-    :param keys_in: should point to the thresholded shots
-    :param keys_out:
-    :param observables:
-    :param params: keyword argument
-        Must contain:
-         - probability_table is it is not in data_dict
-         - n_readouts if it is not in data_dict
-    :return:
+    Calculates the measurement operators corresponding to each observable and
+        the expected covariance matrix between the operators from the
+        observables and calibration points.
+    :param data_dict: OrderedDict containing data to be processed and where
+        processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in data_dict
+        for the data to be processed (thresholded shots)
+    :param observables: measurement observables, see docstring of hlp_mod.
+        get_observables. If not provided, it will default to hlp_mod.
+        get_observables. See required input params there.
+    :param keys_out: list of key names or dictionary keys paths in
+        data_dict for the processed data to be saved into
+    :param params: keyword arguments:
+        Expects to find either in data_dict or in params:
+            - cal_points:  repr of instance of CalibrationPoints
+            - preparation_params: preparation parameters as stored in
+                QuDev_transmon or Device. Used in CalibrationPoints.get_indices()
+            - meas_obj_names: list of measurement object names
+            - probability_table if it is not in data_dict; see
+                calculate_probability_table for details.
+            - n_readouts: the total number of readouts including
+                preselection.
+    :return: adds to data_dict:
+        - the measurement operators corresponding to each observable and the
+            expected covariance matrix between the operators under keys_out
+        - if keys_out is None, it will saves the aforementioned quantities
+            under  'measurement_ops' and 'cov_matrix_meas_obs'
 
     Assumptions:
         - all qubits in CalibrationPoints have the same cal point indices
