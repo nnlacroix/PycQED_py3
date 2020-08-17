@@ -10,7 +10,7 @@ from pycqed.analysis import fitting_models as fit_mods
 from pycqed.analysis_v3 import fitting as fit_module
 from pycqed.analysis_v3 import plotting as plot_module
 from pycqed.analysis_v3 import helper_functions as hlp_mod
-from pycqed.analysis_v3 import processing_pipeline as ppmod
+from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from pycqed.analysis_v3 import pipeline_analysis as pla
 from pycqed.measurement import sweep_points as sp_mod
 from pycqed.measurement.calibration import calibration_points as cp_mod
@@ -49,13 +49,13 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
     n_segments = nreps*(sweep_points.length(0) + num_cal_states)
     # n_sequences = nr_cliffords
     n_sequences = sweep_points.length(1)
-    processing_pipeline = ppmod.ProcessingPipeline()
+    processing_pipeline = pp_mod.ProcessingPipeline()
     if nreps > 1:
         processing_pipeline.add_node('combine_datasets_interleaved_msmt',
                                      keys_in='raw',
                                      meas_obj_names=meas_obj_names)
     for label in ['rb', 'irb']:
-        pp = ppmod.ProcessingPipeline(global_keys_out_container=label)
+        pp = pp_mod.ProcessingPipeline(global_keys_out_container=label)
         keys_in = 'previous combine_datasets_interleaved_msmt' if \
             nreps > 1 else 'raw'
         pp.add_node(f'{label}_data_from_interleaved_msmt',
@@ -142,7 +142,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
     n_segments_all = 2*n_segments_subexp
     # n_sequences = nr_cliffords
     n_sequences = sweep_points.length(1)
-    processing_pipeline = ppmod.ProcessingPipeline()
+    processing_pipeline = pp_mod.ProcessingPipeline()
     if nreps > 1:
         processing_pipeline.add_node('combine_datasets_interleaved_msmt',
                                      keys_in='raw',
@@ -171,7 +171,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
     meas_obj_names = deepcopy(meas_obj_names)
     meas_obj_names += ['correlation_object']
     for label in ['rb', 'irb']:
-        pp = ppmod.ProcessingPipeline(global_keys_out_container=label)
+        pp = pp_mod.ProcessingPipeline(global_keys_out_container=label)
         pp.add_node(f'{label}_data_from_interleaved_msmt',
                     keys_in='previous average_data',
                     meas_obj_names=meas_obj_names)
