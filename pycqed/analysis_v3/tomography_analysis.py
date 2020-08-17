@@ -175,10 +175,17 @@ def state_tomography_analysis(data_dict, keys_in,
                               **params)
         cov_matrix_meas_obs = hlp_mod.get_param('cov_matrix_meas_obs',
                                                 data_dict, **params)
-        if cov_matrix_meas_obs is not None and \
-                hlp_mod.get_param('cov_matrix_meas_obs', data_dict) is None:
-            hlp_mod.add_param('cov_matrix_meas_obs', measurement_ops, data_dict,
+        if cov_matrix_meas_obs is None:
+            meas_obj_names = hlp_mod.get_measurement_properties(
+                data_dict, props_to_extract=['mobjn'],
+                enforce_one_meas_obj=False, **params)
+            hlp_mod.add_param('cov_matrix_meas_obs',
+                              np.diag(np.ones(meas_obj_names**2)), data_dict,
                               **params)
+        else:
+            if hlp_mod.get_param('cov_matrix_meas_obs', data_dict) is None:
+                hlp_mod.add_param('cov_matrix_meas_obs', measurement_ops,
+                                  data_dict, **params)
 
     # get all measurement ops, measurement results, and covariance matrices
     all_msmt_ops_results_omegas(data_dict, observables, **params)
