@@ -77,6 +77,8 @@ def state_tomography_analysis(data_dict, keys_in,
                 condition. Number of segments including preselection.
                 If n_readouts is not provided it will try to estimate it from
                 CalibrationPoints + basis_rots + preselection condition.
+                n_readouts is the total number of readouts including
+                preselection.
         Other possible keyword arguments:
             - do_preselection or preparation_params. If the former is not
                 provided, it will try to take it from preparation_params.
