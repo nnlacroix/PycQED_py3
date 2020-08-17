@@ -719,7 +719,7 @@ def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
 
     Assumptions:
         - len(keys_out) == 1 -> one probability table is calculated
-        - !!! This function returns the transpose of the static method
+        - !!! This function returns a dict not an array like the static method
         probability_table in readout_analysis.py/MultiQubit_SingleShot_Analysis
     """
 
