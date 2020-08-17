@@ -513,7 +513,7 @@ def prepare_prob_table_plot(data_dict, exclude_preselection=False, **params):
     else:
         title = f'{timestamps[-1]} {",".join(meas_obj_names)}'
 
-    plot_dicts['counts_table'] = {
+    plot_dicts[f'counts_table_{"".join(meas_obj_names)}'] = {
         'axid': "ptable",
         'plotfn': 'plot_colorx',
         'xvals': np.arange(len(observables))[obs_filter],
@@ -653,7 +653,7 @@ def prepare_density_matrix_plot(data_dict, estimation_type='least_squares',
     color_tar = (0.5 * np.angle(rho_target.full()) / np.pi) % 1.
     color_meas = (0.5 * np.angle(rho_meas.full()) / np.pi) % 1.
     color = np.concatenate((1.1*np.ones_like(color_tar), color_meas))
-    plot_dicts[f'density_matrix_{estimation_type}'] = {
+    plot_dicts[f'density_matrix_{estimation_type}_{"".join(meas_obj_names)}'] = {
         'plotfn': 'plot_bar3D',
         '3d': True,
         '3d_azim': -35,
@@ -737,7 +737,7 @@ def prepare_pauli_basis_plot(data_dict, estimation_type='least_squares',
     else:
         fit_type = '\n'
 
-    plot_dicts[f'pauli_basis_{estimation_type}'] = {
+    plot_dicts[f'pauli_basis_{estimation_type}_{"".join(meas_obj_names)}'] = {
         'plotfn': 'plot_bar',
         'xcenters': np.arange(len(order)),
         'xwidth': 0.4,
@@ -762,7 +762,7 @@ def prepare_pauli_basis_plot(data_dict, estimation_type='least_squares',
     if rho_target is not None:
         rho_target = qtp.Qobj(rho_target)
         ytar = tomo.density_matrix_to_pauli_basis(rho_target)
-        plot_dicts[f'pauli_basis_target_{estimation_type}'] = {
+        plot_dicts[f'pauli_basis_target_{estimation_type}_{"".join(meas_obj_names)}'] = {
             'plotfn': 'plot_bar',
             'fig_id': f'pauli_basis_{estimation_type}',
             'xcenters': np.arange(len(order)),
