@@ -836,8 +836,22 @@ class CPhase(CalibBuilder):
 
 class DynamicPhase(CalibBuilder):
     def __init__(self, task_list, sweep_points=None, **kw):
+        """
+        Dynamic Phase Measurement TODO
+
+        TODO kw args:
+        simultaneous: (bool) measure all phases simultaneously (not possible if
+            phases of both gate qubits should be measured), default: False
+        simultaneous_groups: (list of list of qubit objects or names)
+            specifies that the phases of all qubits within each sublist can
+            be measured simultaneously.
+            If simultaneous=False and no simultaneous_groups are specified,
+            only one qubit per task will be measured in parallel.
+        """
+
         try:
             self.simultaneous = kw.get('simultaneous', False)
+            self.simultaneous_groups = kw.get('simultaneous_groups', None)
             self.reset_phases_before_measurement = kw.get(
                 'reset_phases_before_measurement', True)
 
@@ -862,16 +876,31 @@ class DynamicPhase(CalibBuilder):
             if not self.simultaneous and max([len(qbs) for qbs in qbm_all]) > 1:
                 # create a child for each measurement
                 task_lists = []
-                # the number of required children is the length of the
-                # longest qubits_to_measure
-                for z in zip_longest(*qbm_all):
-                    new_task_list = []
-                    for task, new_qb in zip(task_list, z):
-                        if new_qb is not None:
+                if self.simultaneous_groups is not None:
+                    for group in self.simultaneous_groups:
+                        new_task_list = []
+                        for task in task_list:
+                            group = [qb if isinstance(qb, str) else qb.name
+                                     for qb in group]
                             new_task = copy(task)
-                            new_task['qubits_to_measure'] = [new_qb]
+                            new_task['qubits_to_measure'] = [
+                                qb for qb in new_task['qubits_to_measure']
+                                if qb in group]
                             new_task_list.append(new_task)
-                    task_lists.append(new_task_list)
+                        task_lists.append(new_task_list)
+                    # the children measure simultaneously within each group
+                    kw['simultaneous'] = True
+                else:
+                    # the number of required children is the length of the
+                    # longest qubits_to_measure
+                    for z in zip_longest(*qbm_all):
+                        new_task_list = []
+                        for task, new_qb in zip(task_list, z):
+                            if new_qb is not None:
+                                new_task = copy(task)
+                                new_task['qubits_to_measure'] = [new_qb]
+                                new_task_list.append(new_task)
+                        task_lists.append(new_task_list)
 
                 # device object will be needed for update
                 self.dev = kw.get('dev', None)
