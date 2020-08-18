@@ -238,7 +238,7 @@ class Block:
         # resolve parametric values first
         for p in pulses:
             for attr, s in p.items():
-                if isinstance(s, ParametricValue):
+                if getattr(s, '_is_parametric_value', False):
                     for sweep_dict, ind in zip(sweep_dicts_list, index_list):
                         if s.param in sweep_dict:
                             p[attr] = s.resolve(sweep_dict, ind)
@@ -294,13 +294,14 @@ class Block:
         """
         for p in self.pulses:
             for k, s in p.items():
-                if isinstance(s, ParametricValue):
+                if getattr(s, '_is_parametric_value', False):
                     if params is None or s.param in params:
                         s.param = prefix + s.param
 
     def parametric_values(self):
         return {(i, attr) : s for i, p in enumerate(self.pulses)
-                for attr, s in p.items() if isinstance(s, ParametricValue)}
+                for attr, s in p.items()
+                if getattr(s, '_is_parametric_value', False)}
 
 
 class ParametricValue:
@@ -313,6 +314,8 @@ class ParametricValue:
     :param func: (optional) a function applied to the value of the parameter.
 
     """
+    _is_parametric_value = True
+
     def __init__(self, param, func=None):
         self.param = param
         self.func = func
