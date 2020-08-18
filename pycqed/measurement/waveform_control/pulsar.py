@@ -1070,7 +1070,11 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                            get_cmd=self._get_inter_element_spacing)
         self.add_parameter('reuse_waveforms', initial_value=False,
                            parameter_class=ManualParameter, vals=vals.Bool())
-                           
+        self.add_parameter('flux_channels', initial_value=[],
+                           parameter_class=ManualParameter, vals=vals.Lists())
+        self.add_parameter('flux_crosstalk_mtx', initial_value=None,
+                           parameter_class=ManualParameter)
+
         self._inter_element_spacing = 'auto'
         self.channels = set() # channel names
         self.awgs = set() # AWG names

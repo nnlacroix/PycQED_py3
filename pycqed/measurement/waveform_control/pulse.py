@@ -49,6 +49,8 @@ class Pulse:
         self.element_name = element_name
         self.codeword = kw.pop('codeword', 'no_codeword')
         self.pulse_off = kw.pop('pulse_off', False)
+        self.crosstalk_cancellation_channels = []
+        self.crosstalk_cancellation_mtx = None
 
         # Set default pulse_params and overwrite with params in keyword argument
         # list if applicable
@@ -77,14 +79,30 @@ class Pulse:
                 wfs_dict[c] = self.chan_wf(c, tvals_dict[c])
                 if getattr(self, 'pulse_off', False):
                     wfs_dict[c] = np.zeros_like(wfs_dict[c])
+        for c in self.crosstalk_cancellation_channels:
+            if c in tvals_dict:
+                print(f"c: {c}")
+                idx_c = self.crosstalk_cancellation_channels.index(c)
+                if c not in wfs_dict:
+                    wfs_dict[c] = np.zeros_like(tvals_dict[c])
+                if not getattr(self, 'pulse_off', False):
+                    for c2 in self.channels:
+                        if c2 == c or c2 not in \
+                                self.crosstalk_cancellation_channels:
+                            continue
+                        idx_c2 = self.crosstalk_cancellation_channels.index(c2)
+                        factor = self.crosstalk_cancellation_mtx[idx_c, idx_c2]
+                        print(f"c2: {c2}, factor: {factor}")
+                        wfs_dict[c] += factor * self.chan_wf(c2, tvals_dict[c])
         return wfs_dict
 
     def masked_channels(self):
         channel_mask = getattr(self, 'channel_mask', None)
         if channel_mask is None:
-            return self.channels
+            channels = self.channels
         else:
-            return [ch for m, ch in zip(channel_mask, self.channels) if m]
+            channels = [ch for m, ch in zip(channel_mask, self.channels) if m]
+        return set(channels) | set(self.crosstalk_cancellation_channels)
 
     def pulse_area(self, channel, tvals):
         """
@@ -100,7 +118,12 @@ class Pulse:
         if getattr(self, 'pulse_off', False):
             return 0
 
-        wfs = self.chan_wf(channel, tvals)
+        if channel in self.channels:
+            wfs = self.chan_wf(channel, tvals)
+        else:
+            # FIXME: it is a crosstalk cancellation channel and needs to be
+            #  handled separately
+            wfs = np.zeros_like(tvals)
         dt = tvals[1] - tvals[0]
 
         return sum(wfs) * dt
