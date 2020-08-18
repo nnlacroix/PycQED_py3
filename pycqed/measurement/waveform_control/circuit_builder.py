@@ -421,7 +421,9 @@ class CircuitBuilder:
             else:
                 ro_pulse['ref_point'] = 'start'
             ro_pulses.append(ro_pulse)
-        return Block(block_name, ro_pulses)
+        block = Block(block_name, ro_pulses)
+        block.set_end_after_all_pulses()
+        return block
 
     def Z_gate(self, theta=0, qb_names='all'):
 
