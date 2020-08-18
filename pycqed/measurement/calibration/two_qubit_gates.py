@@ -679,7 +679,7 @@ class DynamicPhase(CalibBuilder):
 
         self.data_to_fit.update({qb: 'pe' for qb in qubits_to_measure})
         return self.sequential_blocks(
-            f"dynphase {'_'.join(qubits_to_measure)}", [pb, ir, fp, fr])
+            f"dynphase {op_code}", [pb, ir, fp, fr])
 
     def get_meas_objs_from_task(self, task):
         return task['qubits_to_measure']
