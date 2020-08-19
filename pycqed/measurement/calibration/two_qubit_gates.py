@@ -123,7 +123,7 @@ class MultiTaskingExperiment(QuantumExperiment):
         Should be overloaded in child classes if the default behavior
         of returning all qubits found in the task is not desired.
         :param task: a task dictionary
-        :return: list of a qubit objects (if available) or names
+        :return: list of all qubit objects (if available) or names
         """
         return self.find_qubits_in_tasks(self.qb_names, [task])
 
@@ -662,10 +662,11 @@ class CalibBuilder(MultiTaskingExperiment):
 
 class CPhase(CalibBuilder):
     """
-    class to measure the leakage and the phase acquired during a flux pulse
-    conditioned on the state of another qubit (qbl).
+    Class to measure the phase acquired by a qubit (qbr) during a flux pulse
+    conditioned on the state of another qubit (qbl). Also measures the
+    leakage of qbl.
     In this measurement, the phase from two Ramsey type measurements
-    on qbr is measured, once with the control qubit in the excited state
+    on qbr is measured, once with the control qubit qbl in the excited state
     and once in the ground state. The conditional phase is calculated as the
     difference.
 
@@ -681,22 +682,27 @@ class CPhase(CalibBuilder):
         try:
             self.experiment_name = 'CPhase_measurement'
             for task in task_list:
+                # convert qubit objects to qubit names
                 for k in ['qbl', 'qbr']:
                     if not isinstance(task[k], str):
                         task[k] = task[k].name
+                # generate an informative task prefix
                 if not 'prefix' in task:
                     task['prefix'] = f"{task['qbl']}{task['qbr']}_"
 
+            # By default, include f-level cal points (for measuring leakage).
             kw['for_ef'] = kw.get('for_ef', True)
 
             super().__init__(task_list, sweep_points=sweep_points, **kw)
 
+            # initialize properties specific to the CPhase measurement
             self.cphases = None
             self.population_losses = None
             self.leakage = None
             self.cz_durations = {}
             self.cal_states_rotations = {}
 
+            # Preprocess sweep points and tasks before creating the sequences
             self.add_default_sweep_points(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
             # the block alignments are for: prepended pulses, initial
@@ -705,17 +711,24 @@ class CPhase(CalibBuilder):
                 self.preprocessed_task_list, self.cphase_block,
                 block_align=['center', 'end', 'center', 'start'], **kw)
 
+            # save CPhase-specific metadata
             self.exp_metadata.update({
                 'cz_durations': self.cz_durations,
                 'cal_states_rotations': self.cal_states_rotations,
             })
 
-            self.autorun(**kw)
+            self.autorun(**kw)  # run measurement & analysis if requested in kw
         except Exception as x:
             self.exception = x
             traceback.print_exc()
 
     def add_default_sweep_points(self, **kw):
+        """
+        Adds default sweep points for the CPhase experiment. These are:
+        - Ramsey phases (in dimension 0)
+        - pi pulse off (for control qubit, in dimension 0)
+        :param kw: kwargs passed to add_default_ramsey_sweep_points
+        """
         self.sweep_points = self.add_default_ramsey_sweep_points(
             self.sweep_points, **kw)
         nr_phases = self.sweep_points.length(0) // 2
@@ -727,12 +740,23 @@ class CPhase(CalibBuilder):
                      qbl, qbr, num_cz_gates=1, max_flux_length=None,
                      prepend_pulse_dicts=None, **kw):
         """
-        TODO
-        :param cz_pulse_name: task-specific prefix of CZ gates (overwrites
-            global choice passed to the class init)
-        ...
+        This function creates the blocks for a single CPhase measurement task.
+        :param sweep_points: sweep points
+        :param qbl: control qubit (= qubit on which leakage is measured)
+        :param qbr: Ramsey qubit (= qubit on which the cphase is measured)
+        :param num_cz_gates: number of sequential CZ gates, default: 1
+        :param max_flux_length: determines the time to wait before the final
+            rotations to the, default: None, in which case it will be
+            determined automatically
+        :param prepend_pulse_dicts: (dict) prepended pulses, see
+            prepend_pulses_block
+        :param kw: further keyword arguments:
+            cz_pulse_name: task-specific prefix of CZ gates (overwrites
+                global choice passed to the class init)
+            spectator_op_codes: op_code for adding initializations of
+                spectator qubits. Will be assembled in parallel with the
+                initial rotations.
         """
-
         hard_sweep_dict, soft_sweep_dict = sweep_points
         assert num_cz_gates % 2 != 0
 
@@ -749,7 +773,7 @@ class CPhase(CalibBuilder):
 
         fp = self.block_from_ops('flux', [f"{kw.get('cz_pulse_name', 'CZ')} "
                                           f"{qbl} {qbr}"] * num_cz_gates)
-        # TODO here, we could do DD pulses (CH by 2020-06-19)
+        # TODO here, we could do DD pulses (CH 2020-06-19)
         # FIXME: currently, this assumes that only flux pulse parameters are
         #  swept in the soft sweep. In fact, channels_to_upload should be
         #  determined based on the sweep_points
@@ -788,6 +812,10 @@ class CPhase(CalibBuilder):
         return [pb, ir, fp_w, fr]
 
     def guess_label(self, **kw):
+        """
+        Default label with CPhase-specific information
+        :param kw: keyword arguments
+        """
         predictive_label = kw.pop('predictive_label', False)
         if self.label is None:
             if predictive_label:
@@ -815,6 +843,13 @@ class CPhase(CalibBuilder):
         return qbs[0] if qbs[0] is not None else qbs[1]
 
     def run_analysis(self, **kw):
+        """
+        Runs analysis, and stores analysis results and analysis instance.
+        :param kw: keyword arguments
+             plot_all_traces: (bool) TODO, default: True
+             plot_all_probs: (bool) TODO, default: True
+        :return: cphases, population_losses, leakage, and the analysis instance
+        """
         plot_all_traces = kw.get('plot_all_traces', True)
         plot_all_probs = kw.get('plot_all_probs', True)
         if self.classified:
@@ -867,6 +902,7 @@ class DynamicPhase(CalibBuilder):
         """
 
         try:
+            self.experiment_name = 'Dynamic_phase_measurement'
             self.simultaneous = kw.get('simultaneous', False)
             self.simultaneous_groups = kw.get('simultaneous_groups', None)
             self.reset_phases_before_measurement = kw.get(
@@ -938,19 +974,20 @@ class DynamicPhase(CalibBuilder):
                 self.measurements = [self]
                 super().__init__(task_list, sweep_points=sweep_points, **kw)
 
-                self.add_default_sweep_points(**kw)
-
                 if self.reset_phases_before_measurement:
                     for task in task_list:
                         self.operation_dict[self.get_cz_operation_name(
                             **task)]['basis_rotation'] = {}
 
+                # Preprocess sweep points and tasks before creating the sequences
+                self.add_default_sweep_points(**kw)
                 self.preprocessed_task_list = self.preprocess_task_list(**kw)
                 # the block alignments are for: prepended pulses, initial
                 # rotations, flux pulse, final rotations
                 self.sequences, self.mc_points = self.parallel_sweep(
                     self.preprocessed_task_list, self.dynamic_phase_block,
                     block_align=['center', 'end', 'center', 'start'], **kw)
+                # run measurement & analysis if requested in kw
                 self.autorun(**kw)
 
             if self.update:
@@ -982,6 +1019,12 @@ class DynamicPhase(CalibBuilder):
             traceback.print_exc()
 
     def add_default_sweep_points(self, **kw):
+        """
+        Adds default sweep points for the DynamicPhase experiment. These are:
+        - Ramsey phases (in dimension 0)
+        - flux pulse off (in dimension 0)
+        :param kw: kwargs passed to add_default_ramsey_sweep_points
+        """
         self.sweep_points = self.add_default_ramsey_sweep_points(
             self.sweep_points, **kw)
         nr_phases = self.sweep_points.length(0) // 2
@@ -990,8 +1033,12 @@ class DynamicPhase(CalibBuilder):
         self.sweep_points.update(hard_sweep_dict + [{}])
 
     def guess_label(self, **kw):
+        """
+        Default label with DynamicPhase-specific information
+        :param kw: keyword arguments
+        """
         if self.label is None:
-            self.label = f'Dynamic_phase_measurement'
+            self.label = self.experiment_name
             for task in self.task_list:
                 self.label += "_" + task['prefix'] + "_"
                 for qb_name in task['qubits_to_measure']:
@@ -999,7 +1046,19 @@ class DynamicPhase(CalibBuilder):
 
     def dynamic_phase_block(self, sweep_points, op_code, qubits_to_measure,
                             prepend_pulse_dicts=None, **kw):
-
+        """
+        This function creates the blocks for a single DynamicPhase measurement
+        task.
+        :param sweep_points: sweep points
+        :param op_code: (str) the op_code of the flux pulse
+        :param qubits_to_measure: (list of str) the qubits on which the
+            dynamic phase should be measured (Ramsey qubits)
+        :param prepend_pulse_dicts: (dict) prepended pulses, see
+            prepend_pulses_block
+        :param kw: keyword arguments passed to get_cz_operation_name
+            cz_pulse_name: task-specific prefix of CZ gates (overwrites
+                global choice passed to the class init)
+        """
         assert (sum([qb in op_code.split(' ')[1:] for qb in qubits_to_measure])
                 <= 1), \
             f"Dynamic phases of control and target qubit cannot be " \
@@ -1017,7 +1076,8 @@ class DynamicPhase(CalibBuilder):
         for p in ir.pulses[1:]:
             p['ref_point_new'] = 'end'
 
-        # calling op_replace_cz() allows to have a custom cz_pulse_name in kw
+        # calling get_cz_operation_name() allows to have a custom cz_pulse_name
+        # in kw
         fp = self.block_from_ops(
             'flux', self.get_cz_operation_name(op_code=op_code, **kw))
         fp.pulses[0]['pulse_off'] = ParametricValue('flux_pulse_off')
@@ -1058,6 +1118,13 @@ class DynamicPhase(CalibBuilder):
         return qbs[0] if qbs[0] is not None else qbs[1]
 
     def run_analysis(self, **kw):
+        """
+        Runs analysis, stores analysis instance in self.dynamic_phase_analysis
+        and stores dynamic phase in self.dyn_phases
+        :param kw: keyword arguments
+             extract_only: (bool) if True, do not plot, default: False
+        :return: the dynamic phases dict and the analysis instance
+        """
         extract_only = kw.pop('extract_only', False)
         for task in self.task_list:
             op = self.get_cz_operation_name(**task)
@@ -1101,19 +1168,23 @@ class Chevron(CalibBuilder):
         try:
             self.experiment_name = 'Chevron'
             for task in task_list:
+                # if qbr is not provided, read out qbt
                 if task.get('qbr', None) is None:
                     task['qbr'] = task['qbt']
+                # convert qubit objects to qubit names
                 for k in ['qbc', 'qbt', 'qbr']:
                     if not isinstance(task[k], str):
                         task[k] = task[k].name
                 if task['qbr'] not in [task['qbc'], task['qbt']]:
                     raise ValueError(
                         'Only target or control qubit can be read out!')
+                # generate an informative task prefix
                 if not 'prefix' in task:
                     task['prefix'] = f"{task['qbc']}{task['qbt']}_"
 
             super().__init__(task_list, sweep_points=sweep_points, **kw)
 
+            # Preprocess sweep points and tasks before creating the sequences
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
             # the block alignments are for: prepended pulses, initial
             # rotations, flux pulse
@@ -1121,38 +1192,37 @@ class Chevron(CalibBuilder):
                 self.preprocessed_task_list, self.sweep_block,
                 block_align = ['center', 'end', 'center'], **kw)
 
-            self.autorun(**kw)
+            self.autorun(**kw)  # run measurement & analysis if requested in kw
         except Exception as x:
             self.exception = x
             traceback.print_exc()
 
-    def add_default_sweep_points(self, sweep_points, **kw):
-        sweep_points = self.add_default_ramsey_sweep_points(sweep_points, **kw)
-        nr_phases = sweep_points.length(0) // 2
-        hard_sweep_dict = SweepPoints(
-            'pi_pulse_off', [0] * nr_phases + [1] * nr_phases)
-        sweep_points.update(hard_sweep_dict + [{}])
-        return sweep_points
-
     def sweep_block(self, sweep_points,
-                     qbc, qbt, qbr, num_cz_gates=1, max_flux_length=None,
-                     prepend_pulse_dicts=None, **kw):
+                    qbc, qbt, qbr, num_cz_gates=1, max_flux_length=None,
+                    prepend_pulse_dicts=None, **kw):
         """
         chevron block (sweep of flux pulse parameters)
 
         Timings of sequence
                                       <-- length -->
         qb_control:    |X180|  ---   |  fluxpulse   |
-
         qb_target:     |X180|  --------------------------------------  |RO|
+        Note: in case of a FLIP gate, flux pulses are on both qubits.
 
-        TODO
-        :param cz_pulse_name: task-specific prefix of CZ gates (overwrites
-            global choice passed to the class init)
-        ...
+        :param sweep_points: SweepPoints object
+        :param qbc: control qubit (= 1st gate qubit)
+        :param qbt: target qubit (= 2nd gate qubit)
+        :param qbr: readout qubit (should be qbc or qbt)
+        :param num_cz_gates: number of sequential CZ gates, default: 1
+        :param max_flux_length: determines the time to wait before the final
+            rotations, default: None, in which case it will be determined
+            automatically
+        :param prepend_pulse_dicts: (dict) prepended pulses, see
+            prepend_pulses_block
+        :param kw: further keyword arguments:
+            cz_pulse_name: task-specific prefix of CZ gates (overwrites
+                global choice passed to the class init)
         """
-
-        hard_sweep_dict, soft_sweep_dict = sweep_points
 
         pb = self.prepend_pulses_block(prepend_pulse_dicts)
         pulse_modifs = {'all': {'element_name': 'initial_rots_el'}}
@@ -1171,7 +1241,7 @@ class Chevron(CalibBuilder):
                 if fp.pulses[0][k] not in self.channels_to_upload:
                     self.channels_to_upload.append(fp.pulses[0][k])
 
-        for k in list(hard_sweep_dict.keys()) + list(soft_sweep_dict.keys()):
+        for k in list(sweep_points[0].keys()) + list(sweep_points[1].keys()):
             for p in fp.pulses:
                 p[k] = ParametricValue(k)
 
@@ -1188,6 +1258,10 @@ class Chevron(CalibBuilder):
         return [pb, ir, fp_w]
 
     def guess_label(self, **kw):
+        """
+        Default label with Chevron-specific information
+        :param kw: keyword arguments
+        """
         if self.label is None:
             self.label = self.experiment_name
             for t in self.task_list:
