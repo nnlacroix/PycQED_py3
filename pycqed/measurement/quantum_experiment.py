@@ -134,7 +134,11 @@ class QuantumExperiment(CircuitBuilder):
         self.force_2D_sweep = force_2D_sweep
         self.compression_seg_lim = compression_seg_lim
         self.channels_to_upload = []
-        self.experiment_name = None
+        # The experiment_name might have been set by the user in kw or by a
+        # child class as an attribute. Otherwise, the default None will
+        # trigger guess_label to use the sequence name.
+        self.experiment_name = kw.pop(
+            'experiment_name', getattr(self, 'experiment_name', None))
         self.timestamp = None
         self.analysis = None
 
