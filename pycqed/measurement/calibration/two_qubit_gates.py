@@ -708,9 +708,11 @@ class CPhase(CalibBuilder):
 
         pulse_modifs = {'all': {'element_name': 'cphase_initial_rots_el'}}
         ir = self.block_from_ops('initial_rots',
-                                 [f'X180 {qbl}', f'X90s {qbr}'] +
+                                 [f'X180 {qbl}', f'X90 {qbr}'] +
                                  kw.get('spectator_op_codes', []),
                                  pulse_modifs=pulse_modifs)
+        for p in ir.pulses[1:]:
+            p['ref_point_new'] = 'end'
         ir.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
 
         fp = self.block_from_ops('flux', [f"{kw.get('cz_pulse_name', 'CZ')} "
@@ -736,6 +738,7 @@ class CPhase(CalibBuilder):
         pulse_modifs = {'all': {'element_name': 'cphase_final_rots_el'}}
         fr = self.block_from_ops('final_rots', [f'X180 {qbl}', f'X90s {qbr}'],
                                  pulse_modifs=pulse_modifs)
+        fr.set_end_after_all_pulses()
         fr.pulses[0]['pulse_delay'] = max_flux_length * num_cz_gates
         fr.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
         for k in hard_sweep_dict.keys():
@@ -968,6 +971,8 @@ class DynamicPhase(CalibBuilder):
         ir = self.block_from_ops('initial_rots',
                                  [f'X90 {qb}' for qb in qubits_to_measure],
                                  pulse_modifs=pulse_modifs)
+        for p in ir.pulses[1:]:
+            p['ref_point_new'] = 'end'
 
         # calling op_replace_cz() allows to have a custom cz_pulse_name in kw
         fp = self.block_from_ops(
@@ -990,6 +995,7 @@ class DynamicPhase(CalibBuilder):
         fr = self.block_from_ops('final_rots',
                                  [f'X90 {qb}' for qb in qubits_to_measure],
                                  pulse_modifs=pulse_modifs)
+        fr.set_end_after_all_pulses()
         for p in fr.pulses:
             for k in hard_sweep_dict.keys():
                 if '=' not in k and k != 'flux_pulse_off':
