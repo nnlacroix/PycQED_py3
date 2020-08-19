@@ -107,6 +107,8 @@ class MultiTaskingExperiment(QuantumExperiment):
         if not isinstance(meas_objs, list):
             meas_objs = [meas_objs]
         for mo in meas_objs:
+            # get name from object if an object was given
+            mo = mo if isinstance(mo, str) else mo.name
             if mo not in self.exp_metadata['meas_obj_sweep_points_map']:
                 self.exp_metadata['meas_obj_sweep_points_map'][mo] = []
             if sweep_point not in self.exp_metadata[
