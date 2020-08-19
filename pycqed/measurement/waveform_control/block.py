@@ -142,8 +142,6 @@ class Block:
         return pulses_built
 
     def set_end_after_all_pulses(self, **block_end):
-        for i, p in enumerate(self.pulses):
-            p['name'] = p.get('name', f"pulse_{i}")
         if len(self.pulses):
             for i, p in enumerate(self.pulses):
                 p['name'] = p.get('name', f"pulse_{i}")
