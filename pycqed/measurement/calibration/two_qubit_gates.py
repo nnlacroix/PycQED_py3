@@ -805,7 +805,14 @@ class CPhase(CalibBuilder):
                     self.label += f'_{num_cz_gates}_gates'
 
     def get_meas_objs_from_task(self, task):
-        return [task['qbl'], task['qbr']]
+        """
+        Returns a list of all measure objects of a task. In case of CPhase
+        this is qbl and qbr.
+        :param task: a task dictionary
+        :return: list of qubit objects (if available) or names
+        """
+        qbs = self.get_qubits([task['qbl'], task['qbr']])
+        return qbs[0] if qbs[0] is not None else qbs[1]
 
     def run_analysis(self, **kw):
         plot_all_traces = kw.get('plot_all_traces', True)
@@ -1041,7 +1048,14 @@ class DynamicPhase(CalibBuilder):
         return [pb, ir, fp, fr]
 
     def get_meas_objs_from_task(self, task):
-        return task['qubits_to_measure']
+        """
+        Returns a list of all measure objects of a task. In case of
+        DynamicPhase, this list is the parameter qubits_to_measure.
+        :param task: a task dictionary
+        :return: list of qubit objects (if available) or names
+        """
+        qbs = self.get_qubits(task['qubits_to_measure'])
+        return qbs[0] if qbs[0] is not None else qbs[1]
 
     def run_analysis(self, **kw):
         extract_only = kw.pop('extract_only', False)
@@ -1180,9 +1194,16 @@ class Chevron(CalibBuilder):
                 self.label += f"_{t['qbc']}{t['qbt']}"
 
     def get_meas_objs_from_task(self, task):
+        """
+        Returns a list of all measure objects of a task. In case of
+        Chevron, this list is the qubit qbr.
+        :param task: a task dictionary
+        :return: list of qubit objects (if available) or names
+        """
         # FIXME is this correct? it will prevent us from doing
         #  preselection/reset on the other qubit
-        return [task['qbr']]
+        qbs = self.get_qubits([task['qbr']])
+        return qbs[0] if qbs[0] is not None else qbs[1]
 
     def run_analysis(self, analysis_kwargs=None, **kw):
         """
