@@ -314,6 +314,8 @@ class Segment:
                         self.pulsar.flux_channels()
                     p.pulse_obj.crosstalk_cancellation_mtx = \
                         self.pulsar.flux_crosstalk_cancellation_mtx()
+                    p.pulse_obj.crosstalk_cancellation_shift_mtx = \
+                        self.pulsar.flux_crosstalk_cancellation_shift_mtx()
 
     def add_charge_compensation(self):
         """

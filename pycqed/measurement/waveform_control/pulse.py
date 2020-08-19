@@ -51,6 +51,7 @@ class Pulse:
         self.pulse_off = kw.pop('pulse_off', False)
         self.crosstalk_cancellation_channels = []
         self.crosstalk_cancellation_mtx = None
+        self.crosstalk_cancellation_shift_mtx = None
 
         # Set default pulse_params and overwrite with params in keyword argument
         # list if applicable
@@ -91,9 +92,14 @@ class Pulse:
                             continue
                         idx_c2 = self.crosstalk_cancellation_channels.index(c2)
                         factor = self.crosstalk_cancellation_mtx[idx_c, idx_c2]
+                        shift = self.crosstalk_cancellation_shift_mtx[
+                            idx_c, idx_c2] \
+                            if self.crosstalk_cancellation_shift_mtx is not \
+                            None else 0
                         print(f"adding from pulse channel: {c2}, factor:"
-                              f" {factor}")
-                        wfs_dict[c] += factor * self.chan_wf(c2, tvals_dict[c])
+                              f" {factor}, shift: {shift}")
+                        wfs_dict[c] += factor * self.chan_wf(
+                            c2, tvals_dict[c] - shift)
         return wfs_dict
 
     def masked_channels(self):
