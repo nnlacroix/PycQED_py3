@@ -75,7 +75,8 @@ class Pulse:
         """
         wfs_dict = {}
         for c in self.channels:
-            if c in tvals_dict:
+            if c in tvals_dict and c not in \
+                    self.crosstalk_cancellation_channels:
                 wfs_dict[c] = self.chan_wf(c, tvals_dict[c])
                 if getattr(self, 'pulse_off', False):
                     wfs_dict[c] = np.zeros_like(wfs_dict[c])
@@ -83,12 +84,10 @@ class Pulse:
             if c in tvals_dict:
                 print(f"adding cancellation to flux line: {c}")
                 idx_c = self.crosstalk_cancellation_channels.index(c)
-                if c not in wfs_dict:
-                    wfs_dict[c] = np.zeros_like(tvals_dict[c])
+                wfs_dict[c] = np.zeros_like(tvals_dict[c])
                 if not getattr(self, 'pulse_off', False):
                     for c2 in self.channels:
-                        if c2 == c or c2 not in \
-                                self.crosstalk_cancellation_channels:
+                        if c2 not in self.crosstalk_cancellation_channels:
                             continue
                         idx_c2 = self.crosstalk_cancellation_channels.index(c2)
                         factor = self.crosstalk_cancellation_mtx[idx_c, idx_c2]
