@@ -290,7 +290,7 @@ class MultiTaskingExperiment(QuantumExperiment):
         return task
 
     def parallel_sweep(self, preprocessed_task_list=(), block_func=None,
-                       block_align='start', **kw):
+                       block_align=None, **kw):
         """
         Calls a block creation function for each task in a task list,
         puts these blocks in parallel and sweeps over the given sweep points.
@@ -302,9 +302,16 @@ class MultiTaskingExperiment(QuantumExperiment):
             prefixed with the task prefix.
         :param block_func: a handle to a function that creates a block. As
             an alternative, a task-specific block_func can be given as a
-            parameter of the task.
-        :param block_align: (str) alignment of the parallel blocks, see
-            CircuitBuilder.simultaneous_blocks
+            parameter of the task. If the block creation function instead
+            returns a list of blocks, the i-th blocks of all tasks are
+            assembled in parallel to each other, and the resulting
+            multitask blocks are then assembled sequentially in the order of
+            the list index.
+        :param block_align: (str or list) alignment of the parallel blocks, see
+            CircuitBuilder.simultaneous_blocks, default: center. If the block
+            creation function creates a list of N blocks, block_align can be
+            a list of N strings (otherwise the same alignment is used for
+            all parallel blocks).
         :param kw: keyword arguments are passed to sweep_n_dim
         :return: see sweep_n_dim
         """
@@ -323,19 +330,40 @@ class MultiTaskingExperiment(QuantumExperiment):
             # Call the block creation function. The items in the task dict
             # are used as kwargs for this function.
             new_block = task['block_func'](**task)
-            # For the sweep points that need to be prefixed (see
-            # preprocess_task), call the respective method of the block object.
-            if params_to_prefix is not None:
-                # params_to_prefix is a list of lists (per dimension) and
-                # needs to be flattened
-                new_block.prefix_parametric_values(
-                    prefix, [k for l in params_to_prefix for k in l])
-            # add the new block to the lists of blocks
+            # If a single block was returned, create a single-entry list to
+            # have a unified treatment afterwards.
+            if not isinstance(new_block, list):
+                new_block = [new_block]
+            for b in new_block:
+                # prefix the block names to avoid naming conflicts later on
+                b.name = prefix + b.name
+                # For the sweep points that need to be prefixed (see
+                # preprocess_task), call the respective method of the block
+                # object.
+                if params_to_prefix is not None:
+                    # params_to_prefix is a list of lists (per dimension) and
+                    # needs to be flattened
+                    b.prefix_parametric_values(
+                        prefix, [k for l in params_to_prefix for k in l])
+            # add the new blocks to the lists of blocks
             parallel_blocks.append(new_block)
 
-        # assemble all created blocks in parallel
-        self.all_main_blocks = self.simultaneous_blocks(
-            'all', parallel_blocks, block_align=block_align)
+        # We currently require that all block functions must return the
+        # same number of blocks.
+        if not isinstance(block_align, list):
+            block_align = [block_align] * len(parallel_blocks[0])
+        # assemble all i-th blocks in parallel
+        self.all_main_blocks = [
+            self.simultaneous_blocks(
+                f'all{i}', [l[i] for l in parallel_blocks],
+                block_align=block_align[i])
+            for i in range(len(parallel_blocks[0]))]
+        if len(parallel_blocks[0]) > 1:
+            # assemble the multitask blocks sequentially
+            self.all_main_blocks = self.sequential_blocks(
+                'all', self.all_main_blocks)
+        else:
+            self.all_main_blocks = self.all_main_blocks[0]
         if len(self.sweep_points[1]) == 0:
             # Internally, 1D and 2D sweeps are handled as 2D sweeps.
             # With this dummy soft sweep, exactly one sequence will be created
