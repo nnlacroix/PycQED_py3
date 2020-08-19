@@ -1072,8 +1072,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                            parameter_class=ManualParameter, vals=vals.Bool())
         self.add_parameter('flux_channels', initial_value=[],
                            parameter_class=ManualParameter, vals=vals.Lists())
-        self.add_parameter('flux_crosstalk_mtx', initial_value=None,
-                           parameter_class=ManualParameter)
+        self.add_parameter('flux_crosstalk_cancellation_mtx',
+                           initial_value=None, parameter_class=ManualParameter)
 
         self._inter_element_spacing = 'auto'
         self.channels = set() # channel names
