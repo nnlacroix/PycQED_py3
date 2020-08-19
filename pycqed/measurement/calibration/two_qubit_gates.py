@@ -1183,8 +1183,20 @@ class Chevron(CalibBuilder):
         #  preselection/reset on the other qubit
         return [task['qbr']]
 
-    def run_analysis(self, **kw):
+    def run_analysis(self, analysis_kwargs=None, **kw):
+        """
+        Runs analysis and stores analysis instance in self.analysis.
+        :param analysis_kwargs: (dict) keyword arguments for analysis
+        :param kw: currently ignored
+        :return: the analysis instance
+        """
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+        if 'options_dict' not in analysis_kwargs:
+            analysis_kwargs['options_dict'] = {}
+        if 'TwoD' not in analysis_kwargs['options_dict']:
+            analysis_kwargs['options_dict']['TwoD'] = True
         self.analysis = tda.MultiQubit_TimeDomain_Analysis(
             qb_names=[task['qbr'] for task in self.task_list],
-            options_dict={'TwoD': True})
+            t_start=self.timestamp, **analysis_kwargs)
         return self.analysis
