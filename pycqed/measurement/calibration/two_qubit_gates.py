@@ -299,7 +299,7 @@ class CalibBuilder(MultiTaskingExperiment):
         sweep_points = deepcopy(sweep_points)
         if sweep_points is None:
             sweep_points = SweepPoints(from_dict_list=[{}, {}])
-        if len(sweep_points) == 1:
+        while len(sweep_points) < 2:
             sweep_points.add_sweep_dimension()
         for i in range(len(sweep_points)):
             if len(sweep_points[i]) == 0:
