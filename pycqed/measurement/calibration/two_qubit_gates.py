@@ -697,9 +697,11 @@ class CPhase(CalibBuilder):
 
             self.add_default_sweep_points(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
+            # the block alignments are for: prepended pulses, initial
+            # rotations, flux pulse, final rotations
             self.sequences, self.mc_points = self.parallel_sweep(
                 self.preprocessed_task_list, self.cphase_block,
-                block_align='center', **kw)
+                block_align=['center', 'end', 'center', 'start'], **kw)
 
             self.exp_metadata.update({
                 'cz_durations': self.cz_durations,
@@ -736,9 +738,11 @@ class CPhase(CalibBuilder):
 
         pulse_modifs = {'all': {'element_name': 'cphase_initial_rots_el'}}
         ir = self.block_from_ops('initial_rots',
-                                 [f'X180 {qbl}', f'X90s {qbr}'] +
+                                 [f'X180 {qbl}', f'X90 {qbr}'] +
                                  kw.get('spectator_op_codes', []),
                                  pulse_modifs=pulse_modifs)
+        for p in ir.pulses[1:]:
+            p['ref_point_new'] = 'end'
         ir.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
 
         fp = self.block_from_ops('flux', [f"{kw.get('cz_pulse_name', 'CZ')} "
@@ -760,11 +764,14 @@ class CPhase(CalibBuilder):
                       f'set by user')
         max_flux_length = self.max_pulse_length(fp.pulses[0], sweep_points,
                                                 max_flux_length)
+        w = self.block_from_ops('wait', [])
+        w.block_end.update({'pulse_delay': max_flux_length * num_cz_gates})
+        fp_w = self.simultaneous_blocks('sim', [fp, w], block_align='center')
 
         pulse_modifs = {'all': {'element_name': 'cphase_final_rots_el'}}
         fr = self.block_from_ops('final_rots', [f'X180 {qbl}', f'X90s {qbr}'],
                                  pulse_modifs=pulse_modifs)
-        fr.pulses[0]['pulse_delay'] = max_flux_length * num_cz_gates
+        fr.set_end_after_all_pulses()
         fr.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
         for k in hard_sweep_dict.keys():
             if k != 'pi_pulse_on' and '=' not in k:
@@ -776,8 +783,7 @@ class CPhase(CalibBuilder):
                                           qbr: {'g': 0, 'e': 1}})
         self.data_to_fit.update({qbl: 'pf', qbr: 'pe'})
 
-        fp_fr = self.simultaneous_blocks('sim', [fp, fr])
-        return self.sequential_blocks(f'cphase {qbl} {qbr}', [pb, ir, fp_fr])
+        return [pb, ir, fp_w, fr]
 
     def guess_label(self, **kw):
         predictive_label = kw.pop('predictive_label', False)
@@ -930,9 +936,11 @@ class DynamicPhase(CalibBuilder):
                             **task)]['basis_rotation'] = {}
 
                 self.preprocessed_task_list = self.preprocess_task_list(**kw)
+                # the block alignments are for: prepended pulses, initial
+                # rotations, flux pulse, final rotations
                 self.sequences, self.mc_points = self.parallel_sweep(
                     self.preprocessed_task_list, self.dynamic_phase_block,
-                    block_align='center', **kw)
+                    block_align=['center', 'end', 'center', 'start'], **kw)
                 self.autorun(**kw)
 
             if self.update:
@@ -996,6 +1004,8 @@ class DynamicPhase(CalibBuilder):
         ir = self.block_from_ops('initial_rots',
                                  [f'X90 {qb}' for qb in qubits_to_measure],
                                  pulse_modifs=pulse_modifs)
+        for p in ir.pulses[1:]:
+            p['ref_point_new'] = 'end'
 
         # calling op_replace_cz() allows to have a custom cz_pulse_name in kw
         fp = self.block_from_ops(
@@ -1018,14 +1028,14 @@ class DynamicPhase(CalibBuilder):
         fr = self.block_from_ops('final_rots',
                                  [f'X90 {qb}' for qb in qubits_to_measure],
                                  pulse_modifs=pulse_modifs)
+        fr.set_end_after_all_pulses()
         for p in fr.pulses:
             for k in hard_sweep_dict.keys():
                 if '=' not in k and k != 'flux_pulse_off':
                     p[k] = ParametricValue(k)
 
         self.data_to_fit.update({qb: 'pe' for qb in qubits_to_measure})
-        return self.sequential_blocks(
-            f"dynphase {op_code}", [pb, ir, fp, fr])
+        return [pb, ir, fp, fr]
 
     def get_meas_objs_from_task(self, task):
         return task['qubits_to_measure']
@@ -1088,8 +1098,11 @@ class Chevron(CalibBuilder):
             super().__init__(task_list, sweep_points=sweep_points, **kw)
 
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
+            # the block alignments are for: prepended pulses, initial
+            # rotations, flux pulse
             self.sequences, self.mc_points = self.parallel_sweep(
-                self.preprocessed_task_list, self.sweep_block, **kw)
+                self.preprocessed_task_list, self.sweep_block,
+                block_align = ['center', 'end', 'center'], **kw)
 
             self.autorun(**kw)
         except Exception as x:
@@ -1150,13 +1163,12 @@ class Chevron(CalibBuilder):
                       f'set by user')
         max_flux_length = self.max_pulse_length(fp.pulses[0], sweep_points,
                                                 max_flux_length)
-        b = self.sequential_blocks(f'chevron {qbc} {qbt}', [pb, ir, fp])
-        b.block_end.update({'ref_pulse': 'initial_rots-|-end',
-                            'pulse_delay': max_flux_length * num_cz_gates})
+        w = self.block_from_ops('wait', [])
+        w.block_end.update({'pulse_delay': max_flux_length * num_cz_gates})
+        fp_w = self.simultaneous_blocks('sim', [fp, w], block_align='center')
 
         self.data_to_fit.update({qbr: 'pe'})
-
-        return b
+        return [pb, ir, fp_w]
 
     def guess_label(self, **kw):
         if self.label is None:
