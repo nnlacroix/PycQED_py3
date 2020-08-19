@@ -142,13 +142,14 @@ class Block:
         return pulses_built
 
     def set_end_after_all_pulses(self, **block_end):
-        for i, p in enumerate(self.pulses):
-            p['name'] = p.get('name', f"pulse_{i}")
-        self.block_end.update({
-            'ref_function': 'max',
-            'ref_pulse': [p['name'] for p in self.pulses],
-            'ref_point': 'end',
-        })
+        if len(self.pulses):
+            for i, p in enumerate(self.pulses):
+                p['name'] = p.get('name', f"pulse_{i}")
+            self.block_end.update({
+                'ref_function': 'max',
+                'ref_pulse': [p['name'] for p in self.pulses],
+                'ref_point': 'end',
+            })
         self.block_end.update(block_end)
 
     def _is_shell(self, pulse, block_start, block_end):
