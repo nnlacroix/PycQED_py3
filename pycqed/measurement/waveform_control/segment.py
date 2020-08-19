@@ -302,16 +302,14 @@ class Segment:
         self.resolved_pulses = ordered_unres_pulses
 
     def add_flux_crosstalk_cancellation_channels(self):
-        if self.pulsar.flux_crosstalk_mtx() is not None:
-            crosstalk_cancellation_mtx = np.linalg.inv(
-                self.pulsar.flux_crosstalk_mtx())
+        if self.pulsar.flux_crosstalk_cancellation_mtx() is not None:
             for p in self.resolved_pulses:
                 if any([ch in self.pulsar.flux_channels() for ch in
                         p.pulse_obj.channels]):
                     p.pulse_obj.crosstalk_cancellation_channels = \
                         self.pulsar.flux_channels()
                     p.pulse_obj.crosstalk_cancellation_mtx = \
-                        crosstalk_cancellation_mtx
+                        self.pulsar.flux_crosstalk_cancellation_mtx()
 
     def add_charge_compensation(self):
         """
