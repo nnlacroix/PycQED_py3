@@ -798,10 +798,11 @@ class CPhase(CalibBuilder):
                 self.label += '_classified'
             if 'active' in self.get_prep_params()['preparation_type']:
                 self.label += '_reset'
-            # if num_cz_gates > 1:
-            #     label += f'_{num_cz_gates}_gates'
             for t in self.task_list:
                 self.label += f"_{t['qbl']}{t['qbr']}"
+                num_cz_gates = t.get('num_cz_gates', 1)
+                if num_cz_gates > 1:
+                    self.label += f'_{num_cz_gates}_gates'
 
     def get_meas_objs_from_task(self, task):
         return [task['qbl'], task['qbr']]
