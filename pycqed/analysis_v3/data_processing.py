@@ -673,7 +673,7 @@ def correlate_qubits(data_dict, keys_in, keys_out, **params):
         update_value=params.get('update_value', False))
 
 
-def probability_table(data_dict, keys_in, keys_out, **params):
+def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
     """
     Creates a general table of normalized counts averaging out all but
         specified set of correlations.
@@ -722,9 +722,6 @@ def probability_table(data_dict, keys_in, keys_out, **params):
         - !!! This function returns a dict not an array like the static method
         probability_table in readout_analysis.py/MultiQubit_SingleShot_Analysis
     """
-    if len(keys_out) != 1:
-        raise ValueError(f'keys_out must have length one. {len(keys_in)} '
-                         f'entries were given.')
 
     # Get shots_of_qubits: Dictionary of np.arrays of thresholded shots for
     # each qubit.
@@ -735,7 +732,8 @@ def probability_table(data_dict, keys_in, keys_out, **params):
                                     raise_error=True, **params)
 
     n_shots = next(iter(data_to_proc_dict.values())).shape[0]
-    table = np.zeros((n_readouts, len(observables)))
+    # table = np.zeros((n_readouts, len(observables)))
+    table = OrderedDict({obs: np.zeros(n_readouts) for obs in observables})
     res_e = {}
     res_g = {}
     for keyi, results in data_to_proc_dict.items():
@@ -743,25 +741,27 @@ def probability_table(data_dict, keys_in, keys_out, **params):
         res_e[mobjn] = np.array(results).reshape((n_readouts, -1),
                                                  order='F')
         # This makes copy, but allows faster AND later
-        res_g[qubit] = np.logical_not(
+        res_g[mobjn] = np.logical_not(
             np.array(results)).reshape((n_readouts, -1), order='F')
 
     for readout_n in range(n_readouts):
         # first result all ground
-        for state_n, states_of_qubits in enumerate(observables):
+        for obs, states_of_mobjs in observables.items():
             mask = np.ones((n_shots//n_readouts), dtype=np.bool)
             # slow qubit is the first in channel_map list
-            for qubit, state in states_of_qubits.items():
-                if isinstance(qubit, tuple):
-                    seg = (readout_n+qubit[1]) % n_readouts
-                    qubit = qubit[0]
+            for mobjn, state in states_of_mobjs.items():
+                if isinstance(mobjn, tuple):
+                    seg = (readout_n+mobjn[1]) % n_readouts
+                    mobjn = mobjn[0]
                 else:
                     seg = readout_n
                 if state:
-                    mask = np.logical_and(mask, res_e[qubit][seg])
+                    mask = np.logical_and(mask, res_e[mobjn][seg])
                 else:
-                    mask = np.logical_and(mask, res_g[qubit][seg])
-            table[readout_n, state_n] = np.count_nonzero(mask)
+                    mask = np.logical_and(mask, res_g[mobjn][seg])
+            # table[readout_n, state_n] = np.count_nonzero(mask)
+            table[obs][readout_n] = np.count_nonzero(mask)*n_readouts/n_shots
+    # table = table.T
 
     if keys_out is not None:
         if len(keys_out) != 1:
@@ -797,12 +797,11 @@ def calculate_meas_ops_and_covariations(
      - len(keys_out) == 2
      - order in keys_out corresponds to [measurement_operators, covar_matrix]
     """
-    try:
-        preselection_obs_idx = list(self.observables.keys()).index('pre')
-    except ValueError:
-        preselection_obs_idx = None
-    observabele_idxs = [i for i in range(len(self.observables))
-                        if i != preselection_obs_idx]
+    if keys_out is None:
+        keys_out = ['measurement_ops', 'cov_matrix_meas_obs']
+    if len(keys_out) != 2:
+        raise ValueError(f'keys_out must have length 2. {len(keys_out)} '
+                         f'entries were given.')
 
     if meas_obj_names is None:
         meas_obj_names = hlp_mod.get_measurement_properties(
