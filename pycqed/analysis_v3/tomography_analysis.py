@@ -764,7 +764,7 @@ def prepare_pauli_basis_plot(data_dict, estimation_type='least_squares',
         ytar = tomo.density_matrix_to_pauli_basis(rho_target)
         plot_dicts[f'pauli_basis_target_{estimation_type}_{"".join(meas_obj_names)}'] = {
             'plotfn': 'plot_bar',
-            'fig_id': f'pauli_basis_{estimation_type}',
+            'fig_id': f'pauli_basis_{estimation_type}_{"".join(meas_obj_names)}',
             'xcenters': np.arange(len(order)),
             'xwidth': 0.8,
             'yvals': np.array(ytar)[order],
@@ -791,8 +791,8 @@ def prepare_pauli_basis_plot(data_dict, estimation_type='least_squares',
             legend_str += '\n' + r'Concurrence, $C = {:.1f}\%$'.format(
                 100 * concurrence)
 
-    plot_dicts[f'pauli_info_labels_{estimation_type}'] = {
-        'fig_id': f'pauli_basis_{estimation_type}',
+    plot_dicts[f'pauli_info_labels_{estimation_type}_{"".join(meas_obj_names)}'] = {
+        'fig_id': f'pauli_basis_{estimation_type}_{"".join(meas_obj_names)}',
         'plotfn': 'plot_line',
         'xvals': [0],
         'yvals': [0],
