@@ -428,7 +428,9 @@ class QuantumExperiment(CircuitBuilder):
                     self.sequences, self.mc_points[0], \
                     self.mc_points[1], cf = \
                         self.sequences[0].compress_2D_sweep(self.sequences,
-                                                            self.compression_seg_lim)
+                                                            self.compression_seg_lim,
+                                                            True,
+                                                            self.mc_points[0])
                     self.exp_metadata.update({'compression_factor': cf})
                 else:
                     log.warning("Sequence compression currently does not support"
