@@ -132,6 +132,7 @@ class Segment:
         self.enforce_single_element()
         self.resolve_timing()
         self.resolve_Z_gates()
+        self.add_flux_crosstalk_cancellation_channels()
         self.gen_trigger_el()
         self.add_charge_compensation()
 
@@ -303,6 +304,18 @@ class Segment:
             ordered_unres_pulses.append(p)
 
         self.resolved_pulses = ordered_unres_pulses
+
+    def add_flux_crosstalk_cancellation_channels(self):
+        if self.pulsar.flux_crosstalk_cancellation_mtx() is not None:
+            for p in self.resolved_pulses:
+                if any([ch in self.pulsar.flux_channels() for ch in
+                        p.pulse_obj.channels]):
+                    p.pulse_obj.crosstalk_cancellation_channels = \
+                        self.pulsar.flux_channels()
+                    p.pulse_obj.crosstalk_cancellation_mtx = \
+                        self.pulsar.flux_crosstalk_cancellation_mtx()
+                    p.pulse_obj.crosstalk_cancellation_shift_mtx = \
+                        self.pulsar.flux_crosstalk_cancellation_shift_mtx()
 
     def add_charge_compensation(self):
         """

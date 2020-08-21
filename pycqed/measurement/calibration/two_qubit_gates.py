@@ -24,13 +24,44 @@ log = logging.getLogger(__name__)
 
 
 class MultiTaskingExperiment(QuantumExperiment):
+    """
+    This class adds the concept of tasks to the QuantumExperiment class and
+    allows to run multiple tasks in parallel. There are no checks whether a
+    parallel execution of tasks makes sense on the used hardware
+    (connectivity, crosstalk etc.), i.e., it is up to the experimentalist
+    to ensure this by passing a reasonable task_list.
+
+    The concept is that each experiment inherited from this class should
+    define a method that creates a block based on the parameters specified
+    in a task. The method parallel_sweep can then be used to assemble these
+    blocks in parallel.
+
+    :param task_list: list of dicts, where each dict contains the parameters of
+        a task (= keyword arguments for the block creation function)
+    :param dev: device object, see QuantumExperiment
+    :param qubits: list of qubit objects, see QuantumExperiment
+    :param operation_dict: operations dictionary, see QuantumExperiment
+    :param kw: keyword arguments. Some are processed directly in the init or
+        the parent init, some are processed in other functions, e.g.,
+        create_cal_points. (FIXME further documentation would help). The
+        contents of kw are also stored to metadata and thus be used to pass
+        options to the analysis.
+    """
+
+    # The following dictionary can be overwritten by child classes to
+    # specify keyword arguments from which sweep_points should be generated
+    # automatically (see docstring of generate_kw_sweep_points).
     kw_for_sweep_points = {}
+    # The following list can be overwritten by child classes to specify keyword
+    # arguments that should be automatically copied into each task (list of
+    # str, each being a key to be searched in kw).
     kw_for_task_keys = ()
 
     def __init__(self, task_list, dev=None, qubits=None,
                  operation_dict=None, **kw):
 
         self.task_list = task_list
+        # Process kw_for_sweep_points for the global keyword arguments kw
         self.generate_kw_sweep_points(kw)
 
         # Try to get qubits or at least qb_names
@@ -43,7 +74,10 @@ class MultiTaskingExperiment(QuantumExperiment):
                          filter_qb_names=qb_names, **kw)
 
         if 'sweep_points' in kw:
+            # Note that sweep points generated due to kw_for_sweep_points are
+            # already part of kw['sweep_points'] at this point.
             self.sweep_points = kw.pop('sweep_points')
+
         self.cal_points = None
         self.cal_states = None
         self.exception = None
@@ -56,9 +90,18 @@ class MultiTaskingExperiment(QuantumExperiment):
         kw.pop('exp_metadata', None)
         self.exp_metadata.update(kw)
 
+        # Create calibration points based on settings in kw (see docsring of
+        # create_cal_points)
         self.create_cal_points(**kw)
 
     def add_to_meas_obj_sweep_points_map(self, meas_objs, sweep_point):
+        """
+        Add an entry to the meas_obj_sweep_points_map, which will later be
+        stored to the metadata. Makes sure to not add entries twice.
+        :param meas_objs: (str or list of str) name(s) of the measure
+            object(s) for which the sweep_point should be added
+        :param sweep_point: (str) name of the sweep_point that should be added
+        """
         if 'meas_obj_sweep_points_map' not in self.exp_metadata:
             self.exp_metadata['meas_obj_sweep_points_map'] = {}
         if not isinstance(meas_objs, list):
@@ -68,20 +111,36 @@ class MultiTaskingExperiment(QuantumExperiment):
                 self.exp_metadata['meas_obj_sweep_points_map'][mo] = []
             if sweep_point not in self.exp_metadata[
                     'meas_obj_sweep_points_map'][mo]:
+                # if the entry does not exist yet
                 self.exp_metadata['meas_obj_sweep_points_map'][mo].append(
                     sweep_point)
 
     def get_meas_objs_from_task(self, task):
+        """
+        Returns a list of all measure objects (e.g., qubits) of a task.
+        Should be overloaded in child classes if the default behavior
+        of returning all qubits found in the task is not desired.
+        :param task: a task dictionary
+        :return: list of a qubit objects (if available) or names
+        """
         return self.find_qubits_in_tasks(self.qb_names, [task])
 
     def run_measurement(self, **kw):
+        """
+        Run the actual measurement. Stores some additional settings and
+            then calls the respective method in QuantumExperiment.
+        :param kw: keyword arguments
+        """
         # allow the user to overwrite the automatically generated list of
         # channels to upload
         self.channels_to_upload = kw.get('channels_to_upload',
                                          self.channels_to_upload)
+        # update the nr_averages based on the settings in the user measure
+        # objects
         self.df_kwargs.update(
             {'nr_averages': max(qb.acq_averages() for qb in self.meas_objs)})
 
+        # Store metadata that is not part of QuantumExperiment.
         self.exp_metadata.update({
             'preparation_params': self.get_prep_params(),
             'rotate': len(self.cal_states) != 0 and not self.classified,
@@ -97,7 +156,8 @@ class MultiTaskingExperiment(QuantumExperiment):
     def create_cal_points(self, n_cal_points_per_state=1, cal_states='auto',
                           for_ef=False, **kw):
         """
-        Creates a CalibrationPoints object based on the given parameters.
+        Creates a CalibrationPoints object based on the given parameters and
+            saves it to self.cal_points.
 
         :param n_cal_points_per_state: number of segments for each
             calibration state
@@ -107,7 +167,6 @@ class MultiTaskingExperiment(QuantumExperiment):
             state for each qubit
         :param kw: keyword arguments (to allow pass through kw even if it
             contains entries that are not needed)
-        :return: CalibrationPoints object
         """
         self.cal_states = CalibrationPoints.guess_cal_states(
             cal_states, for_ef=for_ef)
@@ -117,12 +176,28 @@ class MultiTaskingExperiment(QuantumExperiment):
         self.exp_metadata.update({'cal_points': repr(self.cal_points)})
 
     def preprocess_task_list(self, **kw):
+        """
+        Calls preprocess task for all tasks in self.task_list. This adds
+        prefixed sweep points to self.sweep_points and returns a
+        preprocessed task list, for details see preprocess_task.
+
+        :param kw: keyword arguments
+        :return: the preprocessed task list
+        """
+        # keep a reference to the original sweep_points object
         given_sweep_points = self.sweep_points
+        # Store a copy of the sweep_points (after ensuring that they are a
+        # SweepPoints object). This copy will then be extended with prefixed
+        # task-specific sweep_points.
         self.sweep_points = SweepPoints(from_dict_list=given_sweep_points)
+        # Internally, 1D and 2D sweeps are handled as 2D sweeps.
         while len(self.sweep_points) < 2:
             self.sweep_points.add_sweep_dimension()
         preprocessed_task_list = []
         for task in self.task_list:
+            # preprocessed_task_list requires both the sweep point that
+            # should be modified and the original version of the sweep
+            # points (to see which sweep points are valid for all tasks)
             preprocessed_task_list.append(
                 self.preprocess_task(task, self.sweep_points,
                                      given_sweep_points, **kw))
@@ -130,38 +205,87 @@ class MultiTaskingExperiment(QuantumExperiment):
 
     def preprocess_task(self, task, global_sweep_points, sweep_points=None,
                         **kw):
+        """
+        Preprocesses a task, which includes the following actions. The
+        original task is not modified, but instead a new, preprocessed task
+        is returned.
+        - Create or cleanup task prefix.
+        - Copy kwargs listed in kw_for_task_keys to the task.
+        - Generate task-specific sweep points based on generate_kw_sweep_points
+          if the respective keys are found as parameters of the task.
+        - Copies sweep points valid for all tasks to the task.
+        - Adds prefixed versions of task-specific sweep points to the global
+          sweep points
+        - Generate a list of sweep points whose names have to be prefixed
+          when used as ParametricValue during block creation.
+        - Update meas_obj_sweep_points_map for qubits involved in the task
+
+        :param task: (dict) the task
+        :param global_sweep_points: (SweepPoints object) global sweep points
+            containing the sweep points valid for all tasks plus prefixed
+            versions of task-specific sweep points. The object is updated
+            by this method.
+        :param sweep_points: (SweepPoints object or list of dicts or None)
+            sweep points valid for all tasks. Remains unchanged in this method.
+        :param kw: keyword arguments
+        :return: the preprocessed task
+        """
+        # copy the task in order to not modify the original task
         task = copy(task)  # no deepcopy: might contain qubit objects
+        # Create a prefix if it does not exist. Otherwise clean it up (add "_")
         prefix = task.get('prefix', None)
         if prefix is None:  # try to guess one based on contained qubits
             prefix = '_'.join(self.find_qubits_in_tasks(self.qb_names, [task]))
         prefix += ('_' if prefix[-1] != '_' else '')
         task['prefix'] = prefix
+        # Get measure objects needed involved in this task. Will be used
+        # below to generate entries for the meas_obj_sweep_points_map.
         mo = self.get_meas_objs_from_task(task)
 
+        # Copy kwargs listed in kw_for_task_keys to the task.
         for param in self.kw_for_task_keys:
             if param not in task:
                 task[param] = kw.get(param, None)
 
+        # Start with sweep points valid for all tasks
         current_sweep_points = SweepPoints(from_dict_list=sweep_points)
+        # generate kw sweep points for the task
         self.generate_kw_sweep_points(task)
+        # Add all task sweep points to the current_sweep_points object.
+        # If a task-specific sweep point has the same name as a sweep point
+        # valid for all tasks, the task-specific one is used for this task.
         current_sweep_points.update(
             SweepPoints(from_dict_list=task['sweep_points']))
+        # Create a list of lists containing for each dimension the names of
+        # the task-specific sweep points. These sweep points have to be
+        # prefixed with the task prefix later on (in the global sweep
+        # points, see below, and when used as ParametricValue during block
+        # creation).
         params_to_prefix = [d.keys() for d in task['sweep_points']]
         task['params_to_prefix'] = params_to_prefix
+        # Save the current_sweep_points object to the preprocessed task
         task['sweep_points'] = current_sweep_points
 
+        # Internally, 1D and 2D sweeps are handled as 2D sweeps.
         while len(current_sweep_points) < 2:
             current_sweep_points.add_sweep_dimension()
         while len(params_to_prefix) < 2:
             params_to_prefix.append([])
+        # for all sweep dimensions
         for gsp, csp, params in zip(global_sweep_points,
                                     current_sweep_points,
                                     params_to_prefix):
+            # for all sweep points in this dimension (both task-specific and
+            # valid for all tasks)
             for k in csp.keys():
                 if k in params:
+                    # task-specific sweep point. Add prefixed version to
+                    # global sweep points and to meas_obj_sweep_points_map
                     gsp[prefix + k] = csp[k]
                     self.add_to_meas_obj_sweep_points_map(mo, prefix + k)
                 else:
+                    # sweep point valid for all tasks. Add without prefix to
+                    # meas_obj_sweep_points_map
                     self.add_to_meas_obj_sweep_points_map(mo, k)
         return task
 
@@ -171,172 +295,337 @@ class MultiTaskingExperiment(QuantumExperiment):
         Calls a block creation function for each task in a task list,
         puts these blocks in parallel and sweeps over the given sweep points.
 
-        :param task_list: a list of dictionaries, each containing keyword
-            arguments for block_func, plus a key 'prefix' with a unique
+        :param preprocessed_task_list: a list of dictionaries, each containing
+            keyword arguments for block_func, plus a key 'prefix' with a unique
             prefix string, plus optionally a key 'params_to_prefix' created
             by preprocess_task indicating which sweep parameters have to be
             prefixed with the task prefix.
-        :param block_func: a handle to a function that creates a block
+        :param block_func: a handle to a function that creates a block. As
+            an alternative, a task-specific block_func can be given as a
+            parameter of the task.
+        :param block_align: (str) alignment of the parallel blocks, see
+            CircuitBuilder.simultaneous_blocks
         :param kw: keyword arguments are passed to sweep_n_dim
         :return: see sweep_n_dim
         """
         parallel_blocks = []
         for task in preprocessed_task_list:
-            task = copy(task)
+            # copy the task in order to not modify the original task
+            task = copy(task)  # no deepcopy: might contain qubit objects
+            # pop prefix and params_to_prefix since they are not needed by
+            # the block creation function
             prefix = task.pop('prefix')
             params_to_prefix = task.pop('params_to_prefix', None)
+            # the block_func passed as argument is used for all tasks that
+            # do not define their own block_func
             if not 'block_func' in task:
                 task['block_func'] = block_func
+            # Call the block creation function. The items in the task dict
+            # are used as kwargs for this function.
             new_block = task['block_func'](**task)
+            # For the sweep points that need to be prefixed (see
+            # preprocess_task), call the respective method of the block object.
             if params_to_prefix is not None:
+                # params_to_prefix is a list of lists (per dimension) and
+                # needs to be flattened
                 new_block.prefix_parametric_values(
                     prefix, [k for l in params_to_prefix for k in l])
+            # add the new block to the lists of blocks
             parallel_blocks.append(new_block)
 
-        self.all_main_blocks = self.simultaneous_blocks('all', parallel_blocks,
-                                                        block_align=block_align)
+        # assemble all created blocks in parallel
+        self.all_main_blocks = self.simultaneous_blocks(
+            'all', parallel_blocks, block_align=block_align)
         if len(self.sweep_points[1]) == 0:
-            # with this dummy soft sweep, exactly one sequence will be created
-            # and the data format will be the same as for a true soft sweep
+            # Internally, 1D and 2D sweeps are handled as 2D sweeps.
+            # With this dummy soft sweep, exactly one sequence will be created
+            # and the data format will be the same as for a true soft sweep.
             self.sweep_points.add_sweep_parameter('dummy_sweep_param', [0])
-        # only measure meas_objs
+        # ro_qubits in kw determines for which qubits sweep_n_dim will add
+        # readout pulses. If it is not provided (which is usually the case
+        # since create_meas_objs_list pops it from kw) all qubits in
+        # meas_obj_names will be used, except those for which there are
+        # already readout pulses in the parallel blocks.
         if 'ro_qubits' not in kw:
             op_codes = [p['op_code'] for p in self.all_main_blocks.pulses if
                         'op_code' in p]
             kw = copy(kw)
             kw['ro_qubits'] = [m for m in self.meas_obj_names if f'RO {m}'
                                not in op_codes]
-
+        # call sweep_n_dim to perform the actual sweep
         return self.sweep_n_dim(self.sweep_points,
                                 body_block=self.all_main_blocks,
                                 cal_points=self.cal_points, **kw)
 
     @staticmethod
     def find_qubits_in_tasks(qubits, task_list, search_in_operations=True):
+        """
+        Searches for qubit objects and all mentions of qubit names in the
+        provided tasks.
+        :param qubits: (list of str or objects) list of qubits whose mentions
+            should be searched
+        :param task_list: (list of dicts) list of tasks in which qubit objects
+            and mentions of qubit names should be searched.
+        :param search_in_operations: (bool) whether qubits should also be
+            searched inside op_codes, default: True
+        :return: list of a qubit object for each found qubit (if objects are
+            available, otherwise list of qubit names)
+        """
+        # This dict maps from qubit names to qubit object if qubit objects
+        # are available. Otherwise it is a trivial map from qubit names to
+        # qubit names.
         qbs_dict = {qb if isinstance(qb, str) else qb.name: qb for qb in
                     qubits}
         found_qubits = []
 
+        # helper function that checks candiates and calls itself recursively
+        # if a candidate is a list
         def append_qbs(found_qubits, candidate):
             if isinstance(candidate, QuDev_transmon):
                 if candidate not in found_qubits:
                     found_qubits.append(candidate)
             elif isinstance(candidate, str):
                 if candidate in qbs_dict.keys():
+                    # it is a mention of a qubit
                     if qbs_dict[candidate] not in found_qubits:
                         found_qubits.append(qbs_dict[candidate])
                 elif ' ' in candidate and search_in_operations:
+                    # If it contains spaces, it could be an op_code. To
+                    # search in operations, we just split the potential op_code
+                    # at the spaces and search again in the resulting list
                     append_qbs(found_qubits, candidate.split(' '))
             elif isinstance(candidate, list):
+                # search inside each list element
                 for v in candidate:
                     append_qbs(found_qubits, v)
             else:
                 return None
 
+        # search in all tasks
         for task in task_list:
+            # search in all parameters of the task
             for v in task.values():
                 append_qbs(found_qubits, v)
         return found_qubits
 
     def create_meas_objs_list(self, task_list=None, **kw):
+        """
+        Creates a list of all measure objects used in the measurement. The
+        following measure objects are added:
+        - qubits listed in kw['ro_qubits']
+        - qubits listed in the parameter ro_qubits of each task
+        - if kw['ro_qubits'] is not provided and a task does not have a
+          parameter ro_qubits: the result of get_meas_objs_from_task for
+          this task
+        Stores two lists:
+        - self.meas_objs: list of measure objects (None if not available)
+        - self.meas_obj_names: and list of measure object names
+
+        :param task_list: (list of dicts) the task list
+        :param kw: keyword arguments
+        """
         if task_list is None:
             task_list = self.task_list
         if task_list is None:
             task_list = [{}]
+        # We can pop ro_qubits: if parallel_sweep does not find ro_qubits in
+        # kw, it uses self.meas_obj_names, which we generate here
         ro_qubits = kw.pop('ro_qubits', None)
         if ro_qubits is None:
+            # Combine for all tasks, fall back to get_meas_objs_from_task if
+            # ro_qubits does not exist in a task.
             ro_qubits = [qb for task in task_list for qb in task.pop(
                 'ro_qubits', self.get_meas_objs_from_task(task))]
         else:
+            # Add ro_qubits from all tasks without falling back to
+            # get_meas_objs_from_task.
             ro_qubits += [qb for task in task_list for qb in
                           task.pop('ro_qubits', [])]
-        # unique and sort
+        # Unique and sort. To make this possible, convert to str.
         ro_qubits = [qb if isinstance(qb, str) else qb.name for qb in
                      ro_qubits]
         ro_qubits = list(np.unique(ro_qubits))
         ro_qubits.sort()
+        # Get the objects again if available, and store the lists.
         self.meas_objs, self.meas_obj_names = self.get_qubits(
             'all' if len(ro_qubits) == 0 else ro_qubits)
 
     def generate_kw_sweep_points(self, task):
-        # instead of a task, a kw dict can also be passed
+        """
+        Generates sweep_points based on task parameters (or kwargs if kw is
+        passed instead of a task) according to the specification in the
+        property kw_for_sweep_points. The generated sweep points are added to
+        sweep_points in the task (or in kw). If needed, sweep_points is
+        converted to a SweepPoints object before.
+
+        Format of kw_for_sweep_points: dict with
+         - key: key to be searched in kw and in tasks
+         - val: dict of kwargs for SweepPoints.add_sweep_parameter, with the
+           additional possibility of specifying 'values_func', a lambda
+           function that processes the values in kw before using them as
+           sweep values
+        or a list of such dicts to create multiple sweep points based on a
+        single keyword argument.
+
+        :param task: a task dictionary ot the kw dictionary
+        """
+        # make sure that sweep_points is a SweepPoints object
         task['sweep_points'] = SweepPoints(
             from_dict_list=task.get('sweep_points', None))
-        for k, vals in self.kw_for_sweep_points.items():
-            if isinstance(vals, dict):
-                vals = [vals]
-            for v in vals:
+        for k, sp_dict_list in self.kw_for_sweep_points.items():
+            if isinstance(sp_dict_list, dict):
+                sp_dict_list = [sp_dict_list]
+            # This loop can create  multiple sweep points based on a single
+            # keyword argument.
+            for v in sp_dict_list:
+                # copy to allow popping the values_func, which should not be
+                # passed to SweepPoints.add_sweep_parameter
                 v = copy(v)
                 values_func = v.pop('values_func', None)
+                # if the respective task parameter (or keyword argument) exists
                 if k in task and task[k] is not None:
                     if values_func is not None:
                         values = values_func(task[k])
                     elif isinstance(task[k], int):
+                        # A single int N as sweep value will be interpreted as
+                        # a sweep over N indices.
                         values = np.arange(task[k])
                     else:
+                        # Othervise it is assumed that list-like sweep
+                        # values are provided.
                         values = task[k]
                     task['sweep_points'].add_sweep_parameter(
                         values=values, **v)
 
 
 class CalibBuilder(MultiTaskingExperiment):
+    """
+    This class extends MultiTaskingExperiment with some methods that are
+    useful for calibration measurements.
+
+    :param task_list: see MultiTaskingExperiment
+    :param kw: kwargs passed to MultiTaskingExperiment, plus in addition:
+        update: (bool) whether instrument settings should be updated based on
+            analysis results of the calibration measurement, default: False
+    """
     def __init__(self, task_list, **kw):
         super().__init__(task_list=task_list, **kw)
         self.update = kw.pop('update', False)
 
     def max_pulse_length(self, pulse, sweep_points=None,
                          given_pulse_length=None):
+        """
+        Determines the maximum time duration of a pulse during a sweep,
+        where the pulse length could be modified by a sweep parameter.
+        Currently, this is implemented only for up to 2-dimensional sweeps.
+
+        :param pulse: a pulse dictionary (which could contain params that
+            are ParametricValue objects)
+        :param sweep_points: a SweepPoints object describing the sweep
+        :param given_pulse_length: overwrites the pulse_length determined by
+            the sweep points with the given value (i.e., no actual sweep is
+            performed). This is useful to conveniently process a
+            user-provided fixed value for the maximum pulse length.
+        """
         pulse = copy(pulse)
+        # the following parameters are required to create an UnresolvedPulse
         pulse['name'] = 'tmp'
         pulse['element_name'] = 'tmp'
 
         if given_pulse_length is not None:
             pulse['pulse_length'] = given_pulse_length
+            # generate a pulse object to extend the given length with buffer
+            # times etc
             p = UnresolvedPulse(pulse)
             return p.pulse_obj.length
 
+        # Even if we only need a single pulse, creating a block allows
+        # us to easily perform a sweep.
         b = Block('tmp', [pulse])
+        # Clean up sweep points
         sweep_points = deepcopy(sweep_points)
         if sweep_points is None:
             sweep_points = SweepPoints(from_dict_list=[{}, {}])
-        if len(sweep_points) == 1:
+        while len(sweep_points) < 2:
             sweep_points.add_sweep_dimension()
         for i in range(len(sweep_points)):
             if len(sweep_points[i]) == 0:
+                # Make sure that there exists at least a single sweep point
+                # that does not overwrite default values of the pulse params.
                 sweep_points[i].update({'dummy': ([0], '', 'dummy')})
 
+        # determine number of sweep values per dimension
         nr_sp_list = [len(list(d.values())[0][0]) for d in sweep_points]
         max_length = 0
         for i in range(nr_sp_list[1]):
             for j in range(nr_sp_list[0]):
+                # Perform sweep
                 pulses = b.build(
                     sweep_dicts_list=sweep_points, sweep_index_list=[j, i])
+                # generate a pulse object to extend the pulse length with
+                # buffer times etc. The pulse with index 1 is needed because
+                # the virtual block start pulse has index 0.
                 p = UnresolvedPulse(pulses[1])
                 max_length = max(p.pulse_obj.length, max_length)
         return max_length
 
     def prepend_pulses_block(self, prepend_pulse_dicts):
+        """
+        Generates a list of prepended pulses to run a calibration under the
+        influence of previous operations (e.g.,  charge in the fluxlines).
+
+        :param prepend_pulse_dicts: list of pulse dictionaries,
+            each containing the op_code of the desired pulse, plus optional
+            pulse parameters to overwrite the default values of the chosen
+            pulse.
+        :return: block containing the prepended pulses
+        """
         prepend_pulses = []
         if prepend_pulse_dicts is not None:
             for i, pp in enumerate(prepend_pulse_dicts):
+                # op_code determines which pulse to use
                 prepend_pulse = self.get_pulse(pp['op_code'])
+                # all other entries in the pulse dict are interpreted as
+                # pulse parameters that overwrite the default values
                 prepend_pulse.update(pp)
                 prepend_pulses += [prepend_pulse]
         return Block('prepend', prepend_pulses)
 
     @staticmethod
     def add_default_ramsey_sweep_points(sweep_points, **kw):
+        """
+        Adds phase sweep points for Ramsey-type experiments to the provided
+        sweep_points. Assumes that each phase is required twice (to measure a
+        comparison between two scenarios, e.g., with flux pulses on and off
+        in a dynamic phase measurement).
+
+        :param sweep_points: (SweepPoints object, list of dicts, or None) the
+            existing sweep points
+        :param kw: keyword arguments
+            nr_phases: how many phase sweep points should be added, default: 6.
+                If there already exist sweep points in dimension 0, this
+                parameter is ignored and the number of phases is adapted to
+                the number of existing sweep points.
+        :return: sweep_points with the added phase sweep points
+        """
+        # ensure that sweep_points is a SweepPoints object with at least two
+        # dimensions
         sweep_points = SweepPoints(from_dict_list=sweep_points, min_length=2)
+        # If there already exist sweep points in dimension 0, this adapt the
+        # number of phases to the number of existing sweep points.
         if len(sweep_points[0]) > 0:
             nr_phases = sweep_points.length(0) // 2
         else:
             nr_phases = kw.get('nr_phases', 6)
+        # create the phase sweep points (with each phase twice)
         hard_sweep_dict = SweepPoints()
         if 'phase' not in sweep_points[0]:
             hard_sweep_dict.add_sweep_parameter(
                 'phase',
                 np.tile(np.linspace(0, 2 * np.pi, nr_phases) * 180 / np.pi, 2),
                 'deg')
+        # add phase sweep points to the existing sweep points (overwriting
+        # them if they exist already)
         sweep_points.update(hard_sweep_dict + [{}])
         return sweep_points
 
@@ -420,9 +709,11 @@ class CPhase(CalibBuilder):
 
         pulse_modifs = {'all': {'element_name': 'cphase_initial_rots_el'}}
         ir = self.block_from_ops('initial_rots',
-                                 [f'X180 {qbl}', f'X90s {qbr}'] +
+                                 [f'X180 {qbl}', f'X90 {qbr}'] +
                                  kw.get('spectator_op_codes', []),
                                  pulse_modifs=pulse_modifs)
+        for p in ir.pulses[1:]:
+            p['ref_point_new'] = 'end'
         ir.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
 
         fp = self.block_from_ops('flux', [f"{kw.get('cz_pulse_name', 'CZ')} "
@@ -448,6 +739,7 @@ class CPhase(CalibBuilder):
         pulse_modifs = {'all': {'element_name': 'cphase_final_rots_el'}}
         fr = self.block_from_ops('final_rots', [f'X180 {qbl}', f'X90s {qbr}'],
                                  pulse_modifs=pulse_modifs)
+        fr.set_end_after_all_pulses()
         fr.pulses[0]['pulse_delay'] = max_flux_length * num_cz_gates
         fr.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
         for k in hard_sweep_dict.keys():
@@ -685,6 +977,8 @@ class DynamicPhase(CalibBuilder):
         ir = self.block_from_ops('initial_rots',
                                  [f'X90 {qb}' for qb in qubits_to_measure],
                                  pulse_modifs=pulse_modifs)
+        for p in ir.pulses[1:]:
+            p['ref_point_new'] = 'end'
 
         # calling op_replace_cz() allows to have a custom cz_pulse_name in kw
         fp = self.block_from_ops(
@@ -707,6 +1001,7 @@ class DynamicPhase(CalibBuilder):
         fr = self.block_from_ops('final_rots',
                                  [f'X90 {qb}' for qb in qubits_to_measure],
                                  pulse_modifs=pulse_modifs)
+        fr.set_end_after_all_pulses()
         for p in fr.pulses:
             for k in hard_sweep_dict.keys():
                 if '=' not in k and k != 'flux_pulse_off':
