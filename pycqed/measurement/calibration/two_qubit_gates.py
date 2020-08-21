@@ -375,6 +375,7 @@ class CPhase(CalibBuilder):
             self.cphases = None
             self.population_losses = None
             self.leakage = None
+            self.delta_leakage = None
             self.cz_durations = {}
             self.cal_states_rotations = {}
 
@@ -502,6 +503,7 @@ class CPhase(CalibBuilder):
         self.cphases = {}
         self.population_losses = {}
         self.leakage = {}
+        self.delta_leakage = {}
         for task in self.task_list:
             self.cphases.update({task['prefix'][:-1]: self.analysis.proc_data_dict[
                 'analysis_params_dict'][f"cphase_{task['qbr']}"]['val']})
@@ -513,6 +515,10 @@ class CPhase(CalibBuilder):
                 {task['prefix'][:-1]: self.analysis.proc_data_dict[
                     'analysis_params_dict'][
                     f"leakage_{task['qbl']}"]['val']})
+            self.delta_leakage.update(
+                {task['prefix'][:-1]: self.analysis.proc_data_dict[
+                    'analysis_params_dict'][
+                    f"leakage_increase_{task['qbl']}"]['val']})
 
         return self.cphases, self.population_losses, self.leakage, \
                self.analysis
