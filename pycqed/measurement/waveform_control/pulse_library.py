@@ -6,6 +6,9 @@ import sys
 import numpy as np
 import scipy as sp
 from pycqed.measurement.waveform_control import pulse
+import logging
+
+log = logging.getLogger(__name__)
 
 pulse.pulse_libraries.add(sys.modules[__name__])
 
@@ -369,7 +372,7 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
                                      tl / 2, ml / 2, be - d])
             else:
                 if np.abs(tl * ta) < np.abs(ml * ao):
-                    raise ValueError(
+                    log.warning(
                         'NZTCPulse: Pick the pulse parameters such that '
                         '`abs(trans_len * trans_amplitude) >= abs(pulse_length'
                         ' * amplitude_offset)`.')
