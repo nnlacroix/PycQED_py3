@@ -136,9 +136,6 @@ class SurfaceCodeExperiment(qe_mod.QuantumExperiment):
         round_parity_maps = self.readout_rounds[readout_round]['parity_maps']
         ancilla_steps = {pm['ancilla']: pm['data'] for pm in round_parity_maps}
         total_steps = max([len(v) for v in ancilla_steps.values()])
-        if total_steps % 2:
-            raise NotImplementedError('Code has not been written for odd weight'
-                                      ' parity maps.')
         ancilla_steps = {a: (total_steps - len(v)) // 2 * [None] +
                             list(v) + (total_steps - len(v) + 1) // 2 * [None]
                          for a, v in ancilla_steps.items()}
@@ -156,6 +153,9 @@ class SurfaceCodeExperiment(qe_mod.QuantumExperiment):
         element_name = f'parity_map_ancilla_dd_{readout_round}_{cycle}'
         pulse_modifs = {'all': dict(element_name=element_name)}
         if self.ancilla_dd:
+            if total_steps % 2:
+                raise NotImplementedError('Ancilla dynamical decoupling not '
+                                          'implemented for odd weight parity maps.')
             ops = []
             for a, ds in ancilla_steps.items():
                 ops += [f'Y180 {a}', f'Z180 {a}']
