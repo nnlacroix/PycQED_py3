@@ -987,9 +987,28 @@ class Segment:
 
         for pulse in self.elements[elname]:
             if pulse.codeword in {'no_codeword', codeword}:
-                hashlist += pulse.hashables(tstart, channel)
+                hashlist += self.hashables(pulse, tstart, channel)
         return tuple(hashlist)
 
+    @staticmethod
+    def hashables(pulse, tstart, channel):
+        if channel in pulse.crosstalk_cancellation_channels:
+            hashables = []
+            idx_c = pulse.crosstalk_cancellation_channels.index(channel)
+            for c in pulse.channels:
+                if c in pulse.crosstalk_cancellation_channels:
+                    idx_c2 = pulse.crosstalk_cancellation_channels.index(c)
+                    factor = pulse.crosstalk_cancellation_mtx[idx_c, idx_c2]
+                    shift = pulse.crosstalk_cancellation_shift_mtx[
+                        idx_c, idx_c2] \
+                        if pulse.crosstalk_cancellation_shift_mtx is not \
+                           None else 0
+                    if factor != 0:
+                        hashables += pulse.hashables(tstart, c)
+                        hashables += [factor, shift]
+            return hashables
+        else:
+            return pulse.hashables(tstart, channel)
 
     def tvals(self, channel_list, element):
         """
