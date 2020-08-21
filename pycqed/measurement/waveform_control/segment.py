@@ -306,7 +306,7 @@ class Segment:
         self.resolved_pulses = ordered_unres_pulses
 
     def add_flux_crosstalk_cancellation_channels(self):
-        if self.pulsar.flux_crosstalk_cancellation_mtx() is not None:
+        if self.pulsar.flux_crosstalk_cancellation():
             for p in self.resolved_pulses:
                 if any([ch in self.pulsar.flux_channels() for ch in
                         p.pulse_obj.channels]):
