@@ -7,8 +7,8 @@ import numpy as np
 from scipy import optimize
 from collections import OrderedDict
 from pycqed.analysis import fitting_models as fit_mods
-from pycqed.analysis_v3 import fitting as fit_module
-from pycqed.analysis_v3 import plotting as plot_module
+from pycqed.analysis_v3 import fitting as fit_mod
+from pycqed.analysis_v3 import plotting as plot_mod
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from pycqed.analysis_v3 import pipeline_analysis as pla
@@ -343,7 +343,7 @@ def irb_data_from_interleaved_msmt(data_dict, keys_in, keys_out=None,
 # run ramsey analysis
 def rb_analysis(data_dict, keys_in, **params):
     """
-    Does single qubit RB analysis. Prepares fits and plot, and extracts
+    Does single qubit RB analysis. Prepares fits and plots, and extracts
     errors per clifford.
     :param data_dict: OrderedDict containing data to be processed and where
                 processed data is to be stored
@@ -365,8 +365,8 @@ def rb_analysis(data_dict, keys_in, **params):
                                        default_value=True, node_params=params)
     do_fitting = hlp_mod.pop_param('do_fitting', data_dict,
                                    default_value=True, node_params=params)
-    prep_plot_dicts = hlp_mod.pop_param('prep_plot_dicts', data_dict,
-                                        default_value=True, node_params=params)
+    prepare_plotting = hlp_mod.pop_param('prepare_plotting', data_dict,
+                                         default_value=True, node_params=params)
     do_plotting = hlp_mod.pop_param('do_plotting', data_dict,
                                     default_value=True, node_params=params)
 
@@ -391,17 +391,17 @@ def rb_analysis(data_dict, keys_in, **params):
                         **params)
 
     if do_fitting:
-        getattr(fit_module, 'run_fitting')(data_dict, keys_in=list(
+        getattr(fit_mod, 'run_fitting')(data_dict, keys_in=list(
                 data_dict['fit_dicts']),**params)
         # extract EPC, leakage, and seepage from fits and save to
         # data_dict[meas_obj_name]
         analyze_rb_fit_results(data_dict, keys_in, **params)
 
     # prepare plots
-    if prep_plot_dicts:
+    if prepare_plotting:
         prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params)
     if do_plotting:
-        getattr(plot_module, 'plot')(data_dict, keys_in=list(
+        getattr(plot_mod, 'plot')(data_dict, keys_in=list(
             data_dict['plot_dicts']), **params)
 
 
@@ -444,7 +444,7 @@ def prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
         if 'pf' in keyi:
             # if this is the |f> state population data, then do an additional
             # fit based on the Google style
-            fit_module.prepare_rbleakage_fit_dict(
+            fit_mod.prepare_rbleakage_fit_dict(
                 data_dict, [keyi], indep_var_array=cliffords,
                 fit_name='rbleak_fit', **params)
 
@@ -576,7 +576,7 @@ def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
         ylabel = 'Probability, $P(|ee\\rangle)$' if 'corr' in mobjn else None
         if ylabel is None and not classified_msmt:
             ylabel = 'Probability, $P(|e\\rangle)$'
-        plot_module.prepare_1d_plot_dicts(data_dict=data_dict, keys_in=[keyi],
+        plot_mod.prepare_1d_plot_dicts(data_dict=data_dict, keys_in=[keyi],
                                           figure_name=figure_name,
                                           ylabel=ylabel,
                                           sp_name=sp_name, yerr_key=keys,
@@ -584,7 +584,7 @@ def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
 
         if len(cp.states) != 0:
             # plot cal states
-            plot_module.prepare_cal_states_plot_dicts(data_dict=data_dict,
+            plot_mod.prepare_cal_states_plot_dicts(data_dict=data_dict,
                                                       keys_in=[keyi],
                                                       figure_name=figure_name,
                                                       sp_name=sp_name,
@@ -597,7 +597,7 @@ def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
             textstr = ''
             if 'pf' in keyi:
                 # plot Google-style leakage fit + textbox
-                plot_module.prepare_fit_plot_dicts(
+                plot_mod.prepare_fit_plot_dicts(
                     data_dict=data_dict,
                     figure_name=figure_name,
                     fit_names=['rbleak_fit' + keyi],
@@ -611,7 +611,7 @@ def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
                     **params)[0]
 
             # plot fit trace
-            plot_module.prepare_fit_plot_dicts(
+            plot_mod.prepare_fit_plot_dicts(
                 data_dict=data_dict,
                 figure_name=figure_name,
                 fit_names=['rb_fit' + keyi],
@@ -689,7 +689,7 @@ def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
 
             # plot data
             plot_dicts.update(
-                plot_module.prepare_1d_plot_dicts(
+                plot_mod.prepare_1d_plot_dicts(
                     data_dict=data_dict, keys_in=[keyi],
                     figure_name=figure_name, key_suffix=key_suffix,
                     sp_name=sp_name, #yerr_key=keys,
@@ -701,7 +701,7 @@ def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
             if len(cp.states) != 0:
                 # plot cal states
                 plot_dicts.update(
-                    plot_module.prepare_cal_states_plot_dicts(
+                    plot_mod.prepare_cal_states_plot_dicts(
                         data_dict=data_dict, keys_in=[keyi],
                         figure_name=figure_name, sp_name=sp_name,
                         key_suffix=key_suffix,
@@ -714,7 +714,7 @@ def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
                 fit_dicts = data_dict['fit_dicts']
                 # plot fit trace
                 plot_dicts.update(
-                    plot_module.prepare_fit_plot_dicts(
+                    plot_mod.prepare_fit_plot_dicts(
                         data_dict=data_dict, figure_name=figure_name,
                         key_suffix=key_suffix,
                         fit_names=['rb_fit' + keyi],
@@ -775,7 +775,7 @@ def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
     hlp_mod.add_param('plot_dicts', plot_dicts, data_dict_irb,
                       update_value=True)
     if do_plotting:
-        getattr(plot_module, 'plot')(data_dict_irb, keys_in=list(plot_dicts),
+        getattr(plot_mod, 'plot')(data_dict_irb, keys_in=list(plot_dicts),
                                      **params)
 
 

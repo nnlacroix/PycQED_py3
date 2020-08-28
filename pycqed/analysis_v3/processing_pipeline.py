@@ -287,7 +287,10 @@ class ProcessingPipeline(list):
                 for mobj_name in meas_obj_names:
                     # mobjn is a string!
                     new_node_params = deepcopy(node_params)
-                    new_node_params['meas_obj_names'] = mobj_name
+                    new_node_params['joint_processing'] = joint_processing
+                    if joint_processing and 'num_keys_out' \
+                            not in new_node_params:
+                        new_node_params['num_keys_out'] = 1
                     # get the value names corresponding to the measured
                     # object name
                     if not joint_processing:
@@ -297,7 +300,7 @@ class ProcessingPipeline(list):
                     for k, v in new_node_params.items():
                         if 'keys_in' in k:
                             keys = self.process_keys_in(
-                                v, mobj_name, mobj_value_names,
+                                v, mobj_name, meas_obj_value_names_map,
                                 node_idx=i)
                             new_node_params[k] = keys
                     # get keys_out
@@ -317,11 +320,13 @@ class ProcessingPipeline(list):
 
                     keys_out = self.process_keys_out(
                         keys_out_container=keys_out_container,
+                        mobj_name=mobj_name,
                         meas_obj_value_names_map=meas_obj_value_names_map,
                         **new_node_params)
                     new_node_params['keys_out_container'] = keys_out_container
                     if keys_out is not None:
                         new_node_params['keys_out'] = keys_out
+                    new_node_params['meas_obj_names'] = mobj_name.split(',')
                     # add flag that this node has been resolved
                     new_node_params['was_resolved'] = True
                     self.append(new_node_params)
@@ -337,7 +342,7 @@ class ProcessingPipeline(list):
         node_params['node_name'] = node_name
         self.append(node_params)
 
-    def process_keys_in(self, keys_in, mobj_name, mobj_value_names,
+    def process_keys_in(self, keys_in, mobj_name, meas_obj_value_names_map,
                         node_idx=None):
         prev_keys_out = []
         for d in self:
@@ -351,12 +356,15 @@ class ProcessingPipeline(list):
         if isinstance(keys_in_temp, str):
             keys_in_temp = [keys_in_temp]
 
+        mobj_value_names = hlp_mod.flatten_list(
+            list(meas_obj_value_names_map.values()))
         keys_in = []
         for keyi in keys_in_temp:
             if keyi in mobj_value_names or keyi in prev_keys_out:
                 keys_in += [keyi]
             elif keyi == 'raw':
-                keys_in += [f'{mobj_name}.{movn}' for movn in mobj_value_names]
+                keys_in += [f'{mobjn}.{movn}' for mobjn in mobj_name.split(',')
+                            for movn in meas_obj_value_names_map[mobjn]]
             elif 'previous' in keyi:
                 if len(self) > 0:
                     # assumes that what comes after 'previous' is separated by
@@ -400,9 +408,10 @@ class ProcessingPipeline(list):
                              f'{node_idx} and raw "keys_in" {keys_in_temp}.')
         return keys_in
 
-    def process_keys_out(self, keys_in, keys_out_container,
+    def process_keys_out(self, keys_in, keys_out_container, mobj_name,
                          meas_obj_value_names_map,
                          keys_out=(), **node_params):
+
         if keys_out is None:
             return keys_out
 
@@ -424,7 +433,6 @@ class ProcessingPipeline(list):
             assert len(keys_in) % num_keys_out == 0
             n = len(keys_in) // num_keys_out
 
-            mobj_name = node_params['meas_obj_names']
             keys_out = []
             for keyis in [keys_in[i*n: i*n + n] for i
                           in range(num_keys_out)]:
@@ -456,13 +464,16 @@ class ProcessingPipeline(list):
                     keyo += [f'{keys_out_container}.'
                              f'{node_name_to_use} {keyo}']
                 else:
-                    # Append to keyo the channel names(s) that we passed in
+                    # Append to keyo the channel names(s) that were passed in
                     # keys_in (some nodes process the data corresponding to
                     # only one or some subset of the meas_obj readout channels.
-                    mobj_name = node_params['meas_obj_names']
-                    suffix = ','.join(hlp_mod.flatten_list([re.findall(ch, k)
-                        for ch in meas_obj_value_names_map[mobj_name]
-                        for k in [keyi.split('.')[-1] for keyi in keyis_mod]]))
+                    suffix = []
+                    for mobjn in mobj_name.split(','):
+                        suffix += hlp_mod.flatten_list([re.findall(ch, k)
+                            for ch in meas_obj_value_names_map[mobjn]
+                            for k in [keyi.split('.')[-1]
+                                      for keyi in keyis_mod]])
+                    suffix = ','.join(suffix)
                     if len(suffix):
                         keyo = f'{keyo} {suffix}'
                     else:
@@ -477,5 +488,31 @@ class ProcessingPipeline(list):
                         keyo = f'{keyo} ' \
                                f'{",".join(meas_obj_value_names_map[mobj_name])}'
                 keys_out += [keyo]
+
+        return keys_out
+
+    def get_keys_out(self, meas_obj_names, node_name, keys_out_container=''):
+
+        prev_keys_out = []
+        for d in self:
+            if 'keys_out' in d:
+                if d['keys_out'] is not None:
+                    prev_keys_out += d['keys_out']
+
+        keys_out = []
+        for keyo in prev_keys_out:
+            for mobjn in meas_obj_names:
+                string = '.'.join([mobjn, keys_out_container, node_name]) \
+                    if len(keys_out_container) else '.'.join([mobjn, node_name])
+                if string in keyo:
+                    keys_out += [keyo]
+
+        if len(keys_out) == 0:
+            string = '.'.join(['mobjn', keys_out_container, node_name]) \
+                if len(keys_out_container) else '.'.join(['mobjn', node_name])
+            raise KeyError(
+                f'No keys_out were found that contain "{string}", '
+                f'for mobjn in {meas_obj_names}.'
+                f'Make sure you use the correct keys_out_container.')
 
         return keys_out

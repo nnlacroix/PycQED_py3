@@ -275,11 +275,11 @@ def get_data_to_process(data_dict, keys_in):
         all_keys = keyi.split('.')
         if len(all_keys) == 1:
             try:
-                if isinstance(data_dict[all_keys[0]], dict):
-                    data_to_proc_dict = {f'{keyi}.{k}': deepcopy(v) for k, v
-                                         in data_dict[all_keys[0]].items()}
-                else:
-                    data_to_proc_dict[keyi] = data_dict[all_keys[0]]
+                # if isinstance(data_dict[all_keys[0]], dict):
+                #     data_to_proc_dict = {f'{keyi}.{k}': deepcopy(v) for k, v
+                #                          in data_dict[all_keys[0]].items()}
+                # else:
+                data_to_proc_dict[keyi] = data_dict[all_keys[0]]
             except KeyError:
                 key_found = False
         else:
@@ -506,11 +506,7 @@ def get_measurement_properties(data_dict, props_to_extract='all',
         elif 'sp' == prop:
             sp = get_param('sweep_points', data_dict, raise_error=raise_error,
                            **params)
-            if isinstance(sp, str):
-                sp = eval(sp)
-            if isinstance(sp[0], dict):
-                sp = sp_mod.SweepPoints(from_dict_list=sp)
-            props_to_return += [sp]
+            props_to_return += [sp_mod.SweepPoints.cast_init(sp)]
         elif 'mospm' == prop:
             meas_obj_sweep_points_map = get_param(
                 'meas_obj_sweep_points_map', data_dict, raise_error=raise_error,
@@ -666,11 +662,49 @@ def get_reset_reps_from_data_dict(data_dict):
     return reset_reps
 
 
-def get_observables(data_dict, keys_out, preselection_shift=-1,
-                    use_preselection=False, **params):
-
-    assert len(keys_out) == 1
-
+def get_observables(data_dict, keys_out=None, preselection_shift=-1,
+                    do_preselection=False, **params):
+    """
+    Creates the observables dictionary from meas_obj_names, preselection_shift,
+        and do_preselection.
+    :param data_dict: OrderedDict containing data to be processed and where
+        processed data is to be stored
+    :param keys_out: list with one entry specifying the key name or dictionary
+        key path in data_dict for the processed data to be saved into
+    :param preselection_shift: integer specifying which readout prior to the
+        current readout to be considered for preselection
+    :param do_preselection: bool specifying whether to do preselection on
+        the data.
+    :param params: keyword arguments
+        Expects to find either in data_dict or in params:
+            - meas_obj_names: list of measurement object names
+    :return: a dictionary with
+        name of the qubit as key and boolean value indicating if it is
+        selecting exited states. If the qubit is missing from the list
+        of states it is averaged out. Instead of just the qubit name, a
+        tuple of qubit name and a shift value can be passed, where the
+        shift value specifies the relative readout index for which the
+        state is checked.
+        Example qb2-qb4 state tomo with preselection:
+            {'pre': {('qb2', -1): False,
+                    ('qb4', -1): False}, # preselection conditions
+             '$\\| gg\\rangle$': {'qb2': False,
+                                  'qb4': False,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False},
+             '$\\| ge\\rangle$': {'qb2': False,
+                                  'qb4': True,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False},
+             '$\\| eg\\rangle$': {'qb2': True,
+                                  'qb4': False,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False},
+             '$\\| ee\\rangle$': {'qb2': True,
+                                  'qb4': True,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False}}
+    """
     mobj_names = get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
         **params)
@@ -683,7 +717,7 @@ def get_observables(data_dict, keys_out, preselection_shift=-1,
     observables = OrderedDict()
 
     # add preselection condition also as an observable
-    if use_preselection:
+    if do_preselection:
         observables["pre"] = preselection_condition
     # add all combinations
     for i, states in enumerate(combination_list):
@@ -691,10 +725,15 @@ def get_observables(data_dict, keys_out, preselection_shift=-1,
         obs_name = '$\| ' + name + '\\rangle$'
         observables[obs_name] = dict(zip(mobj_names, states))
         # add preselection condition
-        if use_preselection:
+        if do_preselection:
             observables[obs_name].update(preselection_condition)
 
-    add_param(keys_out[0], observables, data_dict)
+    if keys_out is None:
+        keys_out = ['observables']
+    if len(keys_out) != 1:
+        raise ValueError(f'keys_out must have length one. {len(keys_out)} '
+                         f'entries were given.')
+    add_param(keys_out[0], observables, data_dict, **params)
 
 
 ### functions that do NOT have the ana_v3 format for input parameters ###
@@ -714,47 +753,6 @@ def observable_product(*observables):
             else:
                 res_obs[k] = obs[k]
     return res_obs
-
-
-def convert_channel_names_to_index(cal_points, nr_segments, value_names):
-    """
-    Converts the calibration points list from the format
-    cal_points = [{'ch1': [-4, -3], 'ch2': [-4, -3]},
-                  {0: [-2, -1], 1: [-2, -1]}]
-    to the format (for a 100-segment dataset)
-    cal_points_list = [[[96, 97], [96, 97]],
-                       [[98, 99], [98, 99]]]
-
-    Args:
-        cal_points: the list of calibration points to convert
-        nr_segments: number of segments in the dataset to convert negative
-                     indices to positive indices.
-        value_names: a list of channel names that is used to determine the
-                     index of the channels
-    Returns:
-        cal_points_list in the converted format
-    """
-
-    cal_points_list = []
-    for observable in cal_points:
-        if isinstance(observable, (list, np.ndarray)):
-            observable_list = [[]] * len(value_names)
-            for i, idxs in enumerate(observable):
-                observable_list[i] = \
-                    [idx % nr_segments for idx in idxs]
-            cal_points_list.append(observable_list)
-        else:
-            observable_list = [[]] * len(value_names)
-            for channel, idxs in observable.items():
-                if isinstance(channel, int):
-                    observable_list[channel] = \
-                        [idx % nr_segments for idx in idxs]
-                else:  # assume str
-                    ch_idx = value_names.index(channel)
-                    observable_list[ch_idx] = \
-                        [idx % nr_segments for idx in idxs]
-            cal_points_list.append(observable_list)
-    return cal_points_list
 
 
 def get_cal_state_color(cal_state_label):

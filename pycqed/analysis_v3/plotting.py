@@ -73,8 +73,8 @@ def get_default_plot_params(set_params=True, figure_width='1col',
         'font.size': 8,
         'lines.markersize': 2.0,
         'figure.facecolor': '0.9',
-        'xtick.direction': 'in',
-        'ytick.direction': 'in',
+        'xtick.direction': 'out',
+        'ytick.direction': 'out',
         'figure.titlesize': 'medium',
         'axes.titlesize': 'medium',
         'figure.dpi': 600,
@@ -136,6 +136,23 @@ def default_figure_title(data_dict, meas_obj_name, **params):
     else:
         title += f' {meas_obj_name}'
     return title
+
+
+def default_phase_cmap():
+    cols = np.array(((41, 39, 231), (61, 130, 163), (208, 170, 39),
+                     (209, 126, 4), (181, 28, 20), (238, 76, 152),
+                     (251, 130, 242), (162, 112, 251))) / 255
+    n = len(cols)
+    cdict = {
+        'red': [[i/n, cols[i%n][0], cols[i%n][0]] for i in range(n+1)],
+        'green': [[i/n, cols[i%n][1], cols[i%n][1]] for i in range(n+1)],
+        'blue': [[i/n, cols[i%n][2], cols[i%n][2]] for i in range(n+1)],
+        'alpha': [[i/n, 1.0, 1.0] for i in range(n+1)],
+    }
+
+    cmap = mpl.colors.LinearSegmentedColormap('DMDefault', cdict)
+    cmap.set_over((0,0,0,0))
+    return cmap
 
 
 ## Prepare plot dicts functions ##
@@ -1002,8 +1019,11 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
             axs[pdict['fig_id']].figure.subplots_adjust(
                 wspace=0, hspace=0)
 
-        pdict['ax_geom'] = get_axes_geometry_from_figure(
-            figs[pdict['fig_id']])
+        try:
+            pdict['ax_geom'] = get_axes_geometry_from_figure(
+                figs[pdict['fig_id']])
+        except AttributeError:
+            pass
 
         # Check if pdict is one of the accepted arguments,
         # these are the plotting functions in this module.
@@ -1049,7 +1069,10 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
 
     # close figures
     for fig_name in figs:
-        figs[fig_name].align_ylabels()
+        try:
+            figs[fig_name].align_ylabels()
+        except AttributeError:
+            pass
         plt.close(figs[fig_name])
 
     # add figures and axes to data_dict
@@ -1202,19 +1225,22 @@ def plot_bar3D(pdict, axs, tight_fig=True):
     plot_xtick_labels = pdict.get('xtick_labels', None)
     plot_ytick_labels = pdict.get('ytick_labels', None)
     do_legend = pdict.get('do_legend', False)
+    set_edgecolor = pdict.get('set_edgecolor', False)
 
     xpos, ypos = np.meshgrid(plot_xvals, plot_yvals)
     xpos = xpos.T.flatten()
     ypos = ypos.T.flatten()
+    xpos = np.concatenate(len(plot_zvals.flatten()) // len(xpos) * [xpos])
+    ypos = np.concatenate(len(plot_zvals.flatten()) // len(ypos) * [ypos])
     zpos = np.zeros_like(xpos)
     if plot_barwidthx is None:
         plot_barwidthx = plot_xvals[1] - plot_xvals[0]
     if not hasattr(plot_barwidthx, '__iter__'):
-        plot_barwidthx = np.ones_like(zpos)*plot_barwidthx
+        plot_barwidthx = np.ones_like(plot_zvals.flatten())*plot_barwidthx
     if plot_barwidthy is None:
         plot_barwidthy = plot_yvals[1] - plot_yvals[0]
     if not hasattr(plot_barwidthy, '__iter__'):
-        plot_barwidthy = np.ones_like(zpos) * plot_barwidthy
+        plot_barwidthy = np.ones_like(plot_zvals.flatten()) * plot_barwidthy
     plot_barheight = plot_zvals.flatten()
 
     if 'color' in plot_barkws:
@@ -1238,9 +1264,12 @@ def plot_bar3D(pdict, axs, tight_fig=True):
                 plot_color = np.repeat(plot_color, n).reshape(-1, n).T
 
     zsort = plot_barkws.pop('zsort', 'max')
+    edgecolor = None
+    if set_edgecolor:
+        edgecolor = len(xpos)*[(0,0,0,1)] + len(xpos)*[(0,0,0,1)]
     p_out = pfunc(xpos - plot_barwidthx/2, ypos - plot_barwidthy/2, zpos,
                   plot_barwidthx, plot_barwidthy, plot_barheight,
-                  color=plot_color,
+                  color=plot_color, edgecolor=edgecolor,
                   zsort=zsort, **plot_barkws)
 
     if plot_xtick_labels is not None:

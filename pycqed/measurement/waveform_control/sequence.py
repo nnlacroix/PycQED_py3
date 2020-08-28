@@ -286,7 +286,7 @@ class Sequence:
 
     @staticmethod
     def compress_2D_sweep(sequences, segment_limit=None,
-                          merge_repeat_patterns=True):
+                          merge_repeat_patterns=True, mc_points=None):
         """
         Compresses a list of sequences to a lower number of sequences
         (if possible), each of which containing the same amount of segments
@@ -303,6 +303,8 @@ class Sequence:
             segment_limit (int): maximal number of segments that can be in
                 a sequence
             merge_repeat_patterns (bool): see docstring of Sequence.merge.
+            mc_points: mc_points array of the original hardware sweep.
+                Useful in case it differs from n_acq_elements().
 
         Returns: list of sequences for the compressed 2D sweep,
             new hardsweep points indices,
@@ -341,8 +343,14 @@ class Sequence:
         seg_lim_eff = factor * n_seg
         compressed_2D_sweep = Sequence.merge(sequences, seg_lim_eff,
                                               merge_repeat_patterns)
-        hard_sp_ind = np.arange(compressed_2D_sweep[0].n_acq_elements())
-        soft_sp_ind = np.arange(len(compressed_2D_sweep))
+        if mc_points is None:
+            hard_sp_ind = np.arange(compressed_2D_sweep[0].n_acq_elements())
+            soft_sp_ind = np.arange(len(compressed_2D_sweep))
+        else:
+            hard_sp_ind = np.arange(len(mc_points)*len(sequences) //
+                                    len(compressed_2D_sweep))
+            soft_sp_ind = np.arange(len(compressed_2D_sweep))
+
         return compressed_2D_sweep, hard_sp_ind, soft_sp_ind, factor
 
     def __repr__(self):
