@@ -3498,17 +3498,17 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 if param_values is None:
                     continue
                 suffix = '_amp' if p == 0 else '_freq'
-                # Plot T1 vs flux pulse amplitude
                 mask = pdd['mask'][qb]
-                label = f'T1_fit_{qb}{suffix}'
-                xvals = param_values[qb][mask]
                 xlabel = r'Flux pulse amplitude' if p == 0 else \
                     r'Derived qubit frequency'
+
+                # Plot T1 vs flux pulse amplitude
+                label = f'T1_fit_{qb}{suffix}'
                 self.plot_dicts[label] = {
                     'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
                     'plotfn': self.plot_line,
                     'linestyle': '-',
-                    'xvals': xvals,
+                    'xvals': param_values[qb][mask],
                     'yvals': pdd['T1'][qb][mask],
                     'yerr': pdd['T1_err'][qb][mask],
                     'xlabel': xlabel,
@@ -3521,21 +3521,35 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 # Plot rotated integrated average in dependece of flux pulse
                 # amplitude and length
                 label = f'T1_color_plot_{qb}{suffix}'
-                xvals = param_values[qb][mask]
-                xlabel = r'Flux pulse amplitude' if p == 0 else \
-                    r'Derived qubit frequency'
                 self.plot_dicts[label] = {
                     'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
                     'plotfn': self.plot_colorxy,
                     'linestyle': '-',
-                    'xvals': xvals,
+                    'xvals': param_values[qb][mask],
                     'yvals': self.lengths[qb],
-                    'zvals': np.transpose(pdd['data_reshaped_no_cp'][qb]),
+                    'zvals': np.transpose(pdd['data_reshaped_no_cp'][qb][mask]),
                     'xlabel': xlabel,
                     'xunit': 'V' if p == 0 else 'Hz',
                     'ylabel': r'Flux pulse length',
                     'yunit': 's',
                     'zlabel': r'Excited state population'
+                }
+
+                # Plot population loss for the first flux pulse length as a
+                # function of flux pulse amplitude
+                label = f'Pop_loss_{qb}{suffix}'
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
+                    'plotfn': self.plot_line,
+                    'linestyle': '-',
+                    'xvals': param_values[qb][mask],
+                    'yvals': 1 - pdd['data_reshaped_no_cp'][qb][:, 0][mask],
+                    'xlabel': xlabel,
+                    'xunit': 'V' if p == 0 else 'Hz',
+                    'ylabel': r'Pop. loss @ {:.0f} ns'.format(
+                        self.lengths[qb][0]/1e-9
+                    ),
+                    'yunit': '',
                 }
 
             # Plot all fits in single figure
@@ -6910,6 +6924,134 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 fig_key = f'{qbn}_state_prob_matrix_masked_{self.classif_method}'
                 self.figs[fig_key] = fig
 
+
+class FluxPulseTimingAnalysis(MultiQubit_TimeDomain_Analysis):
+
+    def __init__(self, qb_names, *args, **kwargs):
+        params_dict = {}
+        for qbn in qb_names:
+            s = 'Instrument settings.'+qbn
+        kwargs['params_dict'] = params_dict
+        kwargs['numeric_params'] = list(params_dict)
+        # super().__init__(qb_names, *args, **kwargs)
+
+        options_dict = kwargs.pop('options_dict', {})
+        options_dict['TwoD'] = True
+        kwargs['options_dict'] = options_dict
+        super().__init__(qb_names, *args, **kwargs)
+
+    def process_data(self):
+        super().process_data()
+
+        # Make sure data has the right shape (len(hard_sp), len(soft_sp))
+        for qbn, data in self.proc_data_dict['data_to_fit'].items():
+            if data.shape[1] != self.proc_data_dict['sweep_points_dict'][qbn][
+                'sweep_points'].size:
+                self.proc_data_dict['data_to_fit'][qbn] = data.T
+
+    def prepare_fitting(self):
+        self.fit_dicts = OrderedDict()
+        for qbn in self.qb_names:
+            data = self.proc_data_dict['data_to_fit'][qbn][0]
+            sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
+                'msmt_sweep_points']
+            if self.num_cal_points != 0:
+                data = data[:-self.num_cal_points]
+            TwoErrorFuncModel = lmfit.Model(fit_mods.TwoErrorFunc)
+            guess_pars = fit_mods.TwoErrorFunc_guess(model=TwoErrorFuncModel,
+                                               data=data, \
+                                            delays=sweep_points)
+            guess_pars['amp'].vary = True
+            guess_pars['mu_A'].vary = True
+            guess_pars['mu_B'].vary = True
+            guess_pars['sigma'].vary = True
+            guess_pars['offset'].vary = True
+            key = 'two_error_func_' + qbn
+            self.fit_dicts[key] = {
+                'fit_fn': TwoErrorFuncModel.func,
+                'fit_xvals': {'x': sweep_points},
+                'fit_yvals': {'data': data},
+                'guess_pars': guess_pars}
+
+
+    def analyze_fit_results(self):
+        self.proc_data_dict['analysis_params_dict'] = OrderedDict()
+        for qbn in self.qb_names:
+            mu_A = self.fit_dicts['two_error_func_' + qbn]['fit_res'].best_values[
+                'mu_A']
+            mu_B = self.fit_dicts['two_error_func_' + qbn]['fit_res'].best_values[
+                'mu_B']
+            fp_length = a_tools.get_instr_setting_value_from_file(
+                file_path=self.raw_data_dict['folder'],
+                instr_name=qbn, param_name='flux_pulse_pulse_length')
+
+
+            self.proc_data_dict['analysis_params_dict'][qbn] = OrderedDict()
+            self.proc_data_dict['analysis_params_dict'][qbn]['delay'] = \
+                mu_A + 0.5 * (mu_B - mu_A) - fp_length / 2
+            self.proc_data_dict['analysis_params_dict'][qbn]['delay_stderr'] = \
+                1 / 2 * np.sqrt(
+                    self.fit_dicts['two_error_func_' + qbn]['fit_res'].params[
+                        'mu_A'].stderr ** 2
+                    + self.fit_dicts['two_error_func_' + qbn]['fit_res'].params[
+                        'mu_B'].stderr ** 2)
+            self.proc_data_dict['analysis_params_dict'][qbn]['fp_length'] = \
+                (mu_B - mu_A)
+            self.proc_data_dict['analysis_params_dict'][qbn]['fp_length_stderr'] = \
+                np.sqrt(
+                    self.fit_dicts['two_error_func_' + qbn]['fit_res'].params[
+                        'mu_A'].stderr ** 2
+                    + self.fit_dicts['two_error_func_' + qbn]['fit_res'].params[
+                        'mu_B'].stderr ** 2)
+        self.save_processed_data(key='analysis_params_dict')
+
+    def prepare_plots(self):
+        self.options_dict.update({'TwoD': False,
+                                  'plot_proj_data': False})
+        super().prepare_plots()
+
+        if self.do_fitting:
+            for qbn in self.qb_names:
+                # rename base plot
+                base_plot_name = 'Pulse_timing_' + qbn
+                self.prepare_projected_data_plot(
+                    fig_name=base_plot_name,
+                    data=self.proc_data_dict['data_to_fit'][qbn][0],
+                    plot_name_suffix=qbn+'fit',
+                    qb_name=qbn)
+
+                self.plot_dicts['fit_' + qbn] = {
+                    'fig_id': base_plot_name,
+                    'plotfn': self.plot_fit,
+                    'fit_res': self.fit_dicts['two_error_func_' + qbn]['fit_res'],
+                    'setlabel': 'two error func. fit',
+                    'do_legend': True,
+                    'color': 'r',
+                    'legend_ncol': 1,
+                    'legend_bbox_to_anchor': (1, -0.15),
+                    'legend_pos': 'upper right'}
+
+                apd = self.proc_data_dict['analysis_params_dict']
+                textstr = 'delay = {:.2f} ns'.format(apd[qbn]['delay']*1e9) \
+                          + ' $\pm$ {:.2f} ns'.format(apd[qbn]['delay_stderr']
+                                                      * 1e9)
+                textstr += '\n\nflux_pulse_length:\n  fitted = {:.2f} ns'.format(
+                    apd[qbn]['fp_length'] * 1e9) \
+                           + ' $\pm$ {:.2f} ns'.format(
+                    apd[qbn]['fp_length_stderr'] * 1e9)
+                textstr += '\n  set = {:.2f} ns'.format(
+                    1e9 * a_tools.get_instr_setting_value_from_file(
+                        file_path=self.raw_data_dict['folder'],
+                        instr_name=qbn, param_name='flux_pulse_pulse_length'))
+
+                self.plot_dicts['text_msg_' + qbn] = {
+                    'fig_id': base_plot_name,
+                    'ypos': -0.2,
+                    'xpos': 0,
+                    'horizontalalignment': 'left',
+                    'verticalalignment': 'top',
+                    'plotfn': self.plot_text,
+                    'text_string': textstr}
 
 class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
 
