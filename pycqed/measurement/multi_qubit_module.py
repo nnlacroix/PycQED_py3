@@ -395,7 +395,7 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
                                 shots=5000,
                                 RO_spacing=None, preselection=True,
                                 thresholds=None, thresholded=False,
-                                analyse=True):
+                                analyse=True, upload=True):
     for qb in qubits:
         MC = qb.instr_mc.get_instr()
 
@@ -415,7 +415,8 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
         [operation_dict['RO ' + qb.name] for qb in qubits],
         preselection=preselection,
         parallel_pulses=True,
-        RO_spacing=RO_spacing)
+        RO_spacing=RO_spacing,
+        upload=upload)
 
     m = 2 ** (len(qubits))
     if preselection:
@@ -440,7 +441,7 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
     if analyse and thresholds is not None:
         channel_map = {qb.name: qb.int_log_det.value_names[0]+' '+qb.instr_uhf()
                        for qb in qubits}
-        ra.Multiplexed_Readout_Analysis(options_dict=dict(
+        return ra.Multiplexed_Readout_Analysis(options_dict=dict(
             n_readouts=(2 if preselection else 1) * 2 ** len(qubits),
             thresholds=thresholds,
             channel_map=channel_map,
