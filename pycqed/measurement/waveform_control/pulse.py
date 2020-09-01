@@ -126,13 +126,22 @@ class Pulse:
 
         if channel in self.channels:
             wfs = self.chan_wf(channel, tvals)
+        elif channel in self.crosstalk_cancellation_channels:
+            wfs = [] # list of waveforms, area computed in return statement
+            idx_c = self.crosstalk_cancellation_channels.index(channel)
+            if not getattr(self, 'pulse_off', False):
+                for c2 in self.channels:
+                    if c2 not in self.crosstalk_cancellation_channels:
+                        continue
+                    idx_c2 = self.crosstalk_cancellation_channels.index(c2)
+                    factor = self.crosstalk_cancellation_mtx[idx_c, idx_c2]
+                    wfs.append(factor * self.chan_wf( c2, tvals))
+
         else:
-            # FIXME: it is a crosstalk cancellation channel and needs to be
-            #  handled separately
             wfs = np.zeros_like(tvals)
         dt = tvals[1] - tvals[0]
 
-        return sum(wfs) * dt
+        return np.sum(wfs) * dt
 
     def algorithm_time(self, val=None):
         """
