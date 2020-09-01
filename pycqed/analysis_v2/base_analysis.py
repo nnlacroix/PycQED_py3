@@ -25,8 +25,9 @@ import h5py
 from pycqed.measurement.hdf5_data import write_dict_to_hdf5
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
 from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import copy
+import traceback
 import logging
 log = logging.getLogger(__name__)
 log.addHandler(logging.StreamHandler())
@@ -130,96 +131,104 @@ class BaseDataAnalysis(object):
         :param do_fitting: Should the run_fitting method be executed?
         '''
 
-        # initialize an empty dict to store results of analysis
-        self.proc_data_dict = OrderedDict()
-        if options_dict is None:
-            self.options_dict = OrderedDict()
-        else:
-            self.options_dict = options_dict
-
-        ################################################
-        # These options determine what data to extract #
-        ################################################
-        self.timestamps = None
-        if data_file_path is None:
-            if t_start is None:
-                if isinstance(label, list):
-                    self.timestamps = [a_tools.latest_data(
-                        contains=lab, return_timestamp=True)[0] for lab in label]
-                else:
-                    self.timestamps = [a_tools.latest_data(
-                        contains=label, return_timestamp=True)[0]]
-            elif t_stop is None:
-                if isinstance(t_start, list):
-                    self.timestamps = t_start
-                else:
-                    self.timestamps = [t_start]
+        try:
+            # initialize an empty dict to store results of analysis
+            self.proc_data_dict = OrderedDict()
+            if options_dict is None:
+                self.options_dict = OrderedDict()
             else:
-                self.timestamps = a_tools.get_timestamps_in_range(
-                    t_start, timestamp_end=t_stop,
-                    label=label if label != '' else None)
+                self.options_dict = options_dict
 
-        if self.timestamps is None or len(self.timestamps) == 0:
-            raise ValueError('No data file found.')
+            ################################################
+            # These options determine what data to extract #
+            ################################################
+            self.timestamps = None
+            if data_file_path is None:
+                if t_start is None:
+                    if isinstance(label, list):
+                        self.timestamps = [a_tools.latest_data(
+                            contains=lab, return_timestamp=True)[0] for lab in label]
+                    else:
+                        self.timestamps = [a_tools.latest_data(
+                            contains=label, return_timestamp=True)[0]]
+                elif t_stop is None:
+                    if isinstance(t_start, list):
+                        self.timestamps = t_start
+                    else:
+                        self.timestamps = [t_start]
+                else:
+                    self.timestamps = a_tools.get_timestamps_in_range(
+                        t_start, timestamp_end=t_stop,
+                        label=label if label != '' else None)
 
-
-        ########################################
-        # These options relate to the plotting #
-        ########################################
-        self.plot_dicts = OrderedDict()
-        self.axs = OrderedDict()
-        self.figs = OrderedDict()
-        self.presentation_mode = self.options_dict.get(
-            'presentation_mode', False)
-        self.do_individual_traces = self.options_dict.get(
-            'do_individual_traces', False)
-        self.tight_fig = self.options_dict.get('tight_fig', True)
-        # used in self.plot_text, here for future compatibility
-        self.fancy_box_props = dict(boxstyle='round', pad=.4,
-                                    facecolor='white', alpha=0.5)
-
-        self.options_dict['plot_init'] = self.options_dict.get('plot_init',
-                                                               False)
-        self.options_dict['save_figs'] = self.options_dict.get(
-            'save_figs', True)
-        self.options_dict['close_figs'] = self.options_dict.get(
-            'close_figs', close_figs)
+            if self.timestamps is None or len(self.timestamps) == 0:
+                raise ValueError('No data file found.')
 
 
-        ####################################################
-        # These options relate to what analysis to perform #
-        ####################################################
-        self.extract_only = extract_only
-        self.do_fitting = do_fitting
+            ########################################
+            # These options relate to the plotting #
+            ########################################
+            self.plot_dicts = OrderedDict()
+            self.axs = OrderedDict()
+            self.figs = OrderedDict()
+            self.presentation_mode = self.options_dict.get(
+                'presentation_mode', False)
+            self.do_individual_traces = self.options_dict.get(
+                'do_individual_traces', False)
+            self.tight_fig = self.options_dict.get('tight_fig', True)
+            # used in self.plot_text, here for future compatibility
+            self.fancy_box_props = dict(boxstyle='round', pad=.4,
+                                        facecolor='white', alpha=0.5)
 
-        self.verbose = self.options_dict.get('verbose', False)
-        self.auto_keys = self.options_dict.get('auto_keys', None)
+            self.options_dict['plot_init'] = self.options_dict.get('plot_init',
+                                                                   False)
+            self.options_dict['save_figs'] = self.options_dict.get(
+                'save_figs', True)
+            self.options_dict['close_figs'] = self.options_dict.get(
+                'close_figs', close_figs)
 
-        if type(self.auto_keys) is str:
-            self.auto_keys = [self.auto_keys]
+
+            ####################################################
+            # These options relate to what analysis to perform #
+            ####################################################
+            self.extract_only = extract_only
+            self.do_fitting = do_fitting
+
+            self.verbose = self.options_dict.get('verbose', False)
+            self.auto_keys = self.options_dict.get('auto_keys', None)
+
+            if type(self.auto_keys) is str:
+                self.auto_keys = [self.auto_keys]
+        except Exception:
+            log.warning("Unhandled error during init of analysis!")
+            log.warning(traceback.format_exc())
 
     def run_analysis(self):
         """
         This function is at the core of all analysis and defines the flow.
         This function is typically called after the __init__.
         """
-        self.extract_data()  # extract data specified in params dict
-        self.process_data()  # binning, filtering etc
-        if self.do_fitting:
-            self.prepare_fitting()  # set up fit_dicts
-            self.run_fitting()  # fitting to models
-            self.save_fit_results()
-            self.analyze_fit_results()  # analyzing the results of the fits
+        try:
+            self.extract_data()  # extract data specified in params dict
+            self.process_data()  # binning, filtering etc
+            if self.do_fitting:
+                self.prepare_fitting()  # set up fit_dicts
+                self.run_fitting()  # fitting to models
+                self.save_fit_results()
+                self.analyze_fit_results()  # analyzing the results of the fits
 
-        delegate_plotting = self.check_plotting_delegation()
-        if not delegate_plotting:
-            self.prepare_plots()  # specify default plots
-            if not self.extract_only:
-                self.plot(key_list='auto')  # make the plots
+            delegate_plotting = self.check_plotting_delegation()
+            if not delegate_plotting:
+                self.prepare_plots()  # specify default plots
+                if not self.extract_only:
+                    self.plot(key_list='auto')  # make the plots
 
-            if self.options_dict.get('save_figs', False):
-                self.save_figures(close_figs=self.options_dict.get(
-                    'close_figs', False))
+                if self.options_dict.get('save_figs', False):
+                    self.save_figures(close_figs=self.options_dict.get(
+                        'close_figs', False))
+        except Exception:
+            log.warning("Unhandled error during analysis!")
+            log.warning(traceback.format_exc())
 
     def create_job(self, *args, **kwargs):
         """
@@ -327,7 +336,8 @@ class BaseDataAnalysis(object):
         if not hasattr(self, "metadata") or self.metadata is None:
             return self.options_dict.get(param_name, default_value)
         # multi timestamp with different metadata
-        elif isinstance(self.metadata, (list, tuple)) and len(self.metadata) != 0:
+        elif isinstance(self.metadata, (list, tuple)) and \
+                len(self.metadata) != 0:
             return self.options_dict.get(param_name,
                 self.metadata[metadata_index].get(param_name, default_value))
         # base case
@@ -381,6 +391,10 @@ class BaseDataAnalysis(object):
                             len(raw_data_dict_ts[save_par]) == 1:
                         raw_data_dict_ts[save_par] = \
                             raw_data_dict_ts[save_par][0]
+                for par_name in raw_data_dict_ts:
+                    if par_name in self.numeric_params:
+                        raw_data_dict_ts[par_name] = \
+                            np.double(raw_data_dict_ts[par_name])
             except Exception as e:
                 data_file.close()
                 raise e
@@ -388,9 +402,6 @@ class BaseDataAnalysis(object):
 
         if len(raw_data_dict) == 1:
             raw_data_dict = raw_data_dict[0]
-        for par_name in raw_data_dict:
-            if par_name in self.numeric_params:
-                raw_data_dict[par_name] = np.double(raw_data_dict[par_name])
         return raw_data_dict
 
     @staticmethod
@@ -441,9 +452,13 @@ class BaseDataAnalysis(object):
             # run in 1D mode (so only 1 column of sweep points in hdf5 file)
             # CURRENTLY ONLY WORKS WITH SweepPoints CLASS INSTANCES
             hybrid_measurement = False
+            raw_data_dict['hard_sweep_points'] = np.unique(mc_points[0])
             if mc_points.shape[0] > 1:
                 hsp = np.unique(mc_points[0])
-                ssp = np.unique(mc_points[1:])
+                ssp, counts = np.unique(mc_points[1:], return_counts=True)
+                if counts[0] != len(hsp):
+                    # ssro data
+                    hsp = np.tile(hsp, counts[0]//len(hsp))
                 # if needed, decompress the data (assumes hsp and ssp are indices)
                 if compression_factor != 1:
                     hsp = hsp[:int(len(hsp) / compression_factor)]
@@ -471,8 +486,6 @@ class BaseDataAnalysis(object):
                     ssp = np.arange(len(dim_2_sp))
                     raw_data_dict['hard_sweep_points'] = hsp
                     raw_data_dict['soft_sweep_points'] = ssp
-            else:
-                raw_data_dict['hard_sweep_points'] = np.unique(mc_points[0])
 
             data = measured_data[-len(value_names):]
             if data.shape[0] != len(value_names):
@@ -551,7 +564,7 @@ class BaseDataAnalysis(object):
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
                 self.get_param_value('compression_factor', 1),
-                self.get_param_value('sweep_points'),
+                SweepPoints.cast_init(self.get_param_value('sweep_points')),
                 cp, self.get_param_value('preparation_params',
                                          default_value=dict()))
         else:
@@ -698,7 +711,7 @@ class BaseDataAnalysis(object):
         # initialize everything to an empty dict if not overwritten
         self.fit_dicts = OrderedDict()
 
-    def run_fitting(self):
+    def run_fitting(self, keys_to_fit='all'):
         '''
         This function does the fitting and saving of the parameters
         based on the fit_dict options.
@@ -707,7 +720,11 @@ class BaseDataAnalysis(object):
         '''
         if self.fit_res is None:
             self.fit_res = {}
+        if keys_to_fit == 'all':
+            keys_to_fit = list(self.fit_dicts)
         for key, fit_dict in self.fit_dicts.items():
+            if key not in keys_to_fit:
+                continue
             guess_dict = fit_dict.get('guess_dict', None)
             guess_pars = fit_dict.get('guess_pars', None)
             guessfn_pars = fit_dict.get('guessfn_pars', {})
@@ -1685,6 +1702,7 @@ class BaseDataAnalysis(object):
             axs.cbar.set_ticklabels(plot_ctick_labels)
         if not plot_nolabel and plot_clabel is not None:
             axs.cbar.set_label(plot_clabel)
+
 
         if self.tight_fig:
             axs.figure.tight_layout()

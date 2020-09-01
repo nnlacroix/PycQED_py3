@@ -10,7 +10,8 @@ from collections import OrderedDict
 from more_itertools import unique_everseen
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
+from pycqed.measurement import sweep_points as sp_mod
 
 
 def get_hdf_param_value(group, param_name):
@@ -79,7 +80,10 @@ def get_param_from_metadata_group(timestamp=None, param_name=None,
         if param_name in group:
             group = group[param_name]
             param_value = OrderedDict()
-            param_value = read_dict_from_hdf5(param_value, group)
+            if isinstance(group, h5py._hl.dataset.Dataset):
+                param_value = list(np.array(group).flatten())
+            else:
+                param_value = read_dict_from_hdf5(param_value, group)
         elif param_name in group.attrs:
             param_value = get_hdf_param_value(group, param_name)
         else:
@@ -137,7 +141,7 @@ def open_data_file_from_timestamp(timestamp, mode='r+'):
 
 
 def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
-                             append_key=False, update_key=False,
+                             append_value=False, update_value=False,
                              replace_value=False, folder=None, **params):
     """
     Extracts the parameter provided in params_dict from an HDF file
@@ -164,10 +168,6 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
     if numeric_params is None:
         numeric_params = get_param('numeric_params', data_dict,
                                    default_value=[], **params)
-    append_value = get_param('append_value', data_dict, default_value=True,
-                             **params)
-    update_value = get_param('update_value', data_dict, default_value=False,
-                             **params)
     if append_value is True and update_value is True:
         raise ValueError('"append_value" and "update_value" '
                          'cannot both be True.')
@@ -184,22 +184,24 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
     data_file = h5py.File(h5filepath, h5mode)
 
     try:
-        if 'measurementstrings' in params_dict:
-            # assumed data_dict['measurementstrings'] is a list
-            if 'measurementstrings' in data_dict:
-                data_dict['measurementstrings'] += [os.path.split(folder)[1][7:]]
-            else:
-                data_dict['measurementstrings'] = [os.path.split(folder)[1][7:]]
-
-
         for save_par, file_par in params_dict.items():
             epd = data_dict
             all_keys = save_par.split('.')
             for i in range(len(all_keys)-1):
                 if all_keys[i] not in epd:
                     epd[all_keys[i]] = OrderedDict()
-                else:
-                    epd = epd[all_keys[i]]
+                epd = epd[all_keys[i]]
+
+            if isinstance(epd, list):
+                epd = epd[-1]
+
+            if file_par == 'measurementstring':
+                add_param(all_keys[-1],
+                          [os.path.split(folder)[1][7:]],
+                          epd, append_value=True,
+                          update_value=False,
+                          replace_value=False)
+                continue
 
             if len(file_par.split('.')) == 1:
                 par_name = file_par.split('.')[0]
@@ -208,8 +210,8 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                         add_param(all_keys[-1],
                                   get_hdf_param_value(data_file[group_name],
                                                       par_name),
-                                  epd, append_key=append_key,
-                                  update_key=update_key,
+                                  epd, append_value=append_value,
+                                  update_value=update_value,
                                   replace_value=replace_value)
             else:
                 group_name = '/'.join(file_par.split('.')[:-1])
@@ -219,15 +221,15 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                         add_param(all_keys[-1],
                                   get_hdf_param_value(data_file[group_name],
                                                       par_name),
-                                  epd, append_key=append_key,
-                                  update_key=update_key,
+                                  epd, append_value=append_value,
+                                  update_value=update_value,
                                   replace_value=replace_value)
                     elif par_name in list(data_file[group_name].keys()):
                         add_param(all_keys[-1],
                                   read_dict_from_hdf5(
                                       {}, data_file[group_name][par_name]),
-                                  epd, append_key=append_key,
-                                  update_key=update_key,
+                                  epd, append_value=append_value,
+                                  update_value=update_value,
                                   replace_value=replace_value)
 
             if all_keys[-1] not in epd:
@@ -273,11 +275,11 @@ def get_data_to_process(data_dict, keys_in):
         all_keys = keyi.split('.')
         if len(all_keys) == 1:
             try:
-                if isinstance(data_dict[all_keys[0]], dict):
-                    data_to_proc_dict = {f'{keyi}.{k}': deepcopy(v) for k, v
-                                         in data_dict[all_keys[0]].items()}
-                else:
-                    data_to_proc_dict[keyi] = data_dict[all_keys[0]]
+                # if isinstance(data_dict[all_keys[0]], dict):
+                #     data_to_proc_dict = {f'{keyi}.{k}': deepcopy(v) for k, v
+                #                          in data_dict[all_keys[0]].items()}
+                # else:
+                data_to_proc_dict[keyi] = data_dict[all_keys[0]]
             except KeyError:
                 key_found = False
         else:
@@ -310,8 +312,14 @@ def get_param(param, data_dict, default_value=None,
     :return: the value of the parameter
     """
     p = params
-    md = data_dict.get('exp_metadata', dict())
     dd = data_dict
+    md = data_dict.get('exp_metadata', dict())
+    if isinstance(md, list):
+        # this should only happen when extracting metadata from a list of
+        # timestamps. Hence, this extraction should be done separate from
+        # from other parameter extractions, and one should call
+        # combine_metadata_list in pipeline_analysis.py afterwards.
+        md = md[0]
     value = p.get(param,
                   dd.get(param,
                          md.get(param, 'not found')))
@@ -360,8 +368,14 @@ def pop_param(param, data_dict, default_value=None,
         node_params = OrderedDict()
 
     p = node_params
-    md = data_dict.get('exp_metadata', dict())
     dd = data_dict
+    md = data_dict.get('exp_metadata', dict())
+    if isinstance(md, list):
+        # this should only happen when extracting metadata from a list of
+        # timestamps. Hence, this extraction should be done separate from
+        # from other parameter extractions, and one should call
+        # combine_metadata_list in pipeline_analysis.py afterwards.
+        md = md[0]
     value = p.pop(param,
                   dd.pop(param,
                          md.pop(param, 'not found')))
@@ -448,7 +462,7 @@ def add_param(name, value, data_dict, update_value=False, append_value=False,
             dd[all_keys[-1]] = value
         else:
             raise KeyError(f'{all_keys[-1]} already exists in data_dict and it'
-                           f' is unclear how to add it to the data_dict.')
+                           f' is unclear how to add it.')
     else:
         dd[all_keys[-1]] = value
 
@@ -482,52 +496,52 @@ def get_measurement_properties(data_dict, props_to_extract='all',
         props_to_extract = ['cp', 'sp', 'mospm', 'movnm', 'rev_movnm', 'mobjn']
 
     props_to_return = []
-    if 'cp' in props_to_extract:
-        cp = get_param('cal_points', data_dict, raise_error=raise_error,
-                       **params)
-        if isinstance(cp, str):
-            cp = CalibrationPoints.from_string(cp)
-        props_to_return += [cp]
-
-    if 'sp' in props_to_extract:
-        sp = get_param('sweep_points', data_dict, raise_error=raise_error,
-                       **params)
-        if isinstance(sp, str):
-            sp = eval(sp)
-        props_to_return += [sp]
-
-    if 'mospm' in props_to_extract:
-        meas_obj_sweep_points_map = get_param(
-            'meas_obj_sweep_points_map', data_dict, raise_error=raise_error,
-            **params)
-        props_to_return += [meas_obj_sweep_points_map]
-
-    if 'movnm' in props_to_extract:
-        meas_obj_value_names_map = get_param(
-            'meas_obj_value_names_map', data_dict, raise_error=raise_error,
-            **params)
-        props_to_return += [meas_obj_value_names_map]
-
-    if 'rev_movnm' in props_to_extract:
-        meas_obj_value_names_map = get_param(
-            'meas_obj_value_names_map', data_dict, raise_error=raise_error,
-            **params)
-        rev_movnm = OrderedDict()
-        for mobjn, value_names in meas_obj_value_names_map.items():
-            rev_movnm.update({vn: mobjn for vn in value_names})
-        props_to_return += [rev_movnm]
-
-    if 'mobjn' in props_to_extract:
-        mobjn = get_param('meas_obj_names', data_dict,
-                          raise_error=raise_error, **params)
-        if params.get('enforce_one_meas_obj', True):
-            if isinstance(mobjn, list):
-                if len(mobjn) > 1:
-                    raise ValueError(f'This node expects one measurement '
-                                     f'object, {len(mobjn)} were given.')
-                else:
-                    mobjn = mobjn[0]
-        props_to_return += [mobjn]
+    for prop in props_to_extract:
+        if 'cp' == prop:
+            cp = get_param('cal_points', data_dict, raise_error=raise_error,
+                           **params)
+            if isinstance(cp, str):
+                cp = CalibrationPoints.from_string(cp)
+            props_to_return += [cp]
+        elif 'sp' == prop:
+            sp = get_param('sweep_points', data_dict, raise_error=raise_error,
+                           **params)
+            props_to_return += [sp_mod.SweepPoints.cast_init(sp)]
+        elif 'mospm' == prop:
+            meas_obj_sweep_points_map = get_param(
+                'meas_obj_sweep_points_map', data_dict, raise_error=raise_error,
+                **params)
+            props_to_return += [meas_obj_sweep_points_map]
+        elif 'movnm' == prop:
+            meas_obj_value_names_map = get_param(
+                'meas_obj_value_names_map', data_dict, raise_error=raise_error,
+                **params)
+            props_to_return += [meas_obj_value_names_map]
+        elif 'rev_movnm' == prop:
+            meas_obj_value_names_map = get_param(
+                'meas_obj_value_names_map', data_dict, raise_error=raise_error,
+                **params)
+            rev_movnm = OrderedDict()
+            for mobjn, value_names in meas_obj_value_names_map.items():
+                rev_movnm.update({vn: mobjn for vn in value_names})
+            props_to_return += [rev_movnm]
+        elif 'mobjn' == prop:
+            mobjn = get_param('meas_obj_names', data_dict,
+                              raise_error=raise_error, **params)
+            if params.get('enforce_one_meas_obj', True):
+                if isinstance(mobjn, list):
+                    if len(mobjn) > 1:
+                        raise ValueError(f'This node expects one measurement '
+                                         f'object, {len(mobjn)} were given.')
+                    else:
+                        mobjn = mobjn[0]
+            else:
+                if isinstance(mobjn, str):
+                    mobjn = [mobjn]
+            props_to_return += [mobjn]
+        else:
+            raise KeyError(f'Extracting {prop} is not implemented in this '
+                           f'function. Please use get_params_from_hdf_file.')
 
     if len(props_to_return) == 1:
         props_to_return = props_to_return[0]
@@ -648,11 +662,49 @@ def get_reset_reps_from_data_dict(data_dict):
     return reset_reps
 
 
-def get_observables(data_dict, keys_out, preselection_shift=-1,
-                    use_preselection=False, **params):
-
-    assert len(keys_out) == 1
-
+def get_observables(data_dict, keys_out=None, preselection_shift=-1,
+                    do_preselection=False, **params):
+    """
+    Creates the observables dictionary from meas_obj_names, preselection_shift,
+        and do_preselection.
+    :param data_dict: OrderedDict containing data to be processed and where
+        processed data is to be stored
+    :param keys_out: list with one entry specifying the key name or dictionary
+        key path in data_dict for the processed data to be saved into
+    :param preselection_shift: integer specifying which readout prior to the
+        current readout to be considered for preselection
+    :param do_preselection: bool specifying whether to do preselection on
+        the data.
+    :param params: keyword arguments
+        Expects to find either in data_dict or in params:
+            - meas_obj_names: list of measurement object names
+    :return: a dictionary with
+        name of the qubit as key and boolean value indicating if it is
+        selecting exited states. If the qubit is missing from the list
+        of states it is averaged out. Instead of just the qubit name, a
+        tuple of qubit name and a shift value can be passed, where the
+        shift value specifies the relative readout index for which the
+        state is checked.
+        Example qb2-qb4 state tomo with preselection:
+            {'pre': {('qb2', -1): False,
+                    ('qb4', -1): False}, # preselection conditions
+             '$\\| gg\\rangle$': {'qb2': False,
+                                  'qb4': False,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False},
+             '$\\| ge\\rangle$': {'qb2': False,
+                                  'qb4': True,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False},
+             '$\\| eg\\rangle$': {'qb2': True,
+                                  'qb4': False,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False},
+             '$\\| ee\\rangle$': {'qb2': True,
+                                  'qb4': True,
+                                  ('qb2', -1): False,
+                                  ('qb4', -1): False}}
+    """
     mobj_names = get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
         **params)
@@ -665,7 +717,7 @@ def get_observables(data_dict, keys_out, preselection_shift=-1,
     observables = OrderedDict()
 
     # add preselection condition also as an observable
-    if use_preselection:
+    if do_preselection:
         observables["pre"] = preselection_condition
     # add all combinations
     for i, states in enumerate(combination_list):
@@ -673,10 +725,15 @@ def get_observables(data_dict, keys_out, preselection_shift=-1,
         obs_name = '$\| ' + name + '\\rangle$'
         observables[obs_name] = dict(zip(mobj_names, states))
         # add preselection condition
-        if use_preselection:
+        if do_preselection:
             observables[obs_name].update(preselection_condition)
 
-    add_param(keys_out[0], observables, data_dict)
+    if keys_out is None:
+        keys_out = ['observables']
+    if len(keys_out) != 1:
+        raise ValueError(f'keys_out must have length one. {len(keys_out)} '
+                         f'entries were given.')
+    add_param(keys_out[0], observables, data_dict, **params)
 
 
 ### functions that do NOT have the ana_v3 format for input parameters ###
@@ -696,47 +753,6 @@ def observable_product(*observables):
             else:
                 res_obs[k] = obs[k]
     return res_obs
-
-
-def convert_channel_names_to_index(cal_points, nr_segments, value_names):
-    """
-    Converts the calibration points list from the format
-    cal_points = [{'ch1': [-4, -3], 'ch2': [-4, -3]},
-                  {0: [-2, -1], 1: [-2, -1]}]
-    to the format (for a 100-segment dataset)
-    cal_points_list = [[[96, 97], [96, 97]],
-                       [[98, 99], [98, 99]]]
-
-    Args:
-        cal_points: the list of calibration points to convert
-        nr_segments: number of segments in the dataset to convert negative
-                     indices to positive indices.
-        value_names: a list of channel names that is used to determine the
-                     index of the channels
-    Returns:
-        cal_points_list in the converted format
-    """
-
-    cal_points_list = []
-    for observable in cal_points:
-        if isinstance(observable, (list, np.ndarray)):
-            observable_list = [[]] * len(value_names)
-            for i, idxs in enumerate(observable):
-                observable_list[i] = \
-                    [idx % nr_segments for idx in idxs]
-            cal_points_list.append(observable_list)
-        else:
-            observable_list = [[]] * len(value_names)
-            for channel, idxs in observable.items():
-                if isinstance(channel, int):
-                    observable_list[channel] = \
-                        [idx % nr_segments for idx in idxs]
-                else:  # assume str
-                    ch_idx = value_names.index(channel)
-                    observable_list[ch_idx] = \
-                        [idx % nr_segments for idx in idxs]
-            cal_points_list.append(observable_list)
-    return cal_points_list
 
 
 def get_cal_state_color(cal_state_label):
@@ -767,12 +783,12 @@ def flatten_list(lst_of_lsts):
     :param lst_of_lsts: a list of lists
     :return: flattened list
     """
-    if all([isinstance(e, list) for e in lst_of_lsts]):
+    if all([isinstance(e, (list, tuple)) for e in lst_of_lsts]):
         return [e for l1 in lst_of_lsts for e in l1]
-    elif any([isinstance(e, list) for e in lst_of_lsts]):
+    elif any([isinstance(e, (list, tuple)) for e in lst_of_lsts]):
         l = []
         for e in lst_of_lsts:
-            if isinstance(e, list):
+            if isinstance(e, (list, tuple)):
                 l.extend(e)
             else:
                 l.append(e)
@@ -815,3 +831,45 @@ def get_sublst_with_all_strings_of_list(lst_to_search, lst_to_match):
     # unique_everseen takes unique elements while also keeping the original
     # order of the elements
     return list(unique_everseen(lst_w_matches))
+
+
+def check_equal(value1, value2):
+    """
+    Check if value1 is the same as value2.
+    :param value1: dict, list, tuple, str, np.ndarray; dict, list, tuple can
+        contain further dict, list, tuple
+    :param value2: dict, list, tuple, str, np.ndarray; dict, list, tuple can
+        contain further dict, list, tuple
+    :return: True if value1 is the same as value2, else False
+    """
+    assert type(value1) == type(value2)
+
+    if not hasattr(value1, '__iter__'):
+        return value1 == value2
+    else:
+        if isinstance(value1, dict):
+            if len(value1) != len(value2):
+                return False
+            for k, v in value1.items():
+                if k not in value2:
+                    return False
+                else:
+                    if not check_equal(v, value2[k]):
+                        return False
+            # if it reached this point, then all key-vals are the same
+            return True
+        if isinstance(value1, (list, tuple)):
+            if len(value1) != len(value2):
+                return False
+            for v1, v2 in zip(value1, value2):
+                if not check_equal(v1, v2):
+                    return False
+            return True
+        else:
+            try:
+                if value1.shape != value2.shape:
+                    return False
+            except AttributeError:
+                if len(value1) != len(value2):
+                    return False
+            return np.all(value1 == value2)

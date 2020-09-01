@@ -612,6 +612,8 @@ class ZI_base_instrument(Instrument):
         # Create other neat parameters
         self._add_extra_parameters()
 
+        self._awg_source_strings = {}
+
         # Structure for storing errors
         self._errors = None
         # Structure for storing errors that should be demoted to warnings
@@ -1252,12 +1254,18 @@ class ZI_base_instrument(Instrument):
         # Check that awg_nr is set in accordance with devtype
         self._check_awg_nr(awg_nr)
 
+        self._awg_source_strings[awg_nr] = program_string
+
+
         t0 = time.time()
         success_and_ready = False
+        if not hasattr(self, 'compiler_statusstring'):
+            self.compiler_statusstring = ''
 
         # This check (and while loop) is added as a workaround for #9
         while not success_and_ready:
-            print('Configuring AWG {}...'.format(awg_nr))
+            self.compiler_statusstring += ('\nConfiguring AWG {}...\n'.format(
+                awg_nr))
 
             self._awgModule.set('awgModule/index', awg_nr)
             self._awgModule.set('awgModule/compiler/sourcestring', program_string)
@@ -1305,7 +1313,8 @@ class ZI_base_instrument(Instrument):
                  hash_val)
 
         t1 = time.time()
-        print(self._awgModule.get('awgModule/compiler/statusstring')
+        self.compiler_statusstring += (self._awgModule.get(
+            'awgModule/compiler/statusstring')
               ['compiler']['statusstring'][0] + ' in {:.2f}s'.format(t1-t0))
 
         # Check status
