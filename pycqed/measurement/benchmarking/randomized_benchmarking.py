@@ -74,15 +74,13 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
                          label='Seeds', dimension=0,
                          values_func=lambda ns: np.random.randint(0, 1e8, ns))]
             kw['cal_states'] = kw.get('cal_states', '')
-            if not hasattr(self, 'experiment_name'):
-                self.experiment_name = f'RB_{gate_decomposition}' if \
-                    interleaved_gate is not None else \
-                    f'SingleQubitIRB_{gate_decomposition}'
+
             super().__init__(task_list, qubits=qubits,
                              sweep_points=sweep_points,
                              nr_seeds=nr_seeds,
                              cliffords=cliffords, **kw)
-
+            self.experiment_name = f'RB_{gate_decomposition}' if \
+                interleaved_gate is None else f'IRB_{gate_decomposition}'
             self.identical_pulses = nr_seeds is not None
             self.gate_decomposition = gate_decomposition
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -155,11 +153,11 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
             task_list = [{'qb': qb.name} for qb in qubits]
 
         gate_decomposition = kw.get('gate_decomposition', 'HZ')
+        super().__init__(task_list, sweep_points=sweep_points,
+                         qubits=qubits, **kw)
         self.experiment_name = f'SingleQubitRB_{gate_decomposition}' if \
             kw.get('interleaved_gate', None) is None else \
             f'SingleQubitIRB_{gate_decomposition}'
-        super().__init__(task_list, sweep_points=sweep_points,
-                         qubits=qubits, **kw)
 
     def rb_block(self, sp1d_idx, sp2d_idx, **kw):
         interleaved_gate = kw.get('interleaved_gate', None)
@@ -227,8 +225,6 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
             Clifford that is sampled. Set to 24**2 to only sample the tensor
             product of 2 single qubit Clifford groups.
         """
-        self.experiment_name = 'TwoQubitRB' if \
-            kw.get('interleaved_gate', None) is None else 'TwoQubitIRB'
         self.max_clifford_idx = max_clifford_idx
         tqc.gate_decomposition = rb.get_clifford_decomposition(
             kw.get('gate_decomposition', 'HZ'))
@@ -240,7 +236,8 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
             if 'prefix' not in task:
                 task['prefix'] = f"{task['qb_1']}{task['qb_2']}_"
         kw['for_ef'] = kw.get('for_ef', True)
-
+        self.experiment_name = 'TwoQubitRB' if \
+            kw.get('interleaved_gate', None) is None else 'TwoQubitIRB'
         super().__init__(task_list, sweep_points=sweep_points, **kw)
 
     def guess_label(self, **kw):
