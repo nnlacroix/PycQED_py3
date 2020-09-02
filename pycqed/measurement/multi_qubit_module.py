@@ -4020,8 +4020,8 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
                          'data_type': data_type,  # singleshot or averaged
-                         # know whether or not ssro should be classified
-                         'classify': not 'classif' in det_type,
+
+                         'classified_ro': 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})
@@ -4145,8 +4145,8 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
                          'data_type': data_type,  # singleshot or averaged
-                         # know whether or not ssro should be classified
-                         'classify': not 'classif' in det_type,
+
+                         'classified_ro': 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})
@@ -4273,8 +4273,8 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
                          'data_type': data_type,  # singleshot or averaged
-                         # know whether or not ssro should be classified
-                         'classify': not 'classif' in det_type,
+
+                         'classified_ro': 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})
@@ -4392,8 +4392,7 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
                          'data_type': data_type,  # singleshot or averaged
-                         # know whether or not ssro should be classified
-                         'classify': not 'classif' in det_type,
+                         'classified_ro': 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})
@@ -4514,8 +4513,8 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
                          'data_type': data_type,  # singleshot or averaged
-                         # know whether or not ssro should be classified
-                         'classify': not 'classif' in det_type,
+
+                         'classified_ro': 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})

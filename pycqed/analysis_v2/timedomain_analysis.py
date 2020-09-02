@@ -389,7 +389,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         if self.get_param_value("data_type", "averaged") == "singleshot":
             self.process_single_shots(
-                classify=self.get_param_value("classify", True),
+                classify=not self.get_param_value("classified_ro", False),
                 classifier_params=self.get_param_value("classifier_params"),
                 states_map=self.get_param_value("states_map"))
             # ensure rotation is removed when single shots yield probabilities
