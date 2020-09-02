@@ -157,9 +157,17 @@ class QuantumExperiment(CircuitBuilder):
             self.df_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
         self.df = None
 
+        # determine data type
+        if "log" in self.df_name or not \
+                self.df_kwargs.get('averaged', True):
+            data_type = "singleshot"
+        else:
+            data_type = "averaged"
+
         self.exp_metadata.update(kw)
         self.exp_metadata.update({'classified_ro': self.classified,
-                                  'cz_pulse_name': self.cz_pulse_name})
+                                  'cz_pulse_name': self.cz_pulse_name,
+                                  'data_type': data_type})
 
     def create_meas_objs_list(self, meas_objs=None, **kwargs):
         """
