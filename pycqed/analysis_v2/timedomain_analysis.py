@@ -388,13 +388,18 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                               default_value=False)
 
         if self.get_param_value("data_type", "averaged") == "singleshot":
+            predict_proba = self.get_param_value("predict_proba", False)
+            if predict_proba and self.get_param_value("classified_ro", False):
+                log.warning("predict_proba set to 'False' as probabilities are"
+                            "already obtained from classified readout")
+                predict_proba = False
             self.process_single_shots(
-                classify=not self.get_param_value("classified_ro", False),
+                predict_proba=predict_proba,
                 classifier_params=self.get_param_value("classifier_params"),
                 states_map=self.get_param_value("states_map"))
             # ensure rotation is removed when single shots yield probabilities
-            rotate = False if self.get_param_value("classify", True) \
-                else rotate
+            if self.get_param_value("classified_ro", False) or predict_proba:
+                rotate = False
         try:
             self.cp = CalibrationPoints.from_string(cal_points)
             # for now assuming the same for all qubits.
@@ -891,7 +896,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         return shots_per_qb
 
-    def process_single_shots(self, classify=True, classifier_params=None,
+    def process_single_shots(self, predict_proba=True,
+                             classifier_params=None,
                              states_map=None):
         """
         Processes single shots from proc_data_dict("meas_results_per_qb")
@@ -900,14 +906,16 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         average the shots/probabilities.
 
         Args:
-            classify (bool): whether or not to assign probabilities to shots.
+            predict_proba (bool): whether or not to assign probabilities to shots.
                 If True, it assumes that shots in the proc_data_dict are the
                 raw voltages on n channels. If False, it assumes either that
                 shots were acquired with the classifier detector (i.e. shots
                 are the probabilities of being in each state of the classifier)
-                or that they are raw voltages. Note that if shots are raw
-                voltages and preselection is activated, then classify MUST
-                be set to true (otherwise, there is no way of doing preselection)
+                or that they are raw voltages. Note that when preselection
+                the function checks for "classified_ro" and if it is false,
+                 (i.e. the input are raw voltages and not probas) then it uses
+                  the classifier on the preselection readouts regardless of the
+                  "predict_proba" flag (preselection requires classif of ground state).
             classifier_params (dict): dict where keys are qb_names and values
                 are dictionaries of classifier parameters passed to
                 a_tools.predict_proba_from_clf(). Defaults to
@@ -984,8 +992,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         # process single shots per qubit
         for qbn, shots in shots_per_qb.items():
-
-            if classify:
+            if predict_proba:
                 # shots become probabilities with shape (n_shots, n_states)
                 try:
                     shots = a_tools.predict_gm_proba_from_clf(
@@ -1002,13 +1009,14 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 self.proc_data_dict['meas_results_per_qb_probs'][qbn] = shots
 
             if preselection:
-                # use classifier calibrated to classify preselection readouts
-                if classify:
+                if self.get_param_value('classified_ro', False):
+                    # shots were obtained with classifier detector and
+                    # are already probas
+                    presel_proba = presel_shots_per_qb[qbn]
+                else:
+                    # use classifier calibrated to classify preselection readouts
                     presel_proba = a_tools.predict_gm_proba_from_clf(
                         presel_shots_per_qb[qbn], classifier_params[qbn])
-                else:
-                    # assumes shots were obtained with classifier detector
-                    presel_proba = presel_shots_per_qb[qbn]
                 presel_classified = np.argmax(presel_proba, axis=1)
                 # create boolean array of shots to keep.
                 # each time ro is the ground state --> true otherwise false
@@ -1023,6 +1031,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 # keep all shots
                 presel_filter = np.ones(len(shots), dtype=bool)
 
+            # TODO: Nathan: if predict_proba is activated then we should
+            #  first classify, then do a count table and thereby estimate
+            #  average proba
             averaged_shots = [] # either raw voltage shots or probas
             for ro in range(n_readouts*n_seqs):
                 shots_single_ro = shots[ro::n_readouts*n_seqs]
@@ -1036,7 +1047,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             # or (n_prob or n_ch or 1, n_readouts, n_ssp) if 2d
             averaged_shots = np.array(averaged_shots).T
 
-            if classify:
+            if predict_proba:
                 # value names are different from what was previously in
                 # meas_results_per_qb and therefore "artificial" values
                 # are made based on states
