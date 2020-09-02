@@ -856,7 +856,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             data filtering)
 
         Returns: shots_per_qb: dict where keys are qb_names and
-            values are arrays of shape (n_shots, n_value_names)
+            values are arrays of shape (n_shots, n_value_names) for
+            1D measurements and (n_shots*n_soft_sp, n_value_names) for
+            2D measurements
 
         """
         # prepare data in convenient format, i.e. arrays per qubit
@@ -866,14 +868,26 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if raw:
             key += "_raw"
         for qbn in self.qb_names:
-            # shape is (n_shots, n_ro_ch) i.e. one column for each ro_ch
-            shots_per_qb[qbn] = \
-                np.asarray(list(
-                    pdd[key][qbn].values())).T
-            # make 2D array in case only one channel (1D array)
-            if len(shots_per_qb[qbn].shape) == 1:
-                shots_per_qb[qbn] = np.expand_dims(shots_per_qb[qbn],
-                                                   axis=-1)
+                # if "1D measurement" , shape is (n_shots, n_vn) i.e. one
+                # column for each value_name (often equal to n_ro_ch)
+                shots_per_qb[qbn] = \
+                    np.asarray(list(
+                        pdd[key][qbn].values())).T
+                # if "2D measurement" reshape from (n_soft_sp, n_shots, n_vn)
+                #  to ( n_shots * n_soft_sp, n_ro_ch)
+                if np.ndim(shots_per_qb[qbn]) == 3:
+                    assert self.get_param_value("TwoD", False) == True, \
+                        "'TwoD' is False but single shot data seems to be 2D"
+                    n_vn = shots_per_qb[qbn].shape[-1]
+                    n_vn = shots_per_qb[qbn].shape[-1]
+                    # put softsweep as inner most loop for easier processing
+                    shots_per_qb[qbn] = np.swapaxes(shots_per_qb[qbn], 0, 1)
+                    # reshape to 2D array
+                    shots_per_qb[qbn] = shots_per_qb[qbn].reshape((-1, n_vn))
+                # make 2D array in case only one channel (1D array)
+                elif np.ndim(shots_per_qb[qbn]) == 1:
+                    shots_per_qb[qbn] = np.expand_dims(shots_per_qb[qbn],
+                                                       axis=-1)
 
         return shots_per_qb
 
@@ -927,12 +941,37 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         # and the user wants to use the preselection readouts
         preselection = prep_params_presel and use_preselection
 
-        # get shots
+        # returns for each qb: (n_shots, n_ch) or (n_soft_sp* n_shots, n_ch)
+        # where n_soft_sp is the inner most loop i.e. the first dim is ordered as
+        # (shot0_ssp0, shot0_ssp1, ... , shot1_ssp0, shot1_ssp1, ...)
         shots_per_qb = self._get_single_shots_per_qb()
+
+
+        # determine number of shots
+        n_shots = self.get_param_value("n_shots")
+        if n_shots is None:
+            n_shots_from_hdf = [
+                int(self.get_hdf_param_value(f"Instrument settings/{qbn}",
+                                             "acq_shots")) for qbn in self.qb_names]
+            if len(np.unique(n_shots_from_hdf)) > 1:
+                log.warning("Number of shots extracted from hdf are not all the same:"
+                            "assuming n_shots=max(qb.acq_shots() for qb in qb_names)")
+            n_shots = np.max(n_shots_from_hdf)
+
+        # determine number of readouts per sequence
+        if self.get_param_value("TwoD", False):
+            n_seqs = self.sp.length(1)  # corresponds to number of soft sweep points
+        else:
+            n_seqs = 1
+        # does not count preselection readout
+        n_readouts = list(shots_per_qb.values())[0].shape[0] // (n_shots * n_seqs)
+
         if preselection:
             # get preselection readouts
+            preselection_ro_mask = np.tile([True]*n_seqs + [False]*n_seqs,
+                                           n_shots*n_readouts )
             presel_shots_per_qb = \
-                {qbn: presel_shots[::2] for qbn, presel_shots in
+                {qbn: presel_shots[preselection_ro_mask] for qbn, presel_shots in
                  self._get_single_shots_per_qb(raw=True).items()}
 
         # get classification parameters
@@ -945,12 +984,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         # process single shots per qubit
         for qbn, shots in shots_per_qb.items():
-            # guess default value for number of shots
-            n_shots_from_hdf = \
-                int(self.get_hdf_param_value(f"Instrument settings/{qbn}",
-                                             "acq_shots"))
-            n_shots = self.get_param_value("n_shots", n_shots_from_hdf)
-            n_readouts = shots.shape[0] // n_shots
 
             if classify:
                 # shots become probabilities with shape (n_shots, n_states)
@@ -991,11 +1024,16 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 presel_filter = np.ones(len(shots), dtype=bool)
 
             averaged_shots = [] # either raw voltage shots or probas
-            for ro in range(n_readouts):
-                shots_single_ro = shots[ro::n_readouts]
-                presel_filter_single_ro = presel_filter[ro::n_readouts]
+            for ro in range(n_readouts*n_seqs):
+                shots_single_ro = shots[ro::n_readouts*n_seqs]
+                presel_filter_single_ro = presel_filter[ro::n_readouts*n_seqs]
                 averaged_shots.append(
                     np.mean(shots_single_ro[presel_filter_single_ro], axis=0))
+            if self.get_param_value("TwoD", False):
+                averaged_shots = np.reshape(averaged_shots, (n_readouts, n_seqs, -1))
+                averaged_shots = np.swapaxes(averaged_shots, 0, 1) # return to original 2D shape
+            # reshape to (n_prob or n_ch or 1, n_readouts) if 1d
+            # or (n_prob or n_ch or 1, n_readouts, n_ssp) if 2d
             averaged_shots = np.array(averaged_shots).T
 
             if classify:
