@@ -225,6 +225,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             if self.qb_names is None:
                 raise ValueError('Provide the "qb_names."')
 
+        self.data_filter = self.get_param_value('data_filter')
+        self.prep_params = self.get_param_value('preparation_params',
+                                           default_value=dict())
         self.channel_map = self.get_param_value('meas_obj_value_names_map')
         if self.channel_map is None:
             # if the new name meas_obj_value_names_map is not found, try with
@@ -361,16 +364,15 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     def process_data(self):
         super().process_data()
-        self.data_filter = self.get_param_value('data_filter')
-        prep_params = self.get_param_value('preparation_params',
-                                           default_value=dict())
+
         self.data_with_reset = False
         if self.data_filter is None:
-            if 'active' in prep_params.get('preparation_type', 'wait'):
-                reset_reps = prep_params.get('reset_reps', 1)
+            if 'active' in self.prep_params.get('preparation_type', 'wait'):
+                reset_reps = self.prep_params.get('reset_reps', 1)
                 self.data_filter = lambda x: x[reset_reps::reset_reps+1]
                 self.data_with_reset = True
-            elif "preselection" in prep_params.get('preparation_type', 'wait'):
+            elif "preselection" in self.prep_params.get('preparation_type',
+                                                        'wait'):
                 self.data_filter = lambda x: x[1::2]  # filter preselection RO
         if self.data_filter is None:
             self.data_filter = lambda x: x
@@ -384,11 +386,25 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         cal_points = self.get_param_value('cal_points')
         last_ge_pulses = self.get_param_value('last_ge_pulses',
                                               default_value=False)
+
+        if self.get_param_value("data_type", "averaged") == "singleshot":
+            predict_proba = self.get_param_value("predict_proba", False)
+            if predict_proba and self.get_param_value("classified_ro", False):
+                log.warning("predict_proba set to 'False' as probabilities are"
+                            "already obtained from classified readout")
+                predict_proba = False
+            self.process_single_shots(
+                predict_proba=predict_proba,
+                classifier_params=self.get_param_value("classifier_params"),
+                states_map=self.get_param_value("states_map"))
+            # ensure rotation is removed when single shots yield probabilities
+            if self.get_param_value("classified_ro", False) or predict_proba:
+                rotate = False
         try:
             self.cp = CalibrationPoints.from_string(cal_points)
             # for now assuming the same for all qubits.
             self.cal_states_dict = self.cp.get_indices(
-                self.qb_names, prep_params)[self.qb_names[0]]
+                self.qb_names)[self.qb_names[0]]
             if rotate:
                 cal_states_rots = self.cp.get_rotations(last_ge_pulses,
                         self.qb_names[0])[self.qb_names[0]] if rotate else None
@@ -423,6 +439,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             # this assumes data obtained with classifier detector!
             # ie pg, pe, pf are expected to be in the value_names
             self.proc_data_dict['projected_data_dict'] = OrderedDict()
+            print(self.proc_data_dict[
+                      'meas_results_per_qb'])
             for qbn, data_dict in self.proc_data_dict[
                     'meas_results_per_qb'].items():
                 self.proc_data_dict['projected_data_dict'][qbn] = OrderedDict()
@@ -437,18 +455,20 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
             # correct probabilities given calibration matrix
             if self.get_param_value("correction_matrix") is not None:
-                self.proc_data_dict['projected_data_dict_corrected'] = OrderedDict()
+                self.proc_data_dict['projected_data_dict_corrected'] = \
+                    OrderedDict()
                 for qbn, data_dict in self.proc_data_dict[
                     'meas_results_per_qb'].items():
-                    self.proc_data_dict['projected_data_dict'][qbn] = OrderedDict()
-                    probas_raw = np.asarray([data_dict[k] for k in data_dict
-                                             for state_prob in ['pg', 'pe', 'pf'] if
-                                             state_prob in k])
+                    self.proc_data_dict['projected_data_dict'][qbn] = \
+                        OrderedDict()
+                    probas_raw = np.asarray([
+                        data_dict[k] for k in data_dict for state_prob in
+                        ['pg', 'pe', 'pf'] if state_prob in k])
                     corr_mtx = self.get_param_value("correction_matrix")[qbn]
                     probas_corrected = np.linalg.inv(corr_mtx).T @ probas_raw
                     for state_prob in ['pg', 'pe', 'pf']:
-                        self.proc_data_dict['projected_data_dict_corrected'][qbn].update(
-                            {state_prob: data for key, data in
+                        self.proc_data_dict['projected_data_dict_corrected'][
+                            qbn].update({state_prob: data for key, data in
                              zip(["pg", "pe", "pf"], probas_corrected)})
 
         # get data_to_fit
@@ -831,6 +851,214 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             return r'$|{}\rangle$'.format(prob_label[-1])
         else:
             return r'$|{}\rangle$'.format(prob_label)
+
+    def _get_single_shots_per_qb(self, raw=False):
+        """
+        Gets single shots from the proc_data_dict and arranges
+        them as arrays per qubit
+        Args:
+            raw (bool): whether or not to return  raw shots (before
+            data filtering)
+
+        Returns: shots_per_qb: dict where keys are qb_names and
+            values are arrays of shape (n_shots, n_value_names) for
+            1D measurements and (n_shots*n_soft_sp, n_value_names) for
+            2D measurements
+
+        """
+        # prepare data in convenient format, i.e. arrays per qubit
+        shots_per_qb = dict()        # store shots per qb and per state
+        pdd = self.proc_data_dict    # for convenience of notation
+        key = 'meas_results_per_qb'
+        if raw:
+            key += "_raw"
+        for qbn in self.qb_names:
+                # if "1D measurement" , shape is (n_shots, n_vn) i.e. one
+                # column for each value_name (often equal to n_ro_ch)
+                shots_per_qb[qbn] = \
+                    np.asarray(list(
+                        pdd[key][qbn].values())).T
+                # if "2D measurement" reshape from (n_soft_sp, n_shots, n_vn)
+                #  to ( n_shots * n_soft_sp, n_ro_ch)
+                if np.ndim(shots_per_qb[qbn]) == 3:
+                    assert self.get_param_value("TwoD", False) == True, \
+                        "'TwoD' is False but single shot data seems to be 2D"
+                    n_vn = shots_per_qb[qbn].shape[-1]
+                    n_vn = shots_per_qb[qbn].shape[-1]
+                    # put softsweep as inner most loop for easier processing
+                    shots_per_qb[qbn] = np.swapaxes(shots_per_qb[qbn], 0, 1)
+                    # reshape to 2D array
+                    shots_per_qb[qbn] = shots_per_qb[qbn].reshape((-1, n_vn))
+                # make 2D array in case only one channel (1D array)
+                elif np.ndim(shots_per_qb[qbn]) == 1:
+                    shots_per_qb[qbn] = np.expand_dims(shots_per_qb[qbn],
+                                                       axis=-1)
+
+        return shots_per_qb
+
+    def process_single_shots(self, predict_proba=True,
+                             classifier_params=None,
+                             states_map=None):
+        """
+        Processes single shots from proc_data_dict("meas_results_per_qb")
+        This includes assigning probabilities to each shot (optional),
+        preselect shots on the ground state if there is a preselection readout,
+        average the shots/probabilities.
+
+        Args:
+            predict_proba (bool): whether or not to assign probabilities to shots.
+                If True, it assumes that shots in the proc_data_dict are the
+                raw voltages on n channels. If False, it assumes either that
+                shots were acquired with the classifier detector (i.e. shots
+                are the probabilities of being in each state of the classifier)
+                or that they are raw voltages. Note that when preselection
+                the function checks for "classified_ro" and if it is false,
+                 (i.e. the input are raw voltages and not probas) then it uses
+                  the classifier on the preselection readouts regardless of the
+                  "predict_proba" flag (preselection requires classif of ground state).
+            classifier_params (dict): dict where keys are qb_names and values
+                are dictionaries of classifier parameters passed to
+                a_tools.predict_proba_from_clf(). Defaults to
+                qb.acq_classifier_params(). Note: it
+            states_map (dict):
+                list of states corresponding to the different integers output
+                by the classifier. Defaults to  {0: "g", 1: "e", 2: "f", 3: "h"}
+
+        Other parameters taken from self.get_param_value:
+            use_preselection (bool): whether or not preselection should be used
+                before averaging. If true, then checks if there is a preselection
+                readout in prep_params and if so, performs preselection on the
+                ground state
+            n_shots (int): number of shots per readout. Used to infer the number
+                of readouts. Defaults to qb.acq_shots. WATCH OUT, sometimes
+                for mutli-qubit detector uses max(qb.acq_shots() for qb in qbs),
+                such that acq_shots found in the hdf5 file might be different than
+                the actual number of shots used for the experiment.
+                it is therefore safer to pass the number of shots in the metadata.
+        Returns:
+
+        """
+        if states_map is None:
+            states_map = {0: "g", 1: "e", 2: "f", 3: "h"}
+
+        # get preselection information
+        prep_params_presel = self.prep_params.get('preparation_type', "wait") \
+                             == "preselection"
+        use_preselection = self.get_param_value("use_preselection", True)
+        # activate preselection flag only if preselection is in prep_params
+        # and the user wants to use the preselection readouts
+        preselection = prep_params_presel and use_preselection
+
+        # returns for each qb: (n_shots, n_ch) or (n_soft_sp* n_shots, n_ch)
+        # where n_soft_sp is the inner most loop i.e. the first dim is ordered as
+        # (shot0_ssp0, shot0_ssp1, ... , shot1_ssp0, shot1_ssp1, ...)
+        shots_per_qb = self._get_single_shots_per_qb()
+
+
+        # determine number of shots
+        n_shots = self.get_param_value("n_shots")
+        if n_shots is None:
+            n_shots_from_hdf = [
+                int(self.get_hdf_param_value(f"Instrument settings/{qbn}",
+                                             "acq_shots")) for qbn in self.qb_names]
+            if len(np.unique(n_shots_from_hdf)) > 1:
+                log.warning("Number of shots extracted from hdf are not all the same:"
+                            "assuming n_shots=max(qb.acq_shots() for qb in qb_names)")
+            n_shots = np.max(n_shots_from_hdf)
+
+        # determine number of readouts per sequence
+        if self.get_param_value("TwoD", False):
+            n_seqs = self.sp.length(1)  # corresponds to number of soft sweep points
+        else:
+            n_seqs = 1
+        # does not count preselection readout
+        n_readouts = list(shots_per_qb.values())[0].shape[0] // (n_shots * n_seqs)
+
+        if preselection:
+            # get preselection readouts
+            preselection_ro_mask = np.tile([True]*n_seqs + [False]*n_seqs,
+                                           n_shots*n_readouts )
+            presel_shots_per_qb = \
+                {qbn: presel_shots[preselection_ro_mask] for qbn, presel_shots in
+                 self._get_single_shots_per_qb(raw=True).items()}
+
+        # get classification parameters
+        if classifier_params is None:
+            classifier_params = {}
+            from numpy import array  # for eval
+            for qbn in self.qb_names:
+                classifier_params[qbn] =  eval(self.get_hdf_param_value(
+                f'Instrument settings/{qbn}', "acq_classifier_params"))
+
+        # process single shots per qubit
+        for qbn, shots in shots_per_qb.items():
+            if predict_proba:
+                # shots become probabilities with shape (n_shots, n_states)
+                try:
+                    shots = a_tools.predict_gm_proba_from_clf(
+                        shots, classifier_params[qbn])
+                except ValueError as e:
+                    log.error(f'If the following error relates to number'
+                              ' of features, probably wrong classifer parameters'
+                              ' were passed (e.g. a classifier trained with'
+                              ' a different number of channels than in the'
+                              f' current measurement): {e}')
+                    raise e
+                if not 'meas_results_per_qb_probs' in self.proc_data_dict:
+                    self.proc_data_dict['meas_results_per_qb_probs'] = {}
+                self.proc_data_dict['meas_results_per_qb_probs'][qbn] = shots
+
+            if preselection:
+                if self.get_param_value('classified_ro', False):
+                    # shots were obtained with classifier detector and
+                    # are already probas
+                    presel_proba = presel_shots_per_qb[qbn]
+                else:
+                    # use classifier calibrated to classify preselection readouts
+                    presel_proba = a_tools.predict_gm_proba_from_clf(
+                        presel_shots_per_qb[qbn], classifier_params[qbn])
+                presel_classified = np.argmax(presel_proba, axis=1)
+                # create boolean array of shots to keep.
+                # each time ro is the ground state --> true otherwise false
+                g_state_int = [k for k, v in states_map.items() if v == "g"][0]
+                presel_filter = presel_classified == g_state_int
+
+                if np.sum(presel_filter) == 0:
+                    # FIXME: Nathan should probably not be error but just continue
+                    #  without preselection ?
+                    raise ValueError(f"{qbn}: No data left after preselection!")
+            else:
+                # keep all shots
+                presel_filter = np.ones(len(shots), dtype=bool)
+
+            # TODO: Nathan: if predict_proba is activated then we should
+            #  first classify, then do a count table and thereby estimate
+            #  average proba
+            averaged_shots = [] # either raw voltage shots or probas
+            for ro in range(n_readouts*n_seqs):
+                shots_single_ro = shots[ro::n_readouts*n_seqs]
+                presel_filter_single_ro = presel_filter[ro::n_readouts*n_seqs]
+                averaged_shots.append(
+                    np.mean(shots_single_ro[presel_filter_single_ro], axis=0))
+            if self.get_param_value("TwoD", False):
+                averaged_shots = np.reshape(averaged_shots, (n_readouts, n_seqs, -1))
+                averaged_shots = np.swapaxes(averaged_shots, 0, 1) # return to original 2D shape
+            # reshape to (n_prob or n_ch or 1, n_readouts) if 1d
+            # or (n_prob or n_ch or 1, n_readouts, n_ssp) if 2d
+            averaged_shots = np.array(averaged_shots).T
+
+            if predict_proba:
+                # value names are different from what was previously in
+                # meas_results_per_qb and therefore "artificial" values
+                # are made based on states
+                self.proc_data_dict['meas_results_per_qb'][qbn] = \
+                    {"p" + states_map[i]: p for i, p in enumerate(averaged_shots)}
+            else:
+                # reuse value names that were already there if did not classify
+                for i, k in enumerate(
+                        self.proc_data_dict['meas_results_per_qb'][qbn]):
+                    self.proc_data_dict['meas_results_per_qb'][qbn][k] = \
+                        averaged_shots[i]
 
     def prepare_plots(self):
         if self.get_param_value('plot_proj_data', default_value=True):
