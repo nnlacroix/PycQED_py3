@@ -1089,28 +1089,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     self.proc_data_dict['meas_results_per_qb_probs'] = {}
                 self.proc_data_dict['meas_results_per_qb_probs'][qbn] = shots
 
-            if preselection:
-                if self.get_param_value('classified_ro', False):
-                    # shots were obtained with classifier detector and
-                    # are already probas
-                    presel_proba = presel_shots_per_qb[qbn]
-                else:
-                    # use classifier calibrated to classify preselection readouts
-                    presel_proba = a_tools.predict_gm_proba_from_clf(
-                        presel_shots_per_qb[qbn], classifier_params[qbn])
-                presel_classified = np.argmax(presel_proba, axis=1)
-                # create boolean array of shots to keep.
-                # each time ro is the ground state --> true otherwise false
-                g_state_int = [k for k, v in states_map.items() if v == "g"][0]
-                presel_filter = presel_classified == g_state_int
-
-                if np.sum(presel_filter) == 0:
-                    # FIXME: Nathan should probably not be error but just continue
-                    #  without preselection ?
-                    raise ValueError(f"{qbn}: No data left after preselection!")
-            else:
-                # keep all shots
-                presel_filter = np.ones(len(shots), dtype=bool)
 
             # TODO: Nathan: if predict_proba is activated then we should
             #  first classify, then do a count table and thereby estimate
@@ -6061,6 +6039,20 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 'legend_ncol': legend_ncol,
                 'legend_bbox_to_anchor': legend_bbox_to_anchor,
                 'legend_pos': legend_pos}
+            if self.proc_data_dict.get('percent_data_after_presel',
+                                       False):
+                textstr = "Preselection {} = \n {}".format(qbn,
+                    self.proc_data_dict.get('percent_data_after_presel')[qbn])
+                self.plot_dicts['text_msg_{}_{}_{}'.format(
+                row, qbn, prob_label)] = {
+                    'fig_id': figure_name,
+                    'ypos': -0.2,
+                    'xpos': -0.1,
+                    'horizontalalignment': 'left',
+                    'verticalalignment': 'top',
+                    'box_props': None,
+                    'plotfn': self.plot_text,
+                    'text_string': textstr}
 
             if self.do_fitting and 'projected' not in figure_name:
                 k = 'fit_{}{}_{}_'.format(
@@ -6270,7 +6262,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                           f'{self.phase_key}_{qbn}'][
                                           'stderr'][0] * 180 / np.pi) + \
                                   r'$^{\circ}$'
-                        textstr += '\n\nContrast loss = \n' + \
+                        textstr += '\nContrast loss = \n' + \
                                    '{:.3f} $\\pm$ {:.3f}'.format(
                                        self.proc_data_dict[
                                            'analysis_params_dict'][
@@ -6279,6 +6271,10 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                            'analysis_params_dict'][
                                            f'population_loss_{qbn}'][
                                            'stderr'][0])
+                        if self.proc_data_dict.get('percent_data_after_presel',
+                                                   False):
+                            textstr += "\nPreselection = \n {}".format(
+                                self.proc_data_dict.get('percent_data_after_presel'))
                         self.plot_dicts['text_msg_' + qbn] = {
                             'fig_id': '{}_{}_pe'.format(self.phase_key, qbn),
                             'ypos': -0.2,
