@@ -1001,6 +1001,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 such that acq_shots found in the hdf5 file might be different than
                 the actual number of shots used for the experiment.
                 it is therefore safer to pass the number of shots in the metadata.
+            TwoD (bool): Whether data comes from a 2D sweep, i.e. several concatenated
+                sequences. Used for proper reshaping when using preselection
         Returns:
 
         """
