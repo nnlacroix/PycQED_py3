@@ -834,6 +834,10 @@ class DynamicPhase(CalibBuilder):
         try:
             self.simultaneous = kw.get('simultaneous', False)
             self.simultaneous_groups = kw.get('simultaneous_groups', None)
+            if self.simultaneous_groups is not None:
+                kw['simultaneous_groups'] = [
+                    [qb if isinstance(qb, str) else qb.name for qb in group]
+                    for group in self.simultaneous_groups]
             self.reset_phases_before_measurement = kw.get(
                 'reset_phases_before_measurement', True)
 
@@ -981,8 +985,12 @@ class DynamicPhase(CalibBuilder):
             p['ref_point_new'] = 'end'
 
         # calling op_replace_cz() allows to have a custom cz_pulse_name in kw
+        if len(op_code.split(' ')) == 3:
+            proc_op_code = self.get_cz_operation_name(op_code=op_code, **kw)
+        else:  # not a 2-qubit gate
+            proc_op_code = op_code
         fp = self.block_from_ops(
-            'flux', self.get_cz_operation_name(op_code=op_code, **kw))
+            'flux', proc_op_code)
         fp.pulses[0]['pulse_off'] = ParametricValue('flux_pulse_off')
         # FIXME: currently, this assumes that only flux pulse parameters are
         #  swept in the soft sweep. In fact, channels_to_upload should be
@@ -1015,28 +1023,35 @@ class DynamicPhase(CalibBuilder):
         return task['qubits_to_measure']
 
     def run_analysis(self, **kw):
-        extract_only = kw.pop('extract_only', False)
+        qb_names = [l1 for l2 in [task['qubits_to_measure'] for task in
+                                  self.task_list] for l1 in l2]
+        self.dynamic_phase_analysis = tda.DynamicPhaseAnalysis(qb_names=qb_names)
+
+        # extract_only = kw.pop('extract_only', False)
         for task in self.task_list:
-            op = self.get_cz_operation_name(**task)
-            op_split = op.split(' ')
-            self.dynamic_phase_analysis[task['prefix']] = \
-                tda.DynamicPhaseAnalysis(
-                    qb_names=task['qubits_to_measure'],
-                    options_dict={
-                        'flux_pulse_length': self.dev.get_pulse_par(
-                            *op_split, param='pulse_length')(),
-                        'flux_pulse_amp': self.dev.get_pulse_par(
-                            *op_split, param='amplitude')(),
-                        # FIXME in analysis: in case of a soft sweep, analysis
-                        #  has to overwrite length and amp with values from the
-                        #  sweep_points
-                        'save_figs': ~extract_only}, extract_only=extract_only)
+            if len(task['op_code'].split(' ')) == 3:
+                op = self.get_cz_operation_name(**task)
+            else:  # not a 2-qubit gate
+                op = task['op_code']
+            # op_split = op.split(' ')
+            # self.dynamic_phase_analysis[task['prefix']] = \
+            #     tda.DynamicPhaseAnalysis(
+            #         qb_names=task['qubits_to_measure'],
+            #         options_dict={
+            #             'flux_pulse_length': self.dev.get_pulse_par(
+            #                 *op_split, param='pulse_length')(),
+            #             'flux_pulse_amp': self.dev.get_pulse_par(
+            #                 *op_split, param='amplitude')(),
+            #             # FIXME in analysis: in case of a soft sweep, analysis
+            #             #  has to overwrite length and amp with values from the
+            #             #  sweep_points
+            #             'save_figs': ~extract_only}, extract_only=extract_only)
             self.dyn_phases[op] = {}
             for qb_name in task['qubits_to_measure']:
                 self.dyn_phases[op][qb_name] = \
-                    self.dynamic_phase_analysis[task['prefix']].proc_data_dict[
+                    (self.dynamic_phase_analysis.proc_data_dict[
                         'analysis_params_dict'][f"dynamic_phase_{qb_name}"][
-                        'val'] * 180 / np.pi
+                        'val'] * 180 / np.pi)[0]
 
         return self.dyn_phases, self.dynamic_phase_analysis
 
