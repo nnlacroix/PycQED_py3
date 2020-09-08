@@ -929,7 +929,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             yunit = self.sp.get_sweep_params_property(
                                 'unit', dimension=1, param_names=pn)
                             ylabel = self.sp.get_sweep_params_property(
-                                'label', dimension=2, param_names=pn)
+                                'label', dimension=1, param_names=pn)
                         self.plot_dicts[f'{plot_name}_{ro_channel}_{pn}'] = {
                             'fig_id': plot_name + '_' + pn,
                             'ax_id': ax_id,
@@ -1046,7 +1046,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     yunit = self.sp.get_sweep_params_property(
                         'unit', dimension=1, param_names=pn)
                     ylabel = self.sp.get_sweep_params_property(
-                        'label', dimension=2, param_names=pn)
+                        'label', dimension=1, param_names=pn)
                 self.plot_dicts[f'{plot_dict_name}_{pn}'] = {
                     'plotfn': self.plot_colorxy,
                     'fig_id': fig_name + '_' + pn,
