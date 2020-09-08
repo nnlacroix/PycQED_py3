@@ -25,6 +25,7 @@ from pycqed.analysis.three_state_rotation import predict_proba_avg_ro
 import logging
 
 from pycqed.utilities import math
+from pycqed.utilities.general import find_symmetry_index
 
 log = logging.getLogger(__name__)
 try:
@@ -7280,6 +7281,109 @@ class FluxPulseTimingAnalysis(MultiQubit_TimeDomain_Analysis):
                     'verticalalignment': 'top',
                     'plotfn': self.plot_text,
                     'text_string': textstr}
+
+
+class FluxPulseTimingBetweenQubitsAnalysis(MultiQubit_TimeDomain_Analysis):
+
+    def __init__(self, qb_names, *args, **kwargs):
+        params_dict = {}
+        for qbn in qb_names:
+            s = 'Instrument settings.' + qbn
+        kwargs['params_dict'] = params_dict
+        kwargs['numeric_params'] = list(params_dict)
+        # super().__init__(qb_names, *args, **kwargs)
+
+        options_dict = kwargs.pop('options_dict', {})
+        options_dict['TwoD'] = True
+        kwargs['options_dict'] = options_dict
+        super().__init__(qb_names, *args, **kwargs)
+
+    #         self.analyze_results()
+
+    def process_data(self):
+        super().process_data()
+
+        # Make sure data has the right shape (len(hard_sp), len(soft_sp))
+        for qbn, data in self.proc_data_dict['data_to_fit'].items():
+            if data.shape[1] != self.proc_data_dict['sweep_points_dict'][qbn][
+                'sweep_points'].size:
+                self.proc_data_dict['data_to_fit'][qbn] = data.T
+
+        self.proc_data_dict['analysis_params_dict'] = OrderedDict()
+        for qbn in self.qb_names:
+            data = self.proc_data_dict['data_to_fit'][qbn][0]
+            sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
+                'msmt_sweep_points']
+            if self.num_cal_points != 0:
+                data = data[:-self.num_cal_points]
+            symmetry_idx, corr_data = find_symmetry_index(data)
+            delay = sweep_points[symmetry_idx]
+            self.proc_data_dict['analysis_params_dict'][qbn] = OrderedDict()
+            self.proc_data_dict['analysis_params_dict'][qbn]['delay'] = delay
+            self.proc_data_dict['analysis_params_dict'][qbn][
+                'delay_stderr'] = np.diff(sweep_points).mean()
+            self.proc_data_dict['analysis_params_dict'][qbn][
+                'corr_data'] = np.array(corr_data)
+        self.save_processed_data(key='analysis_params_dict')
+
+    def prepare_plots(self):
+        self.options_dict.update({'TwoD': False,
+                                  'plot_proj_data': False})
+        super().prepare_plots()
+        rdd = self.raw_data_dict
+        for qbn in self.qb_names:
+            # rename base plot
+            base_plot_name = 'Pulse_timing_' + qbn
+            self.prepare_projected_data_plot(
+                fig_name=base_plot_name,
+                data=self.proc_data_dict['data_to_fit'][qbn][0],
+                plot_name_suffix=qbn + 'fit',
+                qb_name=qbn)
+
+            corr_data = self.proc_data_dict['analysis_params_dict'][qbn][
+                'corr_data']
+            delays = self.proc_data_dict['sweep_points_dict'][qbn][
+                         'msmt_sweep_points'] / 1e-9
+            self.plot_dicts['Autocorrelation_' + qbn] = {
+                'title': rdd['measurementstring'] +
+                         '\n' + rdd['timestamp'] + '\n' + qbn,
+                'fig_name': f'Autocorrelation_{qbn}',
+                'fig_id': f'Autocorrelation_{qbn}',
+                'plotfn': self.plot_line,
+                'xvals': delays,
+                'yvals': corr_data,
+                'xlabel': r'Delay time',
+                'xunit': 'ns',
+                'ylabel': 'Autocorrelation function',
+                'linestyle': '-',
+                'color': 'k',
+                #                                     'setlabel': legendlabel,
+                'do_legend': False,
+                'legend_bbox_to_anchor': (1, 1),
+                'legend_pos': 'upper left',
+            }
+
+            self.plot_dicts['corr_vline_' + qbn] = {
+                'fig_id': f'Autocorrelation_{qbn}',
+                'plotfn': self.plot_vlines,
+                'x': self.proc_data_dict['analysis_params_dict'][qbn][
+                         'delay'] / 1e-9,
+                'ymin': corr_data.min(),
+                'ymax': corr_data.max(),
+                'colors': 'gray'}
+
+            apd = self.proc_data_dict['analysis_params_dict']
+            textstr = 'delay = {:.2f} ns'.format(apd[qbn]['delay'] * 1e9) \
+                      + ' $\pm$ {:.2f} ns'.format(apd[qbn]['delay_stderr']
+                                                  * 1e9)
+            self.plot_dicts['text_msg_' + qbn] = {
+                'fig_id': f'Autocorrelation_{qbn}',
+                'ypos': -0.2,
+                'xpos': 0,
+                'horizontalalignment': 'left',
+                'verticalalignment': 'top',
+                'plotfn': self.plot_text,
+                'text_string': textstr}
 
 class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
 

@@ -752,3 +752,14 @@ def configure_qubit_feedback_params(qubits, for_ef=False):
             threshs = threshs.get('thresholds', None)
         if threshs is not None:
             UHF.set(f'qas_0_thresholds_{acq_ch}_level', threshs[0])
+
+
+def find_symmetry_index(data):
+    data = data.copy()
+    data -= data.mean()
+    corr = []
+    for iflip in range(len(data)):
+        span = min(iflip, len(data)-1-iflip)
+        data_filtered = data[iflip-span:iflip+span+1]
+        corr.append((data_filtered*data_filtered[::-1]).sum())
+    return np.argmax(corr), corr
