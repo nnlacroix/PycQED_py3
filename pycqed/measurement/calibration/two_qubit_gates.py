@@ -325,7 +325,10 @@ class CalibBuilder(MultiTaskingExperiment):
         return Block('prepend', prepend_pulses)
 
     @staticmethod
-    def add_default_ramsey_sweep_points(sweep_points, **kw):
+    def add_default_ramsey_sweep_points(sweep_points, tile=2,
+                                        repeat=0, **kw):
+        if tile > 0 and repeat > 0:
+            raise ValueError('"repeat" and "tile" cannot both be > 0.')
         sweep_points = SweepPoints(from_dict_list=sweep_points, min_length=2)
         if len(sweep_points[0]) > 0:
             nr_phases = sweep_points.length(0) // 2
@@ -333,10 +336,12 @@ class CalibBuilder(MultiTaskingExperiment):
             nr_phases = kw.get('nr_phases', 6)
         hard_sweep_dict = SweepPoints()
         if 'phase' not in sweep_points[0]:
-            hard_sweep_dict.add_sweep_parameter(
-                'phase',
-                np.tile(np.linspace(0, 2 * np.pi, nr_phases) * 180 / np.pi, 2),
-                'deg')
+            phases = np.linspace(0, 2 * np.pi, nr_phases) * 180 / np.pi
+            if tile > 0:
+                phases = np.tile(phases, tile)
+            elif repeat > 0:
+                phases = np.repeat(phases, repeat)
+            hard_sweep_dict.add_sweep_parameter('phase', phases, 'deg')
         sweep_points.update(hard_sweep_dict + [{}])
         return sweep_points
 
