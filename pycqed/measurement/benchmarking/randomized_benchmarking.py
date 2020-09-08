@@ -79,8 +79,9 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
                              sweep_points=sweep_points,
                              nr_seeds=nr_seeds,
                              cliffords=cliffords, **kw)
-            self.experiment_name = f'RB_{gate_decomposition}' if \
-                interleaved_gate is None else f'IRB_{gate_decomposition}'
+            if self.experiment_name is None:
+                self.experiment_name = f'RB_{gate_decomposition}' if \
+                    interleaved_gate is None else f'IRB_{gate_decomposition}'
             self.identical_pulses = nr_seeds is not None
             self.gate_decomposition = gate_decomposition
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -143,21 +144,23 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
 
 class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
 
-    def __init__(self, task_list=None, sweep_points=None, qubits=None, **kw):
+    def __init__(self, task_list, sweep_points=None, **kw):
         """
         See docstring for RandomizedBenchmarking.
         """
-        if task_list is None:
-            if qubits is None:
-                raise ValueError('Please provide either "qubits" or "task_list"')
-            task_list = [{'qb': qb.name} for qb in qubits]
+        self.experiment_name = f'SingleQubitRB' if \
+            kw.get('interleaved_gate', None) is None else f'SingleQubitIRB'
 
-        gate_decomposition = kw.get('gate_decomposition', 'HZ')
-        super().__init__(task_list, sweep_points=sweep_points,
-                         qubits=qubits, **kw)
-        self.experiment_name = f'SingleQubitRB_{gate_decomposition}' if \
-            kw.get('interleaved_gate', None) is None else \
-            f'SingleQubitIRB_{gate_decomposition}'
+        for task in task_list:
+            if 'qb' not in task:
+                raise ValueError('Please specify "qb" in each task in '
+                                 '"task_list."')
+            if not isinstance(task['qb'], str):
+                task['qb'] = task['qb'].name
+            if 'prefix' not in task:
+                task['prefix'] = f"{task['qb']}_"
+
+        super().__init__(task_list, sweep_points=sweep_points, **kw)
 
     def rb_block(self, sp1d_idx, sp2d_idx, **kw):
         interleaved_gate = kw.get('interleaved_gate', None)
