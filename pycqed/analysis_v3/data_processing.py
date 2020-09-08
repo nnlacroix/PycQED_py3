@@ -898,6 +898,9 @@ def calculate_meas_ops_and_covariations_cal_points(
          for state in ['g', 'e', 'f', 'h']])
     means = np.array([np.mean([prob_table[cal_idx][observable_idxs]], axis=0)
                       for cal_idx in cal_readouts])
+    # normalize the assignment matrix
+    for r in range(means.shape[0]):
+        means[r] /= means[r].sum()
     Fs = [np.diag(ms) for ms in means.T]
 
     # find the means for all the products of the operators and the average
