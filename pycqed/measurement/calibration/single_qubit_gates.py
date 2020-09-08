@@ -371,6 +371,112 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             options_dict=dict(TwoD=True, global_PCA=True,))
 
 
+class Cryoscope(CalibBuilder):
+    """
+        Delft Cryoscope measurement
+        (https://aip.scitation.org/doi/pdf/10.1063/1.5133894)
+        used to determine the shape of flux pulses set up as a 2D measurement
+        (truncation length and phase of second pi-half pulse are being swept)
+        Timings of sequence
+        |  --- |Y90| ------------------------------------------- |Y90| -  |RO|
+        |  ------- | ------ fluxpulse ------ | separation_buffer | -----
+                    <-  truncation_length  ->
+    """
+    def __init__(self, task_list, sweep_points=None, estimation_window=None,
+                 **kw):
+        try:
+            self.experiment_name = 'Flux_scope'
+            for task in task_list:
+                if not isinstance(task['qb'], str):
+                    task['qb'] = task['qb'].name
+                if not 'prefix' in task:
+                    task['prefix'] = f"{task['qb']}_"
+
+            super().__init__(task_list, sweep_points=sweep_points, **kw)
+            self.estimation_window = estimation_window
+            if self.estimation_window is None:
+                self.estimation_window = 1/2.4e9  # one HDAWG sample
+            self.analysis = {}
+
+            self.add_default_sweep_points(**kw)
+            self.preprocessed_task_list = self.preprocess_task_list(**kw)
+            self.sequences, self.mc_points = self.sweep_n_dim(
+                self.sweep_points, body_block=None,
+                body_block_func=self.sweep_block, cal_points=self.cal_points,
+                ro_qubits=self.meas_obj_names, **kw)
+            self.autorun(**kw)
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def add_default_sweep_points(self, **kw):
+        """
+        Adds hard sweep points to self.sweep_points: phases of second pi-half
+        pulse and the estimation_window increment to the truncation_length
+        :param kw: keyword_arguments
+        """
+        self.sweep_points = self.add_default_ramsey_sweep_points(
+            self.sweep_points, tile=0, repeat=2, **kw)
+        nr_phases = self.sweep_points.length(0) // 2
+        hard_sweep_dict = SweepPoints(
+            'truncation_length', [0, self.estimation_window] * nr_phases,
+            's', 'Pulse length')
+        self.sweep_points.update(hard_sweep_dict + [{}])
+
+    def sweep_block(self, sp1d_idx, sp2d_idx, separation_buffer=None, **kw):
+        """
+        Performs a Ramsey phase measurement with a truncated flux pulse between
+        the two pi-half pulses.
+        Timings of sequence
+        |  --- |Y90| ------------------------------------------- |Y90| -  |RO|
+        |  ------- | ------ fluxpulse ------ | separation_buffer | -----
+                    <-  truncation_length  ->
+
+        :param sp1d_idx: (int) index of sweep point to use from the
+            first sweep dimension
+        :param sp2d_idx: (int) index of sweep point to use from the
+            second sweep dimension
+        :param separation_buffer: (float) extra delay between the (truncated)
+            flux pulse and the last pi-half pulse
+        :param kw: keyword arguments
+        """
+        if separation_buffer is None:
+            separation_buffer = 100e-9
+
+        parallel_block_list = []
+        for i, task in enumerate(self.preprocessed_task_list):
+            sweep_points = task['sweep_points']
+            qb = task['qb']
+            cryo_blk = self.block_from_ops(
+                f'cryoscope {qb}', [f'Y90 {qb}', f'FP {qb}', f'Y90 {qb}'])
+            # set hard sweep phase and delay of second pi-half pulse
+            cryo_blk.pulses[2]['phase'] = \
+                sweep_points.get_sweep_params_property(
+                    'values', 0, 'phase')[sp1d_idx]
+            cryo_blk.pulses[2]['pulse_delay'] = separation_buffer
+            # set soft sweep truncation_length
+            cryo_blk.pulses[1]['truncation_length'] = \
+                sweep_points.get_sweep_params_property(
+                    'values', 1, 'truncation_length')[sp2d_idx]
+            # set hard sweep truncation_length
+            cryo_blk.pulses[1]['truncation_length'] = \
+                cryo_blk.pulses[1]['truncation_length'] + \
+                sweep_points.get_sweep_params_property(
+                    'values', 0, 'truncation_length')[sp1d_idx]
+            parallel_block_list += [cryo_blk]
+
+        return self.simultaneous_blocks(
+            f'sim_rb_{sp2d_idx}_{sp1d_idx}', parallel_block_list,
+            block_align='end')
+
+    def run_analysis(self, **kw):
+        """
+        Runs analysis and stores analysis instances in self.analysis.
+        :param kw:
+        """
+        pass
+
+
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
     """
         Flux pulse amplitude measurement used to determine the qubits energy in
