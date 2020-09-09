@@ -16,11 +16,11 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
 
     kw_for_sweep_points = {
         'nr_seeds': dict(param_name='seeds', unit='',
-                         label='Seeds', dimension=0,
+                         label='Seeds', dimension=1,
                          values_func=lambda ns: np.random.randint(0, 1e8, ns)),
         'cliffords': dict(param_name='cliffords', unit='',
                           label='Nr. Cliffords',
-                          dimension=1),
+                          dimension=0),
     }
 
     def __init__(self, task_list=None, sweep_points=None, qubits=None,
@@ -170,9 +170,9 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
         for i, task in enumerate(tl):
             param_name = 'seeds' if interleaved_gate is None else 'seeds_irb'
             seed = task['sweep_points'].get_sweep_params_property(
-                'values', 0, param_name)[sp1d_idx]
+                'values', 1, param_name)[sp2d_idx]
             clifford = task['sweep_points'].get_sweep_params_property(
-                'values', 1, 'cliffords')[sp2d_idx]
+                'values', 0, 'cliffords')[sp1d_idx]
             cl_seq = rb.randomized_benchmarking_sequence(
                 clifford, seed=seed, interleaved_gate=interleaved_gate)
             pulse_op_codes_list += [rb.decompose_clifford_seq(
