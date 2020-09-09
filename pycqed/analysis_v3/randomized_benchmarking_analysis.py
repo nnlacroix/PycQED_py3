@@ -27,7 +27,7 @@ def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
                                      plot_all_shots=False):
 
     """
-    Wrapper to create the standard processing pipeline for an interleaved RB/RIB
+    Wrapper to create the standard processing pipeline for an single qubit RB
         measurement, measured in SSRO.
     WARNING: if you use plot_all_shots=True, disable data saving. It will try
         to save a huge string of the large numpy array this node will generate.
@@ -65,11 +65,11 @@ def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
     n_sequences = sweep_points.length(1)
     processing_pipeline = pp_mod.ProcessingPipeline()
     if nreps > 1:
-        processing_pipeline.add_node('combine_datasets_interleaved_msmt',
+        processing_pipeline.add_node('combine_datafiles_by_clifford',
                                      keys_in='raw',
                                      n_shots=n_shots,
                                      meas_obj_names=meas_obj_names)
-    keys_in = 'previous combine_datasets_interleaved_msmt' if nreps > 1 \
+    keys_in = 'previous combine_datafiles_by_clifford' if nreps > 1 \
         else 'raw'
     processing_pipeline.add_node('threshold_data',
                                  keys_in=keys_in,
@@ -98,15 +98,15 @@ def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
         for mobjn in meas_obj_names:
             cliffords = sweep_points.get_sweep_params_property(
                 'values', 1, mospm[mobjn][-1])
-            if plot_all_shots and mobjn in meas_obj_names[:-1]:
-                keys_in = 'previous average_data' if nreps > 1 else 'raw'
+            if plot_all_shots:
                 pp.add_node('prepare_1d_raw_data_plot_dicts',
                             sp_name=mospm[mobjn][-1],
                             xvals=np.repeat(cliffords,
                                             n_segments_all*n_shots),
                             do_plotting=True,
                             figname_suffix=f'shots_{label}',
-                            keys_in=keys_in,
+                            title_suffix=' - All shots',
+                            keys_in='previous combine_datafiles_by_clifford',
                             keys_out=None,
                             meas_obj_names=mobjn)
             pp.add_node('prepare_1d_raw_data_plot_dicts',
@@ -114,8 +114,8 @@ def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
                         xvals=np.repeat(cliffords, n_segments_subexp),
                         do_plotting=True,
                         figname_suffix=f'{label}',
-                        ylabel='Probability, ' + ('$P(|ee\\rangle)$' if
-                                                  mobjn=='correlation_object' else '$P(|e\\rangle)$'),
+                        title_suffix=' - All seeds',
+                        ylabel='Probability, $P(|e\\rangle)$',
                         yunit='',
                         keys_in='previous average_data',
                         keys_out=None,
@@ -155,12 +155,13 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
     n_sequences = sweep_points.length(1)
     processing_pipeline = pp_mod.ProcessingPipeline()
     if nreps > 1:
-        processing_pipeline.add_node('combine_datasets_interleaved_msmt',
+        processing_pipeline.add_node('combine_datafiles_by_clifford',
                                      keys_in='raw',
+                                     interleaved_irb=True,
                                      meas_obj_names=meas_obj_names)
     for label in ['rb', 'irb']:
         pp = pp_mod.ProcessingPipeline(global_keys_out_container=label)
-        keys_in = 'previous combine_datasets_interleaved_msmt' if \
+        keys_in = 'previous combine_datafiles_by_clifford' if \
             nreps > 1 else 'raw'
         pp.add_node(f'{label}_data_from_interleaved_msmt',
                     keys_in=keys_in, meas_obj_names=meas_obj_names)
@@ -188,6 +189,7 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
                         xvals=np.repeat(cliffords, n_segments),
                         do_plotting=True,
                         figname_suffix=f'{label}',
+                        title_suffix=' - All seeds',
                         ylabel='Probability, $P(|ee\\rangle)$' if
                             mobjn=='correlation_object' else None,
                         yunit='',
@@ -248,11 +250,12 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
     n_sequences = sweep_points.length(1)
     processing_pipeline = pp_mod.ProcessingPipeline()
     if nreps > 1:
-        processing_pipeline.add_node('combine_datasets_interleaved_msmt',
+        processing_pipeline.add_node('combine_datafiles_by_clifford',
                                      keys_in='raw',
                                      n_shots=n_shots,
+                                     interleaved_irb=True,
                                      meas_obj_names=meas_obj_names)
-    keys_in = 'previous combine_datasets_interleaved_msmt' if nreps > 1 \
+    keys_in = 'previous combine_datafiles_by_clifford' if nreps > 1 \
         else 'raw'
     processing_pipeline.add_node('threshold_data',
                                  keys_in=keys_in,
@@ -299,7 +302,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
             cliffords = sweep_points.get_sweep_params_property(
                 'values', 1, mospm[mobjn][-1])
             if plot_all_shots and mobjn in meas_obj_names[:-1]:
-                keys_in = 'previous combine_datasets_interleaved_msmt' \
+                keys_in = 'previous combine_datafiles_by_clifford' \
                     if nreps > 1 else 'raw'
                 pp.add_node('prepare_1d_raw_data_plot_dicts',
                             sp_name=mospm[mobjn][-1],
@@ -307,6 +310,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
                                             n_segments_all*n_shots),
                             do_plotting=True,
                             figname_suffix=f'shots_{label}',
+                            title_suffix=' - All shots',
                             keys_in=keys_in,
                             keys_out=None,
                             meas_obj_names=mobjn)
@@ -315,6 +319,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
                         xvals=np.repeat(cliffords, n_segments_subexp),
                         do_plotting=True,
                         figname_suffix=f'{label}',
+                        title_suffix=' - All seeds',
                         ylabel='Probability, ' + ('$P(|ee\\rangle)$' if
                             mobjn=='correlation_object' else '$P(|e\\rangle)$'),
                         yunit='',
@@ -332,7 +337,8 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
 
 
 # nodes related to extracting data
-def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
+def combine_datafiles_by_clifford(data_dict, keys_in, keys_out,
+                                  interleaved_irb=False, **params):
     """
     Combines the data from an interleaved RB/IRB measurement that was saved in
     multiple files into one data set that would look as if it had all been
@@ -377,7 +383,8 @@ def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
         # concatenations in the list data_combined
         data_combined = [np.concatenate(
             [d[j*segment_chunk*n_shots:(j+1)*segment_chunk*n_shots]
-             for d in data]) for j in np.arange(2*nr_cliffords)]
+             for d in data]) for j in np.arange(
+            (interleaved_irb+1)*nr_cliffords)]
         # concatenate all the lists in data_combined to get one complete
         # array of data
         data_combined = np.concatenate(data_combined)
