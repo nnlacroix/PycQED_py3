@@ -73,12 +73,17 @@ def get_default_plot_params(set_params=True, figure_width='1col',
         'font.size': 8,
         'lines.markersize': 2.0,
         'figure.facecolor': '0.9',
-        'xtick.direction': 'out',
-        'ytick.direction': 'out',
         'figure.titlesize': 'medium',
         'axes.titlesize': 'medium',
-        'figure.dpi': 600,
-        'figure.figsize': (FIGURE_WIDTH, FIGURE_HEIGHT)}
+        'figure.dpi': 300,
+        'figure.figsize': (FIGURE_WIDTH, FIGURE_HEIGHT),
+        'axes.axisbelow': True,
+        'xtick.direction': 'in',
+        'xtick.labelsize': 'small',
+        'ytick.direction': 'in',
+        'ytick.labelsize': 'small',
+        'image.interpolation': 'none',
+    }
 
     if set_params:
         plt.rcParams.update(plt.rcParamsDefault)
