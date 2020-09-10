@@ -254,13 +254,15 @@ def data_from_time(timestamp, folder=None):
         raise NameError('Timestamp is not unique: %s ' % (measdirs))
 
 
-def measurement_filename(directory=os.getcwd(), file_id=None, ext='hdf5'):
+def measurement_filename(directory=os.getcwd(), file_id=None, ext='hdf5', **kw):
     dirname = os.path.split(directory)[1]
     if file_id is None:
         if dirname[6:9] == '_X_':
             fn = dirname[0:7]+dirname[9:]+'.'+ext
         else:
             fn = dirname+'.'+ext
+    else:
+        fn = dirname+file_id+'.'+ext
 
     if os.path.exists(os.path.join(directory, fn)):
         return os.path.join(directory, fn)
