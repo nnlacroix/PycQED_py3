@@ -73,12 +73,17 @@ def get_default_plot_params(set_params=True, figure_width='1col',
         'font.size': 8,
         'lines.markersize': 2.0,
         'figure.facecolor': '0.9',
-        'xtick.direction': 'out',
-        'ytick.direction': 'out',
         'figure.titlesize': 'medium',
         'axes.titlesize': 'medium',
-        'figure.dpi': 600,
-        'figure.figsize': (FIGURE_WIDTH, FIGURE_HEIGHT)}
+        'figure.dpi': 300,
+        'figure.figsize': (FIGURE_WIDTH, FIGURE_HEIGHT),
+        'axes.axisbelow': True,
+        'xtick.direction': 'in',
+        'xtick.labelsize': 'small',
+        'ytick.direction': 'in',
+        'ytick.labelsize': 'small',
+        'image.interpolation': 'none',
+    }
 
     if set_params:
         plt.rcParams.update(plt.rcParamsDefault)
@@ -690,9 +695,10 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         if isinstance(yunit, list):
             yunit = yunit[0]
 
+        title = default_figure_title(data_dict, mobjn) + hlp_mod.get_param(
+            'title_suffix', data_dict, default_value='', **params)
         plot_dict_name = figure_name + '_' + keyi + hlp_mod.get_param(
             'key_suffix', data_dict, default_value='', **params)
-
         plot_dicts[plot_dict_name] = {
             'plotfn': 'plot_line',
             'fig_id': figure_name,
@@ -707,7 +713,7 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             'ylabel': ylabel,
             'yunit': yunit,
             'setlabel': data_labels[i],
-            'title': default_figure_title(data_dict, mobjn),
+            'title': title,
             'linestyle': params.get('linestyle', '-'),
             'color': params.get('color', None),
             'do_legend': False,

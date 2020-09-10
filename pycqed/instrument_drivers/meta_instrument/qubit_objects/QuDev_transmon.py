@@ -3543,6 +3543,14 @@ class QuDev_transmon(Qubit):
         else:
             return
 
+    def measure_flux_pulse_timing(self, delays, analyze, label=None, **kw):
+        if label is None:
+            label = 'Flux_pulse_timing_{}'.format(self.name)
+        self.measure_flux_pulse_scope([self.ge_freq()], delays,
+                                      label=label, analyze=False, **kw)
+        if analyze:
+            tda.FluxPulseTimingAnalysis(qb_names=[self.name])
+
     def measure_flux_pulse_scope(self, freqs, delays, cz_pulse_name=None,
                                  analyze=True, cal_points=True,
                                  upload=True, label=None,

@@ -297,8 +297,11 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
                              f'{len(data_to_proc_dict[keyi])}.')
         data_to_avg = data_to_proc_dict[keyi] if shape is None else \
             np.reshape(data_to_proc_dict[keyi], shape)
+        avg_data = np.mean(data_to_avg, axis=averaging_axis)
+        if avg_data.ndim > 1:
+            avg_data = avg_data.flatten()
         hlp_mod.add_param(
-            keys_out[k], np.mean(data_to_avg, axis=averaging_axis),
+            keys_out[k], avg_data ,
             data_dict, update_value=params.get('update_value', False), **params)
     return data_dict
 
@@ -898,6 +901,9 @@ def calculate_meas_ops_and_covariations_cal_points(
          for state in ['g', 'e', 'f', 'h']])
     means = np.array([np.mean([prob_table[cal_idx][observable_idxs]], axis=0)
                       for cal_idx in cal_readouts])
+    # normalize the assignment matrix
+    for r in range(means.shape[0]):
+        means[r] /= means[r].sum()
     Fs = [np.diag(ms) for ms in means.T]
 
     # find the means for all the products of the operators and the average

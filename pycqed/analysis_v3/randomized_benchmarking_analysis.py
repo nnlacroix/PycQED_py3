@@ -20,6 +20,130 @@ pla.search_modules.add(sys.modules[__name__])
 
 # Create pipelines
 
+
+def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
+                                     n_shots, dim_hilbert, cal_points=None,
+                                     ro_thresholds=None, nreps=1,
+                                     plot_all_shots=False, slow_cliffords=False):
+
+    """
+    Wrapper to create the standard processing pipeline for an single qubit RB
+        measurement, measured in SSRO.
+    WARNING: if you use plot_all_shots=True, disable data saving. It will try
+        to save a huge string of the large numpy array this node will generate.
+    :param meas_obj_names: list of measured object names
+    :param mospm: meas_obj_sweep_points_map
+    :param sweep_points: SweepPoints object (of one file if the measurement
+        was split into several files)
+    :param n_shots: number of shots
+    :param dim_hilbert: dimension of Hilebert space. 4 for 2QB RB, 2 for 1QB RB
+    :param cal_points: CalibrationPoints object
+    :param ro_thresholds: optional (the threshold_data node can also extract
+        them from the data_dict. See docstring there).
+        Dict with meas_obj_names as keys and their readout thresholds as values.
+    :param nreps: int specifying the number of files to combine into one
+        measurement. IMPORTANT! This feature only works if the measurement was
+        split by seeds, not by cliffords. Meaning that each measurement file
+        contains data for all the Cliffords in sweep_points, but for a subset
+        of the total seeds.
+    :param plot_all_shots: bool specifying whether to produce a raw plot of
+        of all the shots vs cliffords. SEE WARNING ABOVE.
+    :return: the unresolved ProcessingPipeline
+    """
+
+    sweep_points = sp_mod.SweepPoints.cast_init(sweep_points)
+    seeds_dim = sweep_points.find_parameter(f'{meas_obj_names[0]}_seeds')
+    clf_dim = sweep_points.find_parameter(f'{meas_obj_names[0]}_cliffords')
+    if cal_points is None:
+        num_cal_states = 0
+    else:
+        if isinstance(cal_points, str):
+            cal_points = cp_mod.CalibrationPoints.from_string(cal_points)
+        num_cal_states = len(cal_points.states)
+    if slow_cliffords :
+        # n_segments = nr_seeds + nr_cal_segments
+        n_segments_subexp = nreps*(sweep_points.length(seeds_dim) + num_cal_states)
+        n_segments_all = n_segments_subexp
+        # n_sequences = nr_cliffords
+        n_sequences = sweep_points.length(clf_dim)
+    else:
+        # n_segments = nr_cliffords + nr_cal_segments
+        n_segments_subexp = nreps*(sweep_points.length(clf_dim) + num_cal_states)
+        n_segments_all = n_segments_subexp
+        # n_sequences = nr_seeds
+        n_sequences = sweep_points.length(seeds_dim)
+
+    processing_pipeline = pp_mod.ProcessingPipeline()
+    if nreps > 1:
+        processing_pipeline.add_node('combine_datafiles_by_clifford',
+                                     keys_in='raw',
+                                     n_shots=n_shots,
+                                     meas_obj_names=meas_obj_names)
+    keys_in = 'previous combine_datafiles_by_clifford' if nreps > 1 else 'raw'
+    processing_pipeline.add_node('threshold_data',
+                                 keys_in=keys_in,
+                                 ro_thresholds=ro_thresholds,
+                                 meas_obj_names=meas_obj_names)
+    processing_pipeline.add_node('average_data',
+                                 # shape=(n_shots, n_segments_all*n_sequences),
+                                 # averaging_axis=0,
+                                 shape=(n_sequences, n_shots, n_segments_all),
+                                 averaging_axis=1,
+                                 keys_in='previous threshold_data',
+                                 meas_obj_names=meas_obj_names)
+    for label in ['rb']:
+        pp = pp_mod.ProcessingPipeline(global_keys_out_container=label)
+        pp.add_node('average_data',
+                    shape=(n_sequences, n_segments_subexp),
+                    averaging_axis=-1 if slow_cliffords else 0,
+                    keys_in='previous average_data',
+                    meas_obj_names=meas_obj_names)
+        pp.add_node('get_std_deviation',
+                    shape=(n_sequences, n_segments_subexp) ,
+                    averaging_axis=-1 if slow_cliffords else 0,
+                    keys_in='previous average_data',
+                    meas_obj_names=meas_obj_names)
+        pp.add_node('rb_analysis',
+                    d=dim_hilbert,
+                    keys_in=f'previous {label}.average_data',
+                    keys_in_std=f'previous {label}.get_std_deviation',
+                    keys_out=None,
+                    meas_obj_names=meas_obj_names)
+        for mobjn in meas_obj_names:
+            cliffords = sweep_points.get_sweep_params_property(
+                'values', clf_dim, mospm[mobjn][clf_dim])
+            if plot_all_shots:
+                pp.add_node('prepare_1d_raw_data_plot_dicts',
+                            sp_name=mospm[mobjn][clf_dim],
+                            xvals=np.repeat(cliffords, n_segments_all*n_shots
+                                if slow_cliffords else n_sequences*n_shots),
+                            do_plotting=True,
+                            figname_suffix=f'shots_{label}',
+                            title_suffix=' - All shots',
+                            plot_params={'linestyle': 'none'},
+                            keys_in=keys_in,
+                            keys_out=None,
+                            meas_obj_names=mobjn)
+            if slow_cliffords:
+                xvals = np.repeat(cliffords, n_segments_subexp)
+            else:
+                xvals = np.tile(cliffords, n_sequences)
+            pp.add_node('prepare_1d_raw_data_plot_dicts',
+                        sp_name=mospm[mobjn][clf_dim],
+                        xvals=xvals,
+                        do_plotting=True,
+                        figname_suffix=f'{label}',
+                        title_suffix=' - All seeds',
+                        ylabel='Probability, $P(|e\\rangle)$',
+                        yunit='',
+                        plot_params={'linestyle': 'none'},
+                        keys_in='previous average_data',
+                        keys_out=None,
+                        meas_obj_names=mobjn)
+        processing_pipeline += pp
+    return processing_pipeline
+
+
 def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
                                         dim_hilbert, cal_points=None, nreps=1):
     """
@@ -51,12 +175,13 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
     n_sequences = sweep_points.length(1)
     processing_pipeline = pp_mod.ProcessingPipeline()
     if nreps > 1:
-        processing_pipeline.add_node('combine_datasets_interleaved_msmt',
+        processing_pipeline.add_node('combine_datafiles_by_clifford',
                                      keys_in='raw',
+                                     interleaved_irb=True,
                                      meas_obj_names=meas_obj_names)
     for label in ['rb', 'irb']:
         pp = pp_mod.ProcessingPipeline(global_keys_out_container=label)
-        keys_in = 'previous combine_datasets_interleaved_msmt' if \
+        keys_in = 'previous combine_datafiles_by_clifford' if \
             nreps > 1 else 'raw'
         pp.add_node(f'{label}_data_from_interleaved_msmt',
                     keys_in=keys_in, meas_obj_names=meas_obj_names)
@@ -84,6 +209,7 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
                         xvals=np.repeat(cliffords, n_segments),
                         do_plotting=True,
                         figname_suffix=f'{label}',
+                        title_suffix=' - All seeds',
                         ylabel='Probability, $P(|ee\\rangle)$' if
                             mobjn=='correlation_object' else None,
                         yunit='',
@@ -144,11 +270,12 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
     n_sequences = sweep_points.length(1)
     processing_pipeline = pp_mod.ProcessingPipeline()
     if nreps > 1:
-        processing_pipeline.add_node('combine_datasets_interleaved_msmt',
+        processing_pipeline.add_node('combine_datafiles_by_clifford',
                                      keys_in='raw',
                                      n_shots=n_shots,
+                                     interleaved_irb=True,
                                      meas_obj_names=meas_obj_names)
-    keys_in = 'previous combine_datasets_interleaved_msmt' if nreps > 1 \
+    keys_in = 'previous combine_datafiles_by_clifford' if nreps > 1 \
         else 'raw'
     processing_pipeline.add_node('threshold_data',
                                  keys_in=keys_in,
@@ -195,7 +322,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
             cliffords = sweep_points.get_sweep_params_property(
                 'values', 1, mospm[mobjn][-1])
             if plot_all_shots and mobjn in meas_obj_names[:-1]:
-                keys_in = 'previous combine_datasets_interleaved_msmt' \
+                keys_in = 'previous combine_datafiles_by_clifford' \
                     if nreps > 1 else 'raw'
                 pp.add_node('prepare_1d_raw_data_plot_dicts',
                             sp_name=mospm[mobjn][-1],
@@ -203,6 +330,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
                                             n_segments_all*n_shots),
                             do_plotting=True,
                             figname_suffix=f'shots_{label}',
+                            title_suffix=' - All shots',
                             keys_in=keys_in,
                             keys_out=None,
                             meas_obj_names=mobjn)
@@ -211,6 +339,7 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
                         xvals=np.repeat(cliffords, n_segments_subexp),
                         do_plotting=True,
                         figname_suffix=f'{label}',
+                        title_suffix=' - All seeds',
                         ylabel='Probability, ' + ('$P(|ee\\rangle)$' if
                             mobjn=='correlation_object' else '$P(|e\\rangle)$'),
                         yunit='',
@@ -228,8 +357,11 @@ def pipeline_interleaved_rb_irb_ssro(meas_obj_names, mospm, sweep_points,
 
 
 # nodes related to extracting data
-def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
+def combine_datafiles_by_clifford(data_dict, keys_in, keys_out,
+                                  slow_cliffords=False, interleaved_irb=False,
+                                  **params):
     """
+    NOT FULLY IMPLEMENTED FOR slow_cliffords == True!!!
     Combines the data from an interleaved RB/IRB measurement that was saved in
     multiple files into one data set that would look as if it had all been
     taken in one measurements (one file).
@@ -253,15 +385,21 @@ def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
     """
     assert len(keys_in) == len(keys_out)
     n_shots = hlp_mod.get_param('n_shots', data_dict, default_value=1, **params)
-    mospm, rev_movnm, cp = hlp_mod.get_measurement_properties(
-        data_dict, props_to_extract=['mospm', 'rev_movnm', 'cp'], **params)
+    mospm, rev_movnm, cp, mobjn = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['mospm', 'rev_movnm', 'cp', 'mobjn'],
+        **params)
     metadata_list = hlp_mod.get_param('exp_metadata_list', data_dict,
                                       raise_error=True, **params)
     sp_list = [hlp_mod.get_param('sweep_points', mdl, raise_error=True)
                for mdl in metadata_list]
     sp0 = sp_mod.SweepPoints.cast_init(sp_list[0])
-    segment_chunk = sp0.length(0) + len(cp.states)
-    nr_cliffords = sp0.length(1)
+    seeds_dim = sp0.find_parameter(f'{mobjn}_seeds')
+    clf_dim = sp0.find_parameter(f'{mobjn}_cliffords')
+    if slow_cliffords:
+        segment_chunk = sp0.length(seeds_dim) + len(cp.states)
+    else:
+        segment_chunk = sp0.length(clf_dim) + len(cp.states)
+    nr_cliffords = sp0.length(clf_dim)
 
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     for keyi, keyo in zip(keys_in, keys_out):
@@ -273,7 +411,8 @@ def combine_datasets_interleaved_msmt(data_dict, keys_in, keys_out, **params):
         # concatenations in the list data_combined
         data_combined = [np.concatenate(
             [d[j*segment_chunk*n_shots:(j+1)*segment_chunk*n_shots]
-             for d in data]) for j in np.arange(2*nr_cliffords)]
+             for d in data]) for j in np.arange(
+            (interleaved_irb+1)*nr_cliffords)]
         # concatenate all the lists in data_combined to get one complete
         # array of data
         data_combined = np.concatenate(data_combined)
@@ -380,10 +519,13 @@ def rb_analysis(data_dict, keys_in, **params):
 
     sp, mospm, mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['sp', 'mospm', 'mobjn'], **params)
-    nr_seeds = sp.length(0)
+    seeds_dim = sp.find_parameter(f'{mobjn}_seeds')
+    clf_dim = sp.find_parameter(f'{mobjn}_cliffords')
+    nr_seeds = sp.length(seeds_dim)
     if len(data_dict['timestamps']) > 1:
         nr_seeds *= len(data_dict['timestamps'])
-    cliffords = sp.get_sweep_params_property('values', 1, mospm[mobjn])[0]
+    cliffords = sp.get_sweep_params_property('values', clf_dim,
+                                             mospm[mobjn][clf_dim])
 
     # prepare fitting
     if prep_fit_dicts:
@@ -399,7 +541,7 @@ def rb_analysis(data_dict, keys_in, **params):
 
     # prepare plots
     if prepare_plotting:
-        prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params)
+        prepare_rb_plots(data_dict, keys_in, cliffords, **params)
     if do_plotting:
         getattr(plot_mod, 'plot')(data_dict, keys_in=list(
             data_dict['plot_dicts']), **params)
@@ -559,18 +701,37 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
                               data_dict,
                               replace_value=True)
 
+    if hlp_mod.get_param('plot_T1_lim', data_dict, default_value=False,
+                         **params):
+        # get T1, T2, gate length from HDF file
+        get_meas_obj_coh_times(data_dict, **params)
+        F_T1, p_T1 = calc_rb_coherence_limited_fidelity(
+            hlp_mod.get_param(f'{mobjn}.T1', data_dict),
+            hlp_mod.get_param(f'{mobjn}.T2', data_dict),
+            hlp_mod.get_param(f'{mobjn}.ge_sigma', data_dict) *
+            hlp_mod.get_param(f'{mobjn}.ge_nr_sigma', data_dict),
+            hlp_mod.get_param('gate_decomp', data_dict,
+                              default_value='HZ', **params))
+        hlp_mod.add_param(f'{keys_out_container}.EPC coh_lim', 1-F_T1,
+                          data_dict, replace_value=True)
+        hlp_mod.add_param(
+            f'{keys_out_container}.depolarization parameter coh_lim', p_T1,
+            data_dict, replace_value=True)
 
-def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
-    cp, mospm, mobjn, movnm = hlp_mod.get_measurement_properties(
-        data_dict, props_to_extract=['cp', 'mospm', 'mobjn', 'movnm'], **params)
+
+def prepare_rb_plots(data_dict, keys_in, cliffords, **params):
+    sp, cp, mospm, mobjn, movnm = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['sp', 'cp', 'mospm', 'mobjn', 'movnm'],
+        **params)
+    clf_dim = sp.find_parameter(f'{mobjn}_cliffords')
 
     plot_dicts = OrderedDict()
     keys_in_std = hlp_mod.get_param('keys_in_std', data_dict, raise_error=False,
                                     **params)
-    classified_msmt = any([v==3 for v in [len(chs) for chs in movnm.values()]])
+    classified_msmt = any([v == 3 for v in [len(chs) for chs in movnm.values()]])
     for keyi, keys in zip(keys_in, keys_in_std):
         figure_name = 'RB_' + keyi
-        sp_name = mospm[mobjn][-1]
+        sp_name = mospm[mobjn][clf_dim]
 
         # plot data
         ylabel = 'Probability, $P(|ee\\rangle)$' if 'corr' in mobjn else None
@@ -624,15 +785,15 @@ def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
             fit_res = fit_dicts['rb_fit' + keyi]['fit_res']
             if hlp_mod.get_param('plot_T1_lim', data_dict,
                     default_value=False, **params) and 'pf' not in keyi:
-                # get T1, T2, gate length from HDF file
-                get_meas_obj_coh_times(data_dict, **params)
-                F_T1, p_T1 = calc_rb_coherence_limited_fidelity(
-                    hlp_mod.get_param(f'{mobjn}.T1', data_dict),
-                    hlp_mod.get_param(f'{mobjn}.T2', data_dict),
-                    hlp_mod.get_param(f'{mobjn}.ge_sigma', data_dict)*
-                    hlp_mod.get_param(f'{mobjn}.ge_nr_sigma', data_dict),
-                    hlp_mod.get_param('gate_decomp', data_dict,
-                                      default_value='HZ', **params))
+                keys_out_container = hlp_mod.get_param('keys_out_container',
+                                                       data_dict,
+                                                       default_value=mobjn,
+                                                       **params)
+                epc_T1 = hlp_mod.get_param(f'{keys_out_container}.EPC coh_lim',
+                                         data_dict,  **params)
+                p_T1 = hlp_mod.get_param(
+                    f'{keys_out_container}.depolarization parameter coh_lim',
+                    data_dict,  **params)
                 clfs_fine = np.linspace(cliffords[0], cliffords[-1], 1000)
                 T1_limited_curve = fit_res.model.func(
                     clfs_fine, fit_res.best_values['Amplitude'], p_T1,
@@ -650,11 +811,11 @@ def prepare_rb_plots(data_dict, keys_in, cliffords, nr_seeds, **params):
                     'linestyle': '--',
                     'marker': ''}
             else:
-                F_T1 = None
+                epc_T1 = None
 
             # add texbox
             textstr, ha, hp, va, vp = get_rb_textbox_properties(
-                data_dict, fit_res, F_T1=None if 'pf' in keyi else F_T1,
+                data_dict, fit_res, epc_T1=None if 'pf' in keyi else epc_T1,
                 va='top' if 'pg' in keyi else 'bottom',
                 textstr_style='leakage_ibm' if 'pf' in keyi else 'regular',
                 textstr=textstr if 'pf' in keyi else '', **params)
@@ -680,11 +841,12 @@ def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
             cp, sp, mospm, mobjn = hlp_mod.get_measurement_properties(
                 data_dict, props_to_extract=['cp', 'sp', 'mospm', 'mobjn'],
                 **params)
+            clf_dim = sp.find_parameter(f'{mobjn}_cliffords')
             keys_in_std = hlp_mod.get_param('keys_in_std', data_dict,
                                             raise_error=False, **params)
             figure_name = 'IRB' + mobjn
             key_suffix = 'RB' if i == 0 else 'IRB'
-            sp_name = mospm[mobjn][1]
+            sp_name = mospm[mobjn][clf_dim]
             cliffords = sp.get_sweep_params_property('values', 1, sp_name)
 
             # plot data
@@ -727,15 +889,16 @@ def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
                 fit_res = fit_dicts['rb_fit' + keyi]['fit_res']
                 if hlp_mod.get_param('plot_T1_lim', data_dict,
                                      default_value=False, **params):
-                    # get T1, T2, gate length from HDF file
-                    get_meas_obj_coh_times(data_dict, **params)
-                    F_T1, p_T1 = calc_rb_coherence_limited_fidelity(
-                        hlp_mod.get_param(f'{mobjn}.T1', data_dict),
-                        hlp_mod.get_param(f'{mobjn}.T2', data_dict),
-                        hlp_mod.get_param(f'{mobjn}.ge_sigma', data_dict)*
-                        hlp_mod.get_param(f'{mobjn}.ge_nr_sigma', data_dict),
-                        hlp_mod.get_param('gate_decomp', data_dict,
-                                          default_value='HZ', **params))
+                    keys_out_container = hlp_mod.get_param('keys_out_container',
+                                                           data_dict,
+                                                           default_value=mobjn,
+                                                           **params)
+                    epc_T1 = hlp_mod.get_param(
+                        f'{keys_out_container}.EPC coh_lim',
+                        data_dict,  **params)
+                    p_T1 = hlp_mod.get_param(
+                        f'{keys_out_container}.depolarization parameter coh_lim',
+                        data_dict,  **params)
                     clfs_fine = np.linspace(cliffords[0], cliffords[-1], 1000)
                     T1_limited_curve = fit_res.model.func(
                         clfs_fine, fit_res.best_values['Amplitude'], p_T1,
@@ -753,11 +916,11 @@ def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
                         'linestyle': '--',
                         'marker': ''}
                 else:
-                    F_T1 = None
+                    epc_T1 = None
 
                 # add texbox
                 textstr, ha, hp, va, vp = get_rb_textbox_properties(
-                    data_dict, fit_res, F_T1=F_T1,
+                    data_dict, fit_res, epc_T1=epc_T1,
                     va=params.pop('va', 'bottom'),
                     textstr_style='irb', suffix=key_suffix,
                     textstr=textstr, **params)
@@ -830,13 +993,13 @@ def get_rb_leakage_google_textstr(fit_res, **params):
     return textstr
 
 
-def get_rb_regular_textstr(fit_res, F_T1=None, **params):
+def get_rb_regular_textstr(fit_res, epc_T1=None, **params):
     textstr = ('$r_{\mathrm{Cl}}$' + ' = {:.4f}% $\pm$ {:.3f}%'.format(
         (1-fit_res.params['fidelity_per_Clifford'].value)*100,
         fit_res.params['fidelity_per_Clifford'].stderr*100))
-    if F_T1 is not None:
+    if epc_T1 is not None:
         textstr += ('\n$r_{\mathrm{coh-lim}}$  = ' +
-                    '{:.3f}%'.format((1-F_T1)*100))
+                    '{:.3f}%'.format(epc_T1*100))
     textstr += ('\n' + 'p = {:.4f}% $\pm$ {:.3f}%'.format(
         fit_res.params['p'].value*100, fit_res.params['p'].stderr*100))
     textstr += ('\n' + r'$\langle \sigma_z \rangle _{m=0}$ = ' +
@@ -848,15 +1011,15 @@ def get_rb_regular_textstr(fit_res, F_T1=None, **params):
     return textstr
 
 
-def get_cz_irb_textstr(fit_res,  F_T1=None, **params):
+def get_cz_irb_textstr(fit_res,  epc_T1=None, **params):
     suffix = params.get('suffix', 'RB')
     textstr = (f'$r_{{\mathrm{{Cl}}, {{{suffix}}}}}$' +
                ' = {:.4f}% $\pm$ {:.3f}%'.format(
         (1-fit_res.params['fidelity_per_Clifford'].value)*100,
         fit_res.params['fidelity_per_Clifford'].stderr*100))
-    if F_T1 is not None:
+    if epc_T1 is not None:
         textstr += ('\n$r_{\mathrm{coh-lim}}$  = ' +
-                    '{:.3f}%'.format((1-F_T1)*100))
+                    '{:.3f}%'.format(epc_T1*100))
     textstr += (f'\n$p_{{\\uparrow, {suffix}}}$' +
                 ' = {:.4f}% $\pm$ {:.3f}%'.format(
                     fit_res.params['pu'].value*100,
@@ -868,12 +1031,12 @@ def get_cz_irb_textstr(fit_res,  F_T1=None, **params):
     return textstr
 
 
-def get_rb_textbox_properties(data_dict, fit_res, F_T1=None,
+def get_rb_textbox_properties(data_dict, fit_res, epc_T1=None,
                               textstr_style=(), textstr='', **params):
     if len(textstr_style) != 0:
         textstr += '\n'
         if 'regular' in textstr_style:
-            textstr += get_rb_regular_textstr(fit_res, F_T1, **params)
+            textstr += get_rb_regular_textstr(fit_res, epc_T1, **params)
         if 'leakage_google' in textstr_style:
             textstr += get_rb_leakage_google_textstr(fit_res, **params)
         if 'leakage_ibm' in textstr_style:
@@ -969,7 +1132,7 @@ def calc_rb_coherence_limited_fidelity(T1, T2, pulse_length, gate_decomp='HZ'):
     return F_cl, p
 
 
-def get_meas_obj_coh_times(data_dict, **params):
+def get_meas_obj_coh_times(data_dict, extract_T2s=True, **params):
     mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], **params)
     # Get from the hdf5 file any parameters specified in
@@ -978,7 +1141,10 @@ def get_meas_obj_coh_times(data_dict, **params):
     s = 'Instrument settings.' + mobjn
     for trans_name in ['', '_ef']:
         params_dict[f'{mobjn}.T1{trans_name}'] = s + f'.T1{trans_name}'
-        params_dict[f'{mobjn}.T2{trans_name}'] = s + f'.T2{trans_name}'
+        if extract_T2s:
+            params_dict[f'{mobjn}.T2{trans_name}'] = s + f'.T2_star{trans_name}'
+        else:
+            params_dict[f'{mobjn}.T2{trans_name}'] = s + f'.T2{trans_name}'
     for trans_name in ['ge', 'ef']:
         params_dict[f'{mobjn}.{trans_name}_sigma'] = \
             s + f'.{trans_name}_sigma'
