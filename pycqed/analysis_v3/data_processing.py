@@ -297,8 +297,11 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
                              f'{len(data_to_proc_dict[keyi])}.')
         data_to_avg = data_to_proc_dict[keyi] if shape is None else \
             np.reshape(data_to_proc_dict[keyi], shape)
+        avg_data = np.mean(data_to_avg, axis=averaging_axis)
+        if avg_data.ndim > 1:
+            avg_data = avg_data.flatten()
         hlp_mod.add_param(
-            keys_out[k], np.mean(data_to_avg, axis=averaging_axis),
+            keys_out[k], avg_data ,
             data_dict, update_value=params.get('update_value', False), **params)
     return data_dict
 
