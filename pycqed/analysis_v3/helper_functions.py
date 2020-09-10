@@ -180,7 +180,7 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
             folder = folder[-1]
 
     h5mode = get_param('h5mode', data_dict, default_value='r+', **params)
-    h5filepath = a_tools.measurement_filename(folder)
+    h5filepath = a_tools.measurement_filename(folder, **params)
     data_file = h5py.File(h5filepath, h5mode)
 
     try:
