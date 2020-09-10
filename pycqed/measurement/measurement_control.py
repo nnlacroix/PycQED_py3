@@ -140,7 +140,9 @@ class MeasurementControl(Instrument):
 
     def update_sweep_points(self):
         sweep_points = self.get_sweep_points()
-        self.set_sweep_points(np.tile(sweep_points, self.acq_data_len_scaling))
+        if sweep_points is not None:
+            self.set_sweep_points(np.tile(sweep_points,
+                                          self.acq_data_len_scaling))
 
     def run(self, name: str=None, exp_metadata: dict=None,
             mode: str='1D', disable_snapshot_metadata: bool=False, **kw):
