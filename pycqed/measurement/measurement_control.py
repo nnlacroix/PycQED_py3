@@ -138,6 +138,12 @@ class MeasurementControl(Instrument):
                       datadir=self.datadir()) as self.data_object:
             self.save_instrument_settings(self.data_object)
 
+    def update_sweep_points(self):
+        sweep_points = self.get_sweep_points()
+        if sweep_points is not None:
+            self.set_sweep_points(np.tile(sweep_points,
+                                          self.acq_data_len_scaling))
+
     def run(self, name: str=None, exp_metadata: dict=None,
             mode: str='1D', disable_snapshot_metadata: bool=False, **kw):
         '''
@@ -178,6 +184,9 @@ class MeasurementControl(Instrument):
 
         # used in get_percdone to scale the length of acquired data
         self.acq_data_len_scaling = self.detector_function.acq_data_len_scaling
+
+        # update sweep_points based on self.acq_data_len_scaling
+        self.update_sweep_points()
 
         # needs to be defined here because of the with statement below
         return_dict = {}
@@ -361,13 +370,14 @@ class MeasurementControl(Instrument):
                         (1 + self.soft_iteration))
             self.dset[start_idx:stop_idx,
                       len(self.sweep_functions):] = new_vals
-        sweep_len = len(self.get_sweep_points().T)
+        sweep_len = len(self.get_sweep_points().T) * self.acq_data_len_scaling
+
 
         ######################
         # DATA STORING BLOCK #
         ######################
-        if sweep_len == len_new_data:  # 1D sweep
-            self.dset[:, 0] = self.get_sweep_points().T
+        if sweep_len == len_new_data and self.mode == '1D':  # 1D sweep
+            self.dset[:, 0] = self.get_sweep_points()
         else:
             try:
                 if len(self.sweep_functions) != 1:
@@ -381,7 +391,10 @@ class MeasurementControl(Instrument):
             except Exception:
                 # There are some cases where the sweep points are not
                 # specified that you don't want to crash (e.g. on -off seq)
-                pass
+                logging.warning('You are in the exception case in '
+                                'MC.measure_hard() DATA STORING BLOCK section. '
+                                'Something might have gone wrong with your '
+                                'measurement.')
 
         self.check_keyboard_interrupt()
         self.update_instrument_monitor()
@@ -1247,8 +1260,8 @@ class MeasurementControl(Instrument):
         h5d.write_dict_to_hdf5(metadata, entry_point=metadata_group)
 
     def get_percdone(self):
-        percdone = self.total_nr_acquired_values/self.acq_data_len_scaling/(
-            np.shape(self.get_sweep_points())[0]*self.soft_avg())*100
+        percdone = self.total_nr_acquired_values / (
+            np.shape(self.get_sweep_points())[0] * self.soft_avg()) * 100
         return percdone
 
     def print_progress(self, stop_idx=None):

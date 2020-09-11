@@ -532,8 +532,12 @@ class UHFQC_multi_detector(UHFQC_Base):
                           for UHF, d in raw_data.items()]
         processed_data = np.concatenate(processed_data)
         if self.correlated:
-            corr_data = self.get_correlations_classif_det(np.concatenate([
-                d for d in raw_data.values()]))
+            if not self.detectors[0].get_values_function_kwargs.get(
+                    'averaged', True):
+                data_for_corr = processed_data
+            else:
+                data_for_corr = np.concatenate([d for d in raw_data.values()])
+            corr_data = self.get_correlations_classif_det(data_for_corr)
             processed_data = np.concatenate([processed_data, corr_data], axis=0)
 
         return processed_data
@@ -543,55 +547,49 @@ class UHFQC_multi_detector(UHFQC_Base):
         state_prob_mtx_list = []
         for d in self.detectors:
             classifier_params_list += d.classifier_params_list
-            state_prob_mtx_list += d.state_prob_mtx_list
-        nr_states = len(self.detectors[0].state_labels)
-        len_ch_pairs = sum([len(d.channel_str_pairs) for d in self.detectors])
-
-        # create variable with nr_states=3 x len_ch_pairs=nr_qubits columns
-        # and nr_sweep_points x nr_shots rows
-        clf_data_all = np.zeros(
-            (self.detectors[0].nr_sweep_points * self.detectors[0].nr_shots,
-             nr_states * len_ch_pairs))
-        for i in range(len_ch_pairs):
-            # classify shot-by-shot
-            clf_data = a_tools.predict_gm_proba_from_clf(
-                data[2 * i: 2 * i + 2, :].T, classifier_params_list[i])
             if self.detectors[0].get_values_function_kwargs.get(
-                    'thresholded', True):
-                # clf_data must be 2 dimensional, rows are shots*sweep_points,
-                # columns are nr_states
-                # goes through each set of 3 columns and sets the max entry
-                # in each row to 1 and the other 2 entries to 0
-                clf_data = np.isclose(np.repeat([np.arange(nr_states)],
-                                                clf_data.shape[0], axis=0).T,
-                                      np.argmax(clf_data, axis=1)).T
-            if state_prob_mtx_list is not None:
-                clf_data = (np.linalg.inv(
-                    state_prob_mtx_list[i]).T @ clf_data.T).T
-                log.info('Correlated data corrected based on state_prob_mtx.')
-            else:
-                log.info('not correcting correlated data')
-            clf_data_all[:, nr_states * i: nr_states * i + nr_states] = clf_data
+                    'ro_corrected_stored_mtx', False):
+                state_prob_mtx_list += d.state_prob_mtx_list
+        if len(state_prob_mtx_list) == 0:
+            state_prob_mtx_list = None
+        d0 = self.detectors[0]
+        nr_states = len(d0.state_labels)
+        all_ch_pairs = [d.channel_str_pairs for d in self.detectors]
+        all_ch_pairs = [e0 for e1 in all_ch_pairs for e0 in e1]
+
+        processed_data = data
+        if self.detectors[0].get_values_function_kwargs.get(
+                'averaged', True):
+            d0_get_values_function_kwargs = d0.get_values_function_kwargs
+            d0_channel_str_pairs = d0.channel_str_pairs
+            get_values_function_kwargs = deepcopy(d0_get_values_function_kwargs)
+            get_values_function_kwargs.update({
+                'averaged': False,
+                'state_prob_mtx': state_prob_mtx_list,
+                'classifier_params': classifier_params_list})
+            d0.channel_str_pairs = all_ch_pairs
+            d0.get_values_function_kwargs = get_values_function_kwargs
+            processed_data = d0.process_data(data)
+            d0.channel_str_pairs = d0_channel_str_pairs
+            d0.get_values_function_kwargs = d0_get_values_function_kwargs
 
         # can only correlate corresponding probabilities on all channels;
         # it cannot correlate selected channels
-        nr_states = len(self.detectors[0].state_labels)  # usually 3
-        q = clf_data_all.shape[1] // nr_states  # nr of qubits
+        q = processed_data.shape[0] // nr_states  # nr of qubits
         # creates array with nr_sweep_points x nr_shots columns and
         # nr_qubits rows, where all entries are 0, 1, or 2. The entry in each
         # column is the state of the respective qubit, 0=g, 1=e, 2=f.
         qb_states_list = [np.argmax(
-            clf_data_all[:, i * nr_states: i * nr_states + nr_states],
-            axis=1) for i in range(q)]
+            processed_data[i * nr_states: i * nr_states + nr_states, :],
+            axis=0) for i in range(q)]
+
         # correlate the shots of the two qubits as follows:
         # if both qubits are in g or f ---> correlator = 0
         # if both qubits are in e ---> correlator = 0
         # if one qubit is in g or f but the other in e ---> correlator = 1
         corr_data = np.sum(np.array(qb_states_list) % 2, axis=0) % 2
         if self.averaged:
-            corr_data = np.reshape(
-                corr_data, (self.detectors[0].nr_shots,
-                            self.detectors[0].nr_sweep_points))
+            corr_data = np.reshape(corr_data, (d0.nr_shots, d0.nr_sweep_points))
             corr_data = np.mean(corr_data, axis=0)
         corr_data = np.reshape(corr_data, (1, corr_data.size))
 
@@ -1134,7 +1132,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         self.AWG = AWG
         self.integration_length = integration_length
         self.nr_shots = nr_shots
-        # to be used in MC.get_percdone()
+        # to be used in MC
         self.acq_data_len_scaling = self.nr_shots
 
         # 0/1/2 crosstalk supressed /digitized/raw
@@ -1163,32 +1161,19 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         # should run
         self.UHFQC.awgs_0_single(1)
 
-        self.nr_sweep_points = self.nr_shots*len(sweep_points)
-        self.UHFQC.qas_0_integration_length(int(self.integration_length*(1.8e9)))
+        self.nr_sweep_points = len(sweep_points)
+        self.UHFQC.qas_0_integration_length(int(self.integration_length*1.8e9))
 
         self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
         self.UHFQC.qudev_acquisition_initialize(channels=self.channels, 
                                           samples=self.nr_sweep_points,
-                                          averages=1, #for single shot readout
+                                          averages=1,  # for single shot readout
                                           loop_cnt=int(self.nr_shots),
                                           mode='rl')
 
     def get_values(self):
         if self.always_prepare:
             self.prepare()
-        # if self.AWG is not None:
-        #     self.AWG.stop()
-        #
-        # # resets UHFQC internal readout counters
-        # self.UHFQC._daq.setInt('/' + self.UHFQC._device + '/quex/rl/readout',
-        #                        self._get_readout())
-        #
-        # # starting AWG
-        # if self.AWG is not None:
-        #     self.AWG.start()
-        #
-        # data_raw = self.UHFQC.acquisition_poll(
-        #     samples=self.nr_shots, arm=False, acquisition_time=0.01)
         data_raw = self.poll_data()
         data_processed = self.process_data(data_raw[self.UHFQC.name])
         return data_processed
@@ -1257,8 +1242,7 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
     """
 
     def __init__(self, UHFQC, *args, **kw):
-
-        super().__init__(UHFQC, *args)
+        super().__init__(UHFQC, *args, **kw)
 
         self.get_values_function_kwargs = kw.get('get_values_function_kwargs',
                                                  None)
@@ -1278,113 +1262,183 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
                 self.value_names[idx] = '{}_{} w{}'.format(UHFQC.name,
                     state, ch_pair)
                 idx += 1
+        self.value_units = [self.value_units[0]] * len(self.value_names)
+
+        if self.get_values_function_kwargs.get('averaged', True):
+            self.acq_data_len_scaling = 1  # to be used in MC
+
+        self.classified = self.get_values_function_kwargs.get('classified', True)
+
+    def prepare(self, sweep_points):
+        if self.AWG is not None:
+            self.AWG.stop()
+
+        if self.prepare_function_kwargs is not None:
+            if self.prepare_function is not None:
+                self.prepare_function(**self.prepare_function_kwargs)
+        else:
+            if self.prepare_function is not None:
+                self.prepare_function()
+
+        assert len(sweep_points) % self.acq_data_len_scaling == 0
+        self.nr_sweep_points = len(sweep_points) // self.acq_data_len_scaling
+        # The averaging-count is used to specify how many times the AWG program
+        # should run
+        self.UHFQC.awgs_0_single(1)
+        self.UHFQC.qas_0_integration_length(int(self.integration_length*1.8e9))
+
+        self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
+        self.UHFQC.qudev_acquisition_initialize(
+            channels=self.channels,
+            samples=self.nr_shots * self.nr_sweep_points,
+            averages=1,  # for single shot readout
+            loop_cnt=int(self.nr_shots), mode='rl')
 
     def process_data(self, data_raw):
-        data = super().process_data(data_raw)
-
-        if self.get_values_function_kwargs.get('classified', True):
+        processed_data = super().process_data(data_raw).T
+        nr_states = len(self.state_labels)
+        thresholded = self.get_values_function_kwargs.get('thresholded', True)
+        averaged = self.get_values_function_kwargs.get('averaged', True)
+        if self.classified:
             # Classify data into qutrit states
-            classifier_params_list = self.get_values_function_kwargs.get(
+            self.classifier_params_list = self.get_values_function_kwargs.get(
                 'classifier_params', None)
-            if classifier_params_list is None:
+            if self.classifier_params_list is None:
                 raise ValueError('Please specify the classifier '
                                  'parameters list.')
-            else:
-                if not isinstance(classifier_params_list, list):
-                    classifier_params_list = [classifier_params_list]
-                state_prob_mtx_list = self.get_values_function_kwargs.get(
-                    'state_prob_mtx', None)
+            if not isinstance(self.classifier_params_list, list):
+                self.classifier_params_list = [self.classifier_params_list]
+            processed_data = self.classify_shots(processed_data,
+                                                 self.classifier_params_list,
+                                                 nr_states)
 
-            if state_prob_mtx_list is not None and \
-                    not isinstance(state_prob_mtx_list, list):
-                state_prob_mtx_list = [state_prob_mtx_list]
+        if thresholded:
+            if not self.classified:
+                raise NotImplementedError(
+                    'Currently the threshold_shots only works if the data '
+                    'was first classified.')
+            processed_data = self.threshold_shots(processed_data, nr_states)
 
-            classified_data = self.classify_shots(
-                data, classifier_params_list=classifier_params_list,
-                state_prob_mtx_list=state_prob_mtx_list,
-                **self.get_values_function_kwargs)
-        else:
-            classified_data = data
+        if averaged:
+            processed_data = self.average_shots(processed_data)
 
-        return classified_data.T
-
-    def classify_shots(self, data, classifier_params_list,
-                       averaged=True, thresholded=False,
-                       ro_corrected_stored_mtx=False,
-                       ro_corrected_seq_cal_mtx=False,
-                       state_prob_mtx_list=None, **kw):
-
+        # do readout correction
+        ro_corrected_seq_cal_mtx = self.get_values_function_kwargs.get(
+            'ro_corrected_seq_cal_mtx', False)
+        ro_corrected_stored_mtx = self.get_values_function_kwargs.get(
+            'ro_corrected_stored_mtx', False)
         if ro_corrected_seq_cal_mtx and ro_corrected_stored_mtx:
             raise ValueError('"ro_corrected_seq_cal_mtx" and '
                              '"ro_corrected_stored_mtx" cannot both be True.')
-
         ro_corrected = ro_corrected_seq_cal_mtx or ro_corrected_stored_mtx
         if (ro_corrected and thresholded) and not averaged:
             raise ValueError('It does not make sense to apply readout '
                              'correction if thresholded==True and '
                              'averaged==False.')
+        if ro_corrected_stored_mtx:
+            # correct data with matrices from state_prob_mtx_list
+            processed_data = self.correct_readout_stored_mtx(processed_data,
+                                                             nr_states)
+        elif ro_corrected_seq_cal_mtx:
+            # correct data with the calibration matrix extracted from
+            # the data array
+            if not averaged:
+                raise NotImplementedError(
+                    'Data correction based on calibration state_prob_mtx '
+                    'from measurement sequence is currently only '
+                    'implemented for averaged data (averaged==True).'
+                    'Also, make sure correlated is not True in this case, '
+                    'because in the UHFQC_multi_detector.get_correlations'
+                    '_classif_det, this function is called again but '
+                    'with averaged=True.')
+            processed_data = self.correct_readout_seq_cal_mtx(processed_data,
+                                                              nr_states)
 
-        nr_states = len(self.state_labels)
-        nr_avg_sp = self.nr_sweep_points/self.nr_shots
-        classified_data = np.zeros((nr_avg_sp if averaged else
-                                    nr_avg_sp*self.nr_shots,
+        return processed_data.T
+
+    def classify_shots(self, data, classifier_params_list, nr_states):
+        classified_data = np.zeros((self.nr_sweep_points*self.nr_shots,
                                     nr_states*len(self.channel_str_pairs)))
-
         for i in range(len(self.channel_str_pairs)):
             # classify each shot into (pg, pe, pf)
-            # clf_data will have shape (nr_shots * nr_avg_sp, nr_states)
+            # clf_data will have shape
+            # (nr_shots * self.nr_sweep_points, nr_states)
             clf_data = a_tools.predict_gm_proba_from_clf(
-                data[2*i: 2*i+2, :].T, classifier_params_list[i])
-
-            if thresholded:
-                # For each shot, set the largest probability entry to 1, and the
-                # other two to 0. I.e. assign to one state.
-                # clf_data must be 2 dimensional, rows are shots*sweep_points,
-                # columns are nr_states
-                clf_data = np.isclose(np.repeat([np.arange(nr_states)],
-                                                clf_data.shape[0], axis=0).T,
-                                      np.argmax(clf_data, axis=1)).T
-
-            if averaged:
-                # reshape into (nr_shots, nr_avg_sp, nr_data_columns) then
-                # average over nr_shots
-                clf_data = np.reshape(
-                    clf_data, (self.nr_shots, nr_avg_sp,
-                               clf_data.shape[-1]))
-                clf_data = np.mean(clf_data, axis=0)
-
-            if ro_corrected_stored_mtx:
-                # correct data with matrices from state_prob_mtx_list
-                if state_prob_mtx_list is not None and \
-                        state_prob_mtx_list[i] is not None
-                    clf_data = (np.linalg.inv(
-                        state_prob_mtx_list[i]).T @ clf_data.T).T
-                    log.info('Data corrected based on previously-measured '
-                             'state_prob_mtx.')
-                else:
-                    raise ValueError('state_prob_mtx_list is None.')
-            elif ro_corrected_seq_cal_mtx:
-                # correct data with the calibration matrix extracted from
-                # the data array
-                if not averaged:
-                    raise NotImplementedError(
-                        'Data correction based on calibration state_prob_mtx '
-                        'from measurement sequence is currently only '
-                        'implemented for averaged data (averaged==True).')
-                # get cal matrix
-                calibration_matrix = clf_data[-nr_states:, :]
-                # normalize
-                calibration_matrix = calibration_matrix.astype('float') / \
-                                     calibration_matrix.sum(axis=1)[
-                                     :, np.newaxis]
-                # correct data
-                clf_data = (np.linalg.inv(calibration_matrix).T @ clf_data.T).T
-                log.info('Data corrected based on calibration state_prob_mtx '
-                         'from measurement sequence.')
-            else:
-                log.info('not correcting data')
-
+                data[:, 2*i: 2*i+2], classifier_params_list[i])
             classified_data[:, nr_states * i: nr_states * i + nr_states] = \
                 clf_data
 
         return classified_data
+
+    def threshold_shots(self, data, nr_states):
+        thresholded_data = np.zeros_like(data)
+        for i in range(len(self.channel_str_pairs)):
+            # For each shot, set the largest probability entry to 1, and the
+            # other two to 0. I.e. assign to one state.
+            # clf_data must be 2 dimensional, rows are shots*sweep_points,
+            # columns are nr_states
+            thresh_data = np.isclose(np.repeat(
+                [np.arange(nr_states)],
+                data[:, nr_states*i: nr_states*(i+1)].shape[0], axis=0).T,
+                                     np.argmax(data, axis=1)).T
+            thresholded_data[:, nr_states * i: nr_states * i + nr_states] = \
+                thresh_data
+
+        return thresholded_data
+
+    def average_shots(self, data):
+        # reshape into (nr_shots, nr_sweep_points, nr_data_columns) then
+        # average over nr_shots
+        averaged_data = np.reshape(
+            data, (self.nr_shots, self.nr_sweep_points, data.shape[-1]))
+        # average over shots
+        averaged_data = np.mean(averaged_data, axis=0)
+
+        return averaged_data
+
+    def correct_readout_stored_mtx(self, data, nr_states):
+        # correct data with matrices from state_prob_mtx_list
+        corrected_data = np.zeros_like(data)
+
+        self.state_prob_mtx_list = self.get_values_function_kwargs.get(
+            'state_prob_mtx', None)
+        if self.state_prob_mtx_list is not None and \
+                not isinstance(self.state_prob_mtx_list, list):
+            self.state_prob_mtx_list = [self.state_prob_mtx_list]
+
+        for i in range(len(self.channel_str_pairs)):
+            if self.state_prob_mtx_list is not None and \
+                    self.state_prob_mtx_list[i] is not None:
+                corr_data = np.linalg.inv(self.state_prob_mtx_list[i]).T @ \
+                            data[:, nr_states*i: nr_states*(i+1)].T
+                log.info('Data corrected based on previously-measured '
+                         'state_prob_mtx.')
+            else:
+                raise ValueError(f'state_prob_mtx for index {i} is None.')
+            corrected_data[:, nr_states * i: nr_states * i + nr_states] = \
+                corr_data.T
+
+        return corrected_data
+
+    def correct_readout_seq_cal_mtx(self, data, nr_states):
+        # correct data with the calibration matrix extracted from
+        # the data array
+        corrected_data = np.zeros_like(data)
+        for i in range(len(self.channel_str_pairs)):
+            # get cal matrix
+            calibration_matrix = data[:, nr_states*i: nr_states*(i+1)][
+                                 -nr_states:, :]
+            # normalize
+            calibration_matrix = calibration_matrix.astype('float') / \
+                                 calibration_matrix.sum(axis=1)[:, np.newaxis]
+            # correct data
+            # corr_data = np.linalg.inv(calibration_matrix).T @ \
+            #             data[:, nr_states*i: nr_states*(i+1)].T
+            corr_data = calibration_matrix.T @ \
+                        data[:, nr_states*i: nr_states*(i+1)].T
+            log.info('Data corrected based on calibration state_prob_mtx '
+                     'from measurement sequence.')
+            corrected_data[:, nr_states * i: nr_states * i + nr_states] = \
+                corr_data.T
+
+        return corrected_data
