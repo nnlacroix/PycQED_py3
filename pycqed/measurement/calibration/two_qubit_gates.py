@@ -261,7 +261,7 @@ class MultiTaskingExperiment(QuantumExperiment):
         # Create a list of lists containing for each dimension the names of
         # the task-specific sweep points. These sweep points have to be
         # prefixed with the task prefix later on (in the global sweep
-        # points, see below, and whean used as ParametricValue during block
+        # points, see below, and when used as ParametricValue during block
         # creation).
         params_to_prefix = [d.keys() for d in task['sweep_points']]
         task['params_to_prefix'] = params_to_prefix
