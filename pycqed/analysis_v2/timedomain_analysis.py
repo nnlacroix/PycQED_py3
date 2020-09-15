@@ -6079,6 +6079,18 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                             'fit_yvals': {'data': data},
                             'guess_pars': guess_pars}
 
+    @staticmethod
+    def unwrap_phases_extrapolation(phases):
+        for i in range(2, len(phases)):
+            phase_diff_extrapolation = (phases[i-1]
+                                        + (phases[i-1]
+                                           - phases[i-2]) - phases[i])
+            if phase_diff_extrapolation > np.pi:
+                phases[i] += round(phase_diff_extrapolation/(2*np.pi))*2*np.pi
+            elif phase_diff_extrapolation < np.pi:
+                phases[i] += round(phase_diff_extrapolation/(2*np.pi))*2*np.pi
+        return phases
+
     def analyze_fit_results(self):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
         for cp_qbn in self.ramsey_qbnames:
@@ -6087,6 +6099,8 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
             fit_res_objs = [self.fit_dicts[k]['fit_res'] for k in keys]
             # phase_diffs
             phases = np.array([fr.best_values['phase'] for fr in fit_res_objs])
+            if self.get_param_value('unwrap_phases', False):
+                phases = self.unwrap_phases_extrapolation(phases)
             phases_errs = np.array([fr.params['phase'].stderr
                                     for fr in fit_res_objs])
             phases_errs[phases_errs == None] = 0.0
