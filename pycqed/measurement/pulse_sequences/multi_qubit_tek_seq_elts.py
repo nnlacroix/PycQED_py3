@@ -128,7 +128,7 @@ def two_qubit_randomized_benchmarking_seqs(
         'mZ90': qtp.rotation(qtp.sigmaz(), -np.pi / 2),
         'Z180': qtp.sigmaz(),
         'mZ180': qtp.sigmaz(),
-        'CZ': qtp.gates.cphase(np.pi)
+        'CZ': qtp.cphase(np.pi)
     }
 
     seq_name = '2Qb_RB_sequence'
