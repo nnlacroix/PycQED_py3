@@ -518,6 +518,8 @@ class BufferedCZPulse(pulse.Pulse):
         wave *= np.cos(
             2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
         if self.truncation_length is not None:
+            # truncation_length should be (n+0.5) samples to avoid rounding
+            # errors
             mask = tvals <= (tvals[0] + self.truncation_length)
             wave = wave * mask
         return wave
