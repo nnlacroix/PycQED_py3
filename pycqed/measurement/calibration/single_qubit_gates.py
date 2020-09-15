@@ -419,7 +419,7 @@ class Cryoscope(CalibBuilder):
             self.sweep_points, tile=0, repeat=2, **kw)
         nr_phases = self.sweep_points.length(0) // 2
         hard_sweep_dict = SweepPoints(
-            'truncation_length', [0, self.estimation_window] * nr_phases,
+            'extra_truncation_length', [0, self.estimation_window] * nr_phases,
             's', 'Pulse length')
         self.sweep_points.update(hard_sweep_dict + [{}])
 
@@ -462,7 +462,7 @@ class Cryoscope(CalibBuilder):
             cryo_blk.pulses[1]['truncation_length'] = \
                 cryo_blk.pulses[1]['truncation_length'] + \
                 sweep_points.get_sweep_params_property(
-                    'values', 0, 'truncation_length')[sp1d_idx]
+                    'values', 0, 'extra_truncation_length')[sp1d_idx]
             parallel_block_list += [cryo_blk]
 
         return self.simultaneous_blocks(
