@@ -383,9 +383,18 @@ class Cryoscope(CalibBuilder):
                     <-  truncation_length  ->
     """
     def __init__(self, task_list, sweep_points=None, estimation_window=None,
-                 **kw):
+                 separation_buffer=None, **kw):
+        """
+
+        :param task_list:
+        :param sweep_points:
+        :param estimation_window:
+        :param separation_buffer: (float) extra delay between the (truncated)
+            flux pulse and the last pi-half pulse
+        :param kw:
+        """
         try:
-            self.experiment_name = 'Flux_scope'
+            self.experiment_name = 'Cryoscope'
             for task in task_list:
                 if not isinstance(task['qb'], str):
                     task['qb'] = task['qb'].name
@@ -396,7 +405,11 @@ class Cryoscope(CalibBuilder):
             self.estimation_window = estimation_window
             if self.estimation_window is None:
                 self.estimation_window = 1/2.4e9  # one HDAWG sample
-            self.analysis = {}
+            self.exp_metadata['estimation_window'] = self.estimation_window
+            self.separation_buffer = separation_buffer
+            if self.separation_buffer is None:
+                self.separation_buffer = 100e-9  # one HDAWG sample
+            self.exp_metadata['separation_buffer'] = self.separation_buffer
 
             self.add_default_sweep_points(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -416,14 +429,15 @@ class Cryoscope(CalibBuilder):
         :param kw: keyword_arguments
         """
         self.sweep_points = self.add_default_ramsey_sweep_points(
-            self.sweep_points, tile=0, repeat=2, **kw)
+            self.sweep_points, tile=2, repeat=0, **kw)
         nr_phases = self.sweep_points.length(0) // 2
         hard_sweep_dict = SweepPoints(
-            'extra_truncation_length', [0, self.estimation_window] * nr_phases,
+            'extra_truncation_length', [0] * nr_phases +
+                                       [self.estimation_window] * nr_phases,
             's', 'Pulse length')
         self.sweep_points.update(hard_sweep_dict + [{}])
 
-    def sweep_block(self, sp1d_idx, sp2d_idx, separation_buffer=None, **kw):
+    def sweep_block(self, sp1d_idx, sp2d_idx, **kw):
         """
         Performs a Ramsey phase measurement with a truncated flux pulse between
         the two pi-half pulses.
@@ -436,13 +450,9 @@ class Cryoscope(CalibBuilder):
             first sweep dimension
         :param sp2d_idx: (int) index of sweep point to use from the
             second sweep dimension
-        :param separation_buffer: (float) extra delay between the (truncated)
-            flux pulse and the last pi-half pulse
         :param kw: keyword arguments
         """
-        if separation_buffer is None:
-            separation_buffer = 100e-9
-
+        
         parallel_block_list = []
         for i, task in enumerate(self.preprocessed_task_list):
             sweep_points = task['sweep_points']
@@ -453,17 +463,20 @@ class Cryoscope(CalibBuilder):
             cryo_blk.pulses[2]['phase'] = \
                 sweep_points.get_sweep_params_property(
                     'values', 0, 'phase')[sp1d_idx]
-            cryo_blk.pulses[2]['pulse_delay'] = separation_buffer
+            cryo_blk.pulses[2]['pulse_delay'] = self.separation_buffer
             # set soft sweep truncation_length
-            cryo_blk.pulses[1]['truncation_length'] = \
-                sweep_points.get_sweep_params_property(
-                    'values', 1, 'truncation_length')[sp2d_idx]
+            for k in sweep_points[1]:
+                cryo_blk.pulses[1][k] = sweep_points.get_sweep_params_property(
+                    'values', 1, k)[sp2d_idx]
+            # cryo_blk.pulses[1]['truncation_length'] = \
+            #     sweep_points.get_sweep_params_property(
+            #         'values', 1, 'truncation_length')[sp2d_idx]
             # set hard sweep truncation_length
-            cryo_blk.pulses[1]['truncation_length'] = \
-                cryo_blk.pulses[1]['truncation_length'] + \
+            cryo_blk.pulses[1]['truncation_length'] += \
                 sweep_points.get_sweep_params_property(
                     'values', 0, 'extra_truncation_length')[sp1d_idx]
             parallel_block_list += [cryo_blk]
+            self.data_to_fit.update({qb: 'pe'})
 
         return self.simultaneous_blocks(
             f'sim_rb_{sp2d_idx}_{sp1d_idx}', parallel_block_list,
@@ -474,8 +487,9 @@ class Cryoscope(CalibBuilder):
         Runs analysis and stores analysis instances in self.analysis.
         :param kw:
         """
-        pass
-
+        qb_names = [task['qb'] for task in self.task_list]
+        self.analysis = tda.DynamicPhaseAnalysis(
+            qb_names=qb_names, options_dict={'unwrap_phases': True})
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
     """
