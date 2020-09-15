@@ -6100,7 +6100,11 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
             # phase_diffs
             phases = np.array([fr.best_values['phase'] for fr in fit_res_objs])
             if self.get_param_value('unwrap_phases', False):
-                phases = self.unwrap_phases_extrapolation(phases)
+                phases0 = self.unwrap_phases_extrapolation(phases)
+                phases1 = np.unwrap(phases)
+                assert (np.all(phases0[0::2] - phases0[1::2]==
+                               phases1[0::2] - phases1[1::2]))
+                phases = phases1
             phases_errs = np.array([fr.params['phase'].stderr
                                     for fr in fit_res_objs])
             phases_errs[phases_errs == None] = 0.0
