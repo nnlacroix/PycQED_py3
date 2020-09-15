@@ -454,7 +454,7 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
             qb_names=self.meas_obj_names, options_dict=dict(TwoD=True),
             t_start=self.timestamp, **analysis_kwargs)
 
-        if self.update:
-            for qb in self.meas_obj_names:
-                qb.fit_ge_freq_from_flux_pulse_amp(
-                    self.analysis.fit_res[f'freq_fit_{qb.name}'].best_values)
+    def run_update(self, **kw):
+        for qb in self.meas_obj_names:
+            qb.fit_ge_freq_from_flux_pulse_amp(
+                self.analysis.fit_res[f'freq_fit_{qb.name}'].best_values)

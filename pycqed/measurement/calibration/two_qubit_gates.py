@@ -261,7 +261,7 @@ class MultiTaskingExperiment(QuantumExperiment):
         # Create a list of lists containing for each dimension the names of
         # the task-specific sweep points. These sweep points have to be
         # prefixed with the task prefix later on (in the global sweep
-        # points, see below, and when used as ParametricValue during block
+        # points, see below, and whean used as ParametricValue during block
         # creation).
         params_to_prefix = [d.keys() for d in task['sweep_points']]
         task['params_to_prefix'] = params_to_prefix
@@ -547,6 +547,16 @@ class CalibBuilder(MultiTaskingExperiment):
     def __init__(self, task_list, **kw):
         super().__init__(task_list=task_list, **kw)
         self.update = kw.pop('update', False)
+
+        # if no callback was provided by the user, set the template function
+        # run_update() as callback conditioned on self.update flag
+        self.callback = kw.get('callback', self.run_update)
+        self.callback_condition = lambda : self.update
+
+    def run_update(self, **kw):
+        # must be overriden by child classes to update the
+        # relevant calibration parameters
+        pass
 
     def max_pulse_length(self, pulse, sweep_points=None,
                          given_pulse_length=None):
@@ -1031,31 +1041,6 @@ class DynamicPhase(CalibBuilder):
                     block_align=['center', 'end', 'center', 'start'], **kw)
                 # run measurement & analysis if requested in kw
                 self.autorun(**kw)
-
-            if self.update:
-                assert self.measurements[0].dev is not None, \
-                    "Update only works with device object provided."
-                assert self.measurements[0].analyze, \
-                    "Update is only allowed with analyze=True."
-                assert len(self.measurements[0].mc_points[1]) == 1, \
-                    "Update is only allowed without a soft sweep."
-
-                for op, dp in self.dyn_phases.items():
-                    op_split = op.split(' ')
-                    basis_rot_par = self.dev.get_pulse_par(
-                        *op_split, param='basis_rotation')
-
-                    if self.reset_phases_before_measurement:
-                        basis_rot_par(dp)
-                    else:
-                        not_updated = {k: v for k, v in basis_rot_par().items()
-                                       if k not in dp}
-                        basis_rot_par().update(dp)
-                        if len(not_updated) > 0:
-                            log.warning(f'Not all basis_rotations stored in the '
-                                        f'pulse settings for {op} have been '
-                                        f'measured. Keeping the following old '
-                                        f'value(s): {not_updated}')
         except Exception as x:
             self.exception = x
             traceback.print_exc()
@@ -1188,6 +1173,30 @@ class DynamicPhase(CalibBuilder):
 
         return self.dyn_phases, self.dynamic_phase_analysis
 
+    def run_update(self, **kw):
+        assert self.measurements[0].dev is not None, \
+            "Update only works with device object provided."
+        assert self.measurements[0].analyze, \
+            "Update is only allowed with analyze=True."
+        assert len(self.measurements[0].mc_points[1]) == 1, \
+            "Update is only allowed without a soft sweep."
+
+        for op, dp in self.dyn_phases.items():
+            op_split = op.split(' ')
+            basis_rot_par = self.dev.get_pulse_par(
+                *op_split, param='basis_rotation')
+
+            if self.reset_phases_before_measurement:
+                basis_rot_par(dp)
+            else:
+                not_updated = {k: v for k, v in basis_rot_par().items()
+                               if k not in dp}
+                basis_rot_par().update(dp)
+                if len(not_updated) > 0:
+                    log.warning(f'Not all basis_rotations stored in the '
+                                f'pulse settings for {op} have been '
+                                f'measured. Keeping the following old '
+                                f'value(s): {not_updated}')
 
 def measure_flux_pulse_timing_between_qubits(task_list, pulse_length,
                                              analyze=True, label=None, **kw):
