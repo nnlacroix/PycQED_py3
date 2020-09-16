@@ -2394,7 +2394,7 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         else:
             raise KeyError("Invalid tomography data mode: '" + self.data_type +
                            "'. Valid modes are 'averaged' and 'singleshot'.")
-
+        self.concurrence = self.options_dict.get('concurrence', True)
         if kwargs.get('auto', True):
             self.run_analysis()
 
@@ -2479,8 +2479,10 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         rho_target = self.options_dict.get('rho_target', rho_target)
         if rho_target is not None:
             self.proc_data_dict['fidelity'] = tomo.fidelity(rho, rho_target)
-        if d == 4:
+        if (d == 4) and (self.concurrence):
             self.proc_data_dict['concurrence'] = tomo.concurrence(rho)
+        else:
+            self.proc_data_dict['concurrence'] = 0
 
     def prepare_plots(self):
         self.prepare_density_matrix_plot()
@@ -7314,14 +7316,19 @@ class FluxPulseTimingBetweenQubitsAnalysis(MultiQubit_TimeDomain_Analysis):
             data = self.proc_data_dict['data_to_fit'][qbn][0]
             sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
                 'msmt_sweep_points']
+            delays = np.zeros(len(sweep_points) * 2 - 1)
+            delays[0::2] = sweep_points
+            delays[1::2] = sweep_points[:-1] + np.diff(sweep_points) / 2
             if self.num_cal_points != 0:
                 data = data[:-self.num_cal_points]
             symmetry_idx, corr_data = find_symmetry_index(data)
-            delay = sweep_points[symmetry_idx]
+            delay = delays[symmetry_idx]
+
             self.proc_data_dict['analysis_params_dict'][qbn] = OrderedDict()
+            self.proc_data_dict['analysis_params_dict'][qbn]['delays'] = delays
             self.proc_data_dict['analysis_params_dict'][qbn]['delay'] = delay
             self.proc_data_dict['analysis_params_dict'][qbn][
-                'delay_stderr'] = np.diff(sweep_points).mean()
+                'delay_stderr'] = np.diff(delays).mean()
             self.proc_data_dict['analysis_params_dict'][qbn][
                 'corr_data'] = np.array(corr_data)
         self.save_processed_data(key='analysis_params_dict')
@@ -7342,19 +7349,19 @@ class FluxPulseTimingBetweenQubitsAnalysis(MultiQubit_TimeDomain_Analysis):
 
             corr_data = self.proc_data_dict['analysis_params_dict'][qbn][
                 'corr_data']
-            delays = self.proc_data_dict['sweep_points_dict'][qbn][
-                         'msmt_sweep_points'] / 1e-9
-            self.plot_dicts['Autocorrelation_' + qbn] = {
+            delays = self.proc_data_dict['analysis_params_dict'][qbn]['delays']
+
+            self.plot_dicts['Autoconvolution_' + qbn] = {
                 'title': rdd['measurementstring'] +
                          '\n' + rdd['timestamp'] + '\n' + qbn,
-                'fig_name': f'Autocorrelation_{qbn}',
-                'fig_id': f'Autocorrelation_{qbn}',
+                'fig_name': f'Autoconvolution_{qbn}',
+                'fig_id': f'Autoconvolution_{qbn}',
                 'plotfn': self.plot_line,
-                'xvals': delays,
-                'yvals': corr_data,
+                'xvals': delays[0::2] / 1e-9,
+                'yvals': corr_data[0::2],
                 'xlabel': r'Delay time',
                 'xunit': 'ns',
-                'ylabel': 'Autocorrelation function',
+                'ylabel': 'Autoconvolution function',
                 'linestyle': '-',
                 'color': 'k',
                 #                                     'setlabel': legendlabel,
@@ -7363,8 +7370,15 @@ class FluxPulseTimingBetweenQubitsAnalysis(MultiQubit_TimeDomain_Analysis):
                 'legend_pos': 'upper left',
             }
 
+            self.plot_dicts['Autoconvolution2_' + qbn] = {
+                'fig_id': f'Autoconvolution_{qbn}',
+                'plotfn': self.plot_line,
+                'xvals': delays[1::2] / 1e-9,
+                'yvals': corr_data[1::2],
+                'color': 'r'}
+
             self.plot_dicts['corr_vline_' + qbn] = {
-                'fig_id': f'Autocorrelation_{qbn}',
+                'fig_id': f'Autoconvolution_{qbn}',
                 'plotfn': self.plot_vlines,
                 'x': self.proc_data_dict['analysis_params_dict'][qbn][
                          'delay'] / 1e-9,
@@ -7377,7 +7391,7 @@ class FluxPulseTimingBetweenQubitsAnalysis(MultiQubit_TimeDomain_Analysis):
                       + ' $\pm$ {:.2f} ns'.format(apd[qbn]['delay_stderr']
                                                   * 1e9)
             self.plot_dicts['text_msg_' + qbn] = {
-                'fig_id': f'Autocorrelation_{qbn}',
+                'fig_id': f'Autoconvolution_{qbn}',
                 'ypos': -0.2,
                 'xpos': 0,
                 'horizontalalignment': 'left',

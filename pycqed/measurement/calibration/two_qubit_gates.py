@@ -646,6 +646,7 @@ class CPhase(CalibBuilder):
         :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
     ...
     """
+    kw_for_task_keys = ['ref_pi_half']
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
@@ -701,6 +702,8 @@ class CPhase(CalibBuilder):
             global choice passed to the class init)
         ...
         """
+        ref_pi_half = kw.get('ref_pi_half', False)
+        print(ref_pi_half)
 
         hard_sweep_dict, soft_sweep_dict = sweep_points
         assert num_cz_gates % 2 != 0
@@ -737,19 +740,27 @@ class CPhase(CalibBuilder):
                                                 max_flux_length)
 
         pulse_modifs = {'all': {'element_name': 'cphase_final_rots_el'}}
-        fr = self.block_from_ops('final_rots', [f'X180 {qbl}', f'X90s {qbr}'],
+        if ref_pi_half:
+            fr = self.block_from_ops('final_rots', [f'X90 {qbl}', f'X90s {qbr}'],
+                                     pulse_modifs=pulse_modifs)
+            print('Ref Pi Half')
+        else:
+            fr = self.block_from_ops('final_rots', [f'X180 {qbl}', f'X90s {qbr}'],
                                  pulse_modifs=pulse_modifs)
         fr.set_end_after_all_pulses()
         fr.pulses[0]['pulse_delay'] = max_flux_length * num_cz_gates
-        fr.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
+        if not ref_pi_half:
+            fr.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
         for k in hard_sweep_dict.keys():
             if k != 'pi_pulse_on' and '=' not in k:
+                if ref_pi_half:
+                    fr.pulses[0][k] = ParametricValue(k)
                 fr.pulses[1][k] = ParametricValue(k)
 
         self.cz_durations.update({
             fp.pulses[0]['op_code']: fr.pulses[0]['pulse_delay']})
         self.cal_states_rotations.update({qbl: {'g': 0, 'e': 1, 'f': 2},
-                                          qbr: {'g': 0, 'e': 1, 'f': 2}})
+                                          qbr: {'g': 0, 'e': 1}})
         self.data_to_fit.update({qbl: 'pf', qbr: 'pe'})
 
         fp_fr = self.simultaneous_blocks('sim', [fp, fr])
@@ -791,7 +802,8 @@ class CPhase(CalibBuilder):
             qb_names=self.qb_names,
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
                           'plot_all_probs': plot_all_probs,
-                          'channel_map': channel_map})
+                          'channel_map': channel_map,
+                          'ref_pi_half': kw.get('ref_pi_half', False)})
         self.cphases = {}
         self.population_losses = {}
         self.leakage = {}
@@ -1069,12 +1081,14 @@ def measure_flux_pulse_timing_between_qubits(task_list, pulse_length,
     :return:
     '''
     if label is None:
-        label = 'Flux_pulse_timing_between_qubits{}_{}'.format(task_list[0]['qbc'],
-                                                               task_list[0]['qbt'])
+        label = 'Flux_pulse_timing_between_qubits_{}_{}'.format(task_list[0][
+                                                                    'qbc'].name,
+                                                               task_list[0][
+                                                                   'qbt'].name)
     pulse_lengths = np.array([pulse_length])
     sweep_points = SweepPoints('pulse_length', pulse_lengths, 's',
                                       dimension=1)
-    Chevron(task_list, sweep_points=sweep_points, analyze=False, **kw)
+    Chevron(task_list, sweep_points=sweep_points, analyze=False, label=label, **kw)
     if analyze:
         tda.FluxPulseTimingBetweenQubitsAnalysis(qb_names=[task_list[0]['qbr']])
 
