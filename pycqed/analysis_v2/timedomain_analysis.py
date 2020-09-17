@@ -6108,18 +6108,6 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                             'fit_yvals': {'data': data},
                             'guess_pars': guess_pars}
 
-    @staticmethod
-    def unwrap_phases_extrapolation(phases):
-        for i in range(2, len(phases)):
-            phase_diff_extrapolation = (phases[i-1]
-                                        + (phases[i-1]
-                                           - phases[i-2]) - phases[i])
-            if phase_diff_extrapolation > np.pi:
-                phases[i] += round(phase_diff_extrapolation/(2*np.pi))*2*np.pi
-            elif phase_diff_extrapolation < np.pi:
-                phases[i] += round(phase_diff_extrapolation/(2*np.pi))*2*np.pi
-        return phases
-
     def analyze_fit_results(self):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
 
@@ -6437,6 +6425,9 @@ class DynamicPhaseAnalysis(MultiCZgate_Calib_Analysis):
 class CryoscopeAnalysis(DynamicPhaseAnalysis):
 
     def __init__(self, qb_names, *args, **kwargs):
+        options_dict = kwargs.get('options_dict', {})
+        options_dict['unwrap_phases'] = True
+        kwargs['options_dict'] = options_dict
         params_dict = {}
         for qbn in qb_names:
             s = f'Instrument settings.{qbn}'
@@ -6456,9 +6447,16 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
         for qbn in self.qb_names:
             delta_phases = self.proc_data_dict['analysis_params_dict'][
                 f'{self.phase_key}_{qbn}']
+            delta_phases_vals = delta_phases['val']
+            delta_phases_errs = delta_phases['stderr']
+            if self.get_param_value('unwrap_phases', False):
+                delta_phases_vals = np.unwrap((delta_phases_vals + np.pi) %
+                                              (2*np.pi) - np.pi)
+            self.proc_data_dict['analysis_params_dict'][
+                f'{self.phase_key}_{qbn}']['val'] = delta_phases_vals
             self.proc_data_dict['analysis_params_dict'][f'delta_freq_{qbn}'] = \
-                {'val': delta_phases['val']/2/np.pi/delta_tau,
-                 'stderr': delta_phases['stderr']/2/np.pi/delta_tau}
+                {'val': delta_phases_vals/2/np.pi/delta_tau,
+                 'stderr': delta_phases_errs/2/np.pi/delta_tau}
 
     def prepare_plots(self):
         super().prepare_plots()
