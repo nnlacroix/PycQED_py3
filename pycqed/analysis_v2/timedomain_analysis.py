@@ -6488,6 +6488,91 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                         'linestyle': 'none',
                         'do_legend': False}
 
+    def get_generated_and_measured_pulse(self, qbn=None):
+        """
+        Args:
+            qbn: specifies for which qubit to calculate the quantities for.
+                Defaults to the first qubit in qb_names.
+
+        Returns: A tuple (tvals_gen, volts_gen, tvals_meas, freqs_meas,
+                freq_errs_meas, volt_freq_conv)
+            tvals_gen: time values for the generated fluxpulse
+            volts_gen: voltages of the generated fluxpulse
+            tvals_meas: time-values for the measured qubit frequencies
+            freqs_meas: measured qubit frequencies
+            freq_errs_meas: errors of measured qubit frequencies
+            volt_freq_conv: dictionary of fit params for frequency-voltage 
+                conversion
+
+
+        """
+        import pycqed.measurement.waveform_control.segment as seg_mod
+        import pycqed.analysis_v3.helper_functions as hlp_mod
+
+        if qbn is None:
+            qbn = self.qb_names[0]
+
+        tvals_meas = self.proc_data_dict['sweep_points_2D_dict'][qbn][
+            f'{qbn}_truncation_length']
+        freqs_meas = self.raw_data_dict[f'ge_freq_{qbn}'] + \
+                     self.proc_data_dict['analysis_params_dict'][
+                         f'delta_freq_{qbn}']['val']
+        freq_errs_meas = \
+        self.proc_data_dict['analysis_params_dict'][f'delta_freq_{qbn}'][
+            'stderr']
+
+        # Flux pulse parameters
+        # Needs to be changed when support for other pulses is added.
+        op_dict = {
+            'pulse_type': f'Instrument settings.{qbn}.flux_pulse_type',
+            'channel': f'Instrument settings.{qbn}.flux_pulse_channel',
+            'aux_channels_dict': f'Instrument settings.{qbn}.'
+                                 f'flux_pulse_aux_channels_dict',
+            'amplitude': f'Instrument settings.{qbn}.flux_pulse_amplitude',
+            'frequency': f'Instrument settings.{qbn}.flux_pulse_frequency',
+            'phase': f'Instrument settings.{qbn}.flux_pulse_phase',
+            'pulse_length': f'Instrument settings.{qbn}.'
+                            f'flux_pulse_pulse_length',
+            'truncation_length': f'Instrument settings.{qbn}.'
+                                 f'flux_pulse_truncation_length',
+            'buffer_length_start': f'Instrument settings.{qbn}.'
+                                   f'flux_pulse_buffer_length_start',
+            'buffer_length_end': f'Instrument settings.{qbn}.'
+                                 f'flux_pulse_buffer_length_end',
+            'extra_buffer_aux_pulse': f'Instrument settings.{qbn}.'
+                                      f'flux_pulse_extra_buffer_aux_pulse',
+            'pulse_delay': f'Instrument settings.{qbn}.'
+                           f'flux_pulse_pulse_delay',
+            'basis_rotation': f'Instrument settings.{qbn}.'
+                              f'flux_pulse_basis_rotation',
+            'gaussian_filter_sigma': f'Instrument settings.{qbn}.'
+                                     f'flux_pulse_gaussian_filter_sigma',
+        }
+
+        params_dict = {
+            'volt_freq_conv': f'Instrument settings.{qbn}.'
+                              f'fit_ge_freq_from_flux_pulse_amp',
+            'flux_channel': f'Instrument settings.{qbn}.'
+                            f'flux_pulse_channel',
+            **op_dict
+        }
+
+        dd = hlp_mod.get_params_from_hdf_file({}, params_dict,
+                                              folder=a_tools.get_folder(
+                                                  self.timestamps[0]))
+
+        dd['element_name'] = 'element'
+
+        pulse = seg_mod.UnresolvedPulse(dd).pulse_obj
+        pulse.algorithm_time(0)
+
+        tvals_gen = np.arange(0, pulse.length, 1 / 2.4e9)
+        volts_gen = pulse.chan_wf(dd['flux_channel'], tvals_gen)
+        volt_freq_conv = dd['volt_freq_conv']
+
+        return tvals_gen, volts_gen, tvals_meas, freqs_meas, freq_errs_meas, \
+               volt_freq_conv
+
 class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def __init__(self, *args, **kwargs):
