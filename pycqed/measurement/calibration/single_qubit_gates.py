@@ -488,7 +488,7 @@ class Cryoscope(CalibBuilder):
         :param kw:
         """
         qb_names = [task['qb'] for task in self.task_list]
-        self.analysis = tda.DynamicPhaseAnalysis(
+        self.analysis = tda.CryoscopeAnalysis(
             qb_names=qb_names, options_dict={'unwrap_phases': True})
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):

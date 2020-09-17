@@ -6442,6 +6442,62 @@ class DynamicPhaseAnalysis(MultiCZgate_Calib_Analysis):
             if row % 2 != 0 else 'with FP'
 
 
+class CryoscopeAnalysis(DynamicPhaseAnalysis):
+
+    def __init__(self, qb_names, *args, **kwargs):
+        params_dict = {}
+        for qbn in qb_names:
+            s = f'Instrument settings.{qbn}'
+            params_dict[f'ge_freq_{qbn}'] = s+f'.ge_freq'
+        kwargs['params_dict'] = params_dict
+        kwargs['numeric_params'] = list(params_dict)
+        super().__init__(qb_names, *args, **kwargs)
+
+    def process_data(self):
+        super().process_data()
+        self.phase_key = 'delta_phase'
+
+    def analyze_fit_results(self):
+        super().analyze_fit_results()
+
+        delta_tau = self.get_param_value('estimation_window')
+        for qbn in self.qb_names:
+            delta_phases = self.proc_data_dict['analysis_params_dict'][
+                f'{self.phase_key}_{qbn}']
+            self.proc_data_dict['analysis_params_dict'][f'delta_freq_{qbn}'] = \
+                {'val': delta_phases['val']/2/np.pi/delta_tau,
+                 'stderr': delta_phases['stderr']/2/np.pi/delta_tau}
+
+    def prepare_plots(self):
+        super().prepare_plots()
+
+        if self.do_fitting:
+            for qbn in self.qb_names:
+                ss_pars = self.proc_data_dict['sweep_points_2D_dict'][qbn]
+                for idx, ss_pname in enumerate(ss_pars):
+                    param_name = f'delta_freq_{qbn}'
+                    results_dict = self.proc_data_dict['analysis_params_dict'][
+                        param_name]
+
+                    yvals = results_dict['val'] + self.raw_data_dict[
+                        f'ge_freq_{qbn}']
+                    xlabel = self.sp.get_sweep_params_property('label', 1,
+                                                               ss_pname)
+                    figure_name = f'{param_name}_vs_{xlabel}'
+                    self.plot_dicts[figure_name] = {
+                        'plotfn': self.plot_line,
+                        'xvals': self.sp.get_sweep_params_property('values', 1,
+                                                                   ss_pname),
+                        'xlabel': xlabel,
+                        'xunit': self.sp.get_sweep_params_property('unit', 1,
+                                                                   ss_pname),
+                        'yvals': yvals,
+                        'yerr': results_dict['stderr'],
+                        'ylabel': param_name,
+                        'yunit': 'Hz',
+                        'linestyle': 'none',
+                        'do_legend': False}
+
 class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def __init__(self, *args, **kwargs):
