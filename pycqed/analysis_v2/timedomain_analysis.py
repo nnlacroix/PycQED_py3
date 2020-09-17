@@ -6328,12 +6328,17 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
             for qbn in self.qb_names:
                 ss_pars = self.proc_data_dict['sweep_points_2D_dict'][qbn]
                 for idx, ss_pname in enumerate(ss_pars):
-                    sp_info = self.sp[1][ss_pname]
+                    xvals = self.sp.get_sweep_params_property('values', 1,
+                                                              ss_pname)
+                    xlabel = self.sp.get_sweep_params_property('label', 1,
+                                                               ss_pname)
+                    xunit = self.sp.get_sweep_params_property('unit', 1,
+                                                               ss_pname)
                     for param_name, results_dict in self.proc_data_dict[
                             'analysis_params_dict'].items():
                         if qbn in param_name:
-                            reps = len(results_dict['val']) / len(sp_info[0])
-                            plot_name = f'{param_name}_vs_{sp_info[2]}'
+                            reps = len(results_dict['val']) / len(xvals)
+                            plot_name = f'{param_name}_vs_{xlabel}'
                             if 'phase' in param_name:
                                 yvals = results_dict['val']*180/np.pi - (180 if
                                     len(self.leakage_qbnames) > 0 else 0)
@@ -6344,8 +6349,8 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                     'fig_id': plot_name,
                                     'plotfn': self.plot_hlines,
                                     'y': 0,
-                                    'xmin': np.min(sp_info[0]),
-                                    'xmax': np.max(sp_info[0]),
+                                    'xmin': np.min(xvals),
+                                    'xmax': np.max(xvals),
                                     'colors': 'gray'}
                             else:
                                 yvals = results_dict['val']
@@ -6354,9 +6359,9 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
 
                             self.plot_dicts[plot_name] = {
                                 'plotfn': self.plot_line,
-                                'xvals': np.repeat(sp_info[0], reps),
-                                'xlabel': sp_info[2],
-                                'xunit': sp_info[1],
+                                'xvals': np.repeat(xvals, reps),
+                                'xlabel': xlabel,
+                                'xunit': xunit,
                                 'yvals': yvals,
                                 'yerr': yerr if param_name != 'leakage'
                                     else None,
