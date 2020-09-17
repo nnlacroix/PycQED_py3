@@ -26,6 +26,7 @@ import logging
 
 from pycqed.utilities import math
 from pycqed.utilities.general import find_symmetry_index
+import pycqed.measurement.waveform_control.segment as seg_mod
 
 log = logging.getLogger(__name__)
 try:
@@ -6503,12 +6504,7 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
             freq_errs_meas: errors of measured qubit frequencies
             volt_freq_conv: dictionary of fit params for frequency-voltage 
                 conversion
-
-
         """
-        import pycqed.measurement.waveform_control.segment as seg_mod
-        import pycqed.analysis_v3.helper_functions as hlp_mod
-
         if qbn is None:
             qbn = self.qb_names[0]
 
@@ -6557,10 +6553,7 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
             **op_dict
         }
 
-        dd = hlp_mod.get_params_from_hdf_file({}, params_dict,
-                                              folder=a_tools.get_folder(
-                                                  self.timestamps[0]))
-
+        dd = self.get_data_from_timestamp_list(params_dict)
         dd['element_name'] = 'element'
 
         pulse = seg_mod.UnresolvedPulse(dd).pulse_obj
@@ -6572,6 +6565,7 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
 
         return tvals_gen, volts_gen, tvals_meas, freqs_meas, freq_errs_meas, \
                volt_freq_conv
+
 
 class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
 
