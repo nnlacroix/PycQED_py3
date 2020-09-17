@@ -6139,16 +6139,17 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                     # phase_diffs
                     phases = np.array([fr.best_values['phase'] for fr in
                                        fit_res_objs])
-                    if self.get_param_value('unwrap_phases', False):
-                        phases0 = self.unwrap_phases_extrapolation(phases)
-                        phases1 = np.unwrap(phases)
-                        assert (np.all(phases0[0::2] - phases0[1::2]==
-                                       phases1[0::2] - phases1[1::2]))
-                        phases = phases1
                     phases_errs = np.array([fr.params['phase'].stderr for fr in
                                             fit_res_objs])
                     phases_errs[phases_errs == None] = 0.0
                     phase_diffs = phases[0::2] - phases[1::2]
+                    if self.get_param_value('unwrap_phases', False):
+                        phase_diffs0 = self.unwrap_phases_extrapolation(
+                            phase_diffs)
+                        phase_diffs1 = np.unwrap(phase_diffs)
+                        if not np.all(phase_diffs0 == phase_diffs1):
+                            print('assertion failed')
+                        phase_diffs = phase_diffs1
                     if self.phase_key == 'cphase':
                         phase_diffs[phase_diffs < 0] += 2*np.pi
                     phase_diffs_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
@@ -6334,9 +6335,11 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                             reps = len(results_dict['val']) / len(sp_info[0])
                             plot_name = f'{param_name}_vs_{sp_info[2]}'
                             if 'phase' in param_name:
-                                yvals = results_dict['val']*180/np.pi - 180
+                                yvals = results_dict['val']*180/np.pi - (180 if
+                                    len(self.leakage_qbnames) > 0 else 0)
                                 yerr = results_dict['stderr']*180/np.pi
-                                ylabel = param_name + '-$180^{\\circ}$'
+                                ylabel = param_name + ('-$180^{\\circ}$' if
+                                    len(self.leakage_qbnames) > 0 else '')
                                 self.plot_dicts[plot_name+'_hline'] = {
                                     'fig_id': plot_name,
                                     'plotfn': self.plot_hlines,
