@@ -488,7 +488,6 @@ class BufferedCZPulse(pulse.Pulse):
             'buffer_length_end': 0,
             'extra_buffer_aux_pulse': 5e-9,
             'gaussian_filter_sigma': 0,
-            'truncation_length': None,
         }
         return params
 
@@ -517,11 +516,6 @@ class BufferedCZPulse(pulse.Pulse):
         t_rel = tvals - tvals[0]
         wave *= np.cos(
             2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
-        if self.truncation_length is not None:
-            # truncation_length should be (n+0.5) samples to avoid rounding
-            # errors
-            mask = tvals <= (tvals[0] + self.truncation_length)
-            wave = wave * mask
         return wave
 
     def hashables(self, tstart, channel):
