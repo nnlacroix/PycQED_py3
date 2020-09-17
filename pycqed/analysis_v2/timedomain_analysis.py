@@ -5598,7 +5598,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                 'fit_xvals': {'x': phases},
                                 'fit_yvals': {'data': data},
                                 'guess_pars': guess_pars}
-                    elif prob_label == 'pe':
+                    elif (prob_label == 'pe')or(prob_label == 'pg'):
                         # fit ramsey qb results to a cosine
                         model = lmfit.Model(fit_mods.CosFunc)
                         guess_pars = fit_mods.Cos_guess(
@@ -5801,7 +5801,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                     else:
                         if f'amps_{qbn}' in self.proc_data_dict[
                                 'analysis_params_dict']:
-                            figure_name = f'Leakage_{qbn}_pe'
+                            figure_name = f'Leakage_{qbn}_pg'
                             textstr = 'Amplitude CZ int. OFF = \n' + \
                                        '{:.3f} $\\pm$ {:.3f}'.format(
                                            self.proc_data_dict[
