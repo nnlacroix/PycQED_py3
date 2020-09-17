@@ -684,6 +684,7 @@ class CPhase(CalibBuilder):
         :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
     ...
     """
+    kw_for_task_keys = ['ref_pi_half']
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
@@ -707,6 +708,7 @@ class CPhase(CalibBuilder):
             self.population_losses = None
             self.leakage = None
             self.delta_leakage = None
+            self.swap_errors = None
             self.cz_durations = {}
             self.cal_states_rotations = {}
 
@@ -765,6 +767,9 @@ class CPhase(CalibBuilder):
                 spectator qubits. Will be assembled in parallel with the
                 initial rotations.
         """
+        ref_pi_half = kw.get('ref_pi_half', False)
+        print(ref_pi_half)
+
         hard_sweep_dict, soft_sweep_dict = sweep_points
         assert num_cz_gates % 2 != 0
 
@@ -803,19 +808,30 @@ class CPhase(CalibBuilder):
         fp_w = self.simultaneous_blocks('sim', [fp, w], block_align='center')
 
         pulse_modifs = {'all': {'element_name': 'cphase_final_rots_el'}}
-        fr = self.block_from_ops('final_rots', [f'X180 {qbl}', f'X90s {qbr}'],
+        if ref_pi_half:
+            fr = self.block_from_ops('final_rots', [f'X90 {qbl}', f'X90s {qbr}'],
+                                     pulse_modifs=pulse_modifs)
+            print('Ref Pi Half')
+        else:
+            fr = self.block_from_ops('final_rots', [f'X180 {qbl}', f'X90s {qbr}'],
                                  pulse_modifs=pulse_modifs)
         fr.set_end_after_all_pulses()
-        fr.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
+        if not ref_pi_half:
+            fr.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
         for k in hard_sweep_dict.keys():
             if k != 'pi_pulse_on' and '=' not in k:
+                if ref_pi_half:
+                    fr.pulses[0][k] = ParametricValue(k)
                 fr.pulses[1][k] = ParametricValue(k)
 
         self.cz_durations.update({
             fp.pulses[0]['op_code']: fr.pulses[0]['pulse_delay']})
         self.cal_states_rotations.update({qbl: {'g': 0, 'e': 1, 'f': 2},
                                           qbr: {'g': 0, 'e': 1}})
-        self.data_to_fit.update({qbl: 'pf', qbr: 'pe'})
+        if ref_pi_half:
+            self.data_to_fit.update({qbl: ['pg','pf'], qbr: 'pe'})
+        else:
+            self.data_to_fit.update({qbl: 'pf', qbr: 'pe'})
 
         return [pb, ir, fp_w, fr]
 
@@ -860,6 +876,7 @@ class CPhase(CalibBuilder):
         """
         plot_all_traces = kw.get('plot_all_traces', True)
         plot_all_probs = kw.get('plot_all_probs', True)
+        ref_pi_half = kw.get('ref_pi_half', False)
         if self.classified:
             channel_map = {qb.name: [vn + ' ' +
                                      qb.instr_uhf() for vn in
@@ -874,11 +891,13 @@ class CPhase(CalibBuilder):
             qb_names=self.qb_names,
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
                           'plot_all_probs': plot_all_probs,
-                          'channel_map': channel_map})
+                          'channel_map': channel_map,
+                          'ref_pi_half': kw.get('ref_pi_half', False)})
         self.cphases = {}
         self.population_losses = {}
         self.leakage = {}
         self.delta_leakage = {}
+        self.swap_errors = {}
         for task in self.task_list:
             self.cphases.update({task['prefix'][:-1]: self.analysis.proc_data_dict[
                 'analysis_params_dict'][f"cphase_{task['qbr']}"]['val']})
@@ -886,6 +905,11 @@ class CPhase(CalibBuilder):
                 {task['prefix'][:-1]: self.analysis.proc_data_dict[
                     'analysis_params_dict'][
                     f"population_loss_{task['qbr']}"]['val']})
+            if ref_pi_half:
+                self.swap_errors.update(
+                    {task['prefix'][:-1]: self.analysis.proc_data_dict[
+                        'analysis_params_dict'][
+                        f"amps_{task['qbl']}"]['val']})
             self.leakage.update(
                 {task['prefix'][:-1]: self.analysis.proc_data_dict[
                     'analysis_params_dict'][
@@ -896,7 +920,7 @@ class CPhase(CalibBuilder):
                     f"leakage_increase_{task['qbl']}"]['val']})
 
         return self.cphases, self.population_losses, self.leakage, \
-               self.analysis
+               self.analysis, self.swap_errors
 
 
 class DynamicPhase(CalibBuilder):
