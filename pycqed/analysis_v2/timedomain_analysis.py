@@ -6427,7 +6427,8 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
 
     def __init__(self, qb_names, *args, **kwargs):
         options_dict = kwargs.get('options_dict', {})
-        options_dict['unwrap_phases'] = True
+        unwrap_phases = options_dict.pop('unwrap_phases', True)
+        options_dict['unwrap_phases'] = unwrap_phases
         kwargs['options_dict'] = options_dict
         params_dict = {}
         for qbn in qb_names:
@@ -6455,9 +6456,15 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                                               (2*np.pi) - np.pi)
             self.proc_data_dict['analysis_params_dict'][
                 f'{self.phase_key}_{qbn}']['val'] = delta_phases_vals
+
+            delta_freqs = delta_phases_vals/2/np.pi/delta_tau
+            delta_freqs_errs = delta_phases_errs/2/np.pi/delta_tau
             self.proc_data_dict['analysis_params_dict'][f'delta_freq_{qbn}'] = \
-                {'val': delta_phases_vals/2/np.pi/delta_tau,
-                 'stderr': delta_phases_errs/2/np.pi/delta_tau}
+                {'val': delta_freqs, 'stderr': delta_freqs_errs}
+
+            qb_freqs = self.raw_data_dict[f'ge_freq_{qbn}'] + delta_freqs
+            self.proc_data_dict['analysis_params_dict'][f'freq_{qbn}'] = \
+                {'val':  qb_freqs, 'stderr': delta_freqs_errs}
 
     def prepare_plots(self):
         super().prepare_plots()
@@ -6466,12 +6473,10 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
             for qbn in self.qb_names:
                 ss_pars = self.proc_data_dict['sweep_points_2D_dict'][qbn]
                 for idx, ss_pname in enumerate(ss_pars):
-                    param_name = f'delta_freq_{qbn}'
+                    param_name = f'freq_{qbn}'
                     results_dict = self.proc_data_dict['analysis_params_dict'][
                         param_name]
 
-                    yvals = results_dict['val'] + self.raw_data_dict[
-                        f'ge_freq_{qbn}']
                     xlabel = self.sp.get_sweep_params_property('label', 1,
                                                                ss_pname)
                     figure_name = f'{param_name}_vs_{xlabel}'
@@ -6482,7 +6487,7 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                         'xlabel': xlabel,
                         'xunit': self.sp.get_sweep_params_property('unit', 1,
                                                                    ss_pname),
-                        'yvals': yvals,
+                        'yvals': results_dict['val'],
                         'yerr': results_dict['stderr'],
                         'ylabel': param_name,
                         'yunit': 'Hz',
@@ -6510,12 +6515,10 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
 
         tvals_meas = self.proc_data_dict['sweep_points_2D_dict'][qbn][
             f'{qbn}_truncation_length']
-        freqs_meas = self.raw_data_dict[f'ge_freq_{qbn}'] + \
-                     self.proc_data_dict['analysis_params_dict'][
-                         f'delta_freq_{qbn}']['val']
-        freq_errs_meas = \
-        self.proc_data_dict['analysis_params_dict'][f'delta_freq_{qbn}'][
-            'stderr']
+        freqs_meas = self.proc_data_dict['analysis_params_dict'][
+            f'freq_{qbn}']['val']
+        freq_errs_meas = self.proc_data_dict['analysis_params_dict'][
+            f'freq_{qbn}']['stderr']
 
         # Flux pulse parameters
         # Needs to be changed when support for other pulses is added.
