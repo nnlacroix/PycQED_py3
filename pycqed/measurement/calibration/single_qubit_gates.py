@@ -452,13 +452,15 @@ class Cryoscope(CalibBuilder):
             second sweep dimension
         :param kw: keyword arguments
         """
-        
         parallel_block_list = []
         for i, task in enumerate(self.preprocessed_task_list):
             sweep_points = task['sweep_points']
             qb = task['qb']
+            flux_op_code = task.get('flux_op_code', None)
+            if flux_op_code is None:
+                flux_op_code = f'FP {qb}'
             cryo_blk = self.block_from_ops(
-                f'cryoscope {qb}', [f'Y90 {qb}', f'FP {qb}', f'Y90 {qb}'])
+                f'cryoscope {qb}', [f'Y90 {qb}', flux_op_code, f'Y90 {qb}'])
             # set hard sweep phase and delay of second pi-half pulse
             cryo_blk.pulses[2]['phase'] = \
                 sweep_points.get_sweep_params_property(
@@ -490,6 +492,7 @@ class Cryoscope(CalibBuilder):
         qb_names = [task['qb'] for task in self.task_list]
         self.analysis = tda.CryoscopeAnalysis(
             qb_names=qb_names, options_dict={'unwrap_phases': True})
+
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
     """
