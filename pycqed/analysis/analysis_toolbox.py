@@ -170,6 +170,11 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
         # this makes sure that (most) non day dirs do not get searched
         # as they should start with a digit (e.g. YYYYMMDD)
         if daydir[0].isdigit():
+            if older_than is not None:
+                if not is_older(daydir + '_000000', older_than,
+                                or_equal=or_equal):
+                    i -= 1
+                    continue
             all_measdirs = [d for d in os.listdir(
                 os.path.join(search_dir, daydir))]
             all_measdirs.sort()
