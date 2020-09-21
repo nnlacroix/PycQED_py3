@@ -516,3 +516,20 @@ class ProcessingPipeline(list):
                 f'Make sure you use the correct keys_out_container.')
 
         return keys_out
+
+    def find_node(self, node_name, meas_obj_names=None,
+                  keys_out_container=None):
+
+        nodes = [n for n in self if n['node_name'] == node_name]
+        if meas_obj_names is not None:
+            if isinstance(meas_obj_names, str):
+                meas_obj_names = [meas_obj_names]
+            nodes = [n for n in nodes if (
+                    len(hlp_mod.get_sublst_with_all_strings_of_list(
+                        n['meas_obj_names'], meas_obj_names)) > 0)]
+
+        if keys_out_container is not None:
+            nodes = [n for n in nodes if
+                     n['keys_out_container'] == keys_out_container ]
+
+        return nodes
