@@ -5640,7 +5640,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                             fit_res_objs])
                     phases_errs[phases_errs == None] = 0.0
                     phase_diffs = phases[0::2] - phases[1::2]
-                    phase_diffs %= 2*np.pi
+                    phase_diffs %= (2*np.pi)
                     phase_diffs_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
                                                            phases_errs[1::2]**2,
                                                            dtype=np.float64))
