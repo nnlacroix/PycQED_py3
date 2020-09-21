@@ -24,6 +24,10 @@ class Segment:
     (reference point + delay) as well as an instance of class Pulse.
     """
 
+    trigger_pulse_length = 20e-9
+    trigger_pulse_amplitude = 0.5
+    trigger_pulse_start_buffer = 25e-9
+
     def __init__(self, name, pulse_pars_list=[]):
         self.name = name
         self.pulsar = ps.Pulsar.get_instance()
@@ -34,9 +38,9 @@ class Segment:
         self.element_start_end = {}
         self.elements_on_awg = {}
         self.trigger_pars = {
-            'pulse_length': 50e-9,
-            'amplitude': 0.5,
-            'buffer_length_start': 25e-9
+            'pulse_length': self.trigger_pulse_length,
+            'amplitude': self.trigger_pulse_amplitude,
+            'buffer_length_start': self.trigger_pulse_start_buffer,
         }
         self.trigger_pars['length'] = self.trigger_pars['pulse_length'] + \
                                       self.trigger_pars['buffer_length_start']
@@ -128,17 +132,40 @@ class Segment:
         self.enforce_single_element()
         self.resolve_timing()
         self.resolve_Z_gates()
+        self.add_flux_crosstalk_cancellation_channels()
         self.gen_trigger_el()
         self.add_charge_compensation()
 
     def enforce_single_element(self):
-        self.resolved_pulses = deepcopy(self.unresolved_pulses)
-        for p in self.resolved_pulses:
+        self.resolved_pulses = []
+        for p in self.unresolved_pulses:
+            ch_mask = []
             for ch in p.pulse_obj.channels:
                 ch_awg = self.pulsar.get(f'{ch}_awg')
-                if self.pulsar.get(f'{ch_awg}_enforce_single_element'):
-                    p.pulse_obj.element_name = f'default_{self.name}'
-                    break
+                ch_mask.append(
+                    self.pulsar.get(f'{ch_awg}_enforce_single_element'))
+            if all(ch_mask) and len(ch_mask) != 0:
+                p = deepcopy(p)
+                p.pulse_obj.element_name = f'default_{self.name}'
+                self.resolved_pulses.append(p)
+            elif any(ch_mask):
+                p0 = deepcopy(p)
+                p0.pulse_obj.channel_mask = [not x for x in ch_mask]
+                self.resolved_pulses.append(p0)
+
+                p1 = deepcopy(p)
+                p1.pulse_obj.element_name = f'default_{self.name}'
+                p1.pulse_obj.channel_mask = ch_mask
+                p1.ref_pulse = p.pulse_obj.name
+                p1.ref_point = 0
+                p1.ref_point_new = 0
+                p1.basis_rotation = {}
+                p1.delay = 0
+                p1.pulse_obj.name += '_ese'
+                self.resolved_pulses.append(p1)
+            else:
+                p = deepcopy(p)
+                self.resolved_pulses.append(p)
 
     def resolve_timing(self, resolve_block_align=True):
         """
@@ -246,11 +273,11 @@ class Segment:
                     simultaneous_end_pulse = ref_pulses_dict_all[
                         n[:n[:-len('-|-start')].rfind('-|-') + 3] +
                         'simultaneous_end_pulse']
-                    t0 = p.block_align * (
+                    Delta_t = p.block_align * (
                             simultaneous_end_pulse.pulse_obj.algorithm_time() -
                             end_pulse.pulse_obj.algorithm_time())
-                    if abs(p.pulse_obj.algorithm_time() - t0) > 1e-14:
-                        p.delay += t0 - p.pulse_obj.algorithm_time()
+                    if abs(Delta_t) > 1e-14:
+                        p.delay += Delta_t
                         re_resolve = True
                     p.block_align = None
             if re_resolve:
@@ -277,6 +304,18 @@ class Segment:
             ordered_unres_pulses.append(p)
 
         self.resolved_pulses = ordered_unres_pulses
+
+    def add_flux_crosstalk_cancellation_channels(self):
+        if self.pulsar.flux_crosstalk_cancellation():
+            for p in self.resolved_pulses:
+                if any([ch in self.pulsar.flux_channels() for ch in
+                        p.pulse_obj.channels]):
+                    p.pulse_obj.crosstalk_cancellation_channels = \
+                        self.pulsar.flux_channels()
+                    p.pulse_obj.crosstalk_cancellation_mtx = \
+                        self.pulsar.flux_crosstalk_cancellation_mtx()
+                    p.pulse_obj.crosstalk_cancellation_shift_mtx = \
+                        self.pulsar.flux_crosstalk_cancellation_shift_mtx()
 
     def add_charge_compensation(self):
         """
@@ -312,7 +351,7 @@ class Segment:
                 # Find the end of the last pulse of the segment
                 t_end = max(t_end, pulse.algorithm_time() + pulse.length)
 
-                for c in pulse.channels:
+                for c in pulse.masked_channels():
                     if c not in compensation_chan:
                         continue
                     awg = self.pulsar.get('{}_awg'.format(c))
@@ -438,7 +477,7 @@ class Segment:
 
         for element in self.elements:
             for pulse in self.elements[element]:
-                for channel in pulse.channels:
+                for channel in pulse.masked_channels():
                     awg = self.pulsar.get(channel + '_awg')
                     if awg in self.elements_on_awg and \
                         element not in self.elements_on_awg[awg]:
@@ -560,7 +599,8 @@ class Segment:
                         **self.trigger_pars)
                     i += 1
 
-                    trig_pulse.algorithm_time(trigger_pulse_time)
+                    trig_pulse.algorithm_time(trigger_pulse_time -
+                                              0.25/self.pulsar.clock(channel))
 
                     # Add trigger element and pulse to seg.elements
                     if trig_pulse.element_name in self.elements:
@@ -718,6 +758,11 @@ class Segment:
         t_end = -float('inf')
 
         for pulse in self.elements[element]:
+            for ch in pulse.masked_channels():
+                if self.pulsar.get(f'{ch}_awg') == awg:
+                    break
+            else:
+                continue
             t_start = min(pulse.algorithm_time(), t_start)
             t_end = max(pulse.algorithm_time() + pulse.length, t_end)
 
@@ -787,7 +832,7 @@ class Segment:
                 element_start_time = self.get_element_start(element, awg)
                 for pulse in self.elements[element]:
                     # checks whether pulse is played on AWG
-                    pulse_channels = set(pulse.channels) & set(channel_list)
+                    pulse_channels = set(pulse.masked_channels()) & set(channel_list)
                     if pulse_channels == set():
                         continue
                     if codewords is not None and \
@@ -910,7 +955,7 @@ class Segment:
         if awg is not None:
             channels = set(self.pulsar.find_awg_channels(awg))
         for pulse in self.elements[element]:
-            if awg is not None and len(set(pulse.channels) & channels) == 0:
+            if awg is not None and len(set(pulse.masked_channels()) & channels) == 0:
                 continue
             codewords.add(pulse.codeword)
         return codewords
@@ -921,9 +966,9 @@ class Segment:
             awg_channels = set(self.pulsar.find_awg_channels(awg))
         for pulse in self.elements[element]:
             if awg is not None:
-                channels |= set(pulse.channels) & awg_channels
+                channels |= set(pulse.masked_channels()) & awg_channels
             else:
-                channels |= set(pulse.channels)
+                channels |= set(pulse.masked_channels())
         return channels
 
     def calculate_hash(self, elname, codeword, channel):
@@ -949,9 +994,28 @@ class Segment:
 
         for pulse in self.elements[elname]:
             if pulse.codeword in {'no_codeword', codeword}:
-                hashlist += pulse.hashables(tstart, channel)
+                hashlist += self.hashables(pulse, tstart, channel)
         return tuple(hashlist)
 
+    @staticmethod
+    def hashables(pulse, tstart, channel):
+        if channel in pulse.crosstalk_cancellation_channels:
+            hashables = []
+            idx_c = pulse.crosstalk_cancellation_channels.index(channel)
+            for c in pulse.channels:
+                if c in pulse.crosstalk_cancellation_channels:
+                    idx_c2 = pulse.crosstalk_cancellation_channels.index(c)
+                    factor = pulse.crosstalk_cancellation_mtx[idx_c, idx_c2]
+                    shift = pulse.crosstalk_cancellation_shift_mtx[
+                        idx_c, idx_c2] \
+                        if pulse.crosstalk_cancellation_shift_mtx is not \
+                           None else 0
+                    if factor != 0:
+                        hashables += pulse.hashables(tstart, c)
+                        hashables += [factor, shift]
+            return hashables
+        else:
+            return pulse.hashables(tstart, channel)
 
     def tvals(self, channel_list, element):
         """
@@ -1234,6 +1298,12 @@ class Segment:
                     + new_name
         # rename segment name
         self.name = new_name
+        new_acq_elements = set()
+        for el in self.acquisition_elements:
+            if el.endswith(f"_{old_name}"):
+                new_acq_elements.add(el[:-(len(old_name) + 1)] + '_' \
+                    + new_name)
+        self.acquisition_elements = new_acq_elements
 
     def __deepcopy__(self, memo):
         cls = self.__class__

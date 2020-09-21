@@ -6,6 +6,9 @@ import sys
 import numpy as np
 import scipy as sp
 from pycqed.measurement.waveform_control import pulse
+import logging
+
+log = logging.getLogger(__name__)
 
 pulse.pulse_libraries.add(sys.modules[__name__])
 
@@ -366,18 +369,14 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
             tl = self.trans_length
             bs = self.buffer_length_start
             be = self.buffer_length_end
-            self.amplitudes.append([0, ma + ao, ta, -ta, -ma + ao, 0])
+            ca0 = ma + ao
+            ca1 = -ma + ao
+            cl0 = max(-(ml * ao) / ca0, 0) if ca0 else 0
+            cl1 = max(-(ml * ao) / ca1, 0) if ca1 else 0
 
-            if ta == 0:
-                self.lengths.append([bs + d, ml / 2, tl / 2,
-                                     tl / 2, ml / 2, be - d])
-            else:
-                # if np.abs(tl * ta) < np.abs(ml * ao):
-                #     raise ValueError('NZTCPulse: Pick the pulse parameters '
-                #                      'such that "trans_len * trans_amplitude < '
-                #                      'pulse_length * amplitude_offset".')
-                self.lengths.append([bs + d, ml / 2, (tl - ml * ao / ta) / 2,
-                                     (tl + ml * ao / ta) / 2, ml / 2, be - d])
+            self.amplitudes.append([0, ma + ao, ta, -ta, -ma + ao, 0])
+            self.lengths.append([bs + d - cl0, cl0 + ml / 2, tl / 2,
+                                 tl / 2, ml / 2 + cl1, be - d - cl1])
 
     def chan_wf(self, channel, t):
         self._update_lengths_amps_channels()
@@ -426,13 +425,14 @@ class BufferedSquarePulse(pulse.Pulse):
     def chan_wf(self, chan, tvals):
         if self.gaussian_filter_sigma == 0:
             wave = np.ones_like(tvals) * self.amplitude
-            wave *= (tvals >= tvals[0] + self.buffer_length_start)
+            wave *= (tvals >= self.algorithm_time() + self.buffer_length_start)
             wave *= (tvals <
-                     tvals[0] + self.buffer_length_start + self.pulse_length)
+                     self.algorithm_time() + self.buffer_length_start +
+                     self.pulse_length)
             return wave
         else:
-            tstart = tvals[0] + self.buffer_length_start
-            tend = tvals[0] + self.buffer_length_start + self.pulse_length
+            tstart = self.algorithm_time() + self.buffer_length_start
+            tend = tstart + self.pulse_length
             scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
@@ -1014,7 +1014,7 @@ class GaussFilteredCosIQPulse(pulse.Pulse):
         hashlist += [self.mod_frequency, self.gaussian_filter_sigma]
         hashlist += [self.nr_sigma, self.pulse_length]
         phase = self.phase
-        phase += 360 * (not self.phase_lock) * self.mod_frequency \
+        phase += 360 * self.phase_lock * self.mod_frequency \
                  * self.algorithm_time()
         hashlist += [self.alpha, self.phi_skew, phase]
         return hashlist

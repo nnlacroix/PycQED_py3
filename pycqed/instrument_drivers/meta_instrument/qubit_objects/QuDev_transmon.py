@@ -2002,11 +2002,11 @@ class QuDev_transmon(Qubit):
 
             s1 = swf.Hard_Sweep()
             s1.name = 'Amplitude ratio hardware sweep'
-            s1.label = r'Amplitude ratio, $\alpha$'
+            s1.parameter_name = r'Amplitude ratio, $\alpha$'
             s1.unit = ''
             s2 = swf.Hard_Sweep()
             s2.name = 'Phase skew hardware sweep'
-            s2.label = r'Phase skew, $\phi$'
+            s2.parameter_name = r'Phase skew, $\phi$'
             s2.unit = 'deg'
             MC.set_sweep_functions([s1, s2])
             MC.set_sweep_points(meas_grid.T)
@@ -3540,6 +3540,14 @@ class QuDev_transmon(Qubit):
         else:
             return
 
+    def measure_flux_pulse_timing(self, delays, analyze, label=None, **kw):
+        if label is None:
+            label = 'Flux_pulse_timing_{}'.format(self.name)
+        self.measure_flux_pulse_scope([self.ge_freq()], delays,
+                                      label=label, analyze=False, **kw)
+        if analyze:
+            tda.FluxPulseTimingAnalysis(qb_names=[self.name])
+
     def measure_flux_pulse_scope(self, freqs, delays, cz_pulse_name=None,
                                  analyze=True, cal_points=True,
                                  upload=True, label=None,
@@ -3603,7 +3611,8 @@ class QuDev_transmon(Qubit):
             name='Drive frequency',
             parameter_name='Drive frequency', unit='Hz'))
         MC.set_sweep_points_2D(sweep_points_2D)
-        MC.set_detector_function(self.int_avg_det)
+        det_func = self.int_avg_det
+        MC.set_detector_function(det_func)
         sweep_points = SweepPoints('delay', delays, unit='s',
                                    label=r'delay, $\tau$', dimension=0)
         sweep_points.add_sweep_parameter('freq', freqs, unit='Hz',
@@ -3616,6 +3625,8 @@ class QuDev_transmon(Qubit):
                              'sweep_points_dict_2D': {self.name: freqs},
                              'sweep_points': sweep_points,
                              'meas_obj_sweep_points_map': mospm,
+                             'meas_obj_value_names_map':
+                                 {self.name: det_func.value_names},
                              'use_cal_points': cal_points,
                              'preparation_params': prep_params,
                              'cal_points': repr(cp),
