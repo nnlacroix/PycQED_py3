@@ -1,11 +1,14 @@
 import logging
 log = logging.getLogger(__name__)
 import re
-# import sys
-# this_module = sys.modules[__name__]
-
+import os
 from copy import deepcopy
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+
+try:
+    import pygraphviz as pgv
+except ModuleNotFoundError:
+    log.warning('Visualizing the pipeline tree requires the module pygraphviz.')
 
 ###################################################################
 #### This module creates a processing pipeline for analysis_v3 ####
@@ -235,8 +238,6 @@ Final pipeline:
 """
 
 
-
-
 class ProcessingPipeline(list):
     """
     Creates a processing pipeline for analysis_v3.
@@ -279,8 +280,6 @@ class ProcessingPipeline(list):
                 joint_processing = node_params.pop('joint_processing', False)
                 if joint_processing:
                     meas_obj_names = [','.join(meas_obj_names_raw)]
-                    mobj_value_names = hlp_mod.flatten_list(
-                        meas_obj_value_names_map.values())
                 else:
                     meas_obj_names = meas_obj_names_raw
 
@@ -291,10 +290,6 @@ class ProcessingPipeline(list):
                     if joint_processing and 'num_keys_out' \
                             not in new_node_params:
                         new_node_params['num_keys_out'] = 1
-                    # get the value names corresponding to the measured
-                    # object name
-                    if not joint_processing:
-                        mobj_value_names = meas_obj_value_names_map[mobj_name]
                     # get keys_in and any other key in node_params that
                     # contains keys_in
                     for k, v in new_node_params.items():
@@ -517,19 +512,85 @@ class ProcessingPipeline(list):
 
         return keys_out
 
-    def find_node(self, node_name, meas_obj_names=None,
-                  keys_out_container=None):
+    def find_node(self, dict_to_match, strict_comparison=False):
 
-        nodes = [n for n in self if n['node_name'] == node_name]
-        if meas_obj_names is not None:
-            if isinstance(meas_obj_names, str):
-                meas_obj_names = [meas_obj_names]
-            nodes = [n for n in nodes if (
-                    len(hlp_mod.get_sublst_with_all_strings_of_list(
-                        n['meas_obj_names'], meas_obj_names)) > 0)]
+        nodes = self
+        found = False
+        for k, v in dict_to_match.items():
+            if isinstance(v, dict):
+                raise NotImplementedError('There is no support for searching '
+                                          'for dicts inside the nodes.')
+            matched_nodes = []
+            for node in nodes:
+                if k not in node:
+                    continue
+                if type(node[k]) != type(v):
+                    continue
 
-        if keys_out_container is not None:
-            nodes = [n for n in nodes if
-                     n['keys_out_container'] == keys_out_container ]
+                if strict_comparison:
+                    condition = (v == node[k])
+                else:
+                    node_v = deepcopy(node[k])
+                    v_temp = deepcopy(v)
 
-        return nodes
+                    if isinstance(node_v, str):
+                        node_v = [node_v]
+                    if isinstance(v_temp, str):
+                        v_temp = [v_temp]
+
+                    if hasattr(v_temp, '__iter__') and isinstance(v_temp[0], str):
+                        condition = (len(
+                            hlp_mod.get_sublst_with_all_strings_of_list(
+                                node_v, v_temp)) > 0)
+                    else:
+                        condition = (v == node[k])
+                matched_nodes += [node] if condition else []
+
+            if len(matched_nodes):
+                nodes = matched_nodes
+                found = True
+            else:
+                print(f'No nodes found to have {k} = {v}')
+
+        if not found:
+            return []
+        else:
+            return nodes
+
+    def show(self, meas_obj_value_names_map=None,
+             save_name=None, save_folder=None, fmt='png'):
+
+        pipeline = self
+        if not any([node.get('was_resolved', False) for node in pipeline]):
+            if meas_obj_value_names_map is None:
+                raise ValueError('Please provide a resolved pipeline or the '
+                                 'meas_obj_value_names_map.')
+            pipeline = deepcopy(self)
+            pipeline(meas_obj_value_names_map)
+
+        G = pgv.AGraph(directed=True, dpi=600)
+        node_names = [f'{node["node_name"]}' + (f'_{node["keys_out_container"]}'
+                                                if "keys_out_container" in node
+                                                else '') for node in pipeline]
+        G.add_nodes_from(node_names)
+        for node in pipeline[1:]:
+            if 'keys_in' in node:
+                node_name = f'{node["node_name"]}' + (
+                    f'_{node["keys_out_container"]}' if
+                    "keys_out_container" in node else '')
+                matched_nodes = pipeline.find_node(
+                    dict_to_match={'keys_out': node['keys_in']},
+                    strict_comparison=True)
+                for n in matched_nodes:
+                    n_name = f'{n["node_name"]}' + (
+                        f'_{n["keys_out_container"]}' if
+                        "keys_out_container" in node else '')
+                    G.add_edge(n_name, node_name)
+        G.layout('dot')
+
+        if save_name is not None:
+            if save_folder is None:
+                save_folder = os.getcwd()
+            G.draw(f'{save_folder}\{save_name}.{fmt}')
+
+        return G
