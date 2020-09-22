@@ -452,6 +452,7 @@ class Cryoscope(CalibBuilder):
             second sweep dimension
         :param kw: keyword arguments
         """
+        from pprint import pprint
         parallel_block_list = []
         for i, task in enumerate(self.preprocessed_task_list):
             sweep_points = task['sweep_points']
@@ -459,24 +460,51 @@ class Cryoscope(CalibBuilder):
             flux_op_code = task.get('flux_op_code', None)
             if flux_op_code is None:
                 flux_op_code = f'FP {qb}'
-            cryo_blk = self.block_from_ops(
-                f'cryoscope {qb}', [f'Y90 {qb}', flux_op_code, f'Y90 {qb}'])
+
+            # pi half pulses blocks
+            pihalf_1_bk = self.block_from_ops(f'pihalf_1_{qb}', [f'Y90 {qb}'])
+            pihalf_2_bk = self.block_from_ops(f'pihalf_2_{qb}', [f'Y90 {qb}'])
             # set hard sweep phase and delay of second pi-half pulse
-            cryo_blk.pulses[2]['phase'] = \
+            pihalf_2_bk.pulses[0]['phase'] = \
                 sweep_points.get_sweep_params_property(
                     'values', 0, 'phase')[sp1d_idx]
-            cryo_blk.pulses[2]['pulse_delay'] = self.separation_buffer
+            pihalf_2_bk.pulses[0]['pulse_delay'] = self.separation_buffer
+
+            # flux pulses blocks
+            main_fpbk = self.block_from_ops(f'fp_main_{qb}', [flux_op_code])
+            repark_fpbk = self.block_from_ops(f'fp_repark_{qb}', [f'FP {qb}'])
+            repark_fpbk.pulses[0]['amplitude'] = task.get('repark_fp_amp', 0)
+            repark_fpbk.pulses[0]['pulse_length'] = task.get(
+                'repark_fp_len', main_fpbk.pulses[0]['pulse_length'] +
+                                 main_fpbk.pulses[0].get('buffer_length_start', 0) +
+                                 main_fpbk.pulses[0].get('buffer_length_end', 0))
+            repark_fpbk.pulses[0]['buffer_length_start'] = task.get(
+                'repark_fp_buffers',
+                repark_fpbk.pulses[0].get('buffer_length_start', 0))
+            repark_fpbk.pulses[0]['buffer_length_end'] = task.get(
+                'repark_fp_buffers',
+                repark_fpbk.pulses[0].get('buffer_length_end', 0))
+
             # set soft sweep truncation_length
             for k in sweep_points[1]:
-                cryo_blk.pulses[1][k] = sweep_points.get_sweep_params_property(
+                main_fpbk.pulses[0][k] = sweep_points.get_sweep_params_property(
                     'values', 1, k)[sp2d_idx]
-            # cryo_blk.pulses[1]['truncation_length'] = \
-            #     sweep_points.get_sweep_params_property(
-            #         'values', 1, 'truncation_length')[sp2d_idx]
             # set hard sweep truncation_length
-            cryo_blk.pulses[1]['truncation_length'] += \
+            main_fpbk.pulses[0]['truncation_length'] += \
                 sweep_points.get_sweep_params_property(
                     'values', 0, 'extra_truncation_length')[sp1d_idx]
+            if repark_fpbk.pulses[0]['amplitude']:
+                # truncate the reparking flux pulse
+                repark_fpbk.pulses[0]['truncation_length'] = \
+                    main_fpbk.pulses[0]['truncation_length'] + \
+                    repark_fpbk.pulses[0].get('buffer_length_start', 0)
+
+            # create final block
+            fp_block = self.simultaneous_blocks('flux_pulses_{qb}',
+                [main_fpbk, repark_fpbk], block_align='center')
+            cryo_blk = self.sequential_blocks(f'cryoscope {qb}',
+                [pihalf_1_bk, fp_block, pihalf_2_bk])
+
             parallel_block_list += [cryo_blk]
             self.data_to_fit.update({qb: 'pe'})
 
