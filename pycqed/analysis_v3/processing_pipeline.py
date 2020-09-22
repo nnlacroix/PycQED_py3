@@ -260,6 +260,9 @@ class ProcessingPipeline(list):
                 else:
                     raise ValueError('Entries in list must be dicts.')
 
+    def __add__(self, other):
+        return ProcessingPipeline.cast_init(super().__add__(other))
+
     def __call__(self, meas_obj_value_names_map):
         fallback_pipeline = deepcopy(self)
         pipeline = deepcopy(self)
@@ -579,8 +582,7 @@ class ProcessingPipeline(list):
                     f'_{node["keys_out_container"]}' if
                     "keys_out_container" in node else '')
                 matched_nodes = pipeline.find_node(
-                    dict_to_match={'keys_out': node['keys_in']},
-                    strict_comparison=True)
+                    dict_to_match={'keys_out': node['keys_in']})
                 for n in matched_nodes:
                     n_name = f'{n["node_name"]}' + (
                         f'_{n["keys_out_container"]}' if
@@ -594,3 +596,20 @@ class ProcessingPipeline(list):
             G.draw(f'{save_folder}\{save_name}.{fmt}')
 
         return G
+
+    @staticmethod
+    def cast_init(processing_pipeline):
+        """
+        Recreates a ProcessingPipeline object from a string representation of
+        a ProcessingPipeline instance, or a list of dicts.
+        Avoids having "eval" statements throughout the codebase.
+        Args:
+            processing_pipeline: string representation of ProcessingPipeline
+                instance, or a list of dicts
+
+        Returns: ProcessingPipeline object
+        """
+        if isinstance(processing_pipeline, str):
+            return ProcessingPipeline(from_dict_list=eval(processing_pipeline))
+        else:
+            return ProcessingPipeline(from_dict_list=processing_pipeline)
