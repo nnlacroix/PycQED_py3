@@ -28,7 +28,7 @@ class T1FrequencySweep(CalibBuilder):
 
 
         :param task_list: list of dicts; see CalibBuilder docstring
-        :param sweep_points: SweepPoints class instance with first sweep
+        :param sweep_points: SweepPoints class instance with first sweepn
             dimension describing the flux pulse lengths and second dimension
             either the flux pulse amplitudes, qubit frequencies, or both.
             !!! If both amplitudes and frequencies are provided, they must be

@@ -310,6 +310,10 @@ class QuDev_transmon(Qubit):
                                  initial_value=5, vals=vals.Numbers())
         self.add_pulse_parameter('X180_ef', 'ef_motzoi', 'motzoi',
                                  initial_value=0, vals=vals.Numbers())
+        self.add_pulse_parameter('X180_ef', 'ef_phi_skew', 'phi_skew',
+                                 initial_value=None, vals=vals.Numbers())
+        self.add_pulse_parameter('X180_ef', 'ef_alpha', 'alpha',
+                                 initial_value=None, vals=vals.Numbers())
         self.add_pulse_parameter('X180_ef', 'ef_X_phase', 'phase',
                                  initial_value=0, vals=vals.Numbers())
         self.add_pulse_parameter('X180_ef', 'ef_cancellation_params',
@@ -665,10 +669,12 @@ class QuDev_transmon(Qubit):
             operation_dict['X180 ' + self.name]['I_channel']
         operation_dict['X180_ef ' + self.name]['Q_channel'] = \
             operation_dict['X180 ' + self.name]['Q_channel']
-        operation_dict['X180_ef ' + self.name]['phi_skew'] = \
-            operation_dict['X180 ' + self.name]['phi_skew']
-        operation_dict['X180_ef ' + self.name]['alpha'] = \
-            operation_dict['X180 ' + self.name]['alpha']
+        if self.ef_phi_skew() is None:
+            operation_dict['X180_ef ' + self.name]['phi_skew'] = \
+                    operation_dict['X180 ' + self.name]['phi_skew']
+        if self.ef_alpha() is None:
+            operation_dict['X180_ef ' + self.name]['alpha'] = \
+                    operation_dict['X180 ' + self.name]['alpha']
         operation_dict['Acq ' + self.name] = deepcopy(
             operation_dict['RO ' + self.name])
         operation_dict['Acq ' + self.name]['amplitude'] = 0
@@ -1741,6 +1747,66 @@ class QuDev_transmon(Qubit):
         return ch_1_min, ch_2_min
 
     def calibrate_drive_mixer_skewness(self, update=True, amplitude=0.5,
+                                       for_ef=False, trigger_sep=5e-6,
+                                       no_improv_break=50,
+                                       initial_stepsize=(0.15, 10)):
+        MC = self.instr_mc.get_instr()
+        ad_func_pars = {'adaptive_function': opti.nelder_mead,
+                        'x0': [self.ge_alpha(), self.ge_phi_skew()],
+                        'initial_step': initial_stepsize,
+                        'no_improv_break': no_improv_break,
+                        'minimize': True,
+                        'maxiter': 500}
+        MC.set_sweep_functions([self.ge_alpha, self.ge_phi_skew])
+        MC.set_adaptive_function_parameters(ad_func_pars)
+
+        with temporary_value(
+                (self.ge_alpha, self.ge_alpha()),
+                (self.ge_phi_skew, self.ge_phi_skew()),
+                (self.ro_freq, self.ge_freq() - 2 * self.ge_mod_freq()),
+                (self.acq_weights_type, 'SSB'),
+                (self.instr_trigger.get_instr().pulse_period, trigger_sep),
+        ):
+            self.prepare(drive='timedomain')
+            detector = self.int_avg_det_spec
+            detector.always_prepare = True
+            detector.AWG = self.instr_pulsar.get_instr()
+            detector.prepare_function = lambda \
+                    alphaparam=self.ge_alpha, skewparam=self.ge_phi_skew: \
+                sq.pulse_list_list_seq([[self.get_acq_pars(), dict(
+                    pulse_type='GaussFilteredCosIQPulse',
+                    pulse_length=self.acq_length(),
+                    ref_point='start',
+                    amplitude=amplitude,
+                    I_channel=self.ge_I_channel(),
+                    Q_channel=self.ge_Q_channel(),
+                    mod_frequency=self.ge_mod_freq() if for_ef is False
+                        else self.ge_mod_freq() - (self.ge_freq()-self.ef_freq()),
+                    phase_lock=False,
+                    alpha=alphaparam(),
+                    phi_skew=skewparam(),
+                )]])
+            MC.set_detector_function(det.IndexDetector(detector, 0))
+            MC.run(name='drive_skewness_calibration' + self.msmt_suffix,
+                   mode='adaptive')
+
+        a = ma.OptimizationAnalysis(label='drive_skewness_calibration')
+        # v2 creates a pretty picture of the optimizations
+        ma.OptimizationAnalysis_v2(label='drive_skewness_calibration')
+
+        # phi and alpha are the coefficients that go in the predistortion matrix
+        alpha = a.optimization_result[0][0]
+        phi = a.optimization_result[0][1]
+        if update:
+            if for_ef == False:
+                self.ge_alpha(alpha)
+                self.ge_phi_skew(phi)
+            if for_ef == True:
+                self.ef_alpha(alpha)
+                self.ef_phi_skew(phi)
+        return alpha, phi
+
+    def calibrate_drive_mixer_skewness(self, update=True, amplitude=0.5,
                                        trigger_sep=5e-6, no_improv_break=50,
                                        initial_stepsize=(0.15, 10)):
         MC = self.instr_mc.get_instr()
@@ -1798,7 +1864,7 @@ class QuDev_transmon(Qubit):
             self, update=True,make_fig=True, meas_grid=None, n_meas=100,
             amplitude=0.1, trigger_sep=5e-6, two_rounds=False,
             estimator='GRNN_neupy', hyper_parameter_dict=None,
-            first_round_limits=(0.6, 1.2, -50, 35), **kwargs):
+            first_round_limits=(0.6, 1.2, -50, 35), for_ef=False, **kwargs):
         if not len(first_round_limits) == 4:
             log.error('Input variable `first_round_limits` in function call '
                       '`calibrate_drive_mixer_skewness_NN` needs to be a list '
@@ -1826,8 +1892,12 @@ class QuDev_transmon(Qubit):
                           'Requires length 2 instead.'.format(len(std_devs)))
 
         MC = self.instr_mc.get_instr()
-        _alpha = self.ge_alpha()
-        _phi = self.ge_phi_skew()
+        if not for_ef:
+            _alpha = self.ge_alpha()
+            _phi = self.ge_phi_skew()
+        else:
+            _alpha = self.ef_alpha()
+            _phi = self.ef_phi_skew()
         for runs in range(3 if two_rounds else 2):
             if runs == 0:
                 # half as many points from a uniform distribution at first run
@@ -1855,6 +1925,10 @@ class QuDev_transmon(Qubit):
 
             pulse_list_list = []
             for alpha, phi_skew in meas_grid.T:
+                if not for_ef:
+                    mod_freq = self.ge_mod_freq()
+                else:
+                    mod_freq = self.ge_mod_freq() - (self.ge_freq()-self.ef_freq())
                 pulse_list_list.append([self.get_acq_pars(), dict(
                             pulse_type='GaussFilteredCosIQPulse',
                             pulse_length=self.acq_length(),
@@ -1862,7 +1936,7 @@ class QuDev_transmon(Qubit):
                             amplitude=amplitude,
                             I_channel=self.ge_I_channel(),
                             Q_channel=self.ge_Q_channel(),
-                            mod_frequency=self.ge_mod_freq(),
+                            mod_frequency=mod_freq,
                             phase_lock=False,
                             alpha=alpha,
                             phi_skew=phi_skew,
@@ -1889,9 +1963,12 @@ class QuDev_transmon(Qubit):
             _alpha = a.optimization_result[0]
             _phi = a.optimization_result[1]
 
-            if update:
+            if not for_ef:
                 self.ge_alpha(_alpha)
                 self.ge_phi_skew(_phi)
+            else:
+                self.ef_alpha(_alpha)
+                self.ef_phi_skew(_phi)
 
         return _alpha, _phi, a
 
