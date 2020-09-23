@@ -188,8 +188,11 @@ class MeasurementControl(Instrument):
 
         with h5d.Data(name=self.get_measurement_name(),
                       datadir=self.datadir()) as self.data_object:
+            self.exp_metadata = self.detector_function.generate_metadata()
             if exp_metadata is not None:
-                self.save_exp_metadata(exp_metadata, self.data_object)
+                self.exp_metadata.update(exp_metadata)
+            self.save_exp_metadata(self.exp_metadata, self.data_object)
+
             try:
                 self.check_keyboard_interrupt()
                 self.get_measurement_begintime()
