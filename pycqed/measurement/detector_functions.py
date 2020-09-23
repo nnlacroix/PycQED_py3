@@ -8,6 +8,7 @@ import time
 from string import ascii_uppercase
 from pycqed.analysis import analysis_toolbox as a_tools
 from qcodes.instrument.parameter import _BaseParameter
+from qcodes.instrument.base import Instrument
 import logging
 log = logging.getLogger(__name__)
 
@@ -41,6 +42,41 @@ class Detector_Function(object):
 
     def finish(self, **kw):
         pass
+
+    def generate_metadata(self):
+        det_metadata = {k: self.savable_attribute_value(v, self.name)
+                        for k, v in self.__dict__.items()}
+
+        detectors_dict = {}
+        for d in det_metadata.pop('detectors', []):
+            detectors_dict.update({f'{d["UHFs"][0]} {d["name"]}': d})
+        if len(detectors_dict):
+            det_metadata['detectors'] = detectors_dict
+
+        return {'Detector Metadata': det_metadata}
+
+    @staticmethod
+    def savable_attribute_value(attr_val, det_name):
+        if isinstance(attr_val, Detector_Function):
+            if hasattr(attr_val, 'detectors') and \
+                    det_name != attr_val.detectors[0].name:
+                return {k: Detector_Function.savable_attribute_value(
+                    v, attr_val.name)
+                    for k, v in attr_val.__dict__.items()}
+            else:
+                return attr_val.name
+        elif isinstance(attr_val, Instrument):
+            try:
+                return attr_val.name
+            except AttributeError:
+                return repr(attr_val)
+        elif callable(attr_val):
+            return repr(attr_val)
+        elif isinstance(attr_val, (list, tuple)):
+            return [Detector_Function.savable_attribute_value(av, det_name)
+                    for av in attr_val]
+        else:
+            return attr_val
 
 
 class Multi_Detector(Detector_Function):
