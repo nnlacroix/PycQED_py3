@@ -711,6 +711,10 @@ class BufferedNZFLIPPulse(pulse.Pulse):
             'flux_buffer_length2': 0,
             'channel_relative_delay': 0,
             'gaussian_filter_sigma': 1e-9,
+            'sin_amp': 0,
+            'sin_phase': 0,
+            'kick_amp': 0,
+            'kick_length': 10e-9,
         }
         return params
 
@@ -822,6 +826,10 @@ class BufferedFLIPPulse(pulse.Pulse):
             'flux_buffer_length2': 0,
             'channel_relative_delay': 0,
             'gaussian_filter_sigma': 1e-9,
+            'sin_amp': 0,
+            'sin_phase': 0,
+            'kick_amp': 0,
+            'kick_length': 10e-9,
         }
         return params
 
@@ -843,6 +851,23 @@ class BufferedFLIPPulse(pulse.Pulse):
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
                 (tvals - tend) * scaling)) * amp
+
+            wave_sin = np.sin(2*np.pi*(tvals - tstart)/l1 +
+                              self.sin_phase)*self.sin_amp
+            wave_sin -= np.sin(self.sin_phase)*self.sin_amp
+            wave_sin *= (tvals >= tvals[0] + buffer_start)
+            wave_sin *= (tvals < tvals[0] + buffer_start + l1)
+            wave += wave_sin
+
+            # kick_start = (tstart + tend) / 2 - self.kick_length / 2
+            # kick_end = (tstart + tend) / 2 + self.kick_length / 2
+            kick_start = tstart
+            kick_end = tstart + self.kick_length
+
+            wave_kick = 0.5 * (sp.special.erf(
+                (tvals - kick_start) * scaling) - sp.special.erf(
+                (tvals - kick_end) * scaling)) * self.kick_amp *np.sign(amp)
+            wave += wave_kick
         return wave
 
     def hashables(self, tstart, channel):

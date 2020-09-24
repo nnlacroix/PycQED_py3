@@ -49,6 +49,7 @@ class Pulse:
         self.element_name = element_name
         self.codeword = kw.pop('codeword', 'no_codeword')
         self.pulse_off = kw.pop('pulse_off', False)
+        self.truncation_length = kw.pop('truncation_length', None)
         self.crosstalk_cancellation_channels = []
         self.crosstalk_cancellation_mtx = None
         self.crosstalk_cancellation_shift_mtx = None
@@ -79,8 +80,15 @@ class Pulse:
             if c in tvals_dict and c not in \
                     self.crosstalk_cancellation_channels:
                 wfs_dict[c] = self.chan_wf(c, tvals_dict[c])
+                truncation_length = getattr(self, 'truncation_length', None)
                 if getattr(self, 'pulse_off', False):
                     wfs_dict[c] = np.zeros_like(wfs_dict[c])
+                elif truncation_length is not None:
+                    # truncation_length should be (n+0.5) samples to avoid
+                    # rounding errors
+                    mask = tvals_dict[c] <= (tvals_dict[c][0] +
+                                             truncation_length)
+                    wfs_dict[c] *= mask
         for c in self.crosstalk_cancellation_channels:
             if c in tvals_dict:
                 print(f"adding cancellation to flux line: {c}")

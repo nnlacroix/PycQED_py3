@@ -32,14 +32,14 @@ def get_hdf_param_value(group, param_name):
         return s
 
 
-def get_value_names_from_timestamp(timestamp):
+def get_value_names_from_timestamp(timestamp, file_id=None,):
     """
     Returns value_names from the HDF5 file specified by timestamp.
     :param timestamp: (str) measurement timestamp of form YYYYMMDD_hhmmsss
     :return: list of value_names
     """
     folder = a_tools.get_folder(timestamp)
-    h5filepath = a_tools.measurement_filename(folder)
+    h5filepath = a_tools.measurement_filename(folder, file_id=file_id)
     data_file = h5py.File(h5filepath, 'r+')
     try:
         channel_names = get_hdf_param_value(data_file['Experimental Data'],
@@ -51,7 +51,7 @@ def get_value_names_from_timestamp(timestamp):
         raise e
 
 
-def get_param_from_metadata_group(timestamp=None, param_name=None,
+def get_param_from_metadata_group(timestamp=None, param_name=None, file_id=None,
                                   data_file=None, close_file=True):
     """
     Get a parameter with param_name from the Experimental Metadata group in
@@ -68,7 +68,7 @@ def get_param_from_metadata_group(timestamp=None, param_name=None,
         if timestamp is None:
             raise ValueError('Please provide either timestamp or data_file.')
         folder = a_tools.get_folder(timestamp)
-        h5filepath = a_tools.measurement_filename(folder)
+        h5filepath = a_tools.measurement_filename(folder, file_id=file_id)
         data_file = h5py.File(h5filepath, 'r+')
 
     try:
@@ -97,7 +97,7 @@ def get_param_from_metadata_group(timestamp=None, param_name=None,
 
 
 def get_data_from_hdf_file(timestamp=None, data_file=None,
-                           close_file=True):
+                           close_file=True, file_id=None):
     """
     Return the measurement data stored in Experimental Data group of the file
     specified by timestamp.
@@ -110,14 +110,14 @@ def get_data_from_hdf_file(timestamp=None, data_file=None,
         if timestamp is None:
             raise ValueError('Please provide either timestamp or data_file.')
         folder = a_tools.get_folder(timestamp)
-        h5filepath = a_tools.measurement_filename(folder)
+        h5filepath = a_tools.measurement_filename(folder, file_id=file_id)
         data_file = h5py.File(h5filepath, 'r+')
     try:
         group = data_file['Experimental Data']
         if 'Data' in group:
             dataset = np.array(group['Data'])
         else:
-            raise KeyError(f'{Data} was not found in Experimental Data.')
+            raise KeyError('Data was not found in Experimental Data.')
         if close_file:
             data_file.close()
     except Exception as e:
@@ -126,7 +126,7 @@ def get_data_from_hdf_file(timestamp=None, data_file=None,
     return dataset
 
 
-def open_data_file_from_timestamp(timestamp, mode='r+'):
+def open_data_file_from_timestamp(timestamp, mode='r+', file_id=None):
     """
     Return the opened HDF5 file specified by timestamp.
     ! File is not closed !
@@ -135,7 +135,7 @@ def open_data_file_from_timestamp(timestamp, mode='r+'):
     :return: open HDF5 file
     """
     folder = a_tools.get_folder(timestamp)
-    h5filepath = a_tools.measurement_filename(folder)
+    h5filepath = a_tools.measurement_filename(folder, file_id=file_id)
     data_file = h5py.File(h5filepath, mode)
     return data_file
 
@@ -180,7 +180,7 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
             folder = folder[-1]
 
     h5mode = get_param('h5mode', data_dict, default_value='r+', **params)
-    h5filepath = a_tools.measurement_filename(folder)
+    h5filepath = a_tools.measurement_filename(folder, **params)
     data_file = h5py.File(h5filepath, h5mode)
 
     try:
@@ -705,9 +705,15 @@ def get_observables(data_dict, keys_out=None, preselection_shift=-1,
                                   ('qb2', -1): False,
                                   ('qb4', -1): False}}
     """
-    mobj_names = get_measurement_properties(
-        data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
-        **params)
+    legacy_channel_map = get_param('channel_map', data_dict, **params)
+    if legacy_channel_map is not None:
+        mobj_names = list(legacy_channel_map)
+    else:
+        # make sure the qubits are in the correct order here when we take a
+        # tomo measurement in new framework
+        mobj_names = get_measurement_properties(
+            data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+            **params)
     combination_list = list(itertools.product([False, True],
                                               repeat=len(mobj_names)))
     preselection_condition = dict(zip(
