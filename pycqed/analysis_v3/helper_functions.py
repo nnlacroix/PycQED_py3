@@ -705,9 +705,15 @@ def get_observables(data_dict, keys_out=None, preselection_shift=-1,
                                   ('qb2', -1): False,
                                   ('qb4', -1): False}}
     """
-    mobj_names = get_measurement_properties(
-        data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
-        **params)
+    legacy_channel_map = get_param('channel_map', data_dict, **params)
+    if legacy_channel_map is not None:
+        mobj_names = list(legacy_channel_map)
+    else:
+        # make sure the qubits are in the correct order here when we take a
+        # tomo measurement in new framework
+        mobj_names = get_measurement_properties(
+            data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+            **params)
     combination_list = list(itertools.product([False, True],
                                               repeat=len(mobj_names)))
     preselection_condition = dict(zip(
