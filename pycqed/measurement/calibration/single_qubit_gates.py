@@ -593,7 +593,8 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
     def run_analysis(self, analysis_kwargs=None, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.
-        :param kw:
+        :param analysis_kwargs: (dict) keyword arguments for analysis
+        :param kw: currently ignored
         """
         if analysis_kwargs is None:
             analysis_kwargs = {}
