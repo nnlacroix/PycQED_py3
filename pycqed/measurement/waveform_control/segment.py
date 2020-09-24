@@ -147,7 +147,12 @@ class Segment:
             if all(ch_mask) and len(ch_mask) != 0:
                 p = deepcopy(p)
                 p.pulse_obj.element_name = f'default_{self.name}'
-                self.resolved_pulses.append(p)
+                if p.pulse_obj.codeword == "no_codeword":
+                    self.resolved_pulses.append(p)
+                else:
+                    log.warning('enforce_single_element cannot use codewords, '
+                                f'ignoring {p.pulse_obj.name} on channels '
+                                f'{", ".join(p.pulse_obj.channels)}')
             elif any(ch_mask):
                 p0 = deepcopy(p)
                 p0.pulse_obj.channel_mask = [not x for x in ch_mask]
@@ -162,7 +167,14 @@ class Segment:
                 p1.basis_rotation = {}
                 p1.delay = 0
                 p1.pulse_obj.name += '_ese'
-                self.resolved_pulses.append(p1)
+                if p1.pulse_obj.codeword == "no_codeword":
+                   self.resolved_pulses.append(p1)
+                else:
+                    ese_chs = [ch for m, ch in zip(ch_mask, p.pulse_obj.channels) if m]
+                    log.warning('enforce_single_element cannot use codewords, '
+                                f'ignoring {p.pulse_obj.name} on channels '
+                                f'{", ".join(ese_chs)}')
+
             else:
                 p = deepcopy(p)
                 self.resolved_pulses.append(p)
