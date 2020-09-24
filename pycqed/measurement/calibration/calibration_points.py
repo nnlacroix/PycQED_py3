@@ -246,6 +246,8 @@ class CalibrationPoints:
         if len(sweep_points) == 0:
             log.warning("No sweep points, returning a range.")
             return np.arange(n_cal_pts)
+        if n_cal_pts == 0:
+            return sweep_points
         try:
             step = np.abs(sweep_points[-1] - sweep_points[-2])
         except IndexError:
