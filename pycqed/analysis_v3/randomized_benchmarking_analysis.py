@@ -13,7 +13,7 @@ from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from pycqed.analysis_v3 import pipeline_analysis as pla
 from pycqed.measurement import sweep_points as sp_mod
-from pycqed.measurement.calibration import calibration_points as cp_mod
+from pycqed.measurement import calibration_points as cp_mod
 from copy import deepcopy
 
 pla.search_modules.add(sys.modules[__name__])
