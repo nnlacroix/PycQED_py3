@@ -369,19 +369,14 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
             tl = self.trans_length
             bs = self.buffer_length_start
             be = self.buffer_length_end
-            self.amplitudes.append([0, ma + ao, ta, -ta, -ma + ao, 0])
+            ca0 = ma + ao
+            ca1 = -ma + ao
+            cl0 = max(-(ml * ao) / ca0, 0) if ca0 else 0
+            cl1 = max(-(ml * ao) / ca1, 0) if ca1 else 0
 
-            if ta == 0:
-                self.lengths.append([bs + d, ml / 2, tl / 2,
-                                     tl / 2, ml / 2, be - d])
-            else:
-                if np.abs(tl * ta) < np.abs(ml * ao):
-                    log.warning(
-                        'NZTCPulse: Pick the pulse parameters such that '
-                        '`abs(trans_len * trans_amplitude) >= abs(pulse_length'
-                        ' * amplitude_offset)`.')
-                self.lengths.append([bs + d, ml / 2, (tl - ml * ao / ta) / 2,
-                                     (tl + ml * ao / ta) / 2, ml / 2, be - d])
+            self.amplitudes.append([0, ma + ao, ta, -ta, -ma + ao, 0])
+            self.lengths.append([bs + d - cl0, cl0 + ml / 2, tl / 2,
+                                 tl / 2, ml / 2 + cl1, be - d - cl1])
 
     def chan_wf(self, channel, t):
         self._update_lengths_amps_channels()
@@ -716,6 +711,10 @@ class BufferedNZFLIPPulse(pulse.Pulse):
             'flux_buffer_length2': 0,
             'channel_relative_delay': 0,
             'gaussian_filter_sigma': 1e-9,
+            'sin_amp': 0,
+            'sin_phase': 0,
+            'kick_amp': 0,
+            'kick_length': 10e-9,
         }
         return params
 
@@ -827,6 +826,10 @@ class BufferedFLIPPulse(pulse.Pulse):
             'flux_buffer_length2': 0,
             'channel_relative_delay': 0,
             'gaussian_filter_sigma': 1e-9,
+            'sin_amp': 0,
+            'sin_phase': 0,
+            'kick_amp': 0,
+            'kick_length': 10e-9,
         }
         return params
 
@@ -848,6 +851,23 @@ class BufferedFLIPPulse(pulse.Pulse):
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
                 (tvals - tend) * scaling)) * amp
+
+            wave_sin = np.sin(2*np.pi*(tvals - tstart)/l1 +
+                              self.sin_phase)*self.sin_amp
+            wave_sin -= np.sin(self.sin_phase)*self.sin_amp
+            wave_sin *= (tvals >= tvals[0] + buffer_start)
+            wave_sin *= (tvals < tvals[0] + buffer_start + l1)
+            wave += wave_sin
+
+            # kick_start = (tstart + tend) / 2 - self.kick_length / 2
+            # kick_end = (tstart + tend) / 2 + self.kick_length / 2
+            kick_start = tstart
+            kick_end = tstart + self.kick_length
+
+            wave_kick = 0.5 * (sp.special.erf(
+                (tvals - kick_start) * scaling) - sp.special.erf(
+                (tvals - kick_end) * scaling)) * self.kick_amp *np.sign(amp)
+            wave += wave_kick
         return wave
 
     def hashables(self, tstart, channel):

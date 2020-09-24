@@ -30,8 +30,8 @@ class Save:
             But if data_dict0 = {key: data_dict1}, then it will not work.
     """
     def __init__(self, data_dict, savedir=None, save_processed_data=True,
-                 save_figures=True, filename=None, filter_keys=None,
-                 **save_figs_params):
+                 save_figures=True, filename=None, extension='hdf5',
+                 filter_keys=None, **save_figs_params):
 
         opt = np.get_printoptions()
         np.set_printoptions(threshold=sys.maxsize)
@@ -56,7 +56,7 @@ class Save:
 
             if filename is None:
                 filename = 'AnalysisResults'
-            filename = self.savedir.split('\\')[-1] + f'_{filename}.hdf'
+            filename = self.savedir.split('\\')[-1] + f'_{filename}.{extension}'
             self.filepath = self.savedir + '\\' + filename
             if save_processed_data:
                 self.save_data_dict()

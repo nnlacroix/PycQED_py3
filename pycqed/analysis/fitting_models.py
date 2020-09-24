@@ -447,6 +447,13 @@ def double_gaussianCDF(x, A_amplitude, A_mu, A_sigma,
     CDF_B = gaussianCDF(x, amplitude=B_amplitude, mu=B_mu, sigma=B_sigma)
     return CDF_A + CDF_B
 
+def TwoErrorFunc(x, amp, mu_A, mu_B, sigma, offset):
+    '''
+    parameters:
+
+    '''
+    return offset + double_gaussianCDF(x, amp, mu_A, sigma, -amp, mu_B, sigma)
+
 def ro_gauss(x, A_center, B_center, A_sigma, B_sigma, A_amplitude,
              B_amplitude, A_spurious, B_spurious):
     '''
@@ -1276,6 +1283,19 @@ def half_feed_line_S12_J_guess(model,data):
     params=model.make_params()
     return params
 
+def TwoErrorFunc_guess(model, delays, data):
+    offset_guess = data[1]
+    amp_guess = data[data.size//2] - data[1]
+    delay_interval = (delays[-1]-delays[1])
+    mu_A_guess = delays[1] + 0.1*delay_interval
+    mu_B_guess = delays[1] + 0.9*delay_interval
+    sigma_guess = 3e-9
+    params = model.make_params(amp=amp_guess,
+                               mu_A=mu_A_guess,
+                               mu_B=mu_B_guess,
+                               sigma=sigma_guess,
+                               offset = offset_guess)
+    return params
 
 #################################
 #     User defined Models       #

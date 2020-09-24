@@ -622,7 +622,10 @@ class CalibBuilder(MultiTaskingExperiment):
         return Block('prepend', prepend_pulses)
 
     @staticmethod
-    def add_default_ramsey_sweep_points(sweep_points, **kw):
+    def add_default_ramsey_sweep_points(sweep_points, tile=2,
+                                        repeat=0, **kw):
+        if tile > 0 and repeat > 0:
+            raise ValueError('"repeat" and "tile" cannot both be > 0.')
         """
         Adds phase sweep points for Ramsey-type experiments to the provided
         sweep_points. Assumes that each phase is required twice (to measure a
@@ -650,10 +653,12 @@ class CalibBuilder(MultiTaskingExperiment):
         # create the phase sweep points (with each phase twice)
         hard_sweep_dict = SweepPoints()
         if 'phase' not in sweep_points[0]:
-            hard_sweep_dict.add_sweep_parameter(
-                'phase',
-                np.tile(np.linspace(0, 2 * np.pi, nr_phases) * 180 / np.pi, 2),
-                'deg')
+            phases = np.linspace(0, 2 * np.pi, nr_phases) * 180 / np.pi
+            if tile > 0:
+                phases = np.tile(phases, tile)
+            elif repeat > 0:
+                phases = np.repeat(phases, repeat)
+            hard_sweep_dict.add_sweep_parameter('phase', phases, 'deg')
         # add phase sweep points to the existing sweep points (overwriting
         # them if they exist already)
         sweep_points.update(hard_sweep_dict + [{}])
@@ -677,6 +682,7 @@ class CPhase(CalibBuilder):
         :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
     ...
     """
+    kw_for_task_keys = ['ref_pi_half']
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
@@ -700,6 +706,7 @@ class CPhase(CalibBuilder):
             self.population_losses = None
             self.leakage = None
             self.delta_leakage = None
+            self.swap_errors = None
             self.cz_durations = {}
             self.cal_states_rotations = {}
 
@@ -758,6 +765,9 @@ class CPhase(CalibBuilder):
                 spectator qubits. Will be assembled in parallel with the
                 initial rotations.
         """
+        ref_pi_half = kw.get('ref_pi_half', False)
+        print(ref_pi_half)
+
         hard_sweep_dict, soft_sweep_dict = sweep_points
         assert num_cz_gates % 2 != 0
 
@@ -796,19 +806,30 @@ class CPhase(CalibBuilder):
         fp_w = self.simultaneous_blocks('sim', [fp, w], block_align='center')
 
         pulse_modifs = {'all': {'element_name': 'cphase_final_rots_el'}}
-        fr = self.block_from_ops('final_rots', [f'X180 {qbl}', f'X90s {qbr}'],
+        if ref_pi_half:
+            fr = self.block_from_ops('final_rots', [f'X90 {qbl}', f'X90s {qbr}'],
+                                     pulse_modifs=pulse_modifs)
+            print('Ref Pi Half')
+        else:
+            fr = self.block_from_ops('final_rots', [f'X180 {qbl}', f'X90s {qbr}'],
                                  pulse_modifs=pulse_modifs)
         fr.set_end_after_all_pulses()
-        fr.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
+        if not ref_pi_half:
+            fr.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
         for k in hard_sweep_dict.keys():
             if k != 'pi_pulse_on' and '=' not in k:
+                if ref_pi_half:
+                    fr.pulses[0][k] = ParametricValue(k)
                 fr.pulses[1][k] = ParametricValue(k)
 
         self.cz_durations.update({
             fp.pulses[0]['op_code']: fr.pulses[0]['pulse_delay']})
         self.cal_states_rotations.update({qbl: {'g': 0, 'e': 1, 'f': 2},
                                           qbr: {'g': 0, 'e': 1}})
-        self.data_to_fit.update({qbl: 'pf', qbr: 'pe'})
+        if ref_pi_half:
+            self.data_to_fit.update({qbl: ['pg','pf'], qbr: 'pe'})
+        else:
+            self.data_to_fit.update({qbl: 'pf', qbr: 'pe'})
 
         return [pb, ir, fp_w, fr]
 
@@ -853,6 +874,7 @@ class CPhase(CalibBuilder):
         """
         plot_all_traces = kw.get('plot_all_traces', True)
         plot_all_probs = kw.get('plot_all_probs', True)
+        ref_pi_half = kw.get('ref_pi_half', False)
         if self.classified:
             channel_map = {qb.name: [vn + ' ' +
                                      qb.instr_uhf() for vn in
@@ -867,11 +889,13 @@ class CPhase(CalibBuilder):
             qb_names=self.qb_names,
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
                           'plot_all_probs': plot_all_probs,
-                          'channel_map': channel_map})
+                          'channel_map': channel_map,
+                          'ref_pi_half': kw.get('ref_pi_half', False)})
         self.cphases = {}
         self.population_losses = {}
         self.leakage = {}
         self.delta_leakage = {}
+        self.swap_errors = {}
         for task in self.task_list:
             self.cphases.update({task['prefix'][:-1]: self.analysis.proc_data_dict[
                 'analysis_params_dict'][f"cphase_{task['qbr']}"]['val']})
@@ -879,6 +903,11 @@ class CPhase(CalibBuilder):
                 {task['prefix'][:-1]: self.analysis.proc_data_dict[
                     'analysis_params_dict'][
                     f"population_loss_{task['qbr']}"]['val']})
+            if ref_pi_half:
+                self.swap_errors.update(
+                    {task['prefix'][:-1]: self.analysis.proc_data_dict[
+                        'analysis_params_dict'][
+                        f"amps_{task['qbl']}"]['val']})
             self.leakage.update(
                 {task['prefix'][:-1]: self.analysis.proc_data_dict[
                     'analysis_params_dict'][
@@ -889,7 +918,7 @@ class CPhase(CalibBuilder):
                     f"leakage_increase_{task['qbl']}"]['val']})
 
         return self.cphases, self.population_losses, self.leakage, \
-               self.analysis
+               self.analysis, self.swap_errors
 
 
 class DynamicPhase(CalibBuilder):
@@ -911,6 +940,10 @@ class DynamicPhase(CalibBuilder):
             self.experiment_name = 'Dynamic_phase_measurement'
             self.simultaneous = kw.get('simultaneous', False)
             self.simultaneous_groups = kw.get('simultaneous_groups', None)
+            if self.simultaneous_groups is not None:
+                kw['simultaneous_groups'] = [
+                    [qb if isinstance(qb, str) else qb.name for qb in group]
+                    for group in self.simultaneous_groups]
             self.reset_phases_before_measurement = kw.get(
                 'reset_phases_before_measurement', True)
 
@@ -1084,8 +1117,12 @@ class DynamicPhase(CalibBuilder):
 
         # calling get_cz_operation_name() allows to have a custom cz_pulse_name
         # in kw
+        if len(op_code.split(' ')) == 3:
+            proc_op_code = self.get_cz_operation_name(op_code=op_code, **kw)
+        else:  # not a 2-qubit gate
+            proc_op_code = op_code
         fp = self.block_from_ops(
-            'flux', self.get_cz_operation_name(op_code=op_code, **kw))
+            'flux', proc_op_code)
         fp.pulses[0]['pulse_off'] = ParametricValue('flux_pulse_off')
         # FIXME: currently, this assumes that only flux pulse parameters are
         #  swept in the soft sweep. In fact, channels_to_upload should be
@@ -1131,31 +1168,62 @@ class DynamicPhase(CalibBuilder):
              extract_only: (bool) if True, do not plot, default: False
         :return: the dynamic phases dict and the analysis instance
         """
-        extract_only = kw.pop('extract_only', False)
+        qb_names = [l1 for l2 in [task['qubits_to_measure'] for task in
+                                  self.task_list] for l1 in l2]
+        self.dynamic_phase_analysis = tda.DynamicPhaseAnalysis(qb_names=qb_names)
+
+        # extract_only = kw.pop('extract_only', False)
         for task in self.task_list:
-            op = self.get_cz_operation_name(**task)
-            op_split = op.split(' ')
-            self.dynamic_phase_analysis[task['prefix']] = \
-                tda.DynamicPhaseAnalysis(
-                    qb_names=task['qubits_to_measure'],
-                    options_dict={
-                        'flux_pulse_length': self.dev.get_pulse_par(
-                            *op_split, param='pulse_length')(),
-                        'flux_pulse_amp': self.dev.get_pulse_par(
-                            *op_split, param='amplitude')(),
-                        # FIXME in analysis: in case of a soft sweep, analysis
-                        #  has to overwrite length and amp with values from the
-                        #  sweep_points
-                        'save_figs': ~extract_only}, extract_only=extract_only)
+            if len(task['op_code'].split(' ')) == 3:
+                op = self.get_cz_operation_name(**task)
+            else:  # not a 2-qubit gate
+                op = task['op_code']
+            # op_split = op.split(' ')
+            # self.dynamic_phase_analysis[task['prefix']] = \
+            #     tda.DynamicPhaseAnalysis(
+            #         qb_names=task['qubits_to_measure'],
+            #         options_dict={
+            #             'flux_pulse_length': self.dev.get_pulse_par(
+            #                 *op_split, param='pulse_length')(),
+            #             'flux_pulse_amp': self.dev.get_pulse_par(
+            #                 *op_split, param='amplitude')(),
+            #             # FIXME in analysis: in case of a soft sweep, analysis
+            #             #  has to overwrite length and amp with values from the
+            #             #  sweep_points
+            #             'save_figs': ~extract_only}, extract_only=extract_only)
             self.dyn_phases[op] = {}
             for qb_name in task['qubits_to_measure']:
                 self.dyn_phases[op][qb_name] = \
-                    self.dynamic_phase_analysis[task['prefix']].proc_data_dict[
+                    (self.dynamic_phase_analysis.proc_data_dict[
                         'analysis_params_dict'][f"dynamic_phase_{qb_name}"][
-                        'val'] * 180 / np.pi
+                        'val'] * 180 / np.pi)[0]
 
         return self.dyn_phases, self.dynamic_phase_analysis
 
+
+def measure_flux_pulse_timing_between_qubits(task_list, pulse_length,
+                                             analyze=True, label=None, **kw):
+    '''
+    uses the Chevron measurement to sweep the delay between the two flux pulses
+    in the FLIP gate, finds symmmetry point and
+    :param task_list:
+    :param pulse_length: single float
+    :param analyze:
+    :param label:
+    :param kw:
+    :return:
+    '''
+    if label is None:
+        label = 'Flux_pulse_timing_between_qubits_{}_{}'.format(task_list[0][
+                                                                    'qbc'].name,
+                                                               task_list[0][
+                                                                   'qbt'].name)
+    pulse_lengths = np.array([pulse_length])
+    sweep_points = SweepPoints('pulse_length', pulse_lengths, 's',
+                                      dimension=1)
+    Chevron(task_list, sweep_points=sweep_points, analyze=False, label=label, **kw)
+    if analyze:
+        tda.FluxPulseTimingBetweenQubitsAnalysis(qb_names=[task_list[0]['qbr']])
 
 
 class Chevron(CalibBuilder):
