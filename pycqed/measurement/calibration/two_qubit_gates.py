@@ -766,9 +766,9 @@ class CPhase(CalibBuilder):
             spectator_op_codes: op_code for adding initializations of
                 spectator qubits. Will be assembled in parallel with the
                 initial rotations.
+            ref_pi_half: (bool) TODO, default: False
         """
         ref_pi_half = kw.get('ref_pi_half', False)
-        print(ref_pi_half)
 
         hard_sweep_dict, soft_sweep_dict = sweep_points
         assert num_cz_gates % 2 != 0
@@ -808,12 +808,9 @@ class CPhase(CalibBuilder):
         fp_w = self.simultaneous_blocks('sim', [fp, w], block_align='center')
 
         pulse_modifs = {'all': {'element_name': 'cphase_final_rots_el'}}
-        if ref_pi_half:
-            fr = self.block_from_ops('final_rots', [f'X90 {qbl}', f'X90s {qbr}'],
-                                     pulse_modifs=pulse_modifs)
-            print('Ref Pi Half')
-        else:
-            fr = self.block_from_ops('final_rots', [f'X180 {qbl}', f'X90s {qbr}'],
+        fr = self.block_from_ops('final_rots',
+                                 [f"{'X90' if ref_pi_half else 'X180'} {qbl}",
+                                  f'X90s {qbr}'],
                                  pulse_modifs=pulse_modifs)
         fr.set_end_after_all_pulses()
         if not ref_pi_half:
@@ -828,10 +825,8 @@ class CPhase(CalibBuilder):
             fp.pulses[0]['op_code']: fr.pulses[0]['pulse_delay']})
         self.cal_states_rotations.update({qbl: {'g': 0, 'e': 1, 'f': 2},
                                           qbr: {'g': 0, 'e': 1}})
-        if ref_pi_half:
-            self.data_to_fit.update({qbl: ['pg','pf'], qbr: 'pe'})
-        else:
-            self.data_to_fit.update({qbl: 'pf', qbr: 'pe'})
+        self.data_to_fit.update({qbl: ['pg', 'pf'] if ref_pi_half else 'pf',
+                                 qbr: 'pe'})
 
         return [pb, ir, fp_w, fr]
 
@@ -872,6 +867,7 @@ class CPhase(CalibBuilder):
         :param kw: keyword arguments
              plot_all_traces: (bool) TODO, default: True
              plot_all_probs: (bool) TODO, default: True
+             ref_pi_half: (bool) TODO, default: False
         :return: cphases, population_losses, leakage, and the analysis instance
         """
         plot_all_traces = kw.get('plot_all_traces', True)
@@ -892,7 +888,7 @@ class CPhase(CalibBuilder):
             options_dict={'TwoD': True, 'plot_all_traces': plot_all_traces,
                           'plot_all_probs': plot_all_probs,
                           'channel_map': channel_map,
-                          'ref_pi_half': kw.get('ref_pi_half', False)})
+                          'ref_pi_half': ref_pi_half})
         self.cphases = {}
         self.population_losses = {}
         self.leakage = {}
@@ -1123,8 +1119,7 @@ class DynamicPhase(CalibBuilder):
             proc_op_code = self.get_cz_operation_name(op_code=op_code, **kw)
         else:  # not a 2-qubit gate
             proc_op_code = op_code
-        fp = self.block_from_ops(
-            'flux', proc_op_code)
+        fp = self.block_from_ops('flux', proc_op_code)
         fp.pulses[0]['pulse_off'] = ParametricValue('flux_pulse_off')
         # FIXME: currently, this assumes that only flux pulse parameters are
         #  swept in the soft sweep. In fact, channels_to_upload should be
@@ -1174,25 +1169,11 @@ class DynamicPhase(CalibBuilder):
                                   self.task_list] for l1 in l2]
         self.dynamic_phase_analysis = tda.DynamicPhaseAnalysis(qb_names=qb_names)
 
-        # extract_only = kw.pop('extract_only', False)
         for task in self.task_list:
             if len(task['op_code'].split(' ')) == 3:
                 op = self.get_cz_operation_name(**task)
             else:  # not a 2-qubit gate
                 op = task['op_code']
-            # op_split = op.split(' ')
-            # self.dynamic_phase_analysis[task['prefix']] = \
-            #     tda.DynamicPhaseAnalysis(
-            #         qb_names=task['qubits_to_measure'],
-            #         options_dict={
-            #             'flux_pulse_length': self.dev.get_pulse_par(
-            #                 *op_split, param='pulse_length')(),
-            #             'flux_pulse_amp': self.dev.get_pulse_par(
-            #                 *op_split, param='amplitude')(),
-            #             # FIXME in analysis: in case of a soft sweep, analysis
-            #             #  has to overwrite length and amp with values from the
-            #             #  sweep_points
-            #             'save_figs': ~extract_only}, extract_only=extract_only)
             self.dyn_phases[op] = {}
             for qb_name in task['qubits_to_measure']:
                 self.dyn_phases[op][qb_name] = \
