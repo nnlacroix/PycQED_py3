@@ -1172,6 +1172,28 @@ class DynamicPhase(CalibBuilder):
         return self.dyn_phases, self.dynamic_phase_analysis
 
 
+def measure_flux_pulse_timing_between_qubits(task_list, pulse_length,
+                                             analyze=True, label=None, **kw):
+    '''
+    uses the Chevron measurement to sweep the delay between the two flux pulses
+    in the FLIP gate, finds symmmetry point and
+    :param task_list:
+    :param pulse_length: single float
+    :param analyze:
+    :param label:
+    :param kw:
+    :return:
+    '''
+    if label is None:
+        label = 'Flux_pulse_timing_between_qubits{}_{}'.format(task_list[0]['qbc'],
+                                                               task_list[0]['qbt'])
+    pulse_lengths = np.array([pulse_length])
+    sweep_points = SweepPoints('pulse_length', pulse_lengths, 's',
+                                      dimension=1)
+    Chevron(task_list, sweep_points=sweep_points, analyze=False, **kw)
+    if analyze:
+        tda.FluxPulseTimingBetweenQubitsAnalysis(qb_names=[task_list[0]['qbr']])
+
 
 class Chevron(CalibBuilder):
     """
