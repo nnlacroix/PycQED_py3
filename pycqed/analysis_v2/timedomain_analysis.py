@@ -26,6 +26,7 @@ import logging
 
 from pycqed.utilities import math
 from pycqed.utilities.general import find_symmetry_index
+import pycqed.measurement.waveform_control.segment as seg_mod
 
 log = logging.getLogger(__name__)
 try:
@@ -6133,8 +6134,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                             fit_res_objs])
                     phases_errs[phases_errs == None] = 0.0
                     phase_diffs = phases[0::2] - phases[1::2]
-                    if self.phase_key == 'cphase':
-                        phase_diffs[phase_diffs < 0] += 2*np.pi
+                    phase_diffs %= (2*np.pi)
                     phase_diffs_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
                                                            phases_errs[1::2]**2,
                                                            dtype=np.float64))
@@ -6311,22 +6311,29 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
             for qbn in self.qb_names:
                 ss_pars = self.proc_data_dict['sweep_points_2D_dict'][qbn]
                 for idx, ss_pname in enumerate(ss_pars):
-                    sp_info = self.sp[1][ss_pname]
+                    xvals = self.sp.get_sweep_params_property('values', 1,
+                                                              ss_pname)
+                    xlabel = self.sp.get_sweep_params_property('label', 1,
+                                                               ss_pname)
+                    xunit = self.sp.get_sweep_params_property('unit', 1,
+                                                               ss_pname)
                     for param_name, results_dict in self.proc_data_dict[
                             'analysis_params_dict'].items():
                         if qbn in param_name:
-                            reps = len(results_dict['val']) / len(sp_info[0])
-                            plot_name = f'{param_name}_vs_{sp_info[2]}'
+                            reps = len(results_dict['val']) / len(xvals)
+                            plot_name = f'{param_name}_vs_{xlabel}'
                             if 'phase' in param_name:
-                                yvals = results_dict['val']*180/np.pi - 180
+                                yvals = results_dict['val']*180/np.pi - (180 if
+                                    len(self.leakage_qbnames) > 0 else 0)
                                 yerr = results_dict['stderr']*180/np.pi
-                                ylabel = param_name + '-$180^{\\circ}$'
+                                ylabel = param_name + ('-$180^{\\circ}$' if
+                                    len(self.leakage_qbnames) > 0 else '')
                                 self.plot_dicts[plot_name+'_hline'] = {
                                     'fig_id': plot_name,
                                     'plotfn': self.plot_hlines,
                                     'y': 0,
-                                    'xmin': np.min(sp_info[0]),
-                                    'xmax': np.max(sp_info[0]),
+                                    'xmin': np.min(xvals),
+                                    'xmax': np.max(xvals),
                                     'colors': 'gray'}
                             else:
                                 yvals = results_dict['val']
@@ -6335,9 +6342,9 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
 
                             self.plot_dicts[plot_name] = {
                                 'plotfn': self.plot_line,
-                                'xvals': np.repeat(sp_info[0], reps),
-                                'xlabel': sp_info[2],
-                                'xunit': sp_info[1],
+                                'xvals': np.repeat(xvals, reps),
+                                'xlabel': xlabel,
+                                'xunit': xunit,
                                 'yvals': yvals,
                                 'yerr': yerr if param_name != 'leakage'
                                     else None,
@@ -6416,6 +6423,153 @@ class DynamicPhaseAnalysis(MultiCZgate_Calib_Analysis):
         self.phase_key = 'dynamic_phase'
         self.legend_label_func = lambda qbn, row: 'no FP' \
             if row % 2 != 0 else 'with FP'
+
+
+class CryoscopeAnalysis(DynamicPhaseAnalysis):
+
+    def __init__(self, qb_names, *args, **kwargs):
+        options_dict = kwargs.get('options_dict', {})
+        unwrap_phases = options_dict.pop('unwrap_phases', True)
+        options_dict['unwrap_phases'] = unwrap_phases
+        kwargs['options_dict'] = options_dict
+        params_dict = {}
+        for qbn in qb_names:
+            s = f'Instrument settings.{qbn}'
+            params_dict[f'ge_freq_{qbn}'] = s+f'.ge_freq'
+        kwargs['params_dict'] = params_dict
+        kwargs['numeric_params'] = list(params_dict)
+        super().__init__(qb_names, *args, **kwargs)
+
+    def process_data(self):
+        super().process_data()
+        self.phase_key = 'delta_phase'
+
+    def analyze_fit_results(self):
+        super().analyze_fit_results()
+
+        delta_tau = self.get_param_value('estimation_window')
+        for qbn in self.qb_names:
+            delta_phases = self.proc_data_dict['analysis_params_dict'][
+                f'{self.phase_key}_{qbn}']
+            delta_phases_vals = delta_phases['val']
+            delta_phases_errs = delta_phases['stderr']
+            if self.get_param_value('unwrap_phases', False):
+                delta_phases_vals = np.unwrap((delta_phases_vals + np.pi) %
+                                              (2*np.pi) - np.pi)
+            self.proc_data_dict['analysis_params_dict'][
+                f'{self.phase_key}_{qbn}']['val'] = delta_phases_vals
+
+            delta_freqs = delta_phases_vals/2/np.pi/delta_tau
+            delta_freqs_errs = delta_phases_errs/2/np.pi/delta_tau
+            self.proc_data_dict['analysis_params_dict'][f'delta_freq_{qbn}'] = \
+                {'val': delta_freqs, 'stderr': delta_freqs_errs}
+
+            qb_freqs = self.raw_data_dict[f'ge_freq_{qbn}'] + delta_freqs
+            self.proc_data_dict['analysis_params_dict'][f'freq_{qbn}'] = \
+                {'val':  qb_freqs, 'stderr': delta_freqs_errs}
+
+    def prepare_plots(self):
+        super().prepare_plots()
+
+        if self.do_fitting:
+            for qbn in self.qb_names:
+                ss_pars = self.proc_data_dict['sweep_points_2D_dict'][qbn]
+                for idx, ss_pname in enumerate(ss_pars):
+                    param_name = f'freq_{qbn}'
+                    results_dict = self.proc_data_dict['analysis_params_dict'][
+                        param_name]
+
+                    xlabel = self.sp.get_sweep_params_property('label', 1,
+                                                               ss_pname)
+                    figure_name = f'{param_name}_vs_{xlabel}'
+                    self.plot_dicts[figure_name] = {
+                        'plotfn': self.plot_line,
+                        'xvals': self.sp.get_sweep_params_property('values', 1,
+                                                                   ss_pname),
+                        'xlabel': xlabel,
+                        'xunit': self.sp.get_sweep_params_property('unit', 1,
+                                                                   ss_pname),
+                        'yvals': results_dict['val'],
+                        'yerr': results_dict['stderr'],
+                        'ylabel': param_name,
+                        'yunit': 'Hz',
+                        'linestyle': 'none',
+                        'do_legend': False}
+
+    def get_generated_and_measured_pulse(self, qbn=None):
+        """
+        Args:
+            qbn: specifies for which qubit to calculate the quantities for.
+                Defaults to the first qubit in qb_names.
+
+        Returns: A tuple (tvals_gen, volts_gen, tvals_meas, freqs_meas,
+                freq_errs_meas, volt_freq_conv)
+            tvals_gen: time values for the generated fluxpulse
+            volts_gen: voltages of the generated fluxpulse
+            tvals_meas: time-values for the measured qubit frequencies
+            freqs_meas: measured qubit frequencies
+            freq_errs_meas: errors of measured qubit frequencies
+            volt_freq_conv: dictionary of fit params for frequency-voltage 
+                conversion
+        """
+        if qbn is None:
+            qbn = self.qb_names[0]
+
+        tvals_meas = self.proc_data_dict['sweep_points_2D_dict'][qbn][
+            f'{qbn}_truncation_length']
+        freqs_meas = self.proc_data_dict['analysis_params_dict'][
+            f'freq_{qbn}']['val']
+        freq_errs_meas = self.proc_data_dict['analysis_params_dict'][
+            f'freq_{qbn}']['stderr']
+
+        # Flux pulse parameters
+        # Needs to be changed when support for other pulses is added.
+        op_dict = {
+            'pulse_type': f'Instrument settings.{qbn}.flux_pulse_type',
+            'channel': f'Instrument settings.{qbn}.flux_pulse_channel',
+            'aux_channels_dict': f'Instrument settings.{qbn}.'
+                                 f'flux_pulse_aux_channels_dict',
+            'amplitude': f'Instrument settings.{qbn}.flux_pulse_amplitude',
+            'frequency': f'Instrument settings.{qbn}.flux_pulse_frequency',
+            'phase': f'Instrument settings.{qbn}.flux_pulse_phase',
+            'pulse_length': f'Instrument settings.{qbn}.'
+                            f'flux_pulse_pulse_length',
+            'truncation_length': f'Instrument settings.{qbn}.'
+                                 f'flux_pulse_truncation_length',
+            'buffer_length_start': f'Instrument settings.{qbn}.'
+                                   f'flux_pulse_buffer_length_start',
+            'buffer_length_end': f'Instrument settings.{qbn}.'
+                                 f'flux_pulse_buffer_length_end',
+            'extra_buffer_aux_pulse': f'Instrument settings.{qbn}.'
+                                      f'flux_pulse_extra_buffer_aux_pulse',
+            'pulse_delay': f'Instrument settings.{qbn}.'
+                           f'flux_pulse_pulse_delay',
+            'basis_rotation': f'Instrument settings.{qbn}.'
+                              f'flux_pulse_basis_rotation',
+            'gaussian_filter_sigma': f'Instrument settings.{qbn}.'
+                                     f'flux_pulse_gaussian_filter_sigma',
+        }
+
+        params_dict = {
+            'volt_freq_conv': f'Instrument settings.{qbn}.'
+                              f'fit_ge_freq_from_flux_pulse_amp',
+            'flux_channel': f'Instrument settings.{qbn}.'
+                            f'flux_pulse_channel',
+            **op_dict
+        }
+
+        dd = self.get_data_from_timestamp_list(params_dict)
+        dd['element_name'] = 'element'
+
+        pulse = seg_mod.UnresolvedPulse(dd).pulse_obj
+        pulse.algorithm_time(0)
+
+        tvals_gen = np.arange(0, pulse.length, 1 / 2.4e9)
+        volts_gen = pulse.chan_wf(dd['flux_channel'], tvals_gen)
+        volt_freq_conv = dd['volt_freq_conv']
+
+        return tvals_gen, volts_gen, tvals_meas, freqs_meas, freq_errs_meas, \
+               volt_freq_conv
 
 
 class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):

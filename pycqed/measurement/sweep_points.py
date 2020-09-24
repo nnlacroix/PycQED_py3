@@ -307,10 +307,12 @@ class SweepPoints(list):
     @staticmethod
     def cast_init(sweep_points):
         """
-        Recreates a SweepPoints object from a string representation.
+        Recreates a SweepPoints object from a string representation of
+            SweepPoints, or a list of dicts.
         Avoids having "eval" statements throughout the codebase.
         Args:
-            sweep_points_string: string representation of the SweepPoints
+            sweep_points: string representation of the SweepPoints or
+                a list of dicts
 
         Returns: SweepPoints object
         """
