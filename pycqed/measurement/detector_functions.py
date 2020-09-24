@@ -1323,7 +1323,7 @@ class UHFQC_classifier_detector(UHFQC_Base):
         self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
         self.UHFQC.qudev_acquisition_initialize(
             channels=self.channels,
-            samples=self.acq_data_len_scaling * self.nr_sweep_points,
+            samples=self.nr_shots * self.nr_sweep_points,
             averages=1, #for single shot readout
             loop_cnt=int(self.nr_shots), mode='rl')
 
