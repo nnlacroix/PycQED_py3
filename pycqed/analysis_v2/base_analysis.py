@@ -441,6 +441,7 @@ class BaseDataAnalysis(object):
             # run in 1D mode (so only 1 column of sweep points in hdf5 file)
             # CURRENTLY ONLY WORKS WITH SweepPoints CLASS INSTANCES
             hybrid_measurement = False
+            raw_data_dict['hard_sweep_points'] = np.unique(mc_points[0])
             if mc_points.shape[0] > 1:
                 hsp = np.unique(mc_points[0])
                 ssp, counts = np.unique(mc_points[1:], return_counts=True)
@@ -474,8 +475,6 @@ class BaseDataAnalysis(object):
                     ssp = np.arange(len(dim_2_sp))
                     raw_data_dict['hard_sweep_points'] = hsp
                     raw_data_dict['soft_sweep_points'] = ssp
-            else:
-                raw_data_dict['hard_sweep_points'] = np.unique(mc_points[0])
 
             data = measured_data[-len(value_names):]
             if data.shape[0] != len(value_names):
@@ -554,7 +553,7 @@ class BaseDataAnalysis(object):
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
                 self.get_param_value('compression_factor', 1),
-                self.get_param_value('sweep_points'),
+                SweepPoints.cast_init(self.get_param_value('sweep_points')),
                 cp, self.get_param_value('preparation_params',
                                          default_value=dict()))
         else:
