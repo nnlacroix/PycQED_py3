@@ -6092,7 +6092,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                 'fit_xvals': {'x': phases},
                                 'fit_yvals': {'data': data},
                                 'guess_pars': guess_pars}
-                    elif (prob_label == 'pe')or(prob_label == 'pg'):
+                    elif prob_label == 'pe' or prob_label == 'pg':
                         # fit ramsey qb results to a cosine
                         model = lmfit.Model(fit_mods.CosFunc)
                         guess_pars = fit_mods.Cos_guess(
@@ -6124,15 +6124,16 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 amps = np.array([fr.best_values['amplitude'] for fr
                                  in fit_res_objs])
                 amps_errs = np.array([fr.params['amplitude'].stderr
-                                      for fr in fit_res_objs])
-                amps_errs[amps_errs == None] = 0.0
+                                      for fr in fit_res_objs], dtype=np.float64)
+                amps_errs = np.nan_to_num(amps_errs)
+                # amps_errs.dtype = amps.dtype
                 if qbn in self.ramsey_qbnames:
                     # phase_diffs
                     phases = np.array([fr.best_values['phase'] for fr in
                                        fit_res_objs])
                     phases_errs = np.array([fr.params['phase'].stderr for fr in
-                                            fit_res_objs])
-                    phases_errs[phases_errs == None] = 0.0
+                                            fit_res_objs], dtype=np.float64)
+                    phases_errs = np.nan_to_num(phases_errs)
                     phase_diffs = phases[0::2] - phases[1::2]
                     phase_diffs %= (2*np.pi)
                     phase_diffs_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
@@ -6172,8 +6173,8 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 lines = np.array([fr.best_values['c'] for fr
                                   in fit_res_objs])
                 lines_errs = np.array([fr.params['c'].stderr for
-                                       fr in fit_res_objs])
-                lines_errs[lines_errs == None] = 0.0
+                                       fr in fit_res_objs], dtype=np.float64)
+                lines_errs = np.nan_to_num(lines_errs)
 
                 leakage = lines[0::2]
                 leakage_errs = np.array(lines_errs[0::2], dtype=np.float64)
