@@ -4308,6 +4308,7 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
+                         'artificial_detuning': artificial_detuning,
                          'meas_obj_sweep_points_map':
                              sweep_points.get_meas_obj_sweep_points_map(
                                  qubit_names),
