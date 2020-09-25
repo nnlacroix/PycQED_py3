@@ -2262,7 +2262,7 @@ class QuDev_transmon(Qubit):
                 classifier_params = ssqtro.proc_data_dict[
                     'analysis_params'].get('classifier_params', None)
                 if update:
-                    self.acq_classifier_params(classifier_params)
+                    self.acq_classifier_params().update(classifier_params)
                     self.acq_state_prob_mtx(state_prob_mtx)
                 return state_prob_mtx, classifier_params
             else:

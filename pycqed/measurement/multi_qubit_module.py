@@ -573,7 +573,7 @@ def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
             classifier_params = a.proc_data_dict[
                 'analysis_params']['classifier_params'][qb.name]
             if update:
-                qb.acq_classifier_params(classifier_params)
+                qb.acq_classifier_params().update(classifier_params)
         return a
 
 def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
