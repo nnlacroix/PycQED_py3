@@ -313,6 +313,7 @@ class QuantumExperiment(CircuitBuilder):
 
     def autorun(self, **kw):
         if self.measure:
+            self.prepare_measurement(**kw)
             self.run_measurement(**kw)
         if self.analyze:
             self.run_analysis(**kw)
@@ -565,3 +566,6 @@ class QuantumExperiment(CircuitBuilder):
 
     def __repr__(self):
         return f"QuantumExperiment(dev={self.dev}, qubits={self.qubits})"
+
+    def prepare_measurement(self, **kwargs):
+        pass
