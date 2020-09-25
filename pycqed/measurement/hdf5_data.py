@@ -17,6 +17,14 @@ import numpy as np
 import logging
 log = logging.getLogger(__name__)
 
+try:
+    import qutip
+    qutip_imported = True
+except Exception:
+    log.warning('qutip was not imported. qutip objects will be stored as '
+                'strings.')
+    qutip_imported = False
+
 
 class DateTimeGenerator:
     """
@@ -153,7 +161,10 @@ def write_dict_to_hdf5(data_dict: dict, entry_point, overwrite=False):
                 log.error(e)
                 log.error('Exception occurred while writing'
                       ' {}:{} of type {}'.format(key, item, type(item)))
-        elif isinstance(item, np.ndarray):
+        elif isinstance(item, np.ndarray) or (
+                qutip_imported and isinstance(item, qutip.qobj.Qobj)):
+            if qutip_imported and isinstance(item, qutip.qobj.Qobj):
+                item = item.full()
             try:
                 entry_point.create_dataset(key, data=item)
             except RuntimeError:
@@ -162,7 +173,6 @@ def write_dict_to_hdf5(data_dict: dict, entry_point, overwrite=False):
                     entry_point.create_dataset(key, data=item)
                 else:
                     raise
-
         elif item is None:
             # as h5py does not support saving None as attribute
             # I create special string, note that this can create
