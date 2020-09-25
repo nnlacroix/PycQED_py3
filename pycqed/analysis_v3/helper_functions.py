@@ -5,7 +5,7 @@ import os
 import h5py
 import itertools
 import numpy as np
-from numpy import array  # used for eval statements
+from numpy import array  # Needed for eval. Do not remove.
 from copy import deepcopy
 from collections import OrderedDict
 from more_itertools import unique_everseen
