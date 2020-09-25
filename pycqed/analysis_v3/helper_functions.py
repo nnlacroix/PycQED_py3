@@ -5,6 +5,7 @@ import os
 import h5py
 import itertools
 import numpy as np
+from numpy import array  # used for eval statements
 from copy import deepcopy
 from collections import OrderedDict
 from more_itertools import unique_everseen
@@ -14,22 +15,26 @@ from pycqed.measurement.calibration_points import CalibrationPoints
 from pycqed.measurement import sweep_points as sp_mod
 
 
+def convert_attribute(attr_val):
+    # converts byte type to string because of h5py datasaving
+    if type(attr_val) == bytes:
+        attr_val = attr_val.decode('utf-8')
+    # If it is an array of value decodes individual entries
+    if type(attr_val) == np.ndarray:
+        attr_val = [av.decode('utf-8') for av in attr_val]
+    try:
+        return eval(attr_val)
+    except Exception:
+        return attr_val
+
+
 def get_hdf_param_value(group, param_name):
     '''
     Returns an attribute "key" of the group "Experimental Data"
     in the hdf5 datafile.
     '''
     s = group.attrs[param_name]
-    # converts byte type to string because of h5py datasaving
-    if type(s) == bytes:
-        s = s.decode('utf-8')
-    # If it is an array of value decodes individual entries
-    if type(s) == np.ndarray:
-        s = [s.decode('utf-8') for s in s]
-    try:
-        return eval(s)
-    except Exception:
-        return s
+    return convert_attribute(s)
 
 
 def get_value_names_from_timestamp(timestamp, file_id=None,):
@@ -884,3 +889,86 @@ def check_equal(value1, value2):
                 if len(value1) != len(value2):
                     return False
             return np.all(value1 == value2)
+
+
+def read_analysis_file(timestamp, data_dict=None, file_id=None,
+                       ana_file=None, close_file=True, mode='r+'):
+    if data_dict is None:
+        data_dict = {}
+    try:
+        if ana_file is None:
+            if file_id is None:
+                file_id = '_AnalysisResults'
+            folder = a_tools.get_folder(timestamp)
+            h5filepath = a_tools.measurement_filename(folder, file_id=file_id)
+            ana_file = h5py.File(h5filepath, mode)
+        read_from_hdf(data_dict, ana_file)
+        if close_file:
+            ana_file.close()
+    except Exception as e:
+        if close_file:
+            ana_file.close()
+        raise e
+    return data_dict
+
+
+def read_from_hdf(data_dict, hdf_group):
+
+    if not len(hdf_group) and not len(hdf_group.attrs):
+        path = hdf_group.name.split('/')[1:]
+        add_param('.'.join(path), {}, data_dict)
+
+    for key, value in hdf_group.items():
+        if isinstance(value, h5py.Group):
+            read_from_hdf(data_dict, value)
+        else:
+            path = value.name.split('/')[1:]
+            if 'list_type' not in value.attrs:
+                val_to_store = value[()]
+            elif value.attrs['list_type'] == 'str':
+                # lists of strings needs some special care, see also
+                # the writing part in the writing function above.
+                val_to_store = [x[0] for x in value[()]]
+            else:
+                val_to_store = list(value[()])
+            add_param('.'.join(path), val_to_store, data_dict)
+
+    path = hdf_group.name.split('/')[1:]
+    for key, value in hdf_group.attrs.items():
+        if isinstance(value, str):
+            # Extracts "None" as an exception as h5py does not support
+            # storing None, nested if statement to avoid elementwise
+            # comparison warning
+            if value == 'NoneType:__None__':
+                value = None
+            elif value == 'NoneType:__emptylist__':
+                value = []
+
+        temp_path = deepcopy(path)
+        if temp_path[-1] != key:
+            temp_path += [key]
+        if 'list_type' not in hdf_group.attrs:
+            value = convert_attribute(value)
+            if key == 'cal_points':
+                value = repr(value)
+        add_param('.'.join(temp_path), value, data_dict)
+
+    if 'list_type' in hdf_group.attrs:
+        if (hdf_group.attrs['list_type'] == 'generic_list' or
+                hdf_group.attrs['list_type'] == 'generic_tuple'):
+            list_dict = pop_param('.'.join(path), data_dict)
+            data_list = []
+            for i in range(list_dict['list_length']):
+                data_list.append(list_dict[f'list_idx_{i}'])
+            if hdf_group.attrs['list_type'] == 'generic_tuple':
+                data_list = tuple(data_list)
+            if path[-1] == 'sweep_points':
+                data_list = sp_mod.SweepPoints.cast_init(data_list)
+            add_param('.'.join(path), data_list, data_dict, replace_value=True)
+        else:
+            raise NotImplementedError('cannot read "list_type":"{}"'.format(
+                hdf_group.attrs['list_type']))
+
+
+
+
