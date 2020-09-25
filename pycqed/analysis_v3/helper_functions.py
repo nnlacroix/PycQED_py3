@@ -311,6 +311,7 @@ def get_param(param, data_dict, default_value=None,
     :param params: keyword args where parameter is to be sough
     :return: the value of the parameter
     """
+
     p = params
     dd = data_dict
     md = data_dict.get('exp_metadata', dict())
@@ -331,15 +332,15 @@ def get_param(param, data_dict, default_value=None,
         all_keys = param.split('.')
         if len(all_keys) > 1:
             for i in range(len(all_keys)-1):
-                if all_keys[i] not in p:
-                    p[all_keys[i]] = OrderedDict()
-                if all_keys[i] not in md:
-                    md[all_keys[i]] = OrderedDict()
-                if all_keys[i] not in dd:
-                    dd[all_keys[i]] = OrderedDict()
-                p = p[all_keys[i]]
-                md = md[all_keys[i]]
-                dd = dd[all_keys[i]]
+                if all_keys[i] in p:
+                    p = p[all_keys[i]]
+                if all_keys[i] in dd:
+                    dd = dd[all_keys[i]]
+                if all_keys[i] in md:
+                    md = md[all_keys[i]]
+                p = p if isinstance(p, dict) else OrderedDict()
+                dd = dd if isinstance(dd, dict) else OrderedDict()
+                md = md if isinstance(md, dict) else OrderedDict()
         value = p.get(all_keys[-1],
                       dd.get(all_keys[-1],
                              md.get(all_keys[-1], default_value)))
@@ -364,6 +365,7 @@ def pop_param(param, data_dict, default_value=None,
     :param params: keyword args where parameter is to be sough
     :return: the value of the parameter
     """
+
     if node_params is None:
         node_params = OrderedDict()
 
@@ -387,15 +389,16 @@ def pop_param(param, data_dict, default_value=None,
         all_keys = param.split('.')
         if len(all_keys) > 1:
             for i in range(len(all_keys)-1):
-                if all_keys[i] not in p:
-                    p[all_keys[i]] = OrderedDict()
-                if all_keys[i] not in md:
-                    md[all_keys[i]] = OrderedDict()
-                if all_keys[i] not in dd:
-                    dd[all_keys[i]] = OrderedDict()
-                p = p[all_keys[i]]
-                md = md[all_keys[i]]
-                dd = dd[all_keys[i]]
+                if all_keys[i] in p:
+                    p = p[all_keys[i]]
+                if all_keys[i] in dd:
+                    dd = dd[all_keys[i]]
+                if all_keys[i] in md:
+                    md = md[all_keys[i]]
+                p = p if isinstance(p, dict) else OrderedDict()
+                dd = dd if isinstance(dd, dict) else OrderedDict()
+                md = md if isinstance(md, dict) else OrderedDict()
+
         value = p.pop(all_keys[-1],
                       dd.pop(all_keys[-1],
                              md.pop(all_keys[-1], default_value)))
