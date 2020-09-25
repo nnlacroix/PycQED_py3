@@ -888,12 +888,16 @@ def check_equal(value1, value2):
             return True
         else:
             try:
+                # numpy array
                 if value1.shape != value2.shape:
                     return False
+                else:
+                    return np.all(np.isclose(value1, value2))
             except AttributeError:
                 if len(value1) != len(value2):
                     return False
-            return np.all(value1 == value2)
+                else:
+                    return value1 == value2
 
 
 def read_analysis_file(timestamp, data_dict=None, file_id=None,
