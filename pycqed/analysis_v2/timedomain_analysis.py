@@ -3505,17 +3505,17 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 if param_values is None:
                     continue
                 suffix = '_amp' if p == 0 else '_freq'
-                # Plot T1 vs flux pulse amplitude
                 mask = pdd['mask'][qb]
-                label = f'T1_fit_{qb}{suffix}'
-                xvals = param_values[qb][mask]
                 xlabel = r'Flux pulse amplitude' if p == 0 else \
                     r'Derived qubit frequency'
+
+                # Plot T1 vs flux pulse amplitude
+                label = f'T1_fit_{qb}{suffix}'
                 self.plot_dicts[label] = {
                     'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
                     'plotfn': self.plot_line,
                     'linestyle': '-',
-                    'xvals': xvals,
+                    'xvals': param_values[qb][mask],
                     'yvals': pdd['T1'][qb][mask],
                     'yerr': pdd['T1_err'][qb][mask],
                     'xlabel': xlabel,
@@ -3528,21 +3528,35 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 # Plot rotated integrated average in dependece of flux pulse
                 # amplitude and length
                 label = f'T1_color_plot_{qb}{suffix}'
-                xvals = param_values[qb][mask]
-                xlabel = r'Flux pulse amplitude' if p == 0 else \
-                    r'Derived qubit frequency'
                 self.plot_dicts[label] = {
                     'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
                     'plotfn': self.plot_colorxy,
                     'linestyle': '-',
-                    'xvals': xvals,
+                    'xvals': param_values[qb][mask],
                     'yvals': self.lengths[qb],
-                    'zvals': np.transpose(pdd['data_reshaped_no_cp'][qb]),
+                    'zvals': np.transpose(pdd['data_reshaped_no_cp'][qb][mask]),
                     'xlabel': xlabel,
                     'xunit': 'V' if p == 0 else 'Hz',
                     'ylabel': r'Flux pulse length',
                     'yunit': 's',
                     'zlabel': r'Excited state population'
+                }
+
+                # Plot population loss for the first flux pulse length as a
+                # function of flux pulse amplitude
+                label = f'Pop_loss_{qb}{suffix}'
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
+                    'plotfn': self.plot_line,
+                    'linestyle': '-',
+                    'xvals': param_values[qb][mask],
+                    'yvals': 1 - pdd['data_reshaped_no_cp'][qb][:, 0][mask],
+                    'xlabel': xlabel,
+                    'xunit': 'V' if p == 0 else 'Hz',
+                    'ylabel': r'Pop. loss @ {:.0f} ns'.format(
+                        self.lengths[qb][0]/1e-9
+                    ),
+                    'yunit': '',
                 }
 
             # Plot all fits in single figure
