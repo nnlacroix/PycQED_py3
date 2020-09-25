@@ -2,6 +2,7 @@ import logging
 log = logging.getLogger(__name__)
 from collections import OrderedDict
 from copy import deepcopy
+from numpy import array  # Needed for eval. Do not remove.
 
 class SweepPoints(list):
     """
@@ -302,3 +303,20 @@ class SweepPoints(list):
             if param_name in self[dim]:
                 return dim
         return None
+
+    @staticmethod
+    def cast_init(sweep_points):
+        """
+        Recreates a SweepPoints object from a string representation of
+            SweepPoints, or a list of dicts.
+        Avoids having "eval" statements throughout the codebase.
+        Args:
+            sweep_points: string representation of the SweepPoints or
+                a list of dicts
+
+        Returns: SweepPoints object
+        """
+        if isinstance(sweep_points, str):
+            return SweepPoints(from_dict_list=eval(sweep_points))
+        else:
+            return SweepPoints(from_dict_list=sweep_points)
