@@ -251,7 +251,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     def get_sweep_points(self):
         self.sp = self.get_param_value('sweep_points')
         if self.sp is not None:
-            self.sp = SweepPoints(from_dict_list=self.sp)
+            self.sp = SweepPoints.cast_init(self.sp)
 
     def create_sweep_points_dict(self):
         sweep_points_dict = self.get_param_value('sweep_points_dict')
