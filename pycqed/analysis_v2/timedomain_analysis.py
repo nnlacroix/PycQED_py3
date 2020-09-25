@@ -7623,6 +7623,7 @@ class FluxPulseTimingBetweenQubitsAnalysis(MultiQubit_TimeDomain_Analysis):
                 'plotfn': self.plot_text,
                 'text_string': textstr}
 
+
 class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def __init__(self, *args, **kwargs):
