@@ -957,6 +957,8 @@ def read_from_hdf(data_dict, hdf_group):
                 val_to_store = [x[0] for x in value[()]]
             else:
                 val_to_store = list(value[()])
+            if path[-2] == path[-1]:
+                path = path[:-1]
             add_param('.'.join(path), val_to_store, data_dict)
 
     path = hdf_group.name.split('/')[1:]
@@ -975,7 +977,7 @@ def read_from_hdf(data_dict, hdf_group):
             temp_path += [key]
         if 'list_type' not in hdf_group.attrs:
             value = convert_attribute(value)
-            if key == 'cal_points':
+            if key == 'cal_points' and not isinstance(value, str):
                 value = repr(value)
         add_param('.'.join(temp_path), value, data_dict)
 
