@@ -91,7 +91,6 @@ class Pulse:
                     wfs_dict[c] *= mask
         for c in self.crosstalk_cancellation_channels:
             if c in tvals_dict:
-                print(f"adding cancellation to flux line: {c}")
                 idx_c = self.crosstalk_cancellation_channels.index(c)
                 wfs_dict[c] = np.zeros_like(tvals_dict[c])
                 if not getattr(self, 'pulse_off', False):
@@ -104,8 +103,6 @@ class Pulse:
                             idx_c, idx_c2] \
                             if self.crosstalk_cancellation_shift_mtx is not \
                             None else 0
-                        print(f"adding from pulse channel: {c2}, factor:"
-                              f" {factor}, shift: {shift}")
                         wfs_dict[c] += factor * self.chan_wf(
                             c2, tvals_dict[c] - shift)
         return wfs_dict

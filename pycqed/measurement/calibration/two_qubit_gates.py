@@ -655,7 +655,7 @@ class CalibBuilder(MultiTaskingExperiment):
         # create the phase sweep points (with each phase twice)
         hard_sweep_dict = SweepPoints()
         if 'phase' not in sweep_points[0]:
-            phases = np.linspace(0, 2 * np.pi, nr_phases) * 180 / np.pi
+            phases = np.linspace(0, 360, nr_phases, endpoint=False)
             if tile > 0:
                 phases = np.tile(phases, tile)
             elif repeat > 0:
