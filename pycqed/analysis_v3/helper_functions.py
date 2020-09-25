@@ -851,7 +851,9 @@ def check_equal(value1, value2):
         contain further dict, list, tuple
     :return: True if value1 is the same as value2, else False
     """
-    assert type(value1) == type(value2)
+    if not isinstance(value1, (float, int, bool, np.number,
+                               np.float_, np.int_, np.bool_)):
+        assert type(value1) == type(value2)
 
     if not hasattr(value1, '__iter__'):
         return value1 == value2
