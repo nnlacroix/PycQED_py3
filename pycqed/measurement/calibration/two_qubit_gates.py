@@ -1197,12 +1197,14 @@ def measure_flux_pulse_timing_between_qubits(task_list, pulse_length,
     :return:
     '''
     if label is None:
-        label = 'Flux_pulse_timing_between_qubits{}_{}'.format(task_list[0]['qbc'],
-                                                               task_list[0]['qbt'])
+        label = 'Flux_pulse_timing_between_qubits_{}_{}'.format(task_list[0][
+                                                                    'qbc'].name,
+                                                               task_list[0][
+                                                                   'qbt'].name)
     pulse_lengths = np.array([pulse_length])
     sweep_points = SweepPoints('pulse_length', pulse_lengths, 's',
                                       dimension=1)
-    Chevron(task_list, sweep_points=sweep_points, analyze=False, **kw)
+    Chevron(task_list, sweep_points=sweep_points, analyze=False, label=label, **kw)
     if analyze:
         tda.FluxPulseTimingBetweenQubitsAnalysis(qb_names=[task_list[0]['qbr']])
 
