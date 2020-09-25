@@ -1270,7 +1270,7 @@ class BaseDataAnalysis(object):
         plot_yrange = pdict.get('yrange', None)
         plot_yscale = pdict.get('yscale', None)
         plot_xscale = pdict.get('xscale', None)
-
+        plot_title_pad = pdict.get('titlepad', 0) # in figure coords
         if pdict.get('color', False):
             plot_linekws['color'] = pdict.get('color')
 
@@ -1333,7 +1333,7 @@ class BaseDataAnalysis(object):
             axs.set_xlim(xmin, xmax)
 
         if plot_title is not None:
-            axs.figure.text(0.5, 1, plot_title,
+            axs.figure.text(0.5, 1 + plot_title_pad, plot_title,
                             horizontalalignment='center',
                             verticalalignment='bottom',
                             transform=axs.transAxes)
