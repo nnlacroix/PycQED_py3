@@ -632,20 +632,19 @@ def rb_analysis(data_dict, keys_in, sweep_type=None, **params):
         prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
                         **params)
 
-    if do_fitting:
-        getattr(fit_mod, 'run_fitting')(data_dict, keys_in=list(
-                data_dict['fit_dicts']),**params)
-        # extract EPC, leakage, and seepage from fits and save to
-        # data_dict[meas_obj_name]
-        analyze_rb_fit_results(data_dict, keys_in, **params)
+        if do_fitting:
+            getattr(fit_mod, 'run_fitting')(data_dict, keys_in=list(
+                    data_dict['fit_dicts']),**params)
+            # extract EPC, leakage, and seepage from fits and save to
+            # data_dict[meas_obj_name]
+            analyze_rb_fit_results(data_dict, keys_in, **params)
 
     # prepare plots
     if prepare_plotting:
         prepare_rb_plots(data_dict, keys_in, sweep_type, **params)
-    if do_plotting:
-        print('111111111111')
-        getattr(plot_mod, 'plot')(data_dict, keys_in=list(
-            data_dict['plot_dicts']), **params)
+        if do_plotting:
+            getattr(plot_mod, 'plot')(data_dict, keys_in=list(
+                data_dict['plot_dicts']), **params)
 
 
 def prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
