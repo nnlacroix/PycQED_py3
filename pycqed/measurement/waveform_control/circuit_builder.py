@@ -30,6 +30,8 @@ class CircuitBuilder:
 
     STD_INIT = {'0': ['I'], '1': ['X180'], '+': ['Y90'], '-': ['mY90'],
                 'g': ['I'], 'e': ['X180'], 'f': ['X180', 'X180_ef']}
+    STD_PREP_PARAMS = {'preparation_type': 'wait', 'reset_reps': 3,
+                       'ro_separation': 1.5e-6, 'post_ro_wait': 1e-6}
 
     def __init__(self, dev=None, qubits=None, operation_dict=None,
                  filter_qb_names=None, **kw):
@@ -126,10 +128,9 @@ class CircuitBuilder:
         elif self.dev is not None:
             return self.dev.get_prep_params(qubits)
         elif qubits is not None:
-            return mqm.get_multi_qubit_prep_params(
-                [qb.preparation_params() for qb in qubits])
+            return mqm.get_multi_qubit_prep_params(qubits)
         else:
-            return {'preparation_type': 'wait'}
+            return self.STD_PREP_PARAMS
 
     def get_cz_operation_name(self, qb1=None, qb2=None, op_code=None, **kw):
         """
@@ -367,9 +368,11 @@ class CircuitBuilder:
                                pulse_modifs=pulse_modifs)
 
     def prepare(self, qb_names='all', ref_pulse='start',
-                preparation_type='wait', post_ro_wait=1e-6,
-                ro_separation=1.5e-6, reset_reps=3, final_reset_pulse=False,
-                threshold_mapping=None, block_name=None):
+                preparation_type=STD_PREP_PARAMS['preparation_type'],
+                post_ro_wait=STD_PREP_PARAMS['post_ro_wait'],
+                ro_separation=STD_PREP_PARAMS['ro_separation'],
+                reset_reps=STD_PREP_PARAMS['reset_reps'], final_reset_pulse=False,
+                pad_end=False, threshold_mapping=None, block_name=None):
         """
         Prepares specified qb for an experiment by creating preparation pulse
         for preselection or active reset.
@@ -389,6 +392,13 @@ class CircuitBuilder:
             reset_reps: number of reset repetitions
             final_reset_pulse: Note: NOT used in this function.
             threshold_mapping (dict): thresholds mapping for each qb
+            pad_end (bool): Only used in active reset. Whether or not padding
+                should be added after the last reset readout pulse. If False,
+                no padding is added and therefore any subsequent pulse will start
+                right after the last reset pulse. If True, then the end of the
+                prepare block is set such that the subsequent pulse start
+                "ro_separation" after the start of the last readout pulse.
+
 
         Returns:
 
@@ -479,14 +489,12 @@ class CircuitBuilder:
                 prep_pulse_list += ro_list
                 prep_pulse_list += rp_list
 
-            # manually add block_end with delay referenced to last readout
-            # as if it was an additional readout pulse
-            # otherwise next pulse will overlap with codeword padding.
-            block_end = dict(
-                name='end', pulse_type="VirtualPulse",
-                ref_pulse=f'refpulse_reset_element_{reset_reps - 1}',
-                pulse_delay=ro_separation)
-            prep_pulse_list += [block_end]
+            if pad_end:
+                block_end = dict(
+                    name='end', pulse_type="VirtualPulse",
+                    ref_pulse=f'refpulse_reset_element_{reset_reps - 1}',
+                    pulse_delay=ro_separation, ref_point="start")
+                prep_pulse_list += [block_end]
             return Block(block_name, prep_pulse_list)
 
         # preselection
