@@ -7049,7 +7049,250 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                 fig_key = f'{qbn}_state_prob_matrix_masked_{self.classif_method}'
                 self.figs[fig_key] = fig
 
+class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
+    def __init__(self, options_dict: dict = None, auto=True, **kw):
+        '''
+        options dict options:
+            see BaseDataAnalysis for more.
+        '''
+        options_dict.update({"TwoD": True})
+        super().__init__(options_dict=options_dict, auto=False,
+                         **kw)
 
+        self.create_job(options_dict=options_dict, auto=auto, **kw)
+
+        if auto:
+            self.run_analysis()
+
+    def extract_data(self):
+        super().extract_data()
+        if self.qb_names is None:
+            # try to get qb_names from cal_points
+            try:
+                cp = CalibrationPoints.from_string(
+                    self.get_param_value('cal_points', None))
+                self.qb_names = deepcopy(cp.qb_names)
+            except:
+                # try to get them from metadata
+                self.qb_names = self.get_param_value('ro_qubits', None)
+                if self.qb_names is None:
+                    raise ValueError('Could not find qb_names. Please'
+                                     'provide qb_names to the analysis'
+                                     'or ensure they are in calibration points'
+                                     'or the metadata under "qb_names" '
+                                     'or "ro_qubits"')
+
+    def process_data(self):
+        super().process_data()
+
+        # reshape data per prepared state before reset for each pg, pe, (pf),
+        # for the projected data dict and possibly the readout-corrected version
+        pdd = 'projected_data_dict'
+        for suffix in ["", "_corrected"]:
+            projdd_per_prep_state = \
+                deepcopy(self.proc_data_dict.get(pdd + suffix, {}))
+            for qbn, data_qbi in \
+                    self.proc_data_dict.get(pdd + suffix, {}).items():
+                prep_states = self.sp.get_values("initialize")
+                for j, (state, data) in enumerate(data_qbi.items()):
+                    n_ro = data.shape[0] # infer number of readouts per sequence
+                    projdd_per_prep_state[qbn][state] = dict()
+                    for i, prep_state in enumerate(prep_states):
+                        projdd_per_prep_state[qbn][state].update(
+                            {f"prep_{prep_state}":
+                                 data[i*n_ro//len(prep_states):
+                                      (i+1)*n_ro//len(prep_states),
+                                 :]})
+
+            if len(projdd_per_prep_state):
+                self.proc_data_dict[pdd + '_per_prep_state' + suffix] = \
+                    projdd_per_prep_state
+
+    def prepare_fitting(self):
+        self.fit_dicts = OrderedDict()
+        if "ro_separation" in self.get_param_value("preparation_params"):
+            ro_sep = \
+                self.get_param_value("preparation_params")["ro_separation"]
+        else:
+            return
+
+        base_data_key = 'projected_data_dict_per_prep_state'
+        data_keys = [base_data_key]
+        if self.proc_data_dict.get(base_data_key + '_corrected', False):
+            data_keys += [base_data_key + '_corrected']
+
+        for dk, suffix in zip(data_keys, ('', '_corrected')):
+            for qbn in self.qb_names:
+                probs = self.proc_data_dict[dk][qbn]
+                for prep_state, g_pop in probs.get('pg', {}).items():
+                    if "g" in prep_state:
+                        continue # no need to fit reset on ground state
+                    for seq_nr, g_pop_per_seq in enumerate(g_pop.T):
+                        excited_pop = 1 - g_pop_per_seq
+                        # excited_pop = np.exp(-np.arange(len(g_pop_per_seq)))
+                        if self.num_cal_points != 0:
+                            # do not fit data with cal points
+                            excited_pop = excited_pop[:-self.num_cal_points]
+
+                        if len(excited_pop) < 3:
+                            log.warning('Not enough reset pulses to fit a reset '
+                                        'rate, increase the number of reset '
+                                        'pulses to 3 or more ')
+                            continue
+                        time = np.arange(len(excited_pop)) * ro_sep
+                        # linear rate approx
+                        rate_guess = (excited_pop[0] - excited_pop[-1]) / time[-1]
+                        decay = lambda time, a, rate, offset: \
+                            a * np.exp(-2 * np.pi * rate * time) + offset
+                        decay_model =  lmfit.Model(decay)
+                        print(time)
+                        decay_model.set_param_hint('a', value=excited_pop[0])
+                        decay_model.set_param_hint('rate', value=rate_guess,
+                                                   )
+
+                        decay_model.set_param_hint('n', value=1, vary=False)
+                        decay_model.set_param_hint('offset', value=0)
+
+                        params = decay_model.make_params()
+
+                        key = f'fit_rate_{qbn}_{prep_state}_seq_{seq_nr}{suffix}'
+                        self.fit_dicts[key] = {
+                            'fit_fn': decay_model.func,
+                            'fit_xvals': {'time': time},
+                            'fit_yvals': {'data': excited_pop},
+                            'guess_pars': params}
+
+    def prepare_plots(self):
+        # prepare raw population plots
+        legend_bbox_to_anchor = (1, -0.20)
+        legend_pos = 'upper right'
+        legend_ncol = len(self.sp.get_values("initialize"))
+        # overwrite baseAnalysis plots
+        self.plot_dicts = OrderedDict()
+        basekey = 'projected_data_dict_per_prep_state'
+        suffixes = ('', '_corrected')
+        keys = {basekey + suffix: suffix for suffix in suffixes
+                 if basekey + suffix in self.proc_data_dict}
+        for k in keys:
+            for qbn, data_qbi in self.proc_data_dict[k].items():
+                for i, (state, data) in enumerate(data_qbi.items()):
+                    for j, (prep_state, data_prep_state) in \
+                            enumerate(data.items()):
+                        for seq_nr, pop in enumerate(data_prep_state.T):
+                            plt_key = 'data_{}_{}_{}_{}_{}'.format(
+                                 k, qbn, state, prep_state, seq_nr)
+                            self.plot_dicts[plt_key] = {
+                                'plotfn': self.plot_line,
+                                'fig_id':
+                                    f"populations_{qbn}_{prep_state}{keys[k]}",
+                                'xvals': np.arange(len(pop)),
+                                'xlabel': "Reset cycle, $n$",
+                                'xunit': "",
+                                'yvals': pop,
+                                'yerr': self._std_error(
+                                    pop, self.get_param_value('n_shots')),
+                                'ylabel': 'Population, $P$',
+                                'yunit': '',
+                                'yscale': self.get_param_value("yscale", "log"),
+                                'setlabel': self._get_pop_label(state, seq_nr, k),
+                                'title': self.raw_data_dict['timestamp'] + ' ' +
+                                         self.raw_data_dict['measurementstring']
+                                         + '-' + qbn,
+                                'titlepad': 0.2,
+                                'linestyle': 'none',
+                                'color': f'C{i}',
+                                'alpha': 0.5 if seq_nr == 0 else 1,
+                                'do_legend': seq_nr in [0, 1],
+                                'legend_ncol': legend_ncol,
+                                'legend_bbox_to_anchor': legend_bbox_to_anchor,
+                                'legend_pos': legend_pos}
+
+                            # plot fit results
+                            fit_key = \
+                                f'fit_rate_{qbn}_{prep_state}_seq_{seq_nr}{keys[k]}'
+                            if fit_key in self.fit_res and \
+                                    not fit_key in self.plot_dicts:
+                                res = self.fit_res[fit_key]
+                                rate = res.best_values['rate'] * 1e-6
+                                superscript = "{NR}" if seq_nr == 0 \
+                                    else f"{{c {seq_nr}}}" if "corrected" \
+                                                in fit_key else f"{{{seq_nr}}}"
+                                self.plot_dicts[fit_key] = {
+                                    'plotfn': self.plot_fit,
+                                    'fig_id':
+                                        f"rate_{qbn}{keys[k]}",
+                                    'xvals': res.userkws['time'],
+                                    'xlabel': "Reset cycle, $n$",
+                                    'fit_res': res,
+                                    # "plot_init": True,
+                                    'xunit': "s",
+                                    # 'yvals': res.data,
+                                    # 'yerr': self._std_error(
+                                    #     res.data, self.get_param_value('n_shots')),
+                                    'ylabel': 'Population, $P$',
+                                    'yscale': self.get_param_value("yscale", "log"),
+                                    'setlabel':
+                                        f'fit: $\Gamma_{prep_state[-1]}^{superscript} = '
+                                        f'{rate:.3f}$ MHz',
+                                    'title': self.raw_data_dict['timestamp'] + ' ' +
+                                             f"Reset rates {qbn}{keys[k]}",
+                                    # 'linestyle': 'none',
+                                    'color': f'C{j}',
+                                    'alpha': 0.5 if seq_nr == 0 else 1,
+                                    'do_legend': seq_nr in [0, 1],
+                                    'legend_ncol': legend_ncol,
+                                    'legend_bbox_to_anchor': legend_bbox_to_anchor,
+                                    'legend_pos': legend_pos}
+
+                                self.plot_dicts[fit_key + 'data'] = {
+                                    'plotfn': self.plot_line,
+                                    'fig_id':
+                                        f"rate_{qbn}{keys[k]}",
+                                    'xvals': res.userkws['time'],
+                                    'xlabel': "Time, $t$",
+                                    'xunit': "s",
+                                    'yvals': res.data,
+                                    'yerr': self._std_error(
+                                        res.data, self.get_param_value('n_shots')),
+                                    'ylabel': 'Excited Pop., $P_\mathrm{exc}$',
+                                    'yunit': '',
+                                    'setlabel':
+                                        f'data no reset' if seq_nr == 0 else "data",
+                                    'linestyle': 'none',
+                                    'color': f'C{j}',
+                                    'alpha': 0.5 if seq_nr == 0 else 1,
+                                    'legend_ncol': legend_ncol,
+                                    'legend_bbox_to_anchor': legend_bbox_to_anchor,
+                                    'legend_pos': legend_pos,
+                                    }
+
+
+
+
+    def plot(self, **kw):
+        super().plot(**kw)
+
+        # add formatting to axes
+        from matplotlib.ticker import MaxNLocator
+        for axname, ax in self.axs.items():
+            pass
+            # if "ro_separation" in self.get_param_value("preparation_params"):
+            #     ro_sep = \
+            #         self.get_param_value("preparation_params")["ro_separation"]
+            #     timeax = ax.twiny()
+            #     timeax.set_xlabel(r"Time ($\mu s$)")
+            #     timeax.set_xlim(0, ax.get_xlim()[1] * ro_sep * 1e6)
+            # ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+
+    @staticmethod
+    def _get_pop_label(state, seq_nr, key):
+        superscript = "{NR}" if seq_nr == 0 else "{c}" \
+            if "corrected" in key else "{}"
+        return f'$P_{state[-1]}^{superscript}$'
+    @staticmethod
+    def _std_error(p, nshots=10000):
+        return np.sqrt(np.abs(p)*(1-np.abs(p))/nshots)
 class FluxPulseTimingAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def __init__(self, qb_names, *args, **kwargs):
