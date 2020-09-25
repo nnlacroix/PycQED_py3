@@ -25,6 +25,7 @@ from pycqed.analysis.three_state_rotation import predict_proba_avg_ro
 import logging
 
 from pycqed.utilities import math
+from pycqed.utilities.general import find_symmetry_index
 
 log = logging.getLogger(__name__)
 try:
