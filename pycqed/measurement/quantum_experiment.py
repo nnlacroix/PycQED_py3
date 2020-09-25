@@ -221,6 +221,8 @@ class QuantumExperiment(CircuitBuilder):
 
             self.guess_label(**kw)
 
+            self.update_metadata()
+
             # run measurement
             try:
                 self.MC.run(name=self.label, exp_metadata=self.exp_metadata,
@@ -229,6 +231,29 @@ class QuantumExperiment(CircuitBuilder):
                 self.extract_timestamp()
                 raise e
         self.extract_timestamp()
+
+    def update_metadata(self):
+        # make sure that all metadata params are up to date
+        for name in self._metadata_params:
+            if hasattr(self, name):
+                value = getattr(self, name)
+                try:
+                    if name in ('cal_points', 'sweep_points') and \
+                            value is not None:
+                        old_val = np.get_printoptions()['threshold']
+                        np.set_printoptions(threshold=np.inf)
+                        self.exp_metadata.update({name: repr(value)})
+                        np.set_printoptions(threshold=old_val)
+                    elif name in ('meas_objs', "qubits") and value is not None:
+                        self.exp_metadata.update(
+                            {name: [qb.name for qb in value]})
+                    else:
+                        self.exp_metadata.update({name: value})
+                except Exception as e:
+                    log.error(
+                        f"Could not add {name} with value {value} to the "
+                        f"metadata")
+                    raise e
 
     def extract_timestamp(self):
         try:
@@ -490,32 +515,32 @@ class QuantumExperiment(CircuitBuilder):
                                      "run_measurement() or set the MC attribute"
                                      " of the QuantumExperiment instance.")
 
-    def __setattr__(self, name, value):
-        """
-        Observes attributes which are set to this class. If they are in the
-        _metadata_params then they are automatically added to the experimental
-        metadata
-        Args:
-            name:
-            value:
-
-        Returns:
-
-        """
-        if name in self._metadata_params:
-            try:
-                if name in ('cal_points', 'sweep_points') and value is not None:
-                    self.exp_metadata.update({name: repr(value)})
-                elif name in ('meas_objs', "qubits") and value is not None:
-                    self.exp_metadata.update({name: [qb.name for qb in value]})
-                else:
-                    self.exp_metadata.update({name: value})
-            except Exception as e:
-                log.error(f"Could not add {name} with value {value} to the "
-                          f"metadata")
-                raise e
-
-        self.__dict__[name] = value
+    # def __setattr__(self, name, value):
+    #     """
+    #     Observes attributes which are set to this class. If they are in the
+    #     _metadata_params then they are automatically added to the experimental
+    #     metadata
+    #     Args:
+    #         name:
+    #         value:
+    #
+    #     Returns:
+    #
+    #     """
+    #     if name in self._metadata_params:
+    #         try:
+    #             if name in 'cal_points' and value is not None:
+    #                 self.exp_metadata.update({name: repr(value)})
+    #             elif name in ('meas_objs', "qubits") and value is not None:
+    #                 self.exp_metadata.update({name: [qb.name for qb in value]})
+    #             else:
+    #                 self.exp_metadata.update({name: value})
+    #         except Exception as e:
+    #             log.error(f"Could not add {name} with value {value} to the "
+    #                       f"metadata")
+    #             raise e
+    #
+    #     self.__dict__[name] = value
 
     def __repr__(self):
         return f"QuantumExperiment(dev={self.dev}, qubits={self.qubits})"
