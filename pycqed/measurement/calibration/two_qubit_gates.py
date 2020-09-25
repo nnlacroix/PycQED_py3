@@ -641,10 +641,10 @@ class CalibBuilder(MultiTaskingExperiment):
                 the number of existing sweep points.
         :return: sweep_points with the added phase sweep points
         """
-        # ensure that sweep_points is a SweepPoints object with at least two
-        # dimensions
         if tile > 0 and repeat > 0:
             raise ValueError('"repeat" and "tile" cannot both be > 0.')
+        # ensure that sweep_points is a SweepPoints object with at least two
+        # dimensions
         sweep_points = SweepPoints(from_dict_list=sweep_points, min_length=2)
         # If there already exist sweep points in dimension 0, this adapt the
         # number of phases to the number of existing sweep points.
