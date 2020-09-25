@@ -162,7 +162,7 @@ def write_dict_to_hdf5(data_dict: dict, entry_point, overwrite=False):
                 log.error('Exception occurred while writing'
                       ' {}:{} of type {}'.format(key, item, type(item)))
         elif isinstance(item, np.ndarray) or (
-            qutip_imported and isinstance(item, qutip.qobj.Qobj)):
+                qutip_imported and isinstance(item, qutip.qobj.Qobj)):
             if qutip_imported and isinstance(item, qutip.qobj.Qobj):
                 item = item.full()
             try:
