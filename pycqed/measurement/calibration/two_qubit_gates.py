@@ -624,8 +624,6 @@ class CalibBuilder(MultiTaskingExperiment):
     @staticmethod
     def add_default_ramsey_sweep_points(sweep_points, tile=2,
                                         repeat=0, **kw):
-        if tile > 0 and repeat > 0:
-            raise ValueError('"repeat" and "tile" cannot both be > 0.')
         """
         Adds phase sweep points for Ramsey-type experiments to the provided
         sweep_points. Assumes that each phase is required twice (to measure a
@@ -634,6 +632,8 @@ class CalibBuilder(MultiTaskingExperiment):
 
         :param sweep_points: (SweepPoints object, list of dicts, or None) the
             existing sweep points
+        :param tile: (int) TODO, default: 2
+        :param repeat: (int) TODO, default: 0
         :param kw: keyword arguments
             nr_phases: how many phase sweep points should be added, default: 6.
                 If there already exist sweep points in dimension 0, this
@@ -641,6 +641,8 @@ class CalibBuilder(MultiTaskingExperiment):
                 the number of existing sweep points.
         :return: sweep_points with the added phase sweep points
         """
+        if tile > 0 and repeat > 0:
+            raise ValueError('"repeat" and "tile" cannot both be > 0.')
         # ensure that sweep_points is a SweepPoints object with at least two
         # dimensions
         sweep_points = SweepPoints(from_dict_list=sweep_points, min_length=2)
