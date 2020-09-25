@@ -1541,7 +1541,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
         if self.thresholds is not None:
             for qubit, channel in self.channel_map.items():
                 shots_cont = np.array(
-                    self.raw_data_dict['measured_data'][channel])
+                    self.raw_data_dict['measured_data'][channel]).T.flatten()
                 shots_thresh[qubit] = (shots_cont > self.thresholds[qubit])
             self.proc_data_dict['shots_thresholded'] = shots_thresh
         else:
@@ -1807,6 +1807,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
             val_list = [self.proc_data_dict['probability_table'][idx_ro]
                         [observabele_idxs] for idx_ro in cal_point[0]]
             means[i] = np.mean(val_list, axis=0)
+            means[i] /= means[i].sum()
 
         # find the means for all the products of the operators and the average
         # covariation of the operators
