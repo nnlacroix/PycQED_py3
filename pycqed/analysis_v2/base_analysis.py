@@ -1288,6 +1288,7 @@ class BaseDataAnalysis(object):
         if pdict.get('color', False):
             plot_linekws['color'] = pdict.get('color')
 
+        plot_linekws['alpha'] = pdict.get('alpha', 1)
         # plot_multiple = pdict.get('multiple', False)
         plot_linestyle = pdict.get('linestyle', '-')
         plot_marker = pdict.get('marker', 'o')
