@@ -280,14 +280,20 @@ class MultiTaskingExperiment(QuantumExperiment):
             # for all sweep points in this dimension (both task-specific and
             # valid for all tasks)
             for k in csp.keys():
-                if k in params:
+                if k in params and '=' not in k:
                     # task-specific sweep point. Add prefixed version to
                     # global sweep points and to meas_obj_sweep_points_map
                     gsp[prefix + k] = csp[k]
                     self.add_to_meas_obj_sweep_points_map(mo, prefix + k)
                 else:
-                    # sweep point valid for all tasks. Add without prefix to
-                    # meas_obj_sweep_points_map
+                    # sweep point valid for all tasks.
+                    if k not in gsp:
+                        # Pulse modifier sweep point from a task. Copy it to
+                        # global sweep points, assuming that the expert user
+                        # has made sure that there are no conflicts of pulse
+                        # modifier sweep points across tasks.
+                        gsp[k] = csp[k]
+                    # Add without prefix to meas_obj_sweep_points_map
                     self.add_to_meas_obj_sweep_points_map(mo, k)
         return task
 
