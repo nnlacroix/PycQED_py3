@@ -13,10 +13,17 @@ Contains:
 import os
 import time
 import h5py
-import qutip
 import numpy as np
 import logging
 log = logging.getLogger(__name__)
+
+try:
+    import qutip
+    qutip_imported = True
+except Exception:
+    log.warning('qutip was not imported. qutip objects will be stored as '
+                'strings.')
+    qutip_imported = False
 
 
 class DateTimeGenerator:
@@ -154,8 +161,9 @@ def write_dict_to_hdf5(data_dict: dict, entry_point, overwrite=False):
                 log.error(e)
                 log.error('Exception occurred while writing'
                       ' {}:{} of type {}'.format(key, item, type(item)))
-        elif isinstance(item, (np.ndarray, qutip.qobj.Qobj)):
-            if isinstance(item, qutip.qobj.Qobj):
+        elif isinstance(item, np.ndarray) or (
+            qutip_imported and isinstance(item, qutip.qobj.Qobj)):
+            if qutip_imported and isinstance(item, qutip.qobj.Qobj):
                 item = item.full()
             try:
                 entry_point.create_dataset(key, data=item)
