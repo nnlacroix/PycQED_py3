@@ -7272,18 +7272,23 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
     def plot(self, **kw):
         super().plot(**kw)
 
-        # add formatting to axes
+        # add second axis to population figures
         from matplotlib.ticker import MaxNLocator
         for axname, ax in self.axs.items():
-            pass
-            # if "ro_separation" in self.get_param_value("preparation_params"):
-            #     ro_sep = \
-            #         self.get_param_value("preparation_params")["ro_separation"]
-            #     timeax = ax.twiny()
-            #     timeax.set_xlabel(r"Time ($\mu s$)")
-            #     timeax.set_xlim(0, ax.get_xlim()[1] * ro_sep * 1e6)
-            # ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+            if "populations" in axname:
+                if "ro_separation" in self.get_param_value("preparation_params"):
+                    ro_sep = \
+                        self.get_param_value("preparation_params")["ro_separation"]
+                    timeax = ax.twiny()
+                    timeax.set_xlabel(r"Time ($\mu s$)")
+                    timeax.set_xlim(0, ax.get_xlim()[1] * ro_sep * 1e6)
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
+        # plot raw readouts:
+        if self.get_param_value('plot_all_shots'):
+            #TODO: is this how I want to name this parameter?
+            pass
+            # TODO: add raw data plots here
 
     @staticmethod
     def _get_pop_label(state, seq_nr, key):
