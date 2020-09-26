@@ -722,9 +722,12 @@ class ActiveReset(CalibBuilder):
         self.cal_points = kw.get('cal_points',
                                  CalibrationPoints([qb.name for qb in qb_in_exp],
                                                    ()))
-        self.cal_states = ()
-
-        self.exp_metadata.update({"n_shots": self.n_shots})
+        self.cal_states = kw.get('cal_states', ())
+        # should transform raw voltage to probas in analysis if no cal points
+        # and not classified readout already
+        predict_proba = len(self.cal_states) == 0 and  not self.classified
+        self.exp_metadata.update({"n_shots": self.n_shots,
+                                  "predict_proba":  predict_proba})
 
     def prepare_measurement(self, **kw):
 
@@ -777,6 +780,10 @@ class ActiveReset(CalibBuilder):
 
         ro = self.mux_readout(qubit)
         return [reset_block, ro]
+
+    def run_analysis(self, analysis_class=None, **kwargs):
+
+        self.analysis = tda.MultiQutritActiveResetAnalysis(**kwargs)
 
     @staticmethod
     def _set_thresholds(qubits, clf_params=None):
