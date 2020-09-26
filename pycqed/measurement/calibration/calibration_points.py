@@ -254,9 +254,14 @@ class CalibrationPoints:
             # This fallback is used to have a step value in the same order
             # of magnitude as the value of the single sweep point
             step = np.abs(sweep_points[0])
+        except Exception:
+            print(sweep_points)
+
+            return np.arange(len(sweep_points) + n_cal_pts)
         plot_sweep_points = \
             np.concatenate([sweep_points, [sweep_points[-1] + i * step
                                            for i in range(1, n_cal_pts + 1)]])
+
         return plot_sweep_points
 
     def __str__(self):
