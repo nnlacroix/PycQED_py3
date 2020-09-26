@@ -7055,6 +7055,8 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
         options dict options:
             see BaseDataAnalysis for more.
         '''
+        if options_dict is None:
+            options_dict = {}
         options_dict.update({"TwoD": True})
         super().__init__(options_dict=options_dict, auto=False,
                          **kw)
@@ -7145,10 +7147,8 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
                         decay = lambda time, a, rate, offset: \
                             a * np.exp(-2 * np.pi * rate * time) + offset
                         decay_model =  lmfit.Model(decay)
-                        print(time)
                         decay_model.set_param_hint('a', value=excited_pop[0])
-                        decay_model.set_param_hint('rate', value=rate_guess,
-                                                   )
+                        decay_model.set_param_hint('rate', value=rate_guess)
 
                         decay_model.set_param_hint('n', value=1, vary=False)
                         decay_model.set_param_hint('offset', value=0)
@@ -7197,7 +7197,7 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
                                 'setlabel': self._get_pop_label(state, seq_nr, k),
                                 'title': self.raw_data_dict['timestamp'] + ' ' +
                                          self.raw_data_dict['measurementstring']
-                                         + '-' + qbn,
+                                         + " " +  prep_state,
                                 'titlepad': 0.2,
                                 'linestyle': 'none',
                                 'color': f'C{i}',
