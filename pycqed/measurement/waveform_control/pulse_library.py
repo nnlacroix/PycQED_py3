@@ -778,7 +778,7 @@ class BufferedFLIPPulse(pulse.Pulse):
         self.channel2 = channel2
         self.channels = [self.channel, self.channel2]
 
-        self.amps = {channel: self.amplitude, channel2: self.amplitude2}
+        self._update_amplitudes()
 
         delay = self.channel_relative_delay  # delay of pulse on channel2 wrt pulse on channel
         bls = self.buffer_length_start  # initial value for buffer length start passed with kw
@@ -819,6 +819,8 @@ class BufferedFLIPPulse(pulse.Pulse):
             'channel2': None,
             'amplitude': 0,
             'amplitude2': 0,
+            'mirror_pattern': None,
+            'mirror_correction': None,
             'pulse_length': 0,
             'buffer_length_start': 30e-9,
             'buffer_length_end': 30e-9,
@@ -833,8 +835,12 @@ class BufferedFLIPPulse(pulse.Pulse):
         }
         return params
 
-    def chan_wf(self, chan, tvals):
+    def _update_amplitudes(self):
+        self.amps = {self.channel: self.amplitude,
+                     self.channel2: self.amplitude2}
 
+    def chan_wf(self, chan, tvals):
+        self._update_amplitudes()
         amp = self.amps[chan]
         buffer_start = self.buffer_length_start[chan]
         l1 = self.length1[chan]
@@ -877,6 +883,7 @@ class BufferedFLIPPulse(pulse.Pulse):
             return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
 
+        self._update_amplitudes()
         amp = self.amps[channel]
         buffer_start = self.buffer_length_start[channel]
         buffer_end = self.buffer_length_end[channel]
