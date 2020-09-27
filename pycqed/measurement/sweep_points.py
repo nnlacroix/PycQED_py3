@@ -2,7 +2,7 @@ import logging
 log = logging.getLogger(__name__)
 from collections import OrderedDict
 from copy import deepcopy
-from numpy import array
+from numpy import array  # Needed for eval. Do not remove.
 
 class SweepPoints(list):
     """
