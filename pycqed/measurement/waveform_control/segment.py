@@ -131,6 +131,7 @@ class Segment:
         """
         self.enforce_single_element()
         self.resolve_timing()
+        self.resolve_mirror()
         self.resolve_Z_gates()
         self.add_flux_crosstalk_cancellation_channels()
         self.gen_trigger_el()
@@ -726,6 +727,38 @@ class Segment:
             if len(self.elements_on_awg[awg]) > 1:
                 raise ValueError(
                     'There is more than one element on {}'.format(awg))
+
+    def resolve_mirror(self):
+        """
+        Resolves amplitude mirroring for pulses that have a mirror_pattern
+        property.
+        """
+        op_counts = {}
+        for p in self.resolved_pulses:
+            if p.op_code not in op_counts:
+                op_counts[p.op_code] = 0
+            op_counts[p.op_code] += 1
+            pattern = getattr(p.pulse_obj, 'mirror_pattern', None)
+            if pattern is None or pattern == 'none':
+                continue
+            for pa1, pa2 in [('all', [1]), ('even', [0, 1]), ('odd', [1, 0])]:
+                if pattern == pa1:
+                    pattern = pa2
+            pattern = deepcopy(pattern)
+            while len(pattern) < op_counts[p.op_code]:
+                pattern += pattern
+            if not pattern[op_counts[p.op_code] - 1]:
+                continue
+            # use mirror pulse
+            mirror_correction = getattr(p.pulse_obj, 'mirror_correction', None)
+            if mirror_correction is None:
+                mirror_correction = {}
+            for k in p.pulse_obj.__dict__:
+                if 'amplitude' in k:
+                    amp = -getattr(p.pulse_obj, k)
+                    if k in mirror_correction:
+                        amp += mirror_correction[k]
+                    setattr(p.pulse_obj, k, amp)
 
     def resolve_Z_gates(self):
         """
