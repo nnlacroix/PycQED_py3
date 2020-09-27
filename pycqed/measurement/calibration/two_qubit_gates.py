@@ -684,7 +684,7 @@ class CPhase(CalibBuilder):
         :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
     ...
     """
-    kw_for_task_keys = ['ref_pi_half']
+    kw_for_task_keys = ['ref_pi_half', 'num_cz_gates']
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
@@ -784,6 +784,7 @@ class CPhase(CalibBuilder):
             p['ref_point_new'] = 'end'
         ir.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
 
+        print(num_cz_gates)
         fp = self.block_from_ops('flux', [f"{kw.get('cz_pulse_name', 'CZ')} "
                                           f"{qbl} {qbr}"] * num_cz_gates)
         # TODO here, we could do DD pulses (CH 2020-06-19)
