@@ -470,7 +470,9 @@ class Cryoscope(CalibBuilder):
                     'values', 0, 'phase')[sp1d_idx]
             pihalf_2_bk.pulses[0]['pulse_delay'] = self.separation_buffer
 
-            # flux pulses blocks
+            # extra pulses
+            eb = self.prepend_pulses_block(task.get('extra_pulse_dicts', {}))
+
             main_fpbk = self.block_from_ops(f'fp_main_{qb}', [flux_op_code])
             repark_fpbk = self.block_from_ops(f'fp_repark_{qb}', [f'FP {qb}'])
             repark_fpbk.pulses[0]['amplitude'] = task.get('repark_fp_amp', 0)
@@ -503,7 +505,7 @@ class Cryoscope(CalibBuilder):
             fp_block = self.simultaneous_blocks('flux_pulses_{qb}',
                 [main_fpbk, repark_fpbk], block_align='center')
             cryo_blk = self.sequential_blocks(f'cryoscope {qb}',
-                [pihalf_1_bk, fp_block, pihalf_2_bk])
+                [pihalf_1_bk, eb, fp_block, pihalf_2_bk])
 
             parallel_block_list += [cryo_blk]
             self.data_to_fit.update({qb: 'pe'})
