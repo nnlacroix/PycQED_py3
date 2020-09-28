@@ -1,3 +1,4 @@
+import itertools
 import numpy as np
 from copy import copy
 from copy import deepcopy
@@ -22,7 +23,8 @@ class CircuitBuilder:
             instrument settings)
     """
 
-    STD_INIT = {'0': 'I', '1': 'X180', '+': 'Y90', '-': 'mY90'}
+    STD_INIT = {'0': ['I'], '1': ['X180'], '+': ['Y90'], '-': ['mY90'],
+                'g': ['I'], 'e': ['X180'], 'f': ['X180', 'X180_ef']}
 
     def __init__(self, dev=None, qubits=None, operation_dict=None,
                  filter_qb_names=None, **kw):
@@ -259,7 +261,7 @@ class CircuitBuilder:
         self.qb_names[i], self.qb_names[j] = self.qb_names[j], self.qb_names[i]
 
     def initialize(self, init_state='0', qb_names='all', prep_params=None,
-                   simultaneous=True, block_name=None):
+                   simultaneous=True, block_name=None, pulse_modifs=None):
         """
         Initializes the specified qubits with the corresponding init_state
         :param init_state (String or list): Can be one of the following
@@ -273,7 +275,13 @@ class CircuitBuilder:
         :param qb_names (list or 'all'): list of qubits on which init should be
             applied. Defaults to all qubits.
         :param prep_params: preparation parameters
-        :return: init segment
+        :param simultaneous: (bool, default True) whether initialization
+            pulses should be applied simultaneously.
+        :param block_name: (str, optional) a name to replace the
+            automatically generated block name of the initialization block
+        :param pulse_modifs: (dict) Modification of pulses parameters.
+            See method block_from_ops.
+        :return: init block
         """
         if block_name is None:
             block_name = f"Initialization_{qb_names}"
@@ -289,17 +297,43 @@ class CircuitBuilder:
                 f"qubits"
 
         pulses = []
-        pulses.extend(self.prepare(qb_names, ref_pulse="start",
-                                   **prep_params).build())
         for i, (qbn, init) in enumerate(zip(qb_names, init_state)):
-            # add qb name and "s" for reference to start of previous pulse
-            op = self.STD_INIT.get(init, init)
-            if op != 'I':
-                op += f"{'s' if len(pulses) != 0 and simultaneous else ''} " + \
-                      qbn
-                pulse = self.get_pulse(op)
-                pulses.append(pulse)
-        return Block(block_name, pulses)
+            # Allowing for a list of pulses here makes it possible to,
+            # e.g., initialize in the f-level.
+            if not isinstance(init, list):
+                init = self.STD_INIT.get(init, [init])
+            if init != ['I']:
+                init = [f"{op} {qbn}" for op in init]
+                # We just want the pulses, but we can use block_from_ops as
+                # a helper to get multiple pulses and to process pulse_modifs
+                tmp_block = self.block_from_ops(
+                    'tmp_block', init, pulse_modifs=pulse_modifs)
+                if simultaneous:
+                    tmp_block.pulses[0]['ref_pulse'] = 'start'
+                pulses += tmp_block.pulses
+        block = Block(block_name, pulses)
+        block.set_end_after_all_pulses()
+        if len(prep_params) != 0:
+            block = self.sequential_blocks(
+                block_name, [self.prepare(qb_names, ref_pulse="start",
+                                          **prep_params), block])
+        return block
+
+    def finalize(self, init_state='0', qb_names='all', simultaneous=True,
+                 block_name=None, pulse_modifs=None):
+        """
+        Applies the specified final rotation to the specified qubits.
+        This is basically the same initialize, but without preparation.
+        For parameters, see initialize().
+        :return: finalization block
+        """
+        if block_name is None:
+            block_name = f"Finalialization_{qb_names}"
+        return self.initialize(init_state=init_state, qb_names=qb_names,
+                               simultaneous=simultaneous,
+                               prep_params={},
+                               block_name=block_name,
+                               pulse_modifs=pulse_modifs)
 
     def prepare(self, qb_names='all', ref_pulse='start',
                 preparation_type='wait', post_ro_wait=1e-6,
@@ -436,7 +470,8 @@ class CircuitBuilder:
             preparation_pulses[0]['pulse_delay'] = -ro_separation
             block_end = dict(name='end', pulse_type="VirtualPulse",
                              ref_pulse='preselection_RO',
-                             pulse_delay=ro_separation)
+                             pulse_delay=ro_separation,
+                             ref_point='start')
             preparation_pulses += [block_end]
             return Block(block_name, preparation_pulses)
 
@@ -453,7 +488,9 @@ class CircuitBuilder:
             else:
                 ro_pulse['ref_point'] = 'start'
             ro_pulses.append(ro_pulse)
-        return Block(block_name, ro_pulses)
+        block = Block(block_name, ro_pulses)
+        block.set_end_after_all_pulses()
+        return block
 
     def Z_gate(self, theta=0, qb_names='all'):
 
@@ -593,27 +630,45 @@ class CircuitBuilder:
                                   ro_kwargs=ro_kwargs))
         return seq
 
-    def simultaneous_blocks(self, block_name, blocks):
+    def simultaneous_blocks(self, block_name, blocks, block_align='start',
+                            set_end_after_all_pulses=False):
         """
         Creates a block with name :block_name: that consists of the parallel
         execution of the given :blocks:. Ensures that any pulse or block
         following the created block will occur after the longest given block.
 
-        Note that within each of the given blocks, it is assumed that the
-        pulse listed last in the block is the one that occurs last.
-        TODO: We might want to relax this assumption in a future version!
+        CAUTION: For each of the given blocks, the end time of the block is
+        determined by the pulse listed last in the block, which is not
+        necessarily the one that ends last in terms of timing. To instead
+        determine the end time of the block based on the pulse that ends
+        last, set set_end_after_all_pulses to True (or adjust the end pulse
+        of each block before calling simultaneous_blocks).
 
         Args:
             block_name (string): name of the block that is created
             blocks (iterable): iterable where each element is a block that has
-            to be executed in parallel to the others.
+                to be executed in parallel to the others.
+            block_align (str or float): at which point the simultaneous
+                blocks should be aligned ('start', 'middle', 'end', or a float
+                between 0.0 and 1.0 that determines the alignment point of each
+                block relative to the duration the block). Default: 'start'
+            set_end_after_all_pulses (bool, default False): in all
+                blocks, correct the end pulse to happen after the last pulse.
         """
 
         simultaneous = Block(block_name, [])
         simultaneous_end_pulses = []
+        if block_align == 'start':
+            # saves computation time in Segment.resolve_timing
+            block_align = None
         for block in blocks:
-            simultaneous.extend(block.build(ref_pulse=f"start"))
+            if set_end_after_all_pulses:
+                block.set_end_after_all_pulses()
+            simultaneous.extend(block.build(
+                ref_pulse=f"start", block_start=dict(block_align=block_align)))
             simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
+        # the name of the simultaneous_end_pulse is used in
+        # Segment.resolve_timing and should not be changed
         simultaneous.extend([{"name": f"simultaneous_end_pulse",
                               "pulse_type": "VirtualPulse",
                               "pulse_delay": 0,
@@ -623,67 +678,38 @@ class CircuitBuilder:
                               }])
         return simultaneous
 
-    def simultaneous_blocks_align_end(self, block_name, blocks):
-        """
-        Creates a block with name :block_name: that consists of the parallel
-        execution of the given :blocks:. Ensures that any pulse or block
-        following the created block will occur after the longest given block.
-
-        Note that within each of the given blocks, it is assumed that the
-        pulse listed last in the block is the one that occurs last.
-        TODO: We might want to relax this assumption in a future version!
-
-        Args:
-            block_name (string): name of the block that is created
-            blocks (iterable): iterable where each element is a block that has
-            to be executed in parallel to the others.
-        """
-        from pprint import pprint
-        simultaneous = Block(block_name, [])
-        simultaneous_end_pulses = []
-        if len(blocks) > 1:
-            block_durations = [self.get_ops_duration(pulses=block.build())
-                               for block in blocks]
-        else:  # duration does not matter
-            block_durations = [0] * len(blocks)
-        for i, block in enumerate(blocks):
-            resolved_pulses = block.build(ref_pulse=f"start")
-            if i != np.argmax(block_durations):
-                delay = max(block_durations) - block_durations[i]
-                resolved_pulses[0]['pulse_delay'] = delay
-            simultaneous.extend(resolved_pulses)
-            # block_durations += [self.get_ops_duration(pulses=block.build())]
-            simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
-
-        simultaneous.extend([{"name": f"simultaneousP_end_pulse",
-                              "pulse_type": "VirtualPulse",
-                              "pulse_delay": 0,
-                              "ref_pulse": simultaneous_end_pulses,
-                              "ref_point": 'end',
-                              "ref_function": 'max'
-                              }])
-        return simultaneous
-
-    def sequential_blocks(self, block_name, blocks):
+    def sequential_blocks(self, block_name, blocks,
+                          set_end_after_all_pulses=False):
         """
         Creates a block with name :block_name: that consists of the serial
         execution of the given :blocks:.
 
+        CAUTION: For each of the given blocks, the end time of the block is
+        determined by the pulse listed last in the block, which is not
+        necessarily the one that ends last in terms of timing. To instead
+        determine the end time of the block based on the pulse that ends
+        last, set set_end_after_all_pulses to True (or adjust the end pulse
+        of each block before calling sequential_blocks).
+
         Args:
             block_name (string): name of the block that is created
             blocks (iterable): iterable where each element is a block that has
-            to be executed one after another.
+                to be executed one after another.
+            set_end_after_all_pulses (bool, default False): in all
+                blocks, correct the end pulse to happen after the last pulse.
         """
 
         sequential = Block(block_name, [])
         for block in blocks:
+            if set_end_after_all_pulses:
+                block.set_end_after_all_pulses()
             sequential.extend(block.build())
         return sequential
 
     def sweep_n_dim(self, sweep_points, body_block=None, body_block_func=None,
                     cal_points=None, init_state='0', seq_name='Sequence',
                     ro_kwargs=None, return_segments=False, ro_qubits='all',
-                    **kw):
+                    repeat_ro=True, init_kwargs=None, final_kwargs=None, **kw):
         """
         Creates a sequence or a list of segments by doing an N-dim sweep
         over the given operations based on the sweep_points.
@@ -708,6 +734,12 @@ class CircuitBuilder:
         :param kw: keyword arguments
             body_block_func_kw (dict, default: {}): keyword arguments for the
                 body_block_func
+        :param repeat_ro: (bool) set repeat pattern for readout pulses
+            (default: True)
+        :param init_kwargs: Keyword arguments (dict) for the initialization,
+            see method initialize().
+        :param final_kwargs: Keyword arguments (dict) for the finalization,
+            see method finalize().
         :return:
             - if return_segments==True:
                 1D: list of segments, number of 1d sweep points or
@@ -727,6 +759,10 @@ class CircuitBuilder:
 
         if ro_kwargs is None:
             ro_kwargs = {}
+        if init_kwargs is None:
+            init_kwargs = {}
+        if final_kwargs is None:
+            final_kwargs = {}
 
         nr_sp_list = sweep_points.length()
         if sweep_dims == 1:
@@ -735,7 +771,7 @@ class CircuitBuilder:
             nr_sp_list.append(1)
 
         ro = self.mux_readout(**ro_kwargs, qb_names=ro_qubits)
-        all_ro_qubits = copy(ro_qubits)
+        _, all_ro_qubits = self.get_qubits(ro_qubits)
         all_ro_op_codes = [p['op_code'] for p in ro.pulses]
         if body_block is not None:
             op_codes = [p['op_code'] for p in body_block.pulses if 'op_code'
@@ -744,22 +780,39 @@ class CircuitBuilder:
                               op_codes and qb not in all_ro_qubits]
             all_ro_op_codes += [f'RO {qb}' for qb in all_ro_qubits if qb not
                                 in ro_qubits]
-        prep = self.initialize(init_state=init_state, qb_names=all_ro_qubits)
+        sweep_dim_init = sweep_points.find_parameter('initialize')
+        sweep_dim_final = sweep_points.find_parameter('finalize')
+        if sweep_dim_init is None:
+            prep = self.initialize(init_state=init_state,
+                                   qb_names=all_ro_qubits, **init_kwargs)
+        if sweep_dim_final is None:
+            final = Block('Finalization', [])
 
         seqs = []
         for i in range(nr_sp_list[1]):
             this_seq_name = seq_name + (f'_{i}' if sweep_dims == 2 else '')
             seq = Sequence(this_seq_name)
             for j in range(nr_sp_list[0]):
+                dims = j, i
+                if sweep_dim_init is not None:
+                    prep = self.initialize(
+                        init_state=sweep_points.get_sweep_params_property(
+                            'values', 'all', 'initialize')[dims[sweep_dim_init]],
+                        qb_names=all_ro_qubits, **init_kwargs)
                 if body_block is not None:
-                    segblock = self.sequential_blocks('segblock',
-                                                      [prep, body_block, ro])
+                    this_body_block =  body_block
                 else:
                     this_body_block = body_block_func(
                         j, i, sweep_points=sweep_points,
                         **kw.get('body_block_func_kw', {}))
-                    segblock = self.sequential_blocks(
-                        'segblock', [prep, this_body_block, ro])
+                if sweep_dim_final is not None:
+                    final = self.finalize(
+                        init_state=sweep_points.get_sweep_params_property(
+                            'values', 'all', 'finalize')[dims[sweep_dim_final]],
+                        qb_names=all_ro_qubits, **final_kwargs)
+
+                segblock = self.sequential_blocks(
+                        'segblock', [prep, this_body_block, final, ro])
                 seq.add(Segment(f'seg{j}', segblock.build(
                     sweep_dicts_list=sweep_points, sweep_index_list=[j, i])))
             if cal_points is not None:
@@ -775,12 +828,69 @@ class CircuitBuilder:
                 return segs, nr_sp_list
 
         # repeat UHF seqZ code
-        for s in seqs:
-            for ro_op in all_ro_op_codes:
-                s.repeat_ro(ro_op, self.operation_dict)
+        if repeat_ro:
+            for s in seqs:
+                for ro_op in all_ro_op_codes:
+                    s.repeat_ro(ro_op, self.operation_dict)
 
         if sweep_dims == 1:
             return seqs, [np.arange(seqs[0].n_acq_elements())]
         else:
             return seqs, [np.arange(seqs[0].n_acq_elements()),
                           np.arange(nr_sp_list[1])]
+
+    def tomography_pulses(self, tomo_qubits=None,
+                          basis_rots=('I', 'X90', 'Y90'), all_rots=True):
+
+        """
+        Generates a complete list of tomography pulse lists for tomo_qubits.
+        :param tomo_qubits: None, list of qubit names, or of qubits indices in
+            self.get_qubits(). I None, then tomo_qubit = self.get_qubits()[1].
+            If list of indices, they will be sorted.
+            This parameter is only relevant if basis_rots is not a list of
+            lists/tuples.
+        :param basis_rots: list of strings or list of lists/tuples of strings,
+            where the strings are pycqed pulse names.
+        :param all_rots: bool specifying whether to take all possible
+            combinations of basis_rots for tomo_qubits, or not.
+            This parameter is only relevant if basis_rots is not a list of
+            lists/tuples.
+        :return:
+            If list of lists/tuples, this function will do nothing and will
+                just return basis_rots unmodified. Hence, the lists/tuples of
+                strings must contain pulse names for each qubit in the
+                experiment (i.e. self.get_qubits()).
+
+            If list of strings, this function will return all possible
+                combinations of basis_rots for tomo_qubits if all_rots, else it
+                will return list with len(basis_rots) lists with
+                len(tomo_qubits) repetitions of each pulse in basis_rots
+                (i.e. all qubits get the same pulses).
+        """
+
+        if not isinstance(basis_rots[0], str):
+            return basis_rots
+
+        all_qubit_names = self.get_qubits()[1]
+        if tomo_qubits is None:
+            tomo_qubits = all_qubit_names
+        if isinstance(tomo_qubits[0], str):
+            tomo_qubits = [all_qubit_names.index(i) for i in tomo_qubits]
+        # sort qubit indices to ensure that basis_rots are always applied on
+        # qubits in ascending order as defined by self.get_qubits().
+        tomo_qubits.sort()
+
+        if all_rots:
+            basis_rots = list(itertools.product(basis_rots,
+                                                repeat=len(tomo_qubits)))
+        else:
+            basis_rots = [len(tomo_qubits) * [br] for br in basis_rots]
+
+        basis_rots_all_qbs = len(basis_rots) * ['']
+        for i, br in enumerate(basis_rots):
+            temp = len(all_qubit_names)*['I']
+            for ti in range(len(tomo_qubits)):
+                temp[tomo_qubits[ti]] = br[ti]
+            basis_rots_all_qbs[i] = temp
+
+        return basis_rots_all_qbs

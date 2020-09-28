@@ -140,7 +140,7 @@ class Segment:
                     p.pulse_obj.element_name = f'default_{self.name}'
                     break
 
-    def resolve_timing(self):
+    def resolve_timing(self, resolve_block_align=True):
         """
         For each pulse in the resolved_pulses list, this method:
             * updates the _t0 of the pulse by using the timing description of
@@ -149,6 +149,9 @@ class Segment:
               ascending element start time and the pulses in each element by 
               ascending _t0
             * orderes the resolved_pulses list by ascending pulse middle
+
+        :param resolve_block_align: (bool) whether to resolve alignment of
+            simultaneous blocks (default True)
         """
 
         self.elements = odict()
@@ -232,6 +235,27 @@ class Segment:
                     log.error(unpulse)
             raise Exception(f'Not all pulses have been resolved: '
                             f'{self.resolved_pulses}')
+
+        if resolve_block_align:
+            re_resolve = False
+            for i in range(len(visited_pulses)):
+                p = visited_pulses[i][2]
+                if p.block_align is not None:
+                    n = p.pulse_obj.name
+                    end_pulse = ref_pulses_dict_all[n[:-len('start')] + 'end']
+                    simultaneous_end_pulse = ref_pulses_dict_all[
+                        n[:n[:-len('-|-start')].rfind('-|-') + 3] +
+                        'simultaneous_end_pulse']
+                    Delta_t = p.block_align * (
+                            simultaneous_end_pulse.pulse_obj.algorithm_time() -
+                            end_pulse.pulse_obj.algorithm_time())
+                    if abs(Delta_t) > 1e-14:
+                        p.delay += Delta_t
+                        re_resolve = True
+                    p.block_align = None
+            if re_resolve:
+                self.resolve_timing(resolve_block_align=False)
+                return
 
         # adds the resolved pulses to the elements OrderedDictionary
         for (t0, i, p) in sorted(visited_pulses):
@@ -1234,6 +1258,7 @@ class UnresolvedPulse:
 
     def __init__(self, pulse_pars):
         self.ref_pulse = pulse_pars.get('ref_pulse', 'previous_pulse')
+        alignments = {'start': 0, 'middle': 0.5, 'center': 0.5, 'end': 1}
         if pulse_pars.get('ref_point', 'end') == 'end':
             self.ref_point = 1
         elif pulse_pars.get('ref_point', 'end') == 'middle':
@@ -1255,6 +1280,10 @@ class UnresolvedPulse:
                 'values are: start, end, middle. Default value: start')
 
         self.ref_function = pulse_pars.get('ref_function', 'max')
+        self.block_align = pulse_pars.get('block_align', None)
+        if self.block_align is not None:
+            self.block_align = alignments.get(self.block_align,
+                                              self.block_align)
         self.delay = pulse_pars.get('pulse_delay', 0)
         self.original_phase = pulse_pars.get('phase', 0)
         self.basis = pulse_pars.get('basis', None)

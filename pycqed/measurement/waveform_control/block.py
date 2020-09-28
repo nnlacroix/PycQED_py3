@@ -143,13 +143,14 @@ class Block:
         return pulses_built
 
     def set_end_after_all_pulses(self, **block_end):
-        for i, p in enumerate(self.pulses):
-            p['name'] = p.get('name', f"pulse_{i}")
-        self.block_end.update({
-            'ref_function': 'max',
-            'ref_pulse': [p['name'] for p in self.pulses],
-            'ref_point': 'end',
-        })
+        if len(self.pulses):
+            for i, p in enumerate(self.pulses):
+                p['name'] = p.get('name', f"pulse_{i}")
+            self.block_end.update({
+                'ref_function': 'max',
+                'ref_pulse': [p['name'] for p in self.pulses],
+                'ref_point': 'end',
+            })
         self.block_end.update(block_end)
 
     def _is_shell(self, pulse, block_start, block_end):
@@ -239,7 +240,7 @@ class Block:
         # resolve parametric values first
         for p in pulses:
             for attr, s in p.items():
-                if isinstance(s, ParametricValue):
+                if getattr(s, '_is_parametric_value', False):
                     for sweep_dict, ind in zip(sweep_dicts_list, index_list):
                         if s.param in sweep_dict:
                             p[attr], p['op_code'] = s.resolve(
@@ -296,13 +297,14 @@ class Block:
         """
         for p in self.pulses:
             for k, s in p.items():
-                if isinstance(s, ParametricValue):
+                if getattr(s, '_is_parametric_value', False):
                     if params is None or s.param in params:
                         s.param = prefix + s.param
 
     def parametric_values(self):
         return {(i, attr) : s for i, p in enumerate(self.pulses)
-                for attr, s in p.items() if isinstance(s, ParametricValue)}
+                for attr, s in p.items()
+                if getattr(s, '_is_parametric_value', False)}
 
 
 class ParametricValue:
@@ -315,6 +317,8 @@ class ParametricValue:
     :param func: (optional) a function applied to the value of the parameter.
 
     """
+    _is_parametric_value = True
+
     def __init__(self, param, func=None):
         self.param = param
         self.func = func
