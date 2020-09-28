@@ -11,6 +11,8 @@ e.g. pulse_library.py.
 The module variable `pulse_libraries` is a
 """
 
+import numpy as np
+
 pulse_libraries = set()
 """set of module: The set of pulse implementation libraries.
 
@@ -46,6 +48,7 @@ class Pulse:
         self.name = name
         self.element_name = element_name
         self.codeword = kw.pop('codeword', 'no_codeword')
+        self.pulse_off = kw.pop('pulse_off', False)
 
         # Set default pulse_params and overwrite with params in keyword argument
         # list if applicable
@@ -72,6 +75,8 @@ class Pulse:
         for c in self.channels:
             if c in tvals_dict:
                 wfs_dict[c] = self.chan_wf(c, tvals_dict[c])
+                if getattr(self, 'pulse_off', False):
+                    wfs_dict[c] = np.zeros_like(wfs_dict[c])
         return wfs_dict
 
     def pulse_area(self, channel, tvals):
@@ -85,6 +90,9 @@ class Pulse:
         Returns:
             float: The pulse area.
         """
+        if getattr(self, 'pulse_off', False):
+            return 0
+
         wfs = self.chan_wf(channel, tvals)
         dt = tvals[1] - tvals[0]
 

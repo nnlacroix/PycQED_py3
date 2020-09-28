@@ -25,7 +25,7 @@ import h5py
 from pycqed.measurement.hdf5_data import write_dict_to_hdf5
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
 from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import copy
 import logging
 log = logging.getLogger(__name__)
@@ -327,7 +327,8 @@ class BaseDataAnalysis(object):
         if not hasattr(self, "metadata") or self.metadata is None:
             return self.options_dict.get(param_name, default_value)
         # multi timestamp with different metadata
-        elif isinstance(self.metadata, (list, tuple)) and len(self.metadata) != 0:
+        elif isinstance(self.metadata, (list, tuple)) and \
+                len(self.metadata) != 0:
             return self.options_dict.get(param_name,
                 self.metadata[metadata_index].get(param_name, default_value))
         # base case
@@ -441,9 +442,13 @@ class BaseDataAnalysis(object):
             # run in 1D mode (so only 1 column of sweep points in hdf5 file)
             # CURRENTLY ONLY WORKS WITH SweepPoints CLASS INSTANCES
             hybrid_measurement = False
+            raw_data_dict['hard_sweep_points'] = np.unique(mc_points[0])
             if mc_points.shape[0] > 1:
                 hsp = np.unique(mc_points[0])
-                ssp = np.unique(mc_points[1:])
+                ssp, counts = np.unique(mc_points[1:], return_counts=True)
+                if counts[0] != len(hsp):
+                    # ssro data
+                    hsp = np.tile(hsp, counts[0]//len(hsp))
                 # if needed, decompress the data (assumes hsp and ssp are indices)
                 if compression_factor != 1:
                     hsp = hsp[:int(len(hsp) / compression_factor)]
@@ -471,8 +476,6 @@ class BaseDataAnalysis(object):
                     ssp = np.arange(len(dim_2_sp))
                     raw_data_dict['hard_sweep_points'] = hsp
                     raw_data_dict['soft_sweep_points'] = ssp
-            else:
-                raw_data_dict['hard_sweep_points'] = np.unique(mc_points[0])
 
             data = measured_data[-len(value_names):]
             if data.shape[0] != len(value_names):
@@ -543,12 +546,15 @@ class BaseDataAnalysis(object):
             if len(self.raw_data_dict['exp_metadata']) == 0:
                 self.raw_data_dict['exp_metadata'] = {}
             self.metadata = self.raw_data_dict['exp_metadata']
-            cp = CalibrationPoints.from_string(self.get_param_value(
-                'cal_points', default_value=repr(CalibrationPoints([], []))))
+            try:
+                cp = CalibrationPoints.from_string(self.get_param_value(
+                    'cal_points'))
+            except TypeError:
+                cp = CalibrationPoints([], [])
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
                 self.get_param_value('compression_factor', 1),
-                self.get_param_value('sweep_points'),
+                SweepPoints.cast_init(self.get_param_value('sweep_points')),
                 cp, self.get_param_value('preparation_params',
                                          default_value=dict()))
         else:
@@ -695,7 +701,7 @@ class BaseDataAnalysis(object):
         # initialize everything to an empty dict if not overwritten
         self.fit_dicts = OrderedDict()
 
-    def run_fitting(self):
+    def run_fitting(self, keys_to_fit='all'):
         '''
         This function does the fitting and saving of the parameters
         based on the fit_dict options.
@@ -704,7 +710,11 @@ class BaseDataAnalysis(object):
         '''
         if self.fit_res is None:
             self.fit_res = {}
+        if keys_to_fit == 'all':
+            keys_to_fit = list(self.fit_dicts)
         for key, fit_dict in self.fit_dicts.items():
+            if key not in keys_to_fit:
+                continue
             guess_dict = fit_dict.get('guess_dict', None)
             guess_pars = fit_dict.get('guess_pars', None)
             guessfn_pars = fit_dict.get('guessfn_pars', {})

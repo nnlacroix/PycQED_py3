@@ -13,15 +13,14 @@ import logging
 from scipy import stats
 
 log = logging.getLogger(__name__)
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from copy import deepcopy
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import lmfit
 import matplotlib.colors as mc
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import gridspec
-from matplotlib.colors import LinearSegmentedColormap as lscmap
 from scipy.optimize import minimize
 from sklearn.metrics import confusion_matrix
 from sklearn.mixture import GaussianMixture as GM
@@ -1542,7 +1541,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
         if self.thresholds is not None:
             for qubit, channel in self.channel_map.items():
                 shots_cont = np.array(
-                    self.raw_data_dict['measured_data'][channel])
+                    self.raw_data_dict['measured_data'][channel]).T.flatten()
                 shots_thresh[qubit] = (shots_cont > self.thresholds[qubit])
             self.proc_data_dict['shots_thresholded'] = shots_thresh
         else:
@@ -1808,6 +1807,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
             val_list = [self.proc_data_dict['probability_table'][idx_ro]
                         [observabele_idxs] for idx_ro in cal_point[0]]
             means[i] = np.mean(val_list, axis=0)
+            means[i] /= means[i].sum()
 
         # find the means for all the products of the operators and the average
         # covariation of the operators

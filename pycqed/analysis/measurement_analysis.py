@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis import fitting_models as fit_mods
 import pycqed.measurement.hdf5_data as h5d
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import scipy.optimize as optimize
 import lmfit
 import textwrap
@@ -6826,7 +6826,8 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         if plot:
             fig, ax = plt.subplots()
             if return_stds:
-                ax.errorbar(delays/1e-9, fitted_freqs/1e6, yerr=fitted_stds/1e6)
+                ax.errorbar(delays/1e-9, fitted_freqs/1e6,
+                            yerr=fitted_stds/1e6)
             else:
                 ax.plot(delays/1e-9, fitted_freqs/1e6)
             ax.set_xlabel(r'delay, $\tau$ (ns)')
