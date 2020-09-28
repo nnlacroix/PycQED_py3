@@ -679,7 +679,8 @@ def temporary_value(*param_value_pairs):
 
     class TemporaryValueContext:
         def __init__(self, *param_value_pairs):
-            if not isinstance(param_value_pairs[0], (tuple, list)):
+            if len(param_value_pairs) > 0 and \
+                    not isinstance(param_value_pairs[0], (tuple, list)):
                 param_value_pairs = (param_value_pairs,)
             self.param_value_pairs = param_value_pairs
             self.old_value_pairs = []
@@ -732,3 +733,33 @@ def configure_qubit_mux_readout(qubits, lo_freqs_dict):
             if qb_ro_mwg not in mwgs_set:
                 qb.instr_ro_lo.get_instr().frequency(lo_freqs_dict[qb_ro_mwg])
                 mwgs_set.add(qb_ro_mwg)
+
+
+def configure_qubit_feedback_params(qubits, for_ef=False):
+    if for_ef:
+        raise NotImplementedError('for_ef feedback_params')
+    for qb in qubits:
+        ge_ch = qb.ge_I_channel()
+        pulsar = qb.instr_pulsar.get_instr()
+        AWG = qb.find_instrument(pulsar.get(f'{ge_ch}_awg'))
+        vawg = (int(pulsar.get(f'{ge_ch}_id')[2:])-1)//2
+        acq_ch = qb.acq_I_channel()
+        AWG.set(f'awgs_{vawg}_dio_mask_shift', 1+acq_ch)
+        AWG.set(f'awgs_{vawg}_dio_mask_value', 1)
+        UHF = qb.instr_uhf.get_instr()
+        threshs = qb.acq_classifier_params()
+        if threshs is not None:
+            threshs = threshs.get('thresholds', None)
+        if threshs is not None:
+            UHF.set(f'qas_0_thresholds_{acq_ch}_level', threshs[0])
+
+
+def find_symmetry_index(data):
+    data = data.copy()
+    data -= data.mean()
+    corr = []
+    for iflip in np.arange(0, len(data)-0.5, 0.5):
+        span = min(iflip, len(data)-1-iflip)
+        data_filtered = data[np.int(iflip-span):np.int(iflip+span+1)]
+        corr.append((data_filtered*data_filtered[::-1]).sum())
+    return np.argmax(corr), corr

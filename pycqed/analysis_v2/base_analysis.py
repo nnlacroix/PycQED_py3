@@ -25,7 +25,7 @@ import h5py
 from pycqed.measurement.hdf5_data import write_dict_to_hdf5
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
 from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import copy
 import logging
 log = logging.getLogger(__name__)
@@ -327,7 +327,8 @@ class BaseDataAnalysis(object):
         if not hasattr(self, "metadata") or self.metadata is None:
             return self.options_dict.get(param_name, default_value)
         # multi timestamp with different metadata
-        elif isinstance(self.metadata, (list, tuple)) and len(self.metadata) != 0:
+        elif isinstance(self.metadata, (list, tuple)) and \
+                len(self.metadata) != 0:
             return self.options_dict.get(param_name,
                 self.metadata[metadata_index].get(param_name, default_value))
         # base case
@@ -700,7 +701,7 @@ class BaseDataAnalysis(object):
         # initialize everything to an empty dict if not overwritten
         self.fit_dicts = OrderedDict()
 
-    def run_fitting(self):
+    def run_fitting(self, keys_to_fit='all'):
         '''
         This function does the fitting and saving of the parameters
         based on the fit_dict options.
@@ -709,7 +710,11 @@ class BaseDataAnalysis(object):
         '''
         if self.fit_res is None:
             self.fit_res = {}
+        if keys_to_fit == 'all':
+            keys_to_fit = list(self.fit_dicts)
         for key, fit_dict in self.fit_dicts.items():
+            if key not in keys_to_fit:
+                continue
             guess_dict = fit_dict.get('guess_dict', None)
             guess_pars = fit_dict.get('guess_pars', None)
             guessfn_pars = fit_dict.get('guessfn_pars', {})

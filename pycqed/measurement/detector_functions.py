@@ -1134,7 +1134,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         self.AWG = AWG
         self.integration_length = integration_length
         self.nr_shots = nr_shots
-        # to be used in MC.get_percdone()
+        # to be used in MC
         self.acq_data_len_scaling = self.nr_shots
 
         # 0/1/2 crosstalk supressed /digitized/raw
@@ -1163,7 +1163,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         # should run
         self.UHFQC.awgs_0_single(1)
 
-        self.nr_sweep_points = self.nr_shots*len(sweep_points)
+        self.nr_sweep_points = len(sweep_points)
         self.UHFQC.qas_0_integration_length(int(self.integration_length*(1.8e9)))
 
         self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
@@ -1298,6 +1298,9 @@ class UHFQC_classifier_detector(UHFQC_Base):
         self.prepare_function = prepare_function
         self.prepare_function_kwargs = prepare_function_kwargs
         self.get_values_function_kwargs = get_values_function_kwargs
+        if not self.get_values_function_kwargs.get('averaged', True):
+            # to be used in MC
+            self.acq_data_len_scaling = self.nr_shots
 
     def prepare(self, sweep_points):
         if self.AWG is not None:
@@ -1310,18 +1313,19 @@ class UHFQC_classifier_detector(UHFQC_Base):
             if self.prepare_function is not None:
                 self.prepare_function()
 
-        self.nr_sweep_points = len(sweep_points)
+        assert len(sweep_points) % self.acq_data_len_scaling == 0
+        self.nr_sweep_points = len(sweep_points) // self.acq_data_len_scaling
         # The averaging-count is used to specify how many times the AWG program
         # should run
         self.UHFQC.awgs_0_single(1)
         self.UHFQC.qas_0_integration_length(int(self.integration_length*(1.8e9)))
 
         self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
-        self.UHFQC.qudev_acquisition_initialize(channels=self.channels, 
-                                          samples=self.nr_shots*self.nr_sweep_points,
-                                          averages=1, #for single shot readout
-                                          loop_cnt=int(self.nr_shots),
-                                          mode='rl')
+        self.UHFQC.qudev_acquisition_initialize(
+            channels=self.channels,
+            samples=self.nr_shots * self.nr_sweep_points,
+            averages=1, #for single shot readout
+            loop_cnt=int(self.nr_shots), mode='rl')
 
     def get_values(self):
         if self.always_prepare:
