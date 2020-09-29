@@ -3751,7 +3751,6 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                     'xunit': 'V' if p == 0 else 'Hz',
                     'ylabel': r'T1',
                     'yunit': 's',
-                    'color': 'blue',
                 }
 
                 # Plot rotated integrated average in dependece of flux pulse
