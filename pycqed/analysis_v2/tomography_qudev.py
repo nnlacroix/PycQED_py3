@@ -197,11 +197,13 @@ def max_fidelity(rho1: qtp.Qobj, rho2: qtp.Qobj, thetas1, thetas2):
 
     return max_F, phase1, phase2
 
+
 def concurrence(rho):
     """
     Calculates the concurrence of the two-qubit state rho given in the
     qubits' basis according to https://doi.org/10.1103/PhysRevLett.78.5022
     """
+    print('in concurrence')
     rho = convert_to_density_matrix(rho)
     # convert to bell basis
     b = [np.sqrt(0.5)*qtp.Qobj(np.array(l)) for l in
@@ -212,7 +214,12 @@ def concurrence(rho):
             rhobell[i, j] = (b[j].dag()*rho*b[i])[0, 0]
     rhobell = qtp.Qobj(rhobell)
     R = (rhobell.sqrtm()*rhobell.conj()*rhobell.sqrtm()).sqrtm()
-    C = max(0, 2*R.eigenenergies().max() - R.tr())
+    try:
+        C = max(0, 2*R.eigenenergies().max() - R.tr())
+    except Exception:
+        # Steph, 29.09.2020: there is a bug numpy that causes this call to
+        # sometimes fail the first time it is called.
+        C = max(0, 2*R.eigenenergies().max() - R.tr())
     return C
 
 
