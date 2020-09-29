@@ -371,6 +371,159 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             options_dict=dict(TwoD=True, global_PCA=True,))
 
 
+class Cryoscope(CalibBuilder):
+    """
+        Delft Cryoscope measurement
+        (https://aip.scitation.org/doi/pdf/10.1063/1.5133894)
+        used to determine the shape of flux pulses set up as a 2D measurement
+        (truncation length and phase of second pi-half pulse are being swept)
+        Timings of sequence
+        |  --- |Y90| ------------------------------------------- |Y90| -  |RO|
+        |  ------- | ------ fluxpulse ------ | separation_buffer | -----
+                    <-  truncation_length  ->
+    """
+    def __init__(self, task_list, sweep_points=None, estimation_window=None,
+                 separation_buffer=None, **kw):
+        """
+
+        :param task_list:
+        :param sweep_points:
+        :param estimation_window:
+        :param separation_buffer: (float) extra delay between the (truncated)
+            flux pulse and the last pi-half pulse
+        :param kw:
+        """
+        try:
+            self.experiment_name = 'Cryoscope'
+            for task in task_list:
+                if not isinstance(task['qb'], str):
+                    task['qb'] = task['qb'].name
+                if not 'prefix' in task:
+                    task['prefix'] = f"{task['qb']}_"
+
+            super().__init__(task_list, sweep_points=sweep_points, **kw)
+            self.estimation_window = estimation_window
+            if self.estimation_window is None:
+                self.estimation_window = 1/2.4e9  # one HDAWG sample
+            self.exp_metadata['estimation_window'] = self.estimation_window
+            self.separation_buffer = separation_buffer
+            if self.separation_buffer is None:
+                self.separation_buffer = 100e-9  # one HDAWG sample
+            self.exp_metadata['separation_buffer'] = self.separation_buffer
+
+            self.add_default_sweep_points(**kw)
+            self.preprocessed_task_list = self.preprocess_task_list(**kw)
+            self.sequences, self.mc_points = self.sweep_n_dim(
+                self.sweep_points, body_block=None,
+                body_block_func=self.sweep_block, cal_points=self.cal_points,
+                ro_qubits=self.meas_obj_names, **kw)
+            self.autorun(**kw)
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def add_default_sweep_points(self, **kw):
+        """
+        Adds hard sweep points to self.sweep_points: phases of second pi-half
+        pulse and the estimation_window increment to the truncation_length
+        :param kw: keyword_arguments
+        """
+        self.sweep_points = self.add_default_ramsey_sweep_points(
+            self.sweep_points, tile=2, repeat=0, **kw)
+        nr_phases = self.sweep_points.length(0) // 2
+        hard_sweep_dict = SweepPoints(
+            'extra_truncation_length', [0] * nr_phases +
+                                       [self.estimation_window] * nr_phases,
+            's', 'Pulse length')
+        self.sweep_points.update(hard_sweep_dict + [{}])
+
+    def sweep_block(self, sp1d_idx, sp2d_idx, **kw):
+        """
+        Performs a Ramsey phase measurement with a truncated flux pulse between
+        the two pi-half pulses.
+        Timings of sequence
+        |  --- |Y90| ------------------------------------------- |Y90| -  |RO|
+        |  ------- | ------ fluxpulse ------ | separation_buffer | -----
+                    <-  truncation_length  ->
+
+        :param sp1d_idx: (int) index of sweep point to use from the
+            first sweep dimension
+        :param sp2d_idx: (int) index of sweep point to use from the
+            second sweep dimension
+        :param kw: keyword arguments
+        """
+        from pprint import pprint
+        parallel_block_list = []
+        for i, task in enumerate(self.preprocessed_task_list):
+            sweep_points = task['sweep_points']
+            qb = task['qb']
+            flux_op_code = task.get('flux_op_code', None)
+            if flux_op_code is None:
+                flux_op_code = f'FP {qb}'
+
+            # pi half pulses blocks
+            pihalf_1_bk = self.block_from_ops(f'pihalf_1_{qb}', [f'Y90 {qb}'])
+            pihalf_2_bk = self.block_from_ops(f'pihalf_2_{qb}', [f'Y90 {qb}'])
+            # set hard sweep phase and delay of second pi-half pulse
+            pihalf_2_bk.pulses[0]['phase'] = \
+                sweep_points.get_sweep_params_property(
+                    'values', 0, 'phase')[sp1d_idx]
+            pihalf_2_bk.pulses[0]['pulse_delay'] = self.separation_buffer
+
+            # extra pulses
+            eb = self.prepend_pulses_block(task.get('extra_pulse_dicts', {}))
+
+            main_fpbk = self.block_from_ops(f'fp_main_{qb}', [flux_op_code])
+            repark_fpbk = self.block_from_ops(f'fp_repark_{qb}', [f'FP {qb}'])
+            repark_fpbk.pulses[0]['amplitude'] = task.get('repark_fp_amp', 0)
+            repark_fpbk.pulses[0]['pulse_length'] = task.get(
+                'repark_fp_len', main_fpbk.pulses[0]['pulse_length'] +
+                                 main_fpbk.pulses[0].get('buffer_length_start', 0) +
+                                 main_fpbk.pulses[0].get('buffer_length_end', 0))
+            repark_fpbk.pulses[0]['buffer_length_start'] = task.get(
+                'repark_fp_buffers',
+                repark_fpbk.pulses[0].get('buffer_length_start', 0))
+            repark_fpbk.pulses[0]['buffer_length_end'] = task.get(
+                'repark_fp_buffers',
+                repark_fpbk.pulses[0].get('buffer_length_end', 0))
+
+            # set soft sweep truncation_length
+            for k in sweep_points[1]:
+                main_fpbk.pulses[0][k] = sweep_points.get_sweep_params_property(
+                    'values', 1, k)[sp2d_idx]
+            # set hard sweep truncation_length
+            main_fpbk.pulses[0]['truncation_length'] += \
+                sweep_points.get_sweep_params_property(
+                    'values', 0, 'extra_truncation_length')[sp1d_idx]
+            if repark_fpbk.pulses[0]['amplitude']:
+                # truncate the reparking flux pulse
+                repark_fpbk.pulses[0]['truncation_length'] = \
+                    main_fpbk.pulses[0]['truncation_length'] + \
+                    repark_fpbk.pulses[0].get('buffer_length_start', 0)
+
+            # create final block
+            fp_block = self.simultaneous_blocks('flux_pulses_{qb}',
+                [main_fpbk, repark_fpbk], block_align='center')
+            cryo_blk = self.sequential_blocks(f'cryoscope {qb}',
+                [pihalf_1_bk, eb, fp_block, pihalf_2_bk])
+
+            parallel_block_list += [cryo_blk]
+            self.data_to_fit.update({qb: 'pe'})
+
+        return self.simultaneous_blocks(
+            f'sim_rb_{sp2d_idx}_{sp1d_idx}', parallel_block_list,
+            block_align='end')
+
+    def run_analysis(self, **kw):
+        """
+        Runs analysis and stores analysis instances in self.analysis.
+        :param kw:
+        """
+        qb_names = [task['qb'] for task in self.task_list]
+        self.analysis = tda.CryoscopeAnalysis(
+            qb_names=qb_names, options_dict={'unwrap_phases': True})
+
+
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
     """
         Flux pulse amplitude measurement used to determine the qubits energy in
@@ -442,7 +595,8 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
     def run_analysis(self, analysis_kwargs=None, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.
-        :param kw:
+        :param analysis_kwargs: (dict) keyword arguments for analysis
+        :param kw: currently ignored
         """
         if analysis_kwargs is None:
             analysis_kwargs = {}

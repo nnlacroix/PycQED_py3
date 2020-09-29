@@ -318,7 +318,10 @@ class BaseDataAnalysis(object):
         # If it is an array of value decodes individual entries
         if type(s) == np.ndarray:
             s = [s.decode('utf-8') for s in s]
-        return s
+        try:
+            return eval(s)
+        except Exception:
+            return s
 
     def get_hdf_param_value(self, path_to_group, attribute, hdf_file_index=0):
         """
@@ -361,11 +364,11 @@ class BaseDataAnalysis(object):
             return self.options_dict.get(param_name, self.metadata.get(
                 param_name, default_value))
 
-    def get_data_from_timestamp_list(self):
+    def get_data_from_timestamp_list(self, params_dict, numeric_params=()):
         raw_data_dict = []
         for timestamp in self.timestamps:
             raw_data_dict_ts = OrderedDict([(param, []) for param in
-                                            self.params_dict])
+                                            params_dict])
 
             folder = a_tools.get_folder(timestamp)
             h5mode = self.options_dict.get('h5mode', 'r+')
@@ -383,7 +386,7 @@ class BaseDataAnalysis(object):
                     raw_data_dict_ts['measured_data'] = \
                         np.array(data_file['Experimental Data']['Data']).T
 
-                for save_par, file_par in self.params_dict.items():
+                for save_par, file_par in params_dict.items():
                     if len(file_par.split('.')) == 1:
                         par_name = file_par.split('.')[0]
                         for group_name in data_file.keys():
@@ -561,7 +564,8 @@ class BaseDataAnalysis(object):
              'exp_metadata':
                  'Experimental Data.Experimental Metadata'})
 
-        self.raw_data_dict = self.get_data_from_timestamp_list()
+        self.raw_data_dict = self.get_data_from_timestamp_list(
+            self.params_dict, self.numeric_params)
         if len(self.timestamps) == 1:
             # the if statement below is needed because if exp_metadata is not
             # found in the hdf file, then it is set to

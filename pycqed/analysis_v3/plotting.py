@@ -73,17 +73,22 @@ def get_default_plot_params(set_params=True, figure_width='1col',
         'font.size': 8,
         'lines.markersize': 2.0,
         'figure.facecolor': '0.9',
-        'xtick.direction': 'out',
-        'ytick.direction': 'out',
         'figure.titlesize': 'medium',
         'axes.titlesize': 'medium',
-        'figure.dpi': 600,
-        'figure.figsize': (FIGURE_WIDTH, FIGURE_HEIGHT)}
+        'figure.dpi': 300,
+        'figure.figsize': (FIGURE_WIDTH, FIGURE_HEIGHT),
+        'axes.axisbelow': True,
+        'xtick.direction': 'in',
+        'xtick.labelsize': 'small',
+        'ytick.direction': 'in',
+        'ytick.labelsize': 'small',
+        'image.interpolation': 'none',
+    }
 
     if set_params:
         plt.rcParams.update(plt.rcParamsDefault)
         plt.rcParams.update(params)
-    return params
+    return plt.rcParams
 
 
 def add_letter_to_subplots(fig, axes, xoffset=0.0, yoffset=0.0,
@@ -690,9 +695,10 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         if isinstance(yunit, list):
             yunit = yunit[0]
 
+        title = default_figure_title(data_dict, mobjn) + hlp_mod.get_param(
+            'title_suffix', data_dict, default_value='', **params)
         plot_dict_name = figure_name + '_' + keyi + hlp_mod.get_param(
             'key_suffix', data_dict, default_value='', **params)
-
         plot_dicts[plot_dict_name] = {
             'plotfn': 'plot_line',
             'fig_id': figure_name,
@@ -707,7 +713,7 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
             'ylabel': ylabel,
             'yunit': yunit,
             'setlabel': data_labels[i],
-            'title': default_figure_title(data_dict, mobjn),
+            'title': title,
             'linestyle': params.get('linestyle', '-'),
             'color': params.get('color', None),
             'do_legend': False,
@@ -1329,7 +1335,8 @@ def plot_line(pdict, axs, tight_fig=True):
     plot_linekws = pdict.get('line_kws', {})
     xerr = pdict.get('xerr', None)
     yerr = pdict.get('yerr', None)
-    if xerr is not None or yerr is not None:
+    plot_errorbars = xerr is not None or yerr is not None
+    if plot_errorbars:
         pdict['func'] = pdict.get('func', 'errorbar')
         if yerr is not None:
             plot_linekws['yerr'] = plot_linekws.get('yerr', yerr)
@@ -1376,6 +1383,7 @@ def plot_line(pdict, axs, tight_fig=True):
         assert (len(plot_xvals) == len(plot_yvals))
         assert (len(plot_xvals[0]) == len(plot_yvals[0]))
 
+    alpha_errorbars = plot_linekws.pop('alpha_errorbars', 1)
     if plot_multiple:
         p_out = []
         len_color_cycle = pdict.get('len_color_cycle', len(plot_yvals))
@@ -1388,7 +1396,7 @@ def plot_line(pdict, axs, tight_fig=True):
         # plot_*vals is the list of *vals arrays
         pfunc = getattr(axs, pdict.get('func', 'plot'))
         for i, (xvals, yvals) in enumerate(zip(plot_xvals, plot_yvals)):
-            p_out.append(pfunc(xvals, yvals,
+            plot_out = p_out.append(pfunc(xvals, yvals,
                                linestyle=plot_linestyle,
                                marker=plot_marker,
                                color=plot_linekws.pop(
@@ -1400,10 +1408,16 @@ def plot_line(pdict, axs, tight_fig=True):
 
     else:
         pfunc = getattr(axs, pdict.get('func', 'plot'))
-        p_out = pfunc(plot_xvals, plot_yvals, zorder=zorder,
-                      linestyle=plot_linestyle, marker=plot_marker,
-                      label='%s%s' % (dataset_desc, dataset_label),
-                      **plot_linekws)
+        plot_out = p_out = pfunc(plot_xvals, plot_yvals, zorder=zorder,
+                                 linestyle=plot_linestyle, marker=plot_marker,
+                                 label='%s%s' % (dataset_desc, dataset_label),
+                                 **plot_linekws)
+    plot_linekws['alpha_errorbars'] = alpha_errorbars
+
+    if plot_errorbars:
+        # loop through bars and caps and set the alpha value
+        [bar.set_alpha(alpha_errorbars) for bar in plot_out[2]]
+        [cap.set_alpha(alpha_errorbars) for cap in plot_out[1]]
 
     if plot_xrange is None:
         pass  # Do not set xlim if xrange is None as the axs gets reused
@@ -1424,6 +1438,8 @@ def plot_line(pdict, axs, tight_fig=True):
         legend_title = pdict.get('legend_title', None)
         legend_pos = pdict.get('legend_pos', 'best')
         legend_frameon = pdict.get('legend_frameon', False)
+        legend_labelspacing = pdict.get('legend_labelspacing', None)
+        legend_columnspacing = pdict.get('legend_columnspacing', None)
         legend_bbox_to_anchor = pdict.get('legend_bbox_to_anchor', None)
         legend_bbox_transform = pdict.get('legend_bbox_transform',
                                           axs.transAxes)
@@ -1433,7 +1449,9 @@ def plot_line(pdict, axs, tight_fig=True):
                    ncol=legend_ncol,
                    bbox_to_anchor=legend_bbox_to_anchor,
                    bbox_transform=legend_bbox_transform,
-                   frameon=legend_frameon)
+                   labelspacing=legend_labelspacing,
+                   columnspacing=legend_columnspacing ,
+        frameon=legend_frameon)
 
     if plot_xlabel is not None:
         set_axis_label('x', axs, plot_xlabel, plot_xunit)

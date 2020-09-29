@@ -167,7 +167,7 @@ def Qubit_dac_to_detun(dac_voltage, f_max, E_c, dac_sweet_spot, V_per_phi0,
 def Qubit_freq_to_dac(frequency, f_max,
                       dac_sweet_spot, V_per_phi0=None,
                       dac_flux_coefficient=None, asymmetry=0,
-                      branch='positive'):
+                      branch='smallest'):
     '''
     The cosine Arc model for uncalibrated flux for asymmetric qubit.
     This function implements the inverse of "Qubit_dac_to_freq"
@@ -199,10 +199,22 @@ def Qubit_freq_to_dac(frequency, f_max,
                         'physically meaningful "V_per_phi0" instead.')
         V_per_phi0 = np.pi / dac_flux_coefficient
 
+    dac_voltage_pos = dac_term * V_per_phi0 / np.pi + dac_sweet_spot
+    dac_voltage_neg = -dac_term * V_per_phi0 / np.pi + dac_sweet_spot
     if branch == 'positive':
-        dac_voltage = dac_term * V_per_phi0 / np.pi + dac_sweet_spot
+        dac_voltage = dac_voltage_pos
     elif branch == 'negative':
-        dac_voltage = -dac_term * V_per_phi0 / np.pi + dac_sweet_spot
+        dac_voltage = dac_voltage_neg
+    elif branch == 'smallest':
+        if np.ndim(dac_term) != 0:
+            dac_voltage = np.array([dac_voltage_pos, dac_voltage_neg])
+            idxs0 = np.argmin(np.abs(dac_voltage), 0)
+            idxs1 = np.arange(len(dac_voltage_pos))
+            dac_voltage = dac_voltage[idxs0, idxs1]
+        else:
+            dac_voltage = dac_voltage_pos \
+                if abs(dac_voltage_pos) < abs(dac_voltage_neg) \
+                else dac_voltage_neg
     else:
         raise ValueError('branch {} not recognized'.format(branch))
 
@@ -446,6 +458,13 @@ def double_gaussianCDF(x, A_amplitude, A_mu, A_sigma,
     CDF_A = gaussianCDF(x, amplitude=A_amplitude, mu=A_mu, sigma=A_sigma)
     CDF_B = gaussianCDF(x, amplitude=B_amplitude, mu=B_mu, sigma=B_sigma)
     return CDF_A + CDF_B
+
+def TwoErrorFunc(x, amp, mu_A, mu_B, sigma, offset):
+    '''
+    parameters:
+
+    '''
+    return offset + double_gaussianCDF(x, amp, mu_A, sigma, -amp, mu_B, sigma)
 
 def ro_gauss(x, A_center, B_center, A_sigma, B_sigma, A_amplitude,
              B_amplitude, A_spurious, B_spurious):
@@ -1276,6 +1295,19 @@ def half_feed_line_S12_J_guess(model,data):
     params=model.make_params()
     return params
 
+def TwoErrorFunc_guess(model, delays, data):
+    offset_guess = data[1]
+    amp_guess = data[data.size//2] - data[1]
+    delay_interval = (delays[-1]-delays[1])
+    mu_A_guess = delays[1] + 0.1*delay_interval
+    mu_B_guess = delays[1] + 0.9*delay_interval
+    sigma_guess = 3e-9
+    params = model.make_params(amp=amp_guess,
+                               mu_A=mu_A_guess,
+                               mu_B=mu_B_guess,
+                               sigma=sigma_guess,
+                               offset = offset_guess)
+    return params
 
 #################################
 #     User defined Models       #

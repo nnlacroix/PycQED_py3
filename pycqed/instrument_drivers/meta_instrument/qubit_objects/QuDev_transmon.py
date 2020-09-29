@@ -357,6 +357,9 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter(op_name, ps_name + '_pulse_length',
                                  'pulse_length',
                                  initial_value=100e-9, vals=vals.Numbers(0))
+        self.add_pulse_parameter(op_name, ps_name + '_truncation_length',
+                                 'truncation_length',
+                                 initial_value=None)
         self.add_pulse_parameter(op_name, ps_name + '_buffer_length_start',
                                  'buffer_length_start', initial_value=20e-9,
                                  vals=vals.Numbers(0))
@@ -3539,6 +3542,14 @@ class QuDev_transmon(Qubit):
             return dynamic_phase
         else:
             return
+
+    def measure_flux_pulse_timing(self, delays, analyze, label=None, **kw):
+        if label is None:
+            label = 'Flux_pulse_timing_{}'.format(self.name)
+        self.measure_flux_pulse_scope([self.ge_freq()], delays,
+                                      label=label, analyze=False, **kw)
+        if analyze:
+            tda.FluxPulseTimingAnalysis(qb_names=[self.name])
 
     def measure_flux_pulse_scope(self, freqs, delays, cz_pulse_name=None,
                                  analyze=True, cal_points=True,

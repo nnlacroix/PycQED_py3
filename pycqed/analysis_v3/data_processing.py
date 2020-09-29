@@ -297,8 +297,11 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
                              f'{len(data_to_proc_dict[keyi])}.')
         data_to_avg = data_to_proc_dict[keyi] if shape is None else \
             np.reshape(data_to_proc_dict[keyi], shape)
+        avg_data = np.mean(data_to_avg, axis=averaging_axis)
+        if avg_data.ndim > 1:
+            avg_data = avg_data.flatten()
         hlp_mod.add_param(
-            keys_out[k], np.mean(data_to_avg, axis=averaging_axis),
+            keys_out[k], avg_data ,
             data_dict, update_value=params.get('update_value', False), **params)
     return data_dict
 
@@ -732,7 +735,6 @@ def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
                                     raise_error=True, **params)
 
     n_shots = next(iter(data_to_proc_dict.values())).shape[0]
-    # table = np.zeros((n_readouts, len(observables)))
     table = OrderedDict({obs: np.zeros(n_readouts) for obs in observables})
     res_e = {}
     res_g = {}
@@ -759,9 +761,7 @@ def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
                     mask = np.logical_and(mask, res_e[mobjn][seg])
                 else:
                     mask = np.logical_and(mask, res_g[mobjn][seg])
-            # table[readout_n, state_n] = np.count_nonzero(mask)
             table[obs][readout_n] = np.count_nonzero(mask)*n_readouts/n_shots
-    # table = table.T
 
     if keys_out is not None:
         if len(keys_out) != 1:
@@ -898,6 +898,9 @@ def calculate_meas_ops_and_covariations_cal_points(
          for state in ['g', 'e', 'f', 'h']])
     means = np.array([np.mean([prob_table[cal_idx][observable_idxs]], axis=0)
                       for cal_idx in cal_readouts])
+    # normalize the assignment matrix
+    for r in range(means.shape[0]):
+        means[r] /= means[r].sum()
     Fs = [np.diag(ms) for ms in means.T]
 
     # find the means for all the products of the operators and the average
