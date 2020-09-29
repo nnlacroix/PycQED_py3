@@ -992,6 +992,21 @@ class Segment:
 
     @staticmethod
     def hashables(pulse, tstart, channel):
+        """
+        Wrapper for Pulse.hashables making sure to deal correctly with
+        crosstalk cancellation channels.
+
+        The hashables of a cancellation pulse has to include the hashables
+        of all pulses that it cancels. This is needed to ensure that the
+        cancellation pulse gets re-uploaded when any of the cancelled pulses
+        changes. In addition it has to include the parameters of
+        cancellation calibration, i.e., the relevant entries of the
+        crosstalk cancellation matrix and of the shift matrix.
+
+        :param pulse: a Pulse object
+        :param tstart: (float) start time of the element
+        :param channel: (str) channel name
+        """
         if channel in pulse.crosstalk_cancellation_channels:
             hashables = []
             idx_c = pulse.crosstalk_cancellation_channels.index(channel)
