@@ -24,6 +24,10 @@ class Segment:
     (reference point + delay) as well as an instance of class Pulse.
     """
 
+    trigger_pulse_length = 20e-9
+    trigger_pulse_amplitude = 0.5
+    trigger_pulse_start_buffer = 25e-9
+
     def __init__(self, name, pulse_pars_list=[]):
         self.name = name
         self.pulsar = ps.Pulsar.get_instance()
@@ -34,9 +38,9 @@ class Segment:
         self.element_start_end = {}
         self.elements_on_awg = {}
         self.trigger_pars = {
-            'pulse_length': 50e-9,
-            'amplitude': 0.5,
-            'buffer_length_start': 25e-9
+            'pulse_length': self.trigger_pulse_length,
+            'amplitude': self.trigger_pulse_amplitude,
+            'buffer_length_start': self.trigger_pulse_start_buffer,
         }
         self.trigger_pars['length'] = self.trigger_pars['pulse_length'] + \
                                       self.trigger_pars['buffer_length_start']
@@ -580,7 +584,8 @@ class Segment:
                         **self.trigger_pars)
                     i += 1
 
-                    trig_pulse.algorithm_time(trigger_pulse_time)
+                    trig_pulse.algorithm_time(trigger_pulse_time -
+                                              0.25/self.pulsar.clock(channel))
 
                     # Add trigger element and pulse to seg.elements
                     if trig_pulse.element_name in self.elements:
