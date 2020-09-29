@@ -90,7 +90,7 @@ def n_qubit_off_on(pulse_pars_list, RO_pars_list, return_seq=False,
 
 
 def two_qubit_randomized_benchmarking_seqs(
-        qb1n, qb2n, operation_dict, cliffords, nr_seeds,
+        qb1n, qb2n, operation_dict, cliffords, nr_seeds=None,
         max_clifford_idx=11520, cz_pulse_name=None, cal_points=None,
         net_clifford=0, clifford_decomposition_name='HZ',
         cl_sequence=None, sampling_seeds=None,
@@ -102,16 +102,30 @@ def two_qubit_randomized_benchmarking_seqs(
         qb2n (str): name of qb2
         operation_dict (dict): dict with all operations from both qubits and
             with the multiplexed RO pulse pars
-        nr_cliffords_value (int): number of random Cliffords to generate
+        cliffords (array): array of ints specifying the number of random
+            Cliffords to generate in each sequence
         nr_seeds (array): array of the form np.arange(nr_seeds_value)
+        max_clifford_idx (int): specifies up to which index of the elements in
+            the two-qubit Clifford group to include in the random generation.
+            See measurement/randomized_benchmarking/two_qubit_clifford_group.py.
         CZ_pulse_name (str): pycqed name of the CZ pulse
+        cal_points (CalibrationPoints): instance of CalibrationPoints
         net_clifford (int): 0 or 1; whether the recovery Clifford returns
             qubits to ground statea (0) or puts them in the excited states (1)
         clifford_decomp_name (str): the decomposition of Clifford gates
             into primitives; can be "XY", "HZ", or "5Primitives"
+        cl_sequence (list): the Clifford sequence to use for all seeds. Can
+            also be lists of lists in which case the user must ensure that
+            len(nr seeds) % len(cl_sequence) == 0.
+        sampling_seeds (array of ints): ints that will be used as seeds for
+            the random generation of Cliffords. Should have the same length
+            as nr_seeds.
         interleaved_gate (str): pycqed name for a gate
         upload (bool): whether to upload sequence to AWGs
+        prep_params (dict): qubit preparation_params dict
     """
+
+    # This is used for checking that the recovery is correct
     import qutip as qtp
     standard_pulses = {
         'I': qtp.qeye(2),
@@ -134,14 +148,23 @@ def two_qubit_randomized_benchmarking_seqs(
     seq_name = '2Qb_RB_sequence'
 
     if sampling_seeds is None:
+        if nr_seeds is None:
+            raise ValueError('Please provide either "sampling_seeds" or '
+                             '"nr_seeds."')
         sampling_seeds = [None] * len(nr_seeds)
-    print(cl_sequence)
+    else:
+        nr_seeds = np.arange(len(sampling_seeds))
 
     # Set Clifford decomposition
     tqc.gate_decomposition = rb.get_clifford_decomposition(
         clifford_decomposition_name)
     if cl_sequence is not None:
         if isinstance(cl_sequence[0], list):
+            # if cl_sequence is a list of lists such that
+            # len(nr_seeds) != len(cl_sequence) but
+            # len(nr_seeds) % len(cl_sequence) == 0,
+            # then create as many copies of the lists in cl_sequence until
+            # len(cl_sequence) == len(nr_seeds).
             assert len(nr_seeds) % len(cl_sequence) == 0
             k = len(nr_seeds) // len(cl_sequence)
             cl_seq_temp = k * cl_sequence
@@ -158,7 +181,6 @@ def two_qubit_randomized_benchmarking_seqs(
                     interleaving_cl=interleaved_gate,
                     desired_net_cl=net_clifford,
                     seed=sampling_seeds[s])
-
             elif isinstance(cl_sequence[0], list):
                 cl_seq = cl_seq_temp[s]
             else:
