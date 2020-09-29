@@ -6100,6 +6100,12 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                 yerr = results_dict['stderr']
                                 ylabel = param_name
 
+                            if 'phase' in param_name:
+                                yunit = 'deg'
+                            elif 'freq' in param_name:
+                                yunit = 'Hz'
+                            else:
+                                yunit = ''
                             self.plot_dicts[plot_name] = {
                                 'plotfn': self.plot_line,
                                 'xvals': np.repeat(xvals, reps),
@@ -6109,7 +6115,10 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                 'yerr': yerr if param_name != 'leakage'
                                     else None,
                                 'ylabel': ylabel,
-                                'yunit': 'deg' if 'phase' in param_name else '',
+                                'yunit': yunit,
+                                'title': self.raw_data_dict['timestamp'] + ' ' +
+                                         self.raw_data_dict['measurementstring']
+                                         + '-' + qbn,
                                 'linestyle': 'none',
                                 'do_legend': False}
 
@@ -6228,33 +6237,6 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
             self.proc_data_dict['analysis_params_dict'][f'freq_{qbn}'] = \
                 {'val':  qb_freqs, 'stderr': delta_freqs_errs}
 
-    def prepare_plots(self):
-        super().prepare_plots()
-
-        if self.do_fitting:
-            for qbn in self.qb_names:
-                ss_pars = self.proc_data_dict['sweep_points_2D_dict'][qbn]
-                for idx, ss_pname in enumerate(ss_pars):
-                    param_name = f'freq_{qbn}'
-                    results_dict = self.proc_data_dict['analysis_params_dict'][
-                        param_name]
-
-                    xlabel = self.sp.get_sweep_params_property('label', 1,
-                                                               ss_pname)
-                    figure_name = f'{param_name}_vs_{xlabel}'
-                    self.plot_dicts[figure_name] = {
-                        'plotfn': self.plot_line,
-                        'xvals': self.sp.get_sweep_params_property('values', 1,
-                                                                   ss_pname),
-                        'xlabel': xlabel,
-                        'xunit': self.sp.get_sweep_params_property('unit', 1,
-                                                                   ss_pname),
-                        'yvals': results_dict['val'],
-                        'yerr': results_dict['stderr'],
-                        'ylabel': param_name,
-                        'yunit': 'Hz',
-                        'linestyle': 'none',
-                        'do_legend': False}
 
     def get_generated_and_measured_pulse(self, qbn=None):
         """
