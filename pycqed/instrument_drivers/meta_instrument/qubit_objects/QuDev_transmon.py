@@ -1288,12 +1288,12 @@ class QuDev_transmon(Qubit):
             tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name])
 
     def measure_randomized_benchmarking(
-            self, cliffords, nr_seeds,
+            self, cliffords, nr_seeds, cl_seq=None,
             gate_decomp='HZ', interleaved_gate=None,
             n_cal_points_per_state=2, cal_states=(),
             classified_ro=False, thresholded=True, label=None,
             upload=True, analyze=True, prep_params=None,
-            exp_metadata=None, **kw):
+            exp_metadata=None, sampling_seeds=None, **kw):
         '''
         Performs a randomized benchmarking experiment on 1 qubit.
         '''
@@ -1317,14 +1317,16 @@ class QuDev_transmon(Qubit):
         cal_states = CalibrationPoints.guess_cal_states(cal_states)
         cp = CalibrationPoints.single_qubit(self.name, cal_states,
                                             n_per_state=n_cal_points_per_state)
-
+        if sampling_seeds is None:
+            sampling_seeds = np.random.randint(0, 1e8, nr_seeds)
         sequences, hard_sweep_points, soft_sweep_points = \
             sq.randomized_renchmarking_seqs(
                 qb_name=self.name, operation_dict=self.get_operation_dict(),
                 cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
-                gate_decomposition=gate_decomp,
+                gate_decomposition=gate_decomp, cl_sequence=cl_seq,
                 interleaved_gate=interleaved_gate, upload=False,
-                cal_points=cp, prep_params=prep_params)
+                cal_points=cp, prep_params=prep_params,
+                sampling_seeds=sampling_seeds)
 
         hard_sweep_func = awg_swf.SegmentHardSweep(
             sequence=sequences[0], upload=upload,
@@ -1364,6 +1366,9 @@ class QuDev_transmon(Qubit):
         exp_metadata.update({'preparation_params': prep_params,
                              'cal_points': repr(cp),
                              'sweep_points': sp,
+                             'interleaved_gate': interleaved_gate,
+                             'sampling_seeds': sampling_seeds,
+                             'gate_decomposition': gate_decomp,
                              'meas_obj_sweep_points_map':
                                  sp.get_meas_obj_sweep_points_map([self.name]),
                              'meas_obj_value_names_map':
