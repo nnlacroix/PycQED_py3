@@ -203,7 +203,6 @@ def concurrence(rho):
     Calculates the concurrence of the two-qubit state rho given in the
     qubits' basis according to https://doi.org/10.1103/PhysRevLett.78.5022
     """
-    print('in concurrence')
     rho = convert_to_density_matrix(rho)
     # convert to bell basis
     b = [np.sqrt(0.5)*qtp.Qobj(np.array(l)) for l in
