@@ -41,7 +41,8 @@ class SSB_DRAG_pulse(pulse.Pulse):
             addition to the nominal 90 degrees. Defaults to 0.
     """
 
-    def __init__(self, name, element_name, I_channel, Q_channel, **kw):
+    def __init__(self, element_name, I_channel, Q_channel,
+                 name='SSB Drag pulse', **kw):
         super().__init__(name, element_name, **kw)
 
         self.I_channel = I_channel
@@ -322,7 +323,7 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
     The zero area is achieved by adjusting the lengths for the intermediate
     pulses.
     """
-    def __init__(self, name, element_name, **kw):
+    def __init__(self, element_name, name='NZTC pulse', **kw):
         super().__init__(name, element_name, **kw)
         self._update_lengths_amps_channels()
 
@@ -1126,7 +1127,7 @@ class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
 
 
 class VirtualPulse(pulse.Pulse):
-    def __init__(self, name, element_name, **kw):
+    def __init__(self, element_name, name='virtual pulse', **kw):
         super().__init__(name, element_name, **kw)
         self.length = self.pulse_length
         self.channels = []
