@@ -434,14 +434,15 @@ class MultiTaskingExperiment(QuantumExperiment):
                 # search inside each list element
                 for v in candidate:
                     append_qbs(found_qubits, v)
+            elif isinstance(candidate, dict):
+                for v in candidate.values():
+                    append_qbs(found_qubits, v)
             else:
                 return None
 
         # search in all tasks
-        for task in task_list:
-            # search in all parameters of the task
-            for v in task.values():
-                append_qbs(found_qubits, v)
+        append_qbs(found_qubits, task_list)
+        
         return found_qubits
 
     def create_meas_objs_list(self, task_list=None, **kw):
