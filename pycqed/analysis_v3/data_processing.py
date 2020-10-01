@@ -5,7 +5,7 @@ import numpy as np
 from collections import OrderedDict
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import helper_functions as hlp_mod
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 
 import sys
 from pycqed.analysis_v3 import pipeline_analysis as pla

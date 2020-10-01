@@ -90,9 +90,10 @@ def n_qubit_off_on(pulse_pars_list, RO_pars_list, return_seq=False,
 
 
 def two_qubit_randomized_benchmarking_seqs(
-        qb1n, qb2n, operation_dict, cliffords, nr_seeds,
+        qb1n, qb2n, operation_dict, cliffords, nr_seeds=None,
         max_clifford_idx=11520, cz_pulse_name=None, cal_points=None,
         net_clifford=0, clifford_decomposition_name='HZ',
+        cl_sequence=None, sampling_seeds=None,
         interleaved_gate=None, upload=True, prep_params=dict()):
 
     """
@@ -101,37 +102,97 @@ def two_qubit_randomized_benchmarking_seqs(
         qb2n (str): name of qb2
         operation_dict (dict): dict with all operations from both qubits and
             with the multiplexed RO pulse pars
-        nr_cliffords_value (int): number of random Cliffords to generate
+        cliffords (array): array of ints specifying the number of random
+            Cliffords to generate in each sequence
         nr_seeds (array): array of the form np.arange(nr_seeds_value)
+        max_clifford_idx (int): specifies up to which index of the elements in
+            the two-qubit Clifford group to include in the random generation.
+            See measurement/randomized_benchmarking/two_qubit_clifford_group.py.
         CZ_pulse_name (str): pycqed name of the CZ pulse
+        cal_points (CalibrationPoints): instance of CalibrationPoints
         net_clifford (int): 0 or 1; whether the recovery Clifford returns
             qubits to ground statea (0) or puts them in the excited states (1)
         clifford_decomp_name (str): the decomposition of Clifford gates
             into primitives; can be "XY", "HZ", or "5Primitives"
+        cl_sequence (list): the Clifford sequence to use for all seeds. Can
+            also be lists of lists in which case the user must ensure that
+            len(nr seeds) % len(cl_sequence) == 0.
+        sampling_seeds (array of ints): ints that will be used as seeds for
+            the random generation of Cliffords. Should have the same length
+            as nr_seeds.
         interleaved_gate (str): pycqed name for a gate
         upload (bool): whether to upload sequence to AWGs
+        prep_params (dict): qubit preparation_params dict
     """
+
+    # This is used for checking that the recovery is correct
+    import qutip as qtp
+    standard_pulses = {
+        'I': qtp.qeye(2),
+        'Z0': qtp.qeye(2),
+        'X180': qtp.sigmax(),
+        'mX180': qtp.sigmax(),
+        'Y180': qtp.sigmay(),
+        'mY180': qtp.sigmay(),
+        'X90': qtp.rotation(qtp.sigmax(), np.pi / 2),
+        'mX90': qtp.rotation(qtp.sigmax(), -np.pi / 2),
+        'Y90': qtp.rotation(qtp.sigmay(), np.pi / 2),
+        'mY90': qtp.rotation(qtp.sigmay(), -np.pi / 2),
+        'Z90': qtp.rotation(qtp.sigmaz(), np.pi / 2),
+        'mZ90': qtp.rotation(qtp.sigmaz(), -np.pi / 2),
+        'Z180': qtp.sigmaz(),
+        'mZ180': qtp.sigmaz(),
+        'CZ': qtp.cphase(np.pi)
+    }
+
     seq_name = '2Qb_RB_sequence'
+
+    if sampling_seeds is None:
+        if nr_seeds is None:
+            raise ValueError('Please provide either "sampling_seeds" or '
+                             '"nr_seeds."')
+        sampling_seeds = [None] * len(nr_seeds)
+    else:
+        nr_seeds = np.arange(len(sampling_seeds))
 
     # Set Clifford decomposition
     tqc.gate_decomposition = rb.get_clifford_decomposition(
         clifford_decomposition_name)
+    if cl_sequence is not None:
+        if isinstance(cl_sequence[0], list):
+            # if cl_sequence is a list of lists such that
+            # len(nr_seeds) != len(cl_sequence) but
+            # len(nr_seeds) % len(cl_sequence) == 0,
+            # then create as many copies of the lists in cl_sequence until
+            # len(cl_sequence) == len(nr_seeds).
+            assert len(nr_seeds) % len(cl_sequence) == 0
+            k = len(nr_seeds) // len(cl_sequence)
+            cl_seq_temp = k * cl_sequence
 
     sequences = []
     for nCl in cliffords:
         pulse_list_list_all = []
-        for _ in nr_seeds:
-            cl_seq = rb.randomized_benchmarking_sequence_new(
-                nCl,
-                number_of_qubits=2,
-                max_clifford_idx=max_clifford_idx,
-                interleaving_cl=interleaved_gate,
-                desired_net_cl=net_clifford)
+        for s in nr_seeds:
+            if cl_sequence is None:
+                cl_seq = rb.randomized_benchmarking_sequence_new(
+                    nCl,
+                    number_of_qubits=2,
+                    max_clifford_idx=max_clifford_idx,
+                    interleaving_cl=interleaved_gate,
+                    desired_net_cl=net_clifford,
+                    seed=sampling_seeds[s])
+            elif isinstance(cl_sequence[0], list):
+                cl_seq = cl_seq_temp[s]
+            else:
+                cl_seq = cl_sequence
 
             pulse_list = []
             pulsed_qubits = {qb1n, qb2n}
+            pulse_tuples_list_all = []
             for idx in cl_seq:
                 pulse_tuples_list = tqc.TwoQubitClifford(idx).gate_decomposition
+                pulse_tuples_list_all += pulse_tuples_list
+
                 for j, pulse_tuple in enumerate(pulse_tuples_list):
                     if isinstance(pulse_tuple[1], list):
                         pulse_list += [operation_dict[cz_pulse_name]]
@@ -147,6 +208,20 @@ def two_qubit_randomized_benchmarking_seqs(
                             pulsed_qubits |= {qb_name}
                         pulse_list += [
                             operation_dict[pulse_name + ' ' + qb_name]]
+
+            # check recovery
+            gproduct = qtp.tensor(qtp.identity(2), qtp.identity(2))
+            for i, cl_tup in enumerate(pulse_tuples_list_all):
+                if cl_tup[0] == 'CZ':
+                    gproduct = standard_pulses[cl_tup[0]] * gproduct
+                else:
+                    eye_2qb = [qtp.identity(2), qtp.identity(2)]
+                    eye_2qb[int(cl_tup[1][-1])] = standard_pulses[cl_tup[0]]
+                    gproduct = qtp.tensor(eye_2qb) * gproduct
+            x = gproduct.full() / gproduct.full()[0][0]
+            assert (np.all((np.allclose(np.real(x), np.eye(4)),
+                            np.allclose(np.imag(x), np.zeros(4)))))
+
             pulse_list += generate_mux_ro_pulse_list(
                 [qb1n, qb2n], operation_dict)
             pulse_list_w_prep = add_preparation_pulses(
