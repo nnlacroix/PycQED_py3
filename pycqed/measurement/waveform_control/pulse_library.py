@@ -6,6 +6,9 @@ import sys
 import numpy as np
 import scipy as sp
 from pycqed.measurement.waveform_control import pulse
+import logging
+
+log = logging.getLogger(__name__)
 
 pulse.pulse_libraries.add(sys.modules[__name__])
 
@@ -363,19 +366,14 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
             tl = self.trans_length
             bs = self.buffer_length_start
             be = self.buffer_length_end
-            self.amplitudes.append([0, ma + ao, ta, -ta, -ma + ao, 0])
+            ca0 = ma + ao
+            ca1 = -ma + ao
+            cl0 = max(-(ml * ao) / ca0, 0) if ca0 else 0
+            cl1 = max(-(ml * ao) / ca1, 0) if ca1 else 0
 
-            if ta == 0:
-                self.lengths.append([bs + d, ml / 2, tl / 2,
-                                     tl / 2, ml / 2, be - d])
-            else:
-                if np.abs(tl * ta) < np.abs(ml * ao):
-                    raise ValueError(
-                        'NZTCPulse: Pick the pulse parameters such that '
-                        '`abs(trans_len * trans_amplitude) >= abs(pulse_length'
-                        ' * amplitude_offset)`.')
-                self.lengths.append([bs + d, ml / 2, (tl - ml * ao / ta) / 2,
-                                     (tl + ml * ao / ta) / 2, ml / 2, be - d])
+            self.amplitudes.append([0, ma + ao, ta, -ta, -ma + ao, 0])
+            self.lengths.append([bs + d - cl0, cl0 + ml / 2, tl / 2,
+                                 tl / 2, ml / 2 + cl1, be - d - cl1])
 
     def chan_wf(self, channel, t):
         self._update_lengths_amps_channels()
