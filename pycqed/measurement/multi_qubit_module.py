@@ -395,7 +395,7 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
                                 shots=5000,
                                 RO_spacing=None, preselection=True,
                                 thresholds=None, thresholded=False,
-                                analyse=True):
+                                analyse=True, upload=True):
     for qb in qubits:
         MC = qb.instr_mc.get_instr()
 
@@ -415,7 +415,8 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
         [operation_dict['RO ' + qb.name] for qb in qubits],
         preselection=preselection,
         parallel_pulses=True,
-        RO_spacing=RO_spacing)
+        RO_spacing=RO_spacing,
+        upload=upload)
 
     m = 2 ** (len(qubits))
     if preselection:
@@ -440,7 +441,7 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
     if analyse and thresholds is not None:
         channel_map = {qb.name: qb.int_log_det.value_names[0]+' '+qb.instr_uhf()
                        for qb in qubits}
-        ra.Multiplexed_Readout_Analysis(options_dict=dict(
+        return ra.Multiplexed_Readout_Analysis(options_dict=dict(
             n_readouts=(2 if preselection else 1) * 2 ** len(qubits),
             thresholds=thresholds,
             channel_map=channel_map,
@@ -943,7 +944,7 @@ def measure_parity_correction(qb0, qb1, qb2, feedback_delay, f_LO,
         '' if reset else '_noreset', '_'.join([qb.name for qb in qubits])),
         exp_metadata=exp_metadata)
 
-def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map, 
+def measure_parity_single_round(dev, ancilla_qubit, data_qubits, CZ_map,
                                 preps=None, upload=True, prep_params=None, 
                                 cal_points=None, analyze=True,
                                 exp_metadata=None, label=None, 
@@ -990,7 +991,7 @@ def measure_parity_single_round(ancilla_qubit, data_qubits, CZ_map,
     seq, sweep_points = mqs.parity_single_round_seq(
             ancilla_qubit.name, [qb.name for qb in data_qubits], CZ_map,
             preps=preps, cal_points=cal_points, prep_params=prep_params,
-            operation_dict=get_operation_dict(qubits), upload=False)
+            operation_dict=dev.get_operation_dict(), upload=False)
 
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
             sequence=seq, upload=upload, parameter_name='Preparation'))
@@ -1224,13 +1225,13 @@ def measure_tomography(dev, qubits, prep_sequence, state_name,
 
 def measure_two_qubit_randomized_benchmarking(
         dev, qb1, qb2, cliffords,
-        nr_seeds, cz_pulse_name,
+        nr_seeds, cz_pulse_name, cl_seq=None,
         character_rb=False, net_clifford=0,
         clifford_decomposition_name='HZ', interleaved_gate=None,
         n_cal_points_per_state=2, cal_states=tuple(),
         label=None, prep_params=None, upload=True, analyze_RB=True,
         classified=True, correlated=True, thresholded=True,
-        averaged=True, **kw):
+        averaged=True, sampling_seeds=None, **kw):
 
     # check whether qubits are connected
     dev.check_connection(qb1, qb2)
@@ -1265,17 +1266,19 @@ def measure_two_qubit_randomized_benchmarking(
     cal_states = CalibrationPoints.guess_cal_states(cal_states)
     cp = CalibrationPoints.multi_qubit([qb1n, qb2n], cal_states,
                                        n_per_state=n_cal_points_per_state)
-
+    if sampling_seeds is None:
+        sampling_seeds = np.random.randint(0, 1e8, nr_seeds)
     operation_dict = dev.get_operation_dict()
     sequences, hard_sweep_points, soft_sweep_points = \
         mqs.two_qubit_randomized_benchmarking_seqs(
             qb1n=qb1n, qb2n=qb2n, operation_dict=operation_dict,
             cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
             max_clifford_idx=24 ** 2 if character_rb else 11520,
-            cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}', net_clifford=net_clifford,
+            cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}',
+            net_clifford=net_clifford, interleaved_gate=interleaved_gate,
             clifford_decomposition_name=clifford_decomposition_name,
-            interleaved_gate=interleaved_gate, upload=False,
-            cal_points=cp, prep_params=prep_params)
+            upload=False, cal_points=cp, prep_params=prep_params,
+            cl_sequence=cl_seq, sampling_seeds=sampling_seeds)
 
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
@@ -1323,6 +1326,11 @@ def measure_two_qubit_randomized_benchmarking(
     exp_metadata = {'preparation_params': prep_params,
                     'cal_points': repr(cp),
                     'sweep_points': sp,
+                    'character_rb': character_rb,
+                    'interleaved_gate': interleaved_gate,
+                    'sampling_seeds': sampling_seeds,
+                    'net_clifford': net_clifford,
+                    'gate_decomposition': clifford_decomposition_name,
                     'meas_obj_sweep_points_map':
                         {qbn: ['nr_seeds', 'cliffords'] for qbn in mobj_names},
                     'meas_obj_value_names_map': meas_obj_value_names_map,
@@ -3562,7 +3570,7 @@ def measure_pygsti(qubits, f_LO, pygsti_gateset=None,
     return MC
 
 
-def measure_multi_parity_multi_round(ancilla_qubits, data_qubits,
+def measure_multi_parity_multi_round(dev, ancilla_qubits, data_qubits,
                                      parity_map, CZ_map,
                                      prep=None, upload=True, prep_params=None,
                                      mode='tomo',
@@ -3612,19 +3620,21 @@ def measure_multi_parity_multi_round(ancilla_qubits, data_qubits,
     MC = ancilla_qubits[0].instr_mc.get_instr()
 
     seq, sweep_points = mqs.multi_parity_multi_round_seq(
-                                 [qb.name for qb in ancilla_qubits],
-                                 [qb.name for qb in data_qubits],
-                                 parity_map,
-                                 CZ_map,
-                                 prep,
-                                 operation_dict=get_operation_dict(qubits),
-                                 mode=mode,
-                                 parity_seperation=parity_seperation,
-                                 rots_basis=rots_basis,
-                                 parity_loops=parity_loops,
-                                 cal_points=cal_points,
-                                 prep_params=prep_params,
-                                 upload=upload)
+        [qb.name for qb in ancilla_qubits],
+        [qb.name for qb in data_qubits],
+        parity_map,
+        CZ_map,
+        prep,
+        operation_dict=dev.get_operation_dict(),
+        mode=mode,
+        parity_seperation=parity_seperation,
+        rots_basis=rots_basis,
+        parity_loops=parity_loops,
+        cal_points=cal_points,
+        prep_params=prep_params,
+        upload=upload,
+        max_acq_length=max([qb.acq_length() for qb in qubits])
+    )
 
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
         sequence=seq, upload=False, parameter_name='Tomography'))
@@ -4308,6 +4318,7 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
+                         'artificial_detuning': artificial_detuning,
                          'meas_obj_sweep_points_map':
                              sweep_points.get_meas_obj_sweep_points_map(
                                  qubit_names),
