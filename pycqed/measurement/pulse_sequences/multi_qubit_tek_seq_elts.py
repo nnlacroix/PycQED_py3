@@ -969,6 +969,8 @@ def parity_single_round_seq(ancilla_qubit_name, data_qubit_names, CZ_map,
     if cal_points is not None:
         seq.extend(cal_points.create_segments(operation_dict, **prep_params))
 
+    [seq.repeat_ro(f"RO {qbn}", operation_dict) for qbn in qb_names]
+
     if upload:
        ps.Pulsar.get_instance().program_awgs(seq)
 
@@ -1930,42 +1932,24 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
                                  parity_loops=1,
                                  cal_points=None,
                                  prep_params=None,
-                                 upload=True):
+                                 upload=True,
+                                 max_acq_length=1e-6,
+                                 ):
     seq_name = 'Multi_Parity_{}_round_sequence'.format(parity_loops)
     qb_names = ancilla_qubit_names + data_qubit_names
 
-    # dummy pulses
-    dummy_ro_1 = {'pulse_type': 'GaussFilteredCosIQPulse',
-                 'I_channel': 'UHF1_ch1',
-                 'Q_channel': 'UHF1_ch2',
-                 'amplitude': 0.00001,
+    # Dummy pulses are used to make sure that all UHFs are triggered even if
+    # only part of the qubits are read out.
+    # First get all RO pulses, then throw away all except one per channel pair.
+    dummy_pulses = [deepcopy(operation_dict['RO ' + qbn]) for qbn in qb_names]
+    dummy_pulses = {(p['I_channel'], p['Q_channel']): p for p in dummy_pulses}
+    for p in dummy_pulses.values():
+        p.update({'amplitude': 0.00001,
                  'pulse_length': 50e-09,
                  'pulse_delay': 0,
                  'mod_frequency': 900.0e6,
-                 'phase': 0,
-                 'phi_skew': 0,
-                 'alpha': 1,
-                 'gaussian_filter_sigma': 1e-09,
-                 'nr_sigma': 2,
-                 'phase_lock': True,
-                 'basis_rotation': {},
-                 'operation_type': 'RO'}
-    dummy_ro_2 = {'pulse_type': 'GaussFilteredCosIQPulse',
-                 'I_channel': 'UHF2_ch1',
-                 'Q_channel': 'UHF2_ch2',
-                 'amplitude': 0.00001,
-                 'pulse_length': 50e-09,
-                 'pulse_delay': 0,
-                 'mod_frequency': 900.0e6,
-                 'phase': 0,
-                 'phi_skew': 0,
-                 'alpha': 1,
-                 'gaussian_filter_sigma': 1e-09,
-                 'nr_sigma': 2,
-                 'phase_lock': True,
-                 'basis_rotation': {},
-                 'operation_type': 'RO'}
-
+                 'op_code': ''})
+    
     echo_pulses = [('Y180' + 's ' + dqb)
                    for n, dqb in enumerate(data_qubit_names)]
 
@@ -1998,12 +1982,12 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
             op = 'CZ ' + anc_name + ' ' + dqb
             op = CZ_map.get(op, [op])
             ops = parity_ops+op
-            if n==1 and anc_name=='qb4':
+            if n==1 and parity_map[i]['type'] == 'X':
                 ops.append('Y180 ' + anc_name)
                 ops.append('Z180 ' + parity_map[i]['data'][-1])
                 ops.append('Z180 ' + parity_map[i]['data'][-2])
                 print('ECHO')
-            elif n==0 and (anc_name=='qb3' or anc_name=='qb5'):
+            elif n==0 and parity_map[i]['type'] == 'Z':
                 ops.append('Y180 ' + anc_name)
                 ops.append('Z180 ' + parity_map[i]['data'][-1])
                 print('ECHO')
@@ -2108,20 +2092,15 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
 
                         first_readout[round] = False
 
-                # more hacking for dummy
-                all_pulses.append(deepcopy(dummy_ro_1))
-                all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
-                                                 f'_{m}_tomo_{t}'
-                all_pulses[-1]['ref_pulse'] = f'first_ro_{round}' + \
-                                              f'_loop_{m}_tomo_{t}'
-                all_pulses[-1]['ref_point'] = 'start'
+                # Add dummy pulses for all UHFs
+                for p in dummy_pulses.values():
+                    all_pulses.append(deepcopy(p))
+                    all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
+                                                     f'_{m}_tomo_{t}'
+                    all_pulses[-1]['ref_pulse'] = f'first_ro_{round}' + \
+                                                  f'_loop_{m}_tomo_{t}'
+                    all_pulses[-1]['ref_point'] = 'start'
 
-                all_pulses.append(deepcopy(dummy_ro_2))
-                all_pulses[-1]['element_name'] = f'ro_{round}_loop' + \
-                                                 f'_{m}_tomo_{t}'
-                all_pulses[-1]['ref_pulse'] = f'first_ro_{round}' + \
-                                              f'_loop_{m}_tomo_{t}'
-                all_pulses[-1]['ref_point'] = 'start'
             # if  (m!=parity_loops-1)  or ( (parity_loops%2==0)
             #                               and  m==parity_loops-1):
             if m != parity_loops - 1:
@@ -2137,8 +2116,8 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
             pulse['element_name'] = f'drive_tomo_{t}'
             pulse['ref_pulse'] = f'first_ro_{rounds}' + \
                                  f'_loop_{parity_loops-1}_tomo_{t}'
-            pulse['pulse_delay'] = 200e-9 # to account for UHF deadtime
-            pulse['ref_point'] = 'end'
+            pulse['pulse_delay'] = max_acq_length + 5e-9 # account for UHF deadtime
+            pulse['ref_point'] = 'start'
         all_pulses += end_pulses
         all_pulses += generate_mux_ro_pulse_list(qb_names, operation_dict)
         all_pulsess.append(all_pulses)
