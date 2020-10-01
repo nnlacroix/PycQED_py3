@@ -423,13 +423,14 @@ class BufferedSquarePulse(pulse.Pulse):
     def chan_wf(self, chan, tvals):
         if self.gaussian_filter_sigma == 0:
             wave = np.ones_like(tvals) * self.amplitude
-            wave *= (tvals >= tvals[0] + self.buffer_length_start)
+            wave *= (tvals >= self.algorithm_time() + self.buffer_length_start)
             wave *= (tvals <
-                     tvals[0] + self.buffer_length_start + self.pulse_length)
+                     self.algorithm_time() + self.buffer_length_start +
+                     self.pulse_length)
             return wave
         else:
-            tstart = tvals[0] + self.buffer_length_start
-            tend = tvals[0] + self.buffer_length_start + self.pulse_length
+            tstart = self.algorithm_time() + self.buffer_length_start
+            tend = tstart + self.pulse_length
             scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
@@ -1011,7 +1012,7 @@ class GaussFilteredCosIQPulse(pulse.Pulse):
         hashlist += [self.mod_frequency, self.gaussian_filter_sigma]
         hashlist += [self.nr_sigma, self.pulse_length]
         phase = self.phase
-        phase += 360 * (not self.phase_lock) * self.mod_frequency \
+        phase += 360 * self.phase_lock * self.mod_frequency \
                  * self.algorithm_time()
         hashlist += [self.alpha, self.phi_skew, phase]
         return hashlist
