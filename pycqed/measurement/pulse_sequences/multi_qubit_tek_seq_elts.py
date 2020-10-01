@@ -1874,7 +1874,7 @@ def multi_parity_multi_round_seq(ancilla_qubit_names,
                  'pulse_delay': 0,
                  'mod_frequency': 900.0e6,
                  'op_code': ''})
-    print(dummy_pulses)
+    
     echo_pulses = [('Y180' + 's ' + dqb)
                    for n, dqb in enumerate(data_qubit_names)]
 
