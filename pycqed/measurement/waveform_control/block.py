@@ -342,7 +342,7 @@ class ParametricValue:
             resolving a parametric expression in the op_code
 
         :return: the resolved numerical value. If op_code was provided,
-            the resovled op_code is returned in addition.
+            the resolved op_code is returned in addition.
         """
         d = sweep_dict[self.param]
         if not isinstance(d, list) and not isinstance(d, dict) and not \
