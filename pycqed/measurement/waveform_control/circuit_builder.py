@@ -169,6 +169,11 @@ class CircuitBuilder:
              will perform a 100 degree Z rotation
              >>> get_pulse('Z:theta qb1', parse_z_gate=True)
              will perform a parametric Z rotation with parameter name theta
+             >>> get_pulse('Z:2*[theta] qb1', parse_z_gate=True)
+             will perform a parametric Z rotation with twice the
+             value of the parameter named theta. The brackets are used to
+             indicated the parameter name. This feature has also been tested
+             with some more complicated mathematical expression.
         Adding 's' (for simultaneous) in front of an op_code (e.g.,
         'sZ:theta qb1') will reference the pulse to the start of the
         previous pulse.
