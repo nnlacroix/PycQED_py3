@@ -12,7 +12,7 @@ from copy import deepcopy
 from mpl_toolkits.mplot3d import Axes3D
 
 from pycqed.analysis_v3 import helper_functions as hlp_mod
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 from pycqed.analysis.analysis_toolbox import get_color_order as gco
 from pycqed.analysis.analysis_toolbox import get_color_list
 from pycqed.analysis.tools.plotting import (

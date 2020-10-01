@@ -18,7 +18,7 @@ import pycqed.measurement.pulse_sequences.fluxing_sequences as fsqs
 import pycqed.measurement.detector_functions as det
 import pycqed.analysis.fitting_models as fms
 from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
 from pycqed.measurement.waveform_control import pulsar as ps
 import pycqed.analysis.measurement_analysis as ma
@@ -1224,13 +1224,13 @@ def measure_tomography(dev, qubits, prep_sequence, state_name,
 
 def measure_two_qubit_randomized_benchmarking(
         dev, qb1, qb2, cliffords,
-        nr_seeds, cz_pulse_name,
+        nr_seeds, cz_pulse_name, cl_seq=None,
         character_rb=False, net_clifford=0,
         clifford_decomposition_name='HZ', interleaved_gate=None,
         n_cal_points_per_state=2, cal_states=tuple(),
         label=None, prep_params=None, upload=True, analyze_RB=True,
         classified=True, correlated=True, thresholded=True,
-        averaged=True, **kw):
+        averaged=True, sampling_seeds=None, **kw):
 
     # check whether qubits are connected
     dev.check_connection(qb1, qb2)
@@ -1265,17 +1265,19 @@ def measure_two_qubit_randomized_benchmarking(
     cal_states = CalibrationPoints.guess_cal_states(cal_states)
     cp = CalibrationPoints.multi_qubit([qb1n, qb2n], cal_states,
                                        n_per_state=n_cal_points_per_state)
-
+    if sampling_seeds is None:
+        sampling_seeds = np.random.randint(0, 1e8, nr_seeds)
     operation_dict = dev.get_operation_dict()
     sequences, hard_sweep_points, soft_sweep_points = \
         mqs.two_qubit_randomized_benchmarking_seqs(
             qb1n=qb1n, qb2n=qb2n, operation_dict=operation_dict,
             cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
             max_clifford_idx=24 ** 2 if character_rb else 11520,
-            cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}', net_clifford=net_clifford,
+            cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}',
+            net_clifford=net_clifford, interleaved_gate=interleaved_gate,
             clifford_decomposition_name=clifford_decomposition_name,
-            interleaved_gate=interleaved_gate, upload=False,
-            cal_points=cp, prep_params=prep_params)
+            upload=False, cal_points=cp, prep_params=prep_params,
+            cl_sequence=cl_seq, sampling_seeds=sampling_seeds)
 
     hard_sweep_func = awg_swf.SegmentHardSweep(
         sequence=sequences[0], upload=upload,
@@ -1323,6 +1325,11 @@ def measure_two_qubit_randomized_benchmarking(
     exp_metadata = {'preparation_params': prep_params,
                     'cal_points': repr(cp),
                     'sweep_points': sp,
+                    'character_rb': character_rb,
+                    'interleaved_gate': interleaved_gate,
+                    'sampling_seeds': sampling_seeds,
+                    'net_clifford': net_clifford,
+                    'gate_decomposition': clifford_decomposition_name,
                     'meas_obj_sweep_points_map':
                         {qbn: ['nr_seeds', 'cliffords'] for qbn in mobj_names},
                     'meas_obj_value_names_map': meas_obj_value_names_map,
@@ -2625,8 +2632,8 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
         det_get_values_kws=det_get_values_kws)[det_name]
     MC.set_detector_function(det_func)
 
-    exp_metadata.update({'leakage_qbname': qbc.name,
-                         'cphase_qbname': qbt.name,
+    exp_metadata.update({'leakage_qbnames': [qbc.name],
+                         'cphase_qbnames': [qbt.name],
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'classified_ro': classified,
@@ -2658,11 +2665,11 @@ def measure_cphase(dev, qbc, qbt, soft_sweep_params, cz_pulse_name,
                           'plot_all_probs': plot_all_probs,
                           'channel_map': channel_map})
         cphases = flux_pulse_tdma.proc_data_dict[
-            'analysis_params_dict']['cphase']['val']
+            'analysis_params_dict'][f'cphase_{qbt.name}']['val']
         population_losses = flux_pulse_tdma.proc_data_dict[
-            'analysis_params_dict']['population_loss']['val']
+            'analysis_params_dict'][f'population_loss_{qbt.name}']['val']
         leakage = flux_pulse_tdma.proc_data_dict[
-            'analysis_params_dict']['leakage']['val']
+            'analysis_params_dict'][f'leakage_{qbc.name}']['val']
         return cphases, population_losses, leakage, flux_pulse_tdma
     else:
         return
@@ -3742,6 +3749,9 @@ def get_multi_qubit_msmt_suffix(qubits):
     :param qubits: list of QuDev_transmon instances.
     :return: string with the measurement label suffix
     """
+    # TODO: this was also added in Device. Remove from here when all the
+    # functions that call it have been upgraded to use the Device class
+    # (Steph 15.06.2020)
     qubit_names = [qb.name for qb in qubits]
     if len(qubit_names) == 1:
         msmt_suffix = qubits[0].msmt_suffix
@@ -4305,6 +4315,7 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
                          'sweep_points': sweep_points,
+                         'artificial_detuning': artificial_detuning,
                          'meas_obj_sweep_points_map':
                              sweep_points.get_meas_obj_sweep_points_map(
                                  qubit_names),
