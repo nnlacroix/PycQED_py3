@@ -169,6 +169,10 @@ class CircuitBuilder:
              will perform a 100 degree Z rotation
              >>> get_pulse('Z:theta qb1', parse_z_gate=True)
              will perform a parametric Z rotation with parameter name theta
+        Adding 's' (for simultaneous) in front of an op_code (e.g.,
+        'sZ:theta qb1') will reference the pulse to the start of the
+        previous pulse.
+
         Args:
             op: operation
             parse_rotation_gates: whether or not to look for gates with
@@ -187,7 +191,7 @@ class CircuitBuilder:
             operation = self.get_cz_operation_name(op_info[1], op_info[2])
             p = deepcopy(self.operation_dict[operation])
         elif parse_rotation_gates and op not in self.operation_dict:
-            # assumes operation format of f" e.g. Z{angle} qbname"
+            # assumes operation format of, e.g., f" Z{angle} qbname"
             # FIXME: This parsing is format dependent and is far from ideal but
             #  to generate parametrized pulses it is helpful to be able to
             #  parse Z gates etc.
