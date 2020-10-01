@@ -1757,6 +1757,7 @@ class BaseDataAnalysis(object):
         plot_ypos = pdict.get('ypos', .98)
         verticalalignment = pdict.get('verticalalignment', 'top')
         horizontalalignment = pdict.get('horizontalalignment', 'right')
+        fontsize=pdict.get("fontsize", None)
 
         # fancy box props is based on the matplotlib legend
         box_props = pdict.get('box_props', 'fancy')
@@ -1768,7 +1769,8 @@ class BaseDataAnalysis(object):
               transform=axs.transAxes,
               verticalalignment=verticalalignment,
               horizontalalignment=horizontalalignment,
-              bbox=box_props)
+              bbox=box_props,
+              fontsize=fontsize)
 
     def plot_vlines(self, pdict, axs):
         """
