@@ -7498,6 +7498,44 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
                             'fit_yvals': {'data': excited_pop},
                             'guess_pars': params}
 
+    def analyze_fit_results(self):
+        self.proc_data_dict['analysis_params_dict'] = OrderedDict()
+        apd = self.proc_data_dict['analysis_params_dict']
+
+        base_data_key = 'projected_data_dict_per_prep_state'
+        data_keys = [base_data_key]
+        if self.proc_data_dict.get(base_data_key + '_corrected', False):
+            data_keys += [base_data_key + '_corrected']
+
+        for dk, suffix in zip(data_keys, ('', '_corrected')):
+            for qbn in self.qb_names:
+                probs = self.proc_data_dict[dk][qbn]
+                for prep_state, g_pop in probs.get('pg', {}).items():
+                    if "g" in prep_state:
+                        continue # no fit for reset on ground state
+                    for seq_nr in range(len((g_pop.T))):
+                        key = f'fit_rate_{qbn}_{prep_state}_seq_{seq_nr}{suffix}'
+                        for param, param_key in zip(('rate', 'offset'),
+                                                    ("reset_rate",
+                                                     "residual_population")):
+                            pk = param_key + suffix
+                            res = self.fit_res[key]
+                            param_val = res.params[param].value
+                            param_stderr = res.params[param].stderr
+                            if not pk in apd:
+                                apd[pk] = defaultdict(dict)
+                            if not prep_state in apd[pk][qbn]:
+                                apd[pk][qbn][prep_state] = \
+                                    defaultdict(dict)
+
+                            apd[pk][qbn][prep_state]["val"] = \
+                                apd[pk][qbn][prep_state].get("val", []) + \
+                                [param_val]
+                            apd[pk][qbn][prep_state]["stderr"] = \
+                                apd[pk][qbn][prep_state].get("stderr", []) + \
+                                [param_stderr]
+        self.save_processed_data(key="analysis_params_dict")
+
     def prepare_plots(self):
         # prepare raw population plots
         legend_bbox_to_anchor = (1, -0.20)
@@ -7712,7 +7750,6 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
             "\n".join([f"{i}: {t:0.5f}" for i, t in
                        thresholds.get(qbn, {}).items()]))
         return str
-
 
     @staticmethod
     def _get_pop_label(state, seq_nr, key):
