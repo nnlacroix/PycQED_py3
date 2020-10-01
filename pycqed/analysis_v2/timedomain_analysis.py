@@ -2173,7 +2173,6 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
         else:
             raise KeyError("Invalid tomography data mode: '" + self.data_type +
                            "'. Valid modes are 'averaged' and 'singleshot'.")
-
         if kwargs.get('auto', True):
             self.run_analysis()
 
@@ -2260,6 +2259,8 @@ class StateTomographyAnalysis(ba.BaseDataAnalysis):
             self.proc_data_dict['fidelity'] = tomo.fidelity(rho, rho_target)
         if d == 4:
             self.proc_data_dict['concurrence'] = tomo.concurrence(rho)
+        else:
+            self.proc_data_dict['concurrence'] = 0
 
     def prepare_plots(self):
         self.prepare_density_matrix_plot()
