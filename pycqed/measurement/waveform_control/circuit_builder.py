@@ -177,6 +177,9 @@ class CircuitBuilder:
         Adding 's' (for simultaneous) in front of an op_code (e.g.,
         'sZ:theta qb1') will reference the pulse to the start of the
         previous pulse.
+        Adding 'm' (for minus) in front of an op_code (e.g.,
+        'mZ:theta qb1') negates the sign. If 's' is also given,
+        it has to be in the order 'sm'.
 
         Args:
             op: operation (str in the above format, or iterable
@@ -208,9 +211,12 @@ class CircuitBuilder:
                 raise KeyError(f'Gate "{op}" not found.')
             angle, qbn = op_name[1:], op_info[1]
             param = None
-            if angle[0] == ':':
+            if angle[0] == ':':  # angle depends on a parameter
                 angle = angle[1:]
                 param_start = angle.find('[') + 1
+                # If '[' is contained, this indicates that the parameter
+                # is part of a mathematical expression. Otherwise, the angle
+                # is equal to the parameter.
                 if param_start > 0:
                     param_end = angle.find(']', param_start)
                     param = angle[param_start:param_end]
@@ -222,32 +228,36 @@ class CircuitBuilder:
             if not self.decompose_rotation_gates.get(op_name[0], False):
                 p = self.get_pulse(f"{op_name[0]}180 {qbn}")
                 if op_name[0] == 'Z':
-                    if param is not None:
-                        if param_start > 0:
+                    if param is not None:  # angle depends on a parameter
+                        if param_start > 0:  # via a mathematical expression
                             func = (lambda x, qb=op_info[1], f=factor,
                                           fnc=eval('lambda x : ' + angle):
                                     {qb: f * fnc(x)})
-                        else:
+                        else:  # angle = parameter
                             func = (lambda x, qbn=op_info[1], f=factor:
                                     {qbn: f * x})
                         p['basis_rotation'] = ParametricValue(
                             param, func=func, op_split=(op_name, op_info[1]))
-                    else:
+                    else:  # angle is a given value
+                        # configure virtual Z gate for this angle
                         p['basis_rotation'] = {qbn: factor * float(angle)}
                 else:
-                    if param is not None:
-                        if param_start > 0:
+                    if param is not None:  # angle depends on a parameter
+                        if param_start > 0:  # via a mathematical expression
+                            # combine the mathematical expression with a
+                            # function that calculates the amplitude
                             func = (
                                 lambda x, a=p['amplitude'], f=factor,
                                        fnc=eval('lambda x : ' + angle):
                                 a / 180 * ((f * fnc(x) + 180) % (-360) + 180))
-                        else:
+                        else:  # angle = parameter
                             func = lambda x, a=p['amplitude'], f=factor: \
                                 a / 180 * ((f * x + 180) % (-360) + 180)
                         p['amplitude'] = ParametricValue(
                             param, func=func, op_split=(op_name, op_info[1]))
-                    else:
+                    else:  # angle is a given value
                         angle = factor * float(angle)
+                        # configure drive pulse amplitude for this angle
                         p['amplitude'] *= ((angle + 180) % (-360) + 180) / 180
             else:
                 raise NotImplementedError('Decomposed rotations not '
