@@ -791,7 +791,6 @@ class CPhase(CalibBuilder):
             p['ref_point_new'] = 'end'
         ir.pulses[0]['pulse_off'] = ParametricValue(param='pi_pulse_off')
 
-        print(num_cz_gates)
         fp = self.block_from_ops('flux', [f"{kw.get('cz_pulse_name', 'CZ')} "
                                           f"{qbl} {qbr}"] * num_cz_gates)
         # TODO here, we could do DD pulses (CH 2020-06-19)
