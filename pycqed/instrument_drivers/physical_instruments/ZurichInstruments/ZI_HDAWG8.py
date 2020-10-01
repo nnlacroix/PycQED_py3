@@ -129,8 +129,11 @@ class ZI_HDAWG8(zicore.ZI_HDAWG_core):
 
         for i in range(8): 
             self._snapshot_whitelist.update({
-                'sigouts_{}_direct'.format(i), 'sigouts_{}_offset'.format(i),
-                'sigouts_{}_on'.format(i) , 'sigouts_{}_range'.format(i)})
+                'sigouts_{}_direct'.format(i),
+                'sigouts_{}_offset'.format(i),
+                'sigouts_{}_on'.format(i) ,
+                'sigouts_{}_range'.format(i),
+                'sigouts_{}_delay'.format(i)})
 
         self._params_to_exclude = set(self.parameters.keys()) - self._snapshot_whitelist
         
