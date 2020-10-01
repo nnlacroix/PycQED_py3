@@ -959,7 +959,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         # where n_soft_sp is the inner most loop i.e. the first dim is ordered as
         # (shot0_ssp0, shot0_ssp1, ... , shot1_ssp0, shot1_ssp1, ...)
         shots_per_qb = self._get_single_shots_per_qb()
-
+        # save single shots in proc_data_dict, as they will be overwritten in
+        # 'meas_results_per_qb' with their averaged values for the rest of the
+        # analysis to work.
+        self.proc_data_dict['single_shots_per_qb'] = deepcopy(shots_per_qb)
 
         # determine number of shots
         n_shots = self.get_param_value("n_shots")
@@ -1010,9 +1013,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                               ' a different number of channels than in the'
                               f' current measurement): {e}')
                     raise e
-                if not 'meas_results_per_qb_probs' in self.proc_data_dict:
-                    self.proc_data_dict['meas_results_per_qb_probs'] = {}
-                self.proc_data_dict['meas_results_per_qb_probs'][qbn] = shots
+                if not 'single_shots_per_qb_probs' in self.proc_data_dict:
+                    self.proc_data_dict['single_shots_per_qb_probs'] = {}
+                self.proc_data_dict['single_shots_per_qb_probs'][qbn] = shots
 
             if preselection:
                 if self.get_param_value('classified_ro', False):
@@ -7293,7 +7296,7 @@ class MultiQutrit_Singleshot_Readout_Analysis(MultiQubit_TimeDomain_Analysis):
                                             data["prep_states"][:n_shots_to_plot],
                                             **kwargs)
                 else:
-                    fig = self.plot_scatter_and_marginal_hist(
+                    fig, axes = self.plot_scatter_and_marginal_hist(
                         data['X'][:n_shots_to_plot],
                         data["prep_states"][:n_shots_to_plot],
                         **kwargs)
@@ -7383,6 +7386,9 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
     def __init__(self, options_dict: dict = None, auto=True, **kw):
         '''
         options dict options:
+            plot_raw_shots (bool): whether or not to plot histograms/scatter
+                plots of raw shots. False by default. Slows down the analysis as
+                it creates one plot per readout.
             see BaseDataAnalysis for more.
         '''
         if options_dict is None:
@@ -7597,8 +7603,6 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
                                     }
 
 
-
-
     def plot(self, **kw):
         super().plot(**kw)
 
@@ -7614,20 +7618,61 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
                     timeax.set_xlim(0, ax.get_xlim()[1] * ro_sep * 1e6)
                 ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
-        # plot raw readouts:
-        if self.get_param_value('plot_all_shots'):
-            #TODO: is this how I want to name this parameter?
-            pass
-            # TODO: add raw data plots here
+        # plot raw readouts
+        if self.get_param_value('plot_raw_shots'):
+            prep_states = self.sp.get_values("initialize")
+            n_seqs = self.sp.length(1)
+            for qbn, shots in self.proc_data_dict['single_shots_per_qb'].items():
+                # shots are organized as follow, from outer to inner loop:
+                # shot_prep-state_reset-ro_seq-nr
+                n_ro = len(shots) // self.get_param_value("n_shots")
+                n_ro_per_prep_state = n_ro // (n_seqs * len(prep_states))
+                for i, prep_state in enumerate(prep_states):
+                    for j in range(n_ro_per_prep_state):
+                        for seq_nr in range(n_seqs):
+                            ro = i * n_ro_per_prep_state * len(prep_states) \
+                                 + j * len(prep_states) + seq_nr
+                            shots_single_ro = shots[ro::n_ro]
+                            # first sequence is "no reset"
+                            seq_label = 'NR' if seq_nr == 0 else seq_nr
+                            fig_key = \
+                                f"histograms_seq_{seq_label}_reset_cycle_{j}"
+                            if fig_key not in self.figs:
+                                self.figs[fig_key], _ = plt.subplots()
+
+                            if shots.shape[1] == 2:
+                                plot_func = \
+                                    MultiQutrit_Singleshot_Readout_Analysis.\
+                                        plot_scatter_and_marginal_hist
+                                kwargs = dict(create_axes=not bool(i))
+                            elif shots.shape[1] == 1:
+                                plot_func = \
+                                    MultiQutrit_Singleshot_Readout_Analysis.\
+                                        plot_1D_hist
+                                kwargs = {}
+                            else:
+                                raise NotImplementedError(
+                                    "Raw shot plotting not implemented for"
+                                    f" {shots.shape[1]} dimensions")
+                            colors = [f'C{i}']
+                            fig, _ = plot_func(shots_single_ro,
+                                       y_true=[i]*shots_single_ro.shape[0],
+                                        colors=colors,
+                                        legend=True,
+                                        legend_labels={i: "prep " + prep_state},
+                                        fig=self.figs[fig_key], **kwargs)
+                            fig.suptitle(f'Reset cycle: {j}')
 
     @staticmethod
     def _get_pop_label(state, seq_nr, key):
         superscript = "{NR}" if seq_nr == 0 else "{c}" \
             if "corrected" in key else "{}"
         return f'$P_{state[-1]}^{superscript}$'
+
     @staticmethod
     def _std_error(p, nshots=10000):
         return np.sqrt(np.abs(p)*(1-np.abs(p))/nshots)
+
 class FluxPulseTimingAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def __init__(self, qb_names, *args, **kwargs):
