@@ -6,6 +6,7 @@ from copy import deepcopy
 import traceback
 
 import numpy as np
+import numbers
 from scipy.optimize import fmin_powell
 from pycqed.measurement import hdf5_data as h5d
 from pycqed.utilities import general
@@ -759,9 +760,12 @@ class MeasurementControl(Instrument):
                 plotmon_axes_info[vn].update(dict(labels=labels, units=units))
 
                 try:
-                    for i in range(len(labels)):
-                        if len(new_sweep_vals[i]) != len(sweep_vals[i]):
-                            # There seem to be multiple acquisition elements.
+                    for i in range(len(labels)):  # for each sweep dimension
+                        if len(new_sweep_vals[i]) != len(sweep_vals[i]) or \
+                                not isinstance(new_sweep_vals[i][0],
+                                               numbers.Number):
+                            # There seem to be multiple acquisition elements
+                            # or the sweep points are not numeric.
                             # Fall back to sweep indices.
                             new_sweep_vals[i] = range(len(sweep_vals[i]))
                         # update label if sweep points look like sweep indices
