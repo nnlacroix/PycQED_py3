@@ -837,16 +837,15 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
                     self.analysis.fit_res[f'freq_fit_{qb.name}'].best_values)
 
 
-class Rabi(MultiTaskingExperiment):
+class SingleQubitGateCalib(CalibBuilder):
 
-    kw_for_sweep_points = {
-        'amps': dict(param_name='amplitude', unit='V',
-                     label='Pulse Amplitude', dimension=0)
-    }
+    kw_for_task_keys = ['transition_name']
 
     def __init__(self, task_list=None, sweep_points=None, qubits=None,
-                 amps=None, n=1, TwoD_msmt=False, **kw):
+                 TwoD_msmt=False, **kw):
         try:
+            if 'transition_name' not in kw:
+                kw['transition_name'] = 'ge'
             if task_list is None:
                 if qubits is None:
                     raise ValueError('Please provide either "qubits" or '
@@ -854,70 +853,155 @@ class Rabi(MultiTaskingExperiment):
                 task_list = [{'qb': qb.name} for qb in qubits]
             else:
                 for task in task_list:
-                    if not isinstance(task['qb'], str):
+                    if 'qb' in task and not isinstance(task['qb'], str):
                         task['qb'] = task['qb'].name
 
             super().__init__(task_list, qubits=qubits,
-                             sweep_points=sweep_points,
-                             amps=amps, **kw)
-
+                             sweep_points=sweep_points, **kw)
+            if self.experiment_name is None:
+                self.experiment_name = 'SingleQubiGateCalib'
+            self.transition_order = ('', '_ef', '_fh')
             self.TwoD_msmt = TwoD_msmt
 
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
-            self.resolve_nr_rabi_pulses(self.preprocessed_task_list, n)
-
-            self.experiment_name = 'Rabi_ef' if kw.get('for_ef', False) \
-                else 'Rabi'
-            if self.do_n_rabi:
-                self.experiment_name = 'n' + self.experiment_name
+            self.add_to_preproc_tasks()
+            self.define_data_to_fit()
+            transition_names = [task['transition_name_input'] for task in
+                                self.preprocessed_task_list]
+            states = ''.join(set([s for s in ''.join(transition_names)]))
+            self.experiment_name += states
+            self.create_cal_points(cal_states=states, **kw)
 
             self.sequences, self.mc_points = self.parallel_sweep(
-                self.preprocessed_task_list, self.rabi_block,
+                self.preprocessed_task_list, self.sweep_block,
                 block_align='end', **kw)
             if not TwoD_msmt:
                 self.mc_points = [self.mc_points[0]]
-
-            # self.exp_metadata.update({
-            #     'nr_rabi_pulses': self.nr_rabi_pulses,
-            # })
-
             self.autorun(**kw)
 
         except Exception as x:
             self.exception = x
             traceback.print_exc()
 
-    def resolve_nr_rabi_pulses(self, preprocessed_task_list,
-                               global_nr_rabi_pulses):
-        self.do_n_rabi = False
-        for task in preprocessed_task_list:
-            nr_rabi_pulses = task.pop('n', global_nr_rabi_pulses)
-            self.do_n_rabi = nr_rabi_pulses > 1
-            task['nr_rabi_pulses'] = nr_rabi_pulses
+    def define_data_to_fit(self):
+        for task in self.preprocessed_task_list:
+            qb_name = task['qb']
+            transition_name = task['transition_name_input']
+            self.data_to_fit[qb_name] = f'p{transition_name[-1]}'
 
-    def rabi_block(self, qb, sweep_points, nr_rabi_pulses, **kw):
+    def add_to_preproc_tasks(self):
+        pass
 
-        rabi_block = self.block_from_ops(f'rabi_{qb}',
-                                         nr_rabi_pulses*[f'X180 {qb}'])
-        # create parameteric values
+    def sweep_block(self, qb, sweep_points, transition_name, **kw):
+
+        prepended_pulses = self.transition_order[
+                           :self.transition_order.index(transition_name)]
+        print('prepended_pulses', prepended_pulses)
+        return self.block_from_ops(
+            'prepend', [f'X180{trn} {qb}' for trn in prepended_pulses])
+
+
+class Rabi(SingleQubitGateCalib):
+
+    kw_for_sweep_points = {
+        'amps': dict(param_name='amplitude', unit='V',
+                     label='Pulse Amplitude', dimension=0)
+    }
+
+    def __init__(self, task_list=None, sweep_points=None, qubits=None,
+                 amps=None, **kw):
+        try:
+            self.kw_for_task_keys += ['n']
+            if 'n' not in kw:
+                kw['n'] = 1
+            self.experiment_name = 'Rabi'
+            super().__init__(task_list, qubits=qubits,
+                             sweep_points=sweep_points,
+                             amps=amps, **kw)
+            if any([task.get('n', 1) > 1 for task in
+                    self.preprocessed_task_list]):
+                self.experiment_name = 'n' + self.experiment_name
+
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def sweep_block(self, qb, sweep_points, transition_name, **kw):
+
+        prepend_block = super().sweep_block(qb, sweep_points, transition_name,
+                                            **kw)
+        n = kw.get('n', 1)
+        rabi_block = self.block_from_ops(f'rabi_pulses_{qb}',
+                                         n*[f'X180{transition_name} {qb}'])
+        # create ParametricValues
         for sweep_dict in sweep_points:
             for param_name in sweep_dict:
                 for pulse_dict in rabi_block.pulses:
                     if param_name in pulse_dict:
                         pulse_dict[param_name] = ParametricValue(param_name)
 
-        return rabi_block
+        return self.sequential_blocks(f'rabi_{qb}', [prepend_block, rabi_block])
 
 
+class Ramsey(SingleQubitGateCalib):
 
+    kw_for_sweep_points = {
+        'delays': dict(param_name='pulse_delay', unit='s',
+                       label=r'Second $\pi$-half pulse delay', dimension=0),
+        'phases': dict(param_name='phase', unit='deg',
+                       label=r'Second $\pi$-half pulse phase', dimension=0)
+    }
 
+    def __init__(self, task_list=None, sweep_points=None, qubits=None,
+                 delays=None, echo=False, **kw):
+        try:
+            self.kw_for_task_keys += ['artificial_detuning']
+            if 'artificial_detuning' not in kw:
+                kw['artificial_detuning'] = 0
+            self.experiment_name = 'Ramsey'
+            self.echo = echo
+            super().__init__(task_list, qubits=qubits,
+                             sweep_points=sweep_points,
+                             delays=delays, **kw)
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
 
+    def add_to_preproc_tasks(self):
+        for task in self.preprocessed_task_list:
+            sweep_points = task['sweep_points']
+            task['first_delay_point'] = sweep_points.get_sweep_params_property(
+                'values', 0, 'pulse_delay')[0]
 
+    def sweep_block(self, qb, sweep_points, transition_name, **kw):
 
+        prepend_block = super().sweep_block(qb, sweep_points, transition_name,
+                                            **kw)
+        pulse_modifs = {1: {'ref_point': 'start'}}
+        ramsey_block = self.block_from_ops(f'ramsey_pulses_{qb}',
+                                           [f'X90{transition_name} {qb}',
+                                            f'X90{transition_name} {qb}'],
+                                           pulse_modifs=pulse_modifs)
 
+        first_delay_point = kw['first_delay_point']
+        art_det = kw['artificial_detuning']
+        # create ParametricValues
+        for param_name in sweep_points.get_sweep_dimension(0):
+            ramsey_block.pulses[-1][param_name] = ParametricValue(param_name)
+            if param_name == 'pulse_delay':
+                ramsey_block.pulses[-1]['phase'] = ParametricValue(
+                    'pulse_delay', func=lambda x, o=first_delay_point:
+                    ((x-o)*art_det*360) % 360)
 
+        if self.echo:
+            echo_block = self.block_from_ops(f'echo_pulse_{qb}',
+                                             [f'X180{transition_name} {qb}'])
+            ramsey_block = self.simultaneous_blocks(f'main_{qb}',
+                                                    [ramsey_block, echo_block],
+                                                    block_align='center')
+        # from pprint import pprint
+        # print()
+        # pprint(ramsey_block.pulses)
 
-
-
-
-
+        return self.sequential_blocks(f'ramsey_{qb}',
+                                      [prepend_block, ramsey_block])
