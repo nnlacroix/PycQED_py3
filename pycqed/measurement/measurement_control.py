@@ -291,8 +291,6 @@ class MeasurementControl(Instrument):
                             start_idx:start_idx+self.xlen, 0])
                     self.measure_hard()
         else:
-            print(self.sweep_function.sweep_control)
-            print(self.detector_function.detector_control)
             raise Exception('Sweep and Detector functions not '
                             + 'of the same type. \nAborting measurement')
 
@@ -645,7 +643,6 @@ class MeasurementControl(Instrument):
         sp = self.exp_metadata.get('sweep_points', None)
         if sp is not None:
             try:
-                from numpy import array
                 sp = sp_mod.SweepPoints.cast_init(sp)
             except Exception:
                 sp = None
