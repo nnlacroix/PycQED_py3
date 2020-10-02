@@ -6237,8 +6237,26 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
     def analyze_fit_results(self):
         super().analyze_fit_results()
 
-        delta_tau = self.get_param_value('estimation_window')
+        global_delta_tau = self.get_param_value('estimation_window')
+        task_list = self.get_param_value('task_list')
         for qbn in self.qb_names:
+            delta_tau = deepcopy(global_delta_tau)
+            if delta_tau is None:
+                if task_list is None:
+                    log.warning(f'estimation_window is None and task_list was '
+                                f'for {qbn} not found. Assuming no '
+                                f'estimation_window was used.')
+                else:
+                    task = [t for t in task_list if t['qb'] == qbn]
+                    if not len(task):
+                        raise ValueError(f'{qbn} not found in task_list.')
+                    delta_tau = task[0].get('estimation_window', None)
+
+            if delta_tau is None:
+                raise NotImplementedError(
+                    'Analysis for a cryoscope measurement without an '
+                    'estimation_window not yet implemented.')
+
             delta_phases = self.proc_data_dict['analysis_params_dict'][
                 f'{self.phase_key}_{qbn}']
             delta_phases_vals = delta_phases['val']
