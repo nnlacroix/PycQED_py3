@@ -1,11 +1,17 @@
 import logging
 log = logging.getLogger(__name__)
 import re
-# import sys
-# this_module = sys.modules[__name__]
-
+import os
 from copy import deepcopy
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+
+try:
+    import pygraphviz as pgv
+except ModuleNotFoundError:
+    log.warning('Visualizing the pipeline tree requires graphviz '
+                '(http://www.graphviz.org/download/) and '
+                'the module pygraphviz '
+                '(conda install graphviz pygraphviz -c alubbock).')
 
 ###################################################################
 #### This module creates a processing pipeline for analysis_v3 ####
@@ -235,14 +241,20 @@ Final pipeline:
 """
 
 
-
-
 class ProcessingPipeline(list):
-    """
-    Creates a processing pipeline for analysis_v3.
-    """
+
     def __init__(self, node_name=None, from_dict_list=None,
                  global_keys_out_container='', **node_params):
+        """
+        Creates a processing pipeline for analysis_v3.
+        :param node_name: name of the processing function
+        :param from_dict_list: list of dicts to be instantiated as a
+            ProcessingPipeline
+        :param global_keys_out_container: str specifying a container for the
+            keys_out that will be prepended to all the keys_out in all the nodes
+        :param node_params: keyword arguments that will be passed to the
+            processing function specified by node_name
+        """
         super().__init__()
         self.global_keys_out_container = global_keys_out_container
         if node_name is not None:
@@ -259,7 +271,18 @@ class ProcessingPipeline(list):
                 else:
                     raise ValueError('Entries in list must be dicts.')
 
+    def __add__(self, other):
+        return ProcessingPipeline.cast_init(super().__add__(other))
+
     def __call__(self, meas_obj_value_names_map):
+        """
+        Resolves the keys_in and keys_out of a raw ProcessingPipeline, if they
+        exist.
+        :param meas_obj_value_names_map: dict of the form
+            {mobj_name: readout_ch_list}
+        :return: nothing, but changes self to the resolved ProcessingPipeline.
+        Adds the flag was_resolved = True to the nodes that were resolved.
+        """
         fallback_pipeline = deepcopy(self)
         pipeline = deepcopy(self)
         self.clear()
@@ -279,8 +302,6 @@ class ProcessingPipeline(list):
                 joint_processing = node_params.pop('joint_processing', False)
                 if joint_processing:
                     meas_obj_names = [','.join(meas_obj_names_raw)]
-                    mobj_value_names = hlp_mod.flatten_list(
-                        meas_obj_value_names_map.values())
                 else:
                     meas_obj_names = meas_obj_names_raw
 
@@ -291,15 +312,11 @@ class ProcessingPipeline(list):
                     if joint_processing and 'num_keys_out' \
                             not in new_node_params:
                         new_node_params['num_keys_out'] = 1
-                    # get the value names corresponding to the measured
-                    # object name
-                    if not joint_processing:
-                        mobj_value_names = meas_obj_value_names_map[mobj_name]
                     # get keys_in and any other key in node_params that
                     # contains keys_in
                     for k, v in new_node_params.items():
                         if 'keys_in' in k:
-                            keys = self.process_keys_in(
+                            keys = self.resolve_keys_in(
                                 v, mobj_name, meas_obj_value_names_map,
                                 node_idx=i)
                             new_node_params[k] = keys
@@ -318,7 +335,7 @@ class ProcessingPipeline(list):
                         new_node_params['meas_obj_names'] = \
                             keys_out_container.split('.')[0]
 
-                    keys_out = self.process_keys_out(
+                    keys_out = self.resolve_keys_out(
                         keys_out_container=keys_out_container,
                         mobj_name=mobj_name,
                         meas_obj_value_names_map=meas_obj_value_names_map,
@@ -337,13 +354,30 @@ class ProcessingPipeline(list):
                 raise e
 
     def add_node(self, node_name, **node_params):
+        """
+        Adds a node to self.
+        :param node_name: name of the processing function
+        :param node_params: keyword arguments that will be passed to the
+            processing function specified by node_name
+        """
         if 'keys_out_container' not in node_params:
             node_params['keys_out_container'] = self.global_keys_out_container
         node_params['node_name'] = node_name
         self.append(node_params)
 
-    def process_keys_in(self, keys_in, mobj_name, meas_obj_value_names_map,
+    def resolve_keys_in(self, keys_in, mobj_name, meas_obj_value_names_map,
                         node_idx=None):
+        """
+        Converts the raw keys_in into complete paths inside a data_dict of
+        analysis_v3.
+        :param keys_in: UNresolved value corresponding to the "keys_in" key in
+            a node.
+        :param mobj_name: name of the measured object
+        :param meas_obj_value_names_map: dict of the form
+            {mobj_name: readout_ch_list}
+        :param node_idx: index of the current node (being resolved)
+        :return: resolved keys_in
+        """
         prev_keys_out = []
         for d in self:
             if 'keys_out' in d:
@@ -408,10 +442,25 @@ class ProcessingPipeline(list):
                              f'{node_idx} and raw "keys_in" {keys_in_temp}.')
         return keys_in
 
-    def process_keys_out(self, keys_in, keys_out_container, mobj_name,
+    def resolve_keys_out(self, keys_in, keys_out_container, mobj_name,
                          meas_obj_value_names_map,
                          keys_out=(), **node_params):
-
+        """
+        Creates the key_out entry in the node as complete paths inside a
+        data_dict of analysis_v3.
+        :param keys_in: resolved (!) value corresponding to the "keys_in" key
+            in a node
+        :param keys_out_container: str specifying a container for the
+            keys_out that will be prepended to all the keys_out generated by
+            this function
+        :param mobj_name: name of the measured object
+        :param meas_obj_value_names_map: dict of the form
+            {mobj_name: readout_ch_list}
+        :param keys_out: unresolved value corresponding to "keys_out"
+        :param node_params: keyword arguments of the current node (being
+            resolved) and for which the keys_in have already been resolved
+        :return: resolved keys_out
+        """
         if keys_out is None:
             return keys_out
 
@@ -492,7 +541,14 @@ class ProcessingPipeline(list):
         return keys_out
 
     def get_keys_out(self, meas_obj_names, node_name, keys_out_container=''):
-
+        """
+        Find keys_out in self that contain meas_obj_names, node_name, and
+         keys_out_container
+        :param meas_obj_names: list of measured object names
+        :param node_name: name of the node
+        :param keys_out_container: container for keys_out
+        :return: list of keys_out
+        """
         prev_keys_out = []
         for d in self:
             if 'keys_out' in d:
@@ -517,19 +573,128 @@ class ProcessingPipeline(list):
 
         return keys_out
 
-    def find_node(self, node_name, meas_obj_names=None,
-                  keys_out_container=None):
+    def find_node(self, dict_to_match, strict_comparison=False):
+        """
+        Find and return nodes in self whose have (k, v) pairs that match
+        the (k, v) pairs in dict_to_match.
+        :param dict_to_match: dict that is used to specify which nodes you are
+            looking for. THE ORDER IN dict_to_match MATTERS! The function will
+            go through the (k, v) pairs in dict_to_match and select the
+            node(s) that contain v in/ have v as the value corresponding to k.
+        :param strict_comparison: whether to only look for strict equality
+            node[k] == v
+        :return: list of found node(s)
 
-        nodes = [n for n in self if n['node_name'] == node_name]
-        if meas_obj_names is not None:
-            if isinstance(meas_obj_names, str):
-                meas_obj_names = [meas_obj_names]
-            nodes = [n for n in nodes if (
-                    len(hlp_mod.get_sublst_with_all_strings_of_list(
-                        n['meas_obj_names'], meas_obj_names)) > 0)]
+        Assumptions:
+            - if the value to match v is list/tuple of strings, then, if
+                strict_comparison == False, this function will return a match
+                even when the list v is a subset of node[k]. THIS FUNCTIONALITY
+                ONLY EXISTS FOR LISTS OF STRINGS.
+            - !!! type(v) must match type(node[k])
+        """
+        nodes = self
+        found = False
+        for k, v in dict_to_match.items():
+            if isinstance(v, dict):
+                raise NotImplementedError('There is no support for searching '
+                                          'for dicts inside the nodes.')
+            matched_nodes = []
+            for node in nodes:
+                if k not in node:
+                    continue
+                if type(node[k]) != type(v):
+                    continue
 
-        if keys_out_container is not None:
-            nodes = [n for n in nodes if
-                     n['keys_out_container'] == keys_out_container ]
+                if strict_comparison:
+                    condition = (v == node[k])
+                else:
+                    node_v = deepcopy(node[k])
+                    v_temp = deepcopy(v)
 
-        return nodes
+                    if isinstance(node_v, str):
+                        node_v = [node_v]
+                    if isinstance(v_temp, str):
+                        v_temp = [v_temp]
+
+                    if hasattr(v_temp, '__iter__') and isinstance(v_temp[0], str):
+                        condition = (len(
+                            hlp_mod.get_sublst_with_all_strings_of_list(
+                                node_v, v_temp)) > 0)
+                    else:
+                        condition = (v == node[k])
+                matched_nodes += [node] if condition else []
+
+            if len(matched_nodes):
+                nodes = matched_nodes
+                found = True
+            else:
+                print(f'No nodes found to have {k} = {v}')
+
+        if not found:
+            return []
+        else:
+            return nodes
+
+    def show(self, meas_obj_value_names_map=None,
+             save_name=None, save_folder=None, fmt='png'):
+        """
+        Produces a dependency tree of the ProcessingPipeline in self, using
+        graphviz and pygraphviz.
+        :param meas_obj_value_names_map: dict of the form
+            {mobj_name: readout_ch_list}
+        :param save_name: str with the name of the file that will be saved if
+            this parameter is not None
+        :param save_folder: path to where the file will be saved
+        :param fmt: file format (png, pdf)
+        :return: a pygraphviz.AGraph instance
+        """
+        pipeline = self
+        if not any([node.get('was_resolved', False) for node in pipeline]):
+            if meas_obj_value_names_map is None:
+                raise ValueError('Please provide a resolved pipeline or the '
+                                 'meas_obj_value_names_map.')
+            pipeline = deepcopy(self)
+            pipeline(meas_obj_value_names_map)
+
+        G = pgv.AGraph(directed=True, dpi=600)
+        node_names = [(f'{node.get("keys_out_container", "")} ' if
+                       node.get("keys_out_container", "") else '') +
+                      f'{node["node_name"]}' for node in pipeline]
+        G.add_nodes_from(node_names)
+        for node in pipeline[1:]:
+            if 'keys_in' in node:
+                prefix = (f'{node.get("keys_out_container", "")} ' if
+                          node.get("keys_out_container", "") else '')
+                node_name = f'{prefix}{node["node_name"]}'
+                matched_nodes = pipeline.find_node(
+                    dict_to_match={'keys_out': node['keys_in']})
+                for n in matched_nodes:
+                    prefix = (f'{n.get("keys_out_container", "")} ' if
+                              n.get("keys_out_container", "") else '')
+                    n_name = f'{prefix}{n["node_name"]}'
+                    G.add_edge(n_name, node_name)
+        G.layout('dot')
+
+        if save_name is not None:
+            if save_folder is None:
+                save_folder = os.getcwd()
+            G.draw(f'{save_folder}\{save_name}.{fmt}')
+
+        return G
+
+    @staticmethod
+    def cast_init(processing_pipeline):
+        """
+        Recreates a ProcessingPipeline object from a string representation of
+        a ProcessingPipeline instance, or a list of dicts.
+        Avoids having "eval" statements throughout the codebase.
+        Args:
+            processing_pipeline: string representation of ProcessingPipeline
+                instance, or a list of dicts
+
+        Returns: ProcessingPipeline object
+        """
+        if isinstance(processing_pipeline, str):
+            return ProcessingPipeline(from_dict_list=eval(processing_pipeline))
+        else:
+            return ProcessingPipeline(from_dict_list=processing_pipeline)
