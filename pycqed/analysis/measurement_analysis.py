@@ -267,14 +267,14 @@ class MeasurementAnalysis(object):
             names = self.get_key('sweep_parameter_names')
 
             ind = names.index(key)
-            values = self.g['Data'].value[:, ind]
+            values = self.g['Data'][:, ind]
         elif key in self.get_key('value_names'):
             names = self.get_key('value_names')
             ind = (names.index(key) +
                    len(self.get_key('sweep_parameter_names')))
-            values = self.g['Data'].value[:, ind]
+            values = self.g['Data'][:, ind]
         else:
-            values = self.g[key].value
+            values = self.g[key][()]
         # Makes sure all data is np float64
         return np.asarray(values, dtype=np.float64)
 
@@ -297,7 +297,7 @@ class MeasurementAnalysis(object):
         Returns values for group with the name "group_name" from the
         hdf5 data file.
         '''
-        group_values = self.g[group_name].value
+        group_values = self.g[group_name][()]
         return np.asarray(group_values, dtype=np.float64)
 
     def add_analysis_datagroup_to_file(self, group_name='Analysis'):
