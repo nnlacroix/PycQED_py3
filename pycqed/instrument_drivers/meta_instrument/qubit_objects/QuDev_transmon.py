@@ -3823,7 +3823,16 @@ class QuDev_transmon(Qubit):
         ma.MeasurementAnalysis(TwoD=True)
 
     def set_distortion_in_pulsar(self, pulsar=None, datadir=None):
+        """
+        Configures the fluxline distortion in a pulsar object according to the
+        settings in the parameter flux_distortion of the qubit object.
 
+        :param pulse: the pulsar object. If None, self.find_instrument is
+            used to find an obejct called 'Pulsar'.
+        :param datadir: path to the pydata directory. If None,
+            self.find_instrument is used to find an obejct called 'MC' and
+            the datadir of MC is used.
+        """
         if pulsar is None:
             pulsar = self.find_instrument('Pulsar')
         if datadir is None:
