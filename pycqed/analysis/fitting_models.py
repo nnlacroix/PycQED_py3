@@ -447,6 +447,13 @@ def double_gaussianCDF(x, A_amplitude, A_mu, A_sigma,
     CDF_B = gaussianCDF(x, amplitude=B_amplitude, mu=B_mu, sigma=B_sigma)
     return CDF_A + CDF_B
 
+def TwoErrorFunc(x, amp, mu_A, mu_B, sigma, offset):
+    '''
+    parameters:
+
+    '''
+    return offset + double_gaussianCDF(x, amp, mu_A, sigma, -amp, mu_B, sigma)
+
 def ro_gauss(x, A_center, B_center, A_sigma, B_sigma, A_amplitude,
              B_amplitude, A_spurious, B_spurious):
     '''
@@ -1218,6 +1225,29 @@ def Gaussian(freq,sigma,mu,ampl,offset):
     return ampl/(sigma*np.sqrt(2*np.pi))*np.exp(-0.5*((freq - mu)/sigma)**2) + offset
 
 
+def Gaussian_guess(model, data, freq, **kwargs):
+    """
+    Tip: to use this assign this guess function as a method to a model use:
+    model.guess = Gaussian_guess.__get__(
+        model, model.__class__)
+    """
+
+    mu_guess = freq[np.argmax(data)]
+    offs_guess = np.median(data)
+    p = (data - offs_guess)**2
+    p /= p.sum()
+    sigma_guess = np.sqrt(((freq - mu_guess)**2 * p).sum())/10
+    amp_guess = max(data - offs_guess)*sigma_guess*np.sqrt(2*np.pi)
+    params = model.make_params(sigma=sigma_guess,
+                               mu=mu_guess,
+                               ampl=amp_guess,
+                               offset=offs_guess)
+    params['mu'].min = np.min(freq)
+    params['mu'].max = np.max(freq)
+
+    return params
+
+
 def half_feed_line_S12_J_func(omega, J, kappaPF, gammaPF, gammaRR, omegaPF, omegaRR, phi, A , B, alpha):
     return abs( A+np.exp(-1j*phi)*2*B*((-1+np.exp(1j*alpha))*(4*J**2+(gammaPF-2*1j*(omegaPF-omega))*(gammaRR-2j*omegaRR+2j*omega)))/(16*J**2+(4*gammaPF+(3+np.exp(1j*alpha))*kappaPF-8j*(omegaPF-omega))*(gammaRR-2j*omegaRR+2j*omega)) )
 
@@ -1253,6 +1283,19 @@ def half_feed_line_S12_J_guess(model,data):
     params=model.make_params()
     return params
 
+def TwoErrorFunc_guess(model, delays, data):
+    offset_guess = data[1]
+    amp_guess = data[data.size//2] - data[1]
+    delay_interval = (delays[-1]-delays[1])
+    mu_A_guess = delays[1] + 0.1*delay_interval
+    mu_B_guess = delays[1] + 0.9*delay_interval
+    sigma_guess = 3e-9
+    params = model.make_params(amp=amp_guess,
+                               mu_A=mu_A_guess,
+                               mu_B=mu_B_guess,
+                               sigma=sigma_guess,
+                               offset = offset_guess)
+    return params
 
 #################################
 #     User defined Models       #

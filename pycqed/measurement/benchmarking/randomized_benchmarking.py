@@ -16,11 +16,11 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
 
     kw_for_sweep_points = {
         'nr_seeds': dict(param_name='seeds', unit='',
-                         label='Seeds', dimension=0,
+                         label='Seeds', dimension=1,
                          values_func=lambda ns: np.random.randint(0, 1e8, ns)),
         'cliffords': dict(param_name='cliffords', unit='',
                           label='Nr. Cliffords',
-                          dimension=1),
+                          dimension=0),
     }
 
     def __init__(self, task_list=None, sweep_points=None, qubits=None,
@@ -74,15 +74,14 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
                          label='Seeds', dimension=0,
                          values_func=lambda ns: np.random.randint(0, 1e8, ns))]
             kw['cal_states'] = kw.get('cal_states', '')
-            if not hasattr(self, 'experiment_name'):
-                self.experiment_name = f'RB_{gate_decomposition}' if \
-                    interleaved_gate is not None else \
-                    f'SingleQubitIRB_{gate_decomposition}'
+
             super().__init__(task_list, qubits=qubits,
                              sweep_points=sweep_points,
                              nr_seeds=nr_seeds,
                              cliffords=cliffords, **kw)
-
+            if self.experiment_name is None:
+                self.experiment_name = f'RB_{gate_decomposition}' if \
+                    interleaved_gate is None else f'IRB_{gate_decomposition}'
             self.identical_pulses = nr_seeds is not None
             self.gate_decomposition = gate_decomposition
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -145,21 +144,23 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
 
 class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
 
-    def __init__(self, task_list=None, sweep_points=None, qubits=None, **kw):
+    def __init__(self, task_list, sweep_points=None, **kw):
         """
         See docstring for RandomizedBenchmarking.
         """
-        if task_list is None:
-            if qubits is None:
-                raise ValueError('Please provide either "qubits" or "task_list"')
-            task_list = [{'qb': qb.name} for qb in qubits]
+        self.experiment_name = f'SingleQubitRB' if \
+            kw.get('interleaved_gate', None) is None else f'SingleQubitIRB'
 
-        gate_decomposition = kw.get('gate_decomposition', 'HZ')
-        self.experiment_name = f'SingleQubitRB_{gate_decomposition}' if \
-            kw.get('interleaved_gate', None) is None else \
-            f'SingleQubitIRB_{gate_decomposition}'
-        super().__init__(task_list, sweep_points=sweep_points,
-                         qubits=qubits, **kw)
+        for task in task_list:
+            if 'qb' not in task:
+                raise ValueError('Please specify "qb" in each task in '
+                                 '"task_list."')
+            if not isinstance(task['qb'], str):
+                task['qb'] = task['qb'].name
+            if 'prefix' not in task:
+                task['prefix'] = f"{task['qb']}_"
+
+        super().__init__(task_list, sweep_points=sweep_points, **kw)
 
     def rb_block(self, sp1d_idx, sp2d_idx, **kw):
         interleaved_gate = kw.get('interleaved_gate', None)
@@ -169,9 +170,9 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
         for i, task in enumerate(tl):
             param_name = 'seeds' if interleaved_gate is None else 'seeds_irb'
             seed = task['sweep_points'].get_sweep_params_property(
-                'values', 0, param_name)[sp1d_idx]
+                'values', 1, param_name)[sp2d_idx]
             clifford = task['sweep_points'].get_sweep_params_property(
-                'values', 1, 'cliffords')[sp2d_idx]
+                'values', 0, 'cliffords')[sp1d_idx]
             cl_seq = rb.randomized_benchmarking_sequence(
                 clifford, seed=seed, interleaved_gate=interleaved_gate)
             pulse_op_codes_list += [rb.decompose_clifford_seq(
@@ -182,8 +183,8 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
                                  else i]])
             for i, task in enumerate(self.preprocessed_task_list)]
 
-        return self.simultaneous_blocks_align_end(f'sim_rb_{clifford}{sp1d_idx}',
-                                                  rb_block_list)
+        return self.simultaneous_blocks(f'sim_rb_{clifford}{sp1d_idx}',
+                                        rb_block_list, block_align='end')
 
     def add_processing_pipeline(self):
         """
@@ -227,8 +228,6 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
             Clifford that is sampled. Set to 24**2 to only sample the tensor
             product of 2 single qubit Clifford groups.
         """
-        self.experiment_name = 'TwoQubitRB' if \
-            kw.get('interleaved_gate', None) is None else 'TwoQubitIRB'
         self.max_clifford_idx = max_clifford_idx
         tqc.gate_decomposition = rb.get_clifford_decomposition(
             kw.get('gate_decomposition', 'HZ'))
@@ -240,7 +239,8 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
             if 'prefix' not in task:
                 task['prefix'] = f"{task['qb_1']}{task['qb_2']}_"
         kw['for_ef'] = kw.get('for_ef', True)
-
+        self.experiment_name = 'TwoQubitRB' if \
+            kw.get('interleaved_gate', None) is None else 'TwoQubitIRB'
         super().__init__(task_list, sweep_points=sweep_points, **kw)
 
     def guess_label(self, **kw):
@@ -304,8 +304,8 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
                         for qbn, gates in single_qb_gates.items()]))
             rb_block_list += [self.sequential_blocks(f'rb_block{i}', seq_blocks)]
 
-        return self.simultaneous_blocks_align_end(
-            f'sim_rb_{sp2d_idx}_{sp1d_idx}', rb_block_list)
+        return self.simultaneous_blocks(
+            f'sim_rb_{sp2d_idx}_{sp1d_idx}', rb_block_list, block_align='end')
 
     def add_processing_pipeline(self):
         """

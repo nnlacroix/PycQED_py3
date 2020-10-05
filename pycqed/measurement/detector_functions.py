@@ -107,18 +107,61 @@ class IndexDetector(Detector_Function):
         self.detector = detector
         self.index = index
         self.name = detector.name + '[{}]'.format(index)
-        self.value_names = [detector.value_names[index]]
-        self.value_units = [detector.value_units[index]]
+        if isinstance(self.index, tuple):
+            self.value_names = [detector.value_names[index[0]]]
+            self.value_units = [detector.value_units[index[0]]]
+            self.detector_control = 'soft'
+        else:
+            self.value_names = [detector.value_names[index]]
+            self.value_units = [detector.value_units[index]]
+            self.detector_control = detector.detector_control
+
+
+    def prepare(self, **kw):
+        self.detector.prepare(**kw)
+
+    def get_values(self):
+        if isinstance(self.index, tuple):
+            v = self.detector.get_values()
+            for i in self.index:
+                v = v[i]
+            return v
+        else:
+            return self.detector.get_values()[self.index]
+
+    def acquire_data_point(self):
+        if isinstance(self.index, tuple):
+            v = self.detector.get_values()
+            for i in self.index:
+                v = v[i]
+            return v
+        else:
+            return self.detector.acquire_data_point()[self.index]
+
+    def finish(self):
+        self.detector.finish()
+
+
+class SumDetector(Detector_Function):
+    def __init__(self, detector, idxs=None):
+        super().__init__()
+        self.detector = detector
+        if idxs is None:
+            idxs = np.arange(len(detector.value_names))
+        self.idxs = idxs
+        self.name = detector.name + ' sum'
+        self.value_names = [detector.value_names[idxs[0]]]
+        self.value_units = [detector.value_units[idxs[0]]]
         self.detector_control = detector.detector_control
 
     def prepare(self, **kw):
         self.detector.prepare(**kw)
 
     def get_values(self):
-        return self.detector.get_values()[self.index]
+        return [np.array(self.detector.get_values())[self.idxs].sum(axis=0)]
 
     def acquire_data_point(self):
-        return self.detector.acquire_data_point()[self.index]
+        return [np.array(self.detector.acquire_data_point())[self.idxs].sum(axis=0)]
 
     def finish(self):
         self.detector.finish()
@@ -645,6 +688,92 @@ class UHFQC_input_average_detector(UHFQC_Base):
                                           loop_cnt=int(self.nr_averages),
                                           mode='iavg')
 
+class UHFQC_scope_detector(Hard_Detector):
+    """
+    Detector used for acquiring averaged timetraces and their Fourier'
+    transforms using the scope module of the UHF
+    """
+    def __init__(self, UHFQC, AWG=None, channels=(0, 1),
+                 nr_averages=20, nr_samples=4096, fft_mode='timedomain',
+                 **kw):
+        super().__init__()
+
+        self.UHFQC = UHFQC
+        self.scope = UHFQC.daq.scopeModule()
+        self.AWG = AWG
+        self.channels = channels
+        self.nr_samples = max(int(2**np.floor(np.log2(nr_samples))), 4096)
+        self.nr_averages = nr_averages
+        self.fft_mode = fft_mode
+        self.value_names = [f'{UHFQC.name}_ch{ch}' for ch in channels]
+        if fft_mode == 'fft_power':
+            self.value_units = ['V^2' for _ in channels]
+        else:
+            self.value_units = ['V' for _ in channels]
+        self.trigger_channel = kw.get('trigger_channel', 2)
+        self.trigger_level = kw.get('trigger_level', 0.1)
+        self.trigger = kw.get('trigger', self.AWG is not None)
+
+    def finish(self):
+        if self.AWG is not None:
+            self.AWG.stop()
+
+        self.scope.unsubscribe(f'/{self.UHFQC.devname}/scopes/0/wave')
+        self.scope.finish()
+
+    def get_values(self):
+        # self.scope.set('scopeModule/averager/restart', 1)
+        self.UHFQC.scopes_0_single(1)
+        self.UHFQC.scopes_0_enable(1)
+        self.scope.subscribe(f'/{self.UHFQC.devname}/scopes/0/wave')
+        self.scope.execute()
+        if self.AWG is not None:
+            self.AWG.start()
+        result = self.scope.read()
+        while int(self.scope.progress()) != 1:
+            time.sleep(0.1)
+            result = self.scope.read()
+        return [x.reshape(self.nr_averages, -1).mean(0) for
+                x in result[self.UHFQC.devname]['scopes']['0']['wave'][0][0]['wave']]
+
+    def prepare(self, sweep_points=None):
+        if self.AWG is not None:
+            self.AWG.stop()
+
+        self.UHFQC.scopes_0_enable(0)
+        self.UHFQC.scopes_0_length(self.nr_samples)
+        self.UHFQC.scopes_0_channel((1 << len(self.channels)) - 1)
+        self.UHFQC.scopes_0_segments_count(self.nr_averages)
+        self.UHFQC.scopes_0_segments_enable(1)
+
+        for i, ch in enumerate(self.channels):
+            self.UHFQC.set(f'scopes_0_channels_{i}_inputselect', ch)
+
+        self.UHFQC.scopes_0_single(1)
+        if self.fft_mode == 'fft_power':
+            self.scope.set('scopeModule/mode', 3)
+            self.scope.set('scopeModule/fft/power', 1)
+        elif self.fft_mode == 'fft':
+            self.scope.set('scopeModule/mode', 3)
+            self.scope.set('scopeModule/fft/power', 0)
+        elif self.fft_mode == 'timedomain':
+            self.scope.set('scopeModule/mode', 1)
+            self.scope.set('scopeModule/fft/power', 0)
+        else:
+            raise ValueError("Invalid fft_mode. Allowed options are "
+                             "'timedomain', 'fft' and 'fft_power'")
+        self.scope.set('scopeModule/averager/weight', 1)
+
+        self.UHFQC.scopes_0_trigenable(self.trigger)
+        self.UHFQC.scopes_0_trigchannel(self.trigger_channel)
+        self.UHFQC.scopes_0_triglevel(self.trigger_level)
+        self.UHFQC.scopes_0_trigslope(0)
+
+    def get_sweep_vals(self):
+        if self.fft_mode == 'timedomain':
+            return np.linspace(0, self.nr_samples/1.8e9, self.nr_samples, endpoint=False)
+        elif self.fft_mode in ('fft', 'fft_power'):
+            return np.linspace(0, 0.9e9, self.nr_samples//2, endpoint=False)
 
 class UHFQC_integrated_average_detector(UHFQC_Base):
 
@@ -1163,7 +1292,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         # should run
         self.UHFQC.awgs_0_single(1)
 
-        self.nr_sweep_points = self.nr_shots*len(sweep_points)
+        self.nr_sweep_points = len(sweep_points)
         self.UHFQC.qas_0_integration_length(int(self.integration_length*(1.8e9)))
 
         self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
@@ -1301,7 +1430,6 @@ class UHFQC_classifier_detector(UHFQC_Base):
         if not self.get_values_function_kwargs.get('averaged', True):
             # to be used in MC
             self.acq_data_len_scaling = self.nr_shots
-            print(self.acq_data_len_scaling )
 
     def prepare(self, sweep_points):
         if self.AWG is not None:
@@ -1314,18 +1442,19 @@ class UHFQC_classifier_detector(UHFQC_Base):
             if self.prepare_function is not None:
                 self.prepare_function()
 
-        self.nr_sweep_points = len(sweep_points)
+        assert len(sweep_points) % self.acq_data_len_scaling == 0
+        self.nr_sweep_points = len(sweep_points) // self.acq_data_len_scaling
         # The averaging-count is used to specify how many times the AWG program
         # should run
         self.UHFQC.awgs_0_single(1)
         self.UHFQC.qas_0_integration_length(int(self.integration_length*(1.8e9)))
 
         self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
-        self.UHFQC.qudev_acquisition_initialize(channels=self.channels, 
-                                          samples=self.nr_shots*self.nr_sweep_points,
-                                          averages=1, #for single shot readout
-                                          loop_cnt=int(self.nr_shots),
-                                          mode='rl')
+        self.UHFQC.qudev_acquisition_initialize(
+            channels=self.channels,
+            samples=self.nr_shots * self.nr_sweep_points,
+            averages=1, #for single shot readout
+            loop_cnt=int(self.nr_shots), mode='rl')
 
     def get_values(self):
         if self.always_prepare:

@@ -1541,7 +1541,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
         if self.thresholds is not None:
             for qubit, channel in self.channel_map.items():
                 shots_cont = np.array(
-                    self.raw_data_dict['measured_data'][channel])
+                    self.raw_data_dict['measured_data'][channel]).T.flatten()
                 shots_thresh[qubit] = (shots_cont > self.thresholds[qubit])
             self.proc_data_dict['shots_thresholded'] = shots_thresh
         else:
@@ -1681,12 +1681,14 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
 
         plot_dict = {
             'axid': "ptable",
-            'plotfn': self.plot_colorx,
+            'plotfn': self.plot_colorxy,
             'xvals': np.arange(len(self.observables))[obs_filter],
-            'yvals': np.array(len(self.observables)*[ylist]),
-            'zvals': plt_data,
+            # 'yvals': np.array(len(self.observables)*[ylist]),
+            'yvals': ylist,
+            'zvals': plt_data.T,
             'xlabel': "Channels",
             'ylabel': "Segments",
+            # 'yrange': (0, 19),
             'zlabel': "Counts",
             'zrange': [0,1],
             'title': (self.timestamps[0] + ' \n' +
@@ -2138,7 +2140,9 @@ def convert_channel_names_to_index(cal_points, nr_segments, value_names,
     Returns:
         cal_points_list in the converted format
     """
-    
+
+    if isinstance(value_names, str):
+        value_names = [value_names]
     cal_points_list = []
     try:
         cp = CalibrationPoints.from_string(cal_points)

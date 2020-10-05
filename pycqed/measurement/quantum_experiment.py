@@ -134,6 +134,11 @@ class QuantumExperiment(CircuitBuilder):
         self.force_2D_sweep = force_2D_sweep
         self.compression_seg_lim = compression_seg_lim
         self.channels_to_upload = []
+        # The experiment_name might have been set by the user in kw or by a
+        # child class as an attribute. Otherwise, the default None will
+        # trigger guess_label to use the sequence name.
+        self.experiment_name = kw.pop(
+            'experiment_name', getattr(self, 'experiment_name', None))
         self.timestamp = None
         self.analysis = None
 
@@ -152,9 +157,17 @@ class QuantumExperiment(CircuitBuilder):
             self.df_name = 'int_avg{}_det'.format('_classif' if self.classified else '')
         self.df = None
 
+        # determine data type
+        if "log" in self.df_name or not \
+                self.df_kwargs.get('averaged', True):
+            data_type = "singleshot"
+        else:
+            data_type = "averaged"
+
         self.exp_metadata.update(kw)
         self.exp_metadata.update({'classified_ro': self.classified,
-                                  'cz_pulse_name': self.cz_pulse_name})
+                                  'cz_pulse_name': self.cz_pulse_name,
+                                  'data_type': data_type})
 
     def create_meas_objs_list(self, meas_objs=None, **kwargs):
         """
@@ -217,6 +230,8 @@ class QuantumExperiment(CircuitBuilder):
 
             self.guess_label(**kw)
 
+            self.update_metadata()
+
             # run measurement
             try:
                 self.MC.run(name=self.label, exp_metadata=self.exp_metadata,
@@ -225,6 +240,29 @@ class QuantumExperiment(CircuitBuilder):
                 self.extract_timestamp()
                 raise e
         self.extract_timestamp()
+
+    def update_metadata(self):
+        # make sure that all metadata params are up to date
+        for name in self._metadata_params:
+            if hasattr(self, name):
+                value = getattr(self, name)
+                try:
+                    if name in ('cal_points', 'sweep_points') and \
+                            value is not None:
+                        old_val = np.get_printoptions()['threshold']
+                        np.set_printoptions(threshold=np.inf)
+                        self.exp_metadata.update({name: repr(value)})
+                        np.set_printoptions(threshold=old_val)
+                    elif name in ('meas_objs', "qubits") and value is not None:
+                        self.exp_metadata.update(
+                            {name: [qb.name for qb in value]})
+                    else:
+                        self.exp_metadata.update({name: value})
+                except Exception as e:
+                    log.error(
+                        f"Could not add {name} with value {value} to the "
+                        f"metadata")
+                    raise e
 
     def extract_timestamp(self):
         try:
@@ -241,8 +279,15 @@ class QuantumExperiment(CircuitBuilder):
 
         """
         if self.label is None:
+            if self.experiment_name is None:
+                self.experiment_name = self.sequences[0].name
+            self.label = self.experiment_name
             _, qb_names = self.get_qubits(self.qubits)
-            self.label = f'{self.sequences[0].name}_{",".join(qb_names)}'
+            if self.dev is not None:
+                self.label += self.dev.get_msmt_suffix(self.meas_obj_names)
+            else:
+                # guess_label is called from run_measurement -> we have qubits
+                self.label += mqm.get_multi_qubit_msmt_suffix(self.meas_objs)
 
     def run_analysis(self, analysis_class=None, **kwargs):
         """
@@ -384,7 +429,9 @@ class QuantumExperiment(CircuitBuilder):
                     self.sequences, self.mc_points[0], \
                     self.mc_points[1], cf = \
                         self.sequences[0].compress_2D_sweep(self.sequences,
-                                                            self.compression_seg_lim)
+                                                            self.compression_seg_lim,
+                                                            True,
+                                                            self.mc_points[0])
                     self.exp_metadata.update({'compression_factor': cf})
                 else:
                     log.warning("Sequence compression currently does not support"
@@ -480,32 +527,32 @@ class QuantumExperiment(CircuitBuilder):
                                      "run_measurement() or set the MC attribute"
                                      " of the QuantumExperiment instance.")
 
-    def __setattr__(self, name, value):
-        """
-        Observes attributes which are set to this class. If they are in the
-        _metadata_params then they are automatically added to the experimental
-        metadata
-        Args:
-            name:
-            value:
-
-        Returns:
-
-        """
-        if name in self._metadata_params:
-            try:
-                if name in ('cal_points', 'sweep_points') and value is not None:
-                    self.exp_metadata.update({name: repr(value)})
-                elif name in ('meas_objs', "qubits") and value is not None:
-                    self.exp_metadata.update({name: [qb.name for qb in value]})
-                else:
-                    self.exp_metadata.update({name: value})
-            except Exception as e:
-                log.error(f"Could not add {name} with value {value} to the "
-                          f"metadata")
-                raise e
-
-        self.__dict__[name] = value
+    # def __setattr__(self, name, value):
+    #     """
+    #     Observes attributes which are set to this class. If they are in the
+    #     _metadata_params then they are automatically added to the experimental
+    #     metadata
+    #     Args:
+    #         name:
+    #         value:
+    #
+    #     Returns:
+    #
+    #     """
+    #     if name in self._metadata_params:
+    #         try:
+    #             if name in 'cal_points' and value is not None:
+    #                 self.exp_metadata.update({name: repr(value)})
+    #             elif name in ('meas_objs', "qubits") and value is not None:
+    #                 self.exp_metadata.update({name: [qb.name for qb in value]})
+    #             else:
+    #                 self.exp_metadata.update({name: value})
+    #         except Exception as e:
+    #             log.error(f"Could not add {name} with value {value} to the "
+    #                       f"metadata")
+    #             raise e
+    #
+    #     self.__dict__[name] = value
 
     def __repr__(self):
         return f"QuantumExperiment(dev={self.dev}, qubits={self.qubits})"

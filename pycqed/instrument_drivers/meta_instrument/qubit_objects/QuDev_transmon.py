@@ -485,6 +485,15 @@ class QuDev_transmon(Qubit):
             integration_length=self.acq_length(),
             result_logging_mode='raw', real_imag=False, single_int_avg=True)
 
+        if hasattr(self.instr_uhf.get_instr().daq, 'scopeModule'):
+            self.scope_fft_det = det.UHFQC_scope_detector(
+                UHFQC=self.instr_uhf.get_instr(),
+                AWG=self.instr_pulsar.get_instr(),
+                fft_mode='fft_power',
+                nr_averages=self.acq_averages(),
+                nr_samples=nr_samples,
+            )
+
     def prepare(self, drive='timedomain'):
         ro_lo = self.instr_ro_lo
         ge_lo = self.instr_ge_lo
@@ -1314,12 +1323,12 @@ class QuDev_transmon(Qubit):
             tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name])
 
     def measure_randomized_benchmarking(
-            self, cliffords, nr_seeds,
+            self, cliffords, nr_seeds, cl_seq=None,
             gate_decomp='HZ', interleaved_gate=None,
             n_cal_points_per_state=2, cal_states=(),
             classified_ro=False, thresholded=True, label=None,
             upload=True, analyze=True, prep_params=None,
-            exp_metadata=None, **kw):
+            exp_metadata=None, sampling_seeds=None, **kw):
         '''
         Performs a randomized benchmarking experiment on 1 qubit.
         '''
@@ -1343,14 +1352,16 @@ class QuDev_transmon(Qubit):
         cal_states = CalibrationPoints.guess_cal_states(cal_states)
         cp = CalibrationPoints.single_qubit(self.name, cal_states,
                                             n_per_state=n_cal_points_per_state)
-
+        if sampling_seeds is None:
+            sampling_seeds = np.random.randint(0, 1e8, nr_seeds)
         sequences, hard_sweep_points, soft_sweep_points = \
             sq.randomized_renchmarking_seqs(
                 qb_name=self.name, operation_dict=self.get_operation_dict(),
                 cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
-                gate_decomposition=gate_decomp,
+                gate_decomposition=gate_decomp, cl_sequence=cl_seq,
                 interleaved_gate=interleaved_gate, upload=False,
-                cal_points=cp, prep_params=prep_params)
+                cal_points=cp, prep_params=prep_params,
+                sampling_seeds=sampling_seeds)
 
         hard_sweep_func = awg_swf.SegmentHardSweep(
             sequence=sequences[0], upload=upload,
@@ -1390,6 +1401,9 @@ class QuDev_transmon(Qubit):
         exp_metadata.update({'preparation_params': prep_params,
                              'cal_points': repr(cp),
                              'sweep_points': sp,
+                             'interleaved_gate': interleaved_gate,
+                             'sampling_seeds': sampling_seeds,
+                             'gate_decomposition': gate_decomp,
                              'meas_obj_sweep_points_map':
                                  sp.get_meas_obj_sweep_points_map([self.name]),
                              'meas_obj_value_names_map':
@@ -1695,7 +1709,91 @@ class QuDev_transmon(Qubit):
         a = ma.MeasurementAnalysis(plot_args=dict(log=True, marker=''))
         return a
 
+    def measure_drive_mixer_spectrum_fft(self, ro_lo_freq, amplitude=0.5,
+                                         trigger_sep=5e-6):
+        MC = self.instr_mc.get_instr()
+        s = swf.None_Sweep(
+            name='UHF intermediate frequency',
+            parameter_name='UHF intermediate frequency',
+            unit='Hz')
+        drive_pulse = dict(
+            pulse_type='GaussFilteredCosIQPulse',
+            pulse_length=self.acq_length(),
+            ref_point='start',
+            amplitude=amplitude,
+            I_channel=self.ge_I_channel(),
+            Q_channel=self.ge_Q_channel(),
+            mod_frequency=self.ge_mod_freq(),
+            phase_lock=False,
+        )
+        sq.pulse_list_list_seq([[self.get_acq_pars(), drive_pulse]])
+
+        with temporary_value(
+                (self.ro_freq, ro_lo_freq + self.ro_mod_freq()),
+                (self.instr_trigger.get_instr().pulse_period, trigger_sep),
+        ):
+            self.prepare(drive='timedomain')
+            MC.set_sweep_function(s)
+            MC.set_sweep_points(self.scope_fft_det.get_sweep_vals())
+            MC.set_detector_function(self.scope_fft_det)
+            self.instr_pulsar.get_instr().start()
+            MC.run('ge_uc_spectrum' + self.msmt_suffix)
+
+        a = ma.MeasurementAnalysis(plot_args=dict(log=True, marker=''))
+        return a
+
     def calibrate_drive_mixer_carrier(self, update=True, x0=(0., 0.),
+                                      initial_stepsize=0.01, trigger_sep=5e-6,
+                                      no_improv_break=50, upload=True,
+                                      plot=True):
+        MC = self.instr_mc.get_instr()
+        ad_func_pars = {'adaptive_function': opti.nelder_mead,
+                        'x0': x0,
+                        'initial_step': [initial_stepsize, initial_stepsize],
+                        'no_improv_break': no_improv_break,
+                        'minimize': True,
+                        'maxiter': 500}
+        chI_par = self.instr_pulsar.get_instr().parameters['{}_offset'.format(
+            self.ge_I_channel())]
+        chQ_par = self.instr_pulsar.get_instr().parameters['{}_offset'.format(
+            self.ge_Q_channel())]
+        MC.set_sweep_functions([chI_par, chQ_par])
+        MC.set_adaptive_function_parameters(ad_func_pars)
+        if upload:
+            sq.pulse_list_list_seq([[self.get_acq_pars(), dict(
+                pulse_type='GaussFilteredCosIQPulse',
+                pulse_length=self.acq_length(),
+                ref_point='start',
+                amplitude=0,
+                I_channel=self.ge_I_channel(),
+                Q_channel=self.ge_Q_channel(),
+            )]])
+
+        with temporary_value(
+                (self.ro_freq, self.ge_freq() - self.ge_mod_freq()),
+                (self.acq_weights_type, 'SSB'),
+                (self.instr_trigger.get_instr().pulse_period, trigger_sep),
+        ):
+            self.prepare(drive='timedomain')
+            MC.set_detector_function(det.IndexDetector(
+                self.int_avg_det_spec, 0))
+            self.instr_pulsar.get_instr().start(exclude=[self.instr_uhf()])
+            MC.run(name='drive_carrier_calibration' + self.msmt_suffix,
+                   mode='adaptive')
+
+        a = ma.OptimizationAnalysis(label='drive_carrier_calibration')
+        if plot:
+            # v2 creates a pretty picture of the optimizations
+            ma.OptimizationAnalysis_v2(label='drive_carrier_calibration')
+
+        ch_1_min = a.optimization_result[0][0]
+        ch_2_min = a.optimization_result[0][1]
+        if update:
+            self.ge_I_offset(ch_1_min)
+            self.ge_Q_offset(ch_2_min)
+        return ch_1_min, ch_2_min
+
+    def calibrate_drive_mixer_carrier_fft(self, update=True, x0=(0., 0.),
                                       initial_stepsize=0.01, trigger_sep=5e-6,
                                       no_improv_break=50, upload=True,
                                       plot=True):
@@ -1723,16 +1821,22 @@ class QuDev_transmon(Qubit):
                             )]])
 
         with temporary_value(
-            (self.ro_freq, self.ge_freq() - self.ge_mod_freq()),
-            (self.acq_weights_type, 'SSB'),
-            (self.instr_trigger.get_instr().pulse_period, trigger_sep),
+                (self.ro_freq, self.ge_freq() - self.ge_mod_freq()),
+                (self.instr_trigger.get_instr().pulse_period, trigger_sep),
         ):
             self.prepare(drive='timedomain')
-            MC.set_detector_function(det.IndexDetector(
-                self.int_avg_det_spec, 0))
+            d = self.scope_fft_det
+            d.AWG = None
+            idx = np.argmin(np.abs(d.get_sweep_vals() -
+                                   np.abs(self.ro_mod_freq())))
+
+            d2 = det.IndexDetector(
+                det.SumDetector(d), (0, idx))
+
+            MC.set_detector_function(d2)
             self.instr_pulsar.get_instr().start(exclude=[self.instr_uhf()])
             MC.run(name='drive_carrier_calibration' + self.msmt_suffix,
-                mode='adaptive')
+                   mode='adaptive')
 
         a = ma.OptimizationAnalysis(label='drive_carrier_calibration')
         if plot:
@@ -1804,6 +1908,60 @@ class QuDev_transmon(Qubit):
             if for_ef == True:
                 self.ef_alpha(alpha)
                 self.ef_phi_skew(phi)
+        return alpha, phi
+
+    def calibrate_drive_mixer_skewness(self, update=True, amplitude=0.5,
+                                       trigger_sep=5e-6, no_improv_break=50,
+                                       initial_stepsize=(0.15, 10)):
+        MC = self.instr_mc.get_instr()
+        ad_func_pars = {'adaptive_function': opti.nelder_mead,
+                        'x0': [self.ge_alpha(), self.ge_phi_skew()],
+                        'initial_step': initial_stepsize,
+                        'no_improv_break': no_improv_break,
+                        'minimize': True,
+                        'maxiter': 500}
+        MC.set_sweep_functions([self.ge_alpha, self.ge_phi_skew])
+        MC.set_adaptive_function_parameters(ad_func_pars)
+
+        with temporary_value(
+                (self.ge_alpha, self.ge_alpha()),
+                (self.ge_phi_skew, self.ge_phi_skew()),
+                (self.ro_freq, self.ge_freq() - 2 * self.ge_mod_freq()),
+                (self.acq_weights_type, 'SSB'),
+                (self.instr_trigger.get_instr().pulse_period, trigger_sep),
+        ):
+            self.prepare(drive='timedomain')
+            detector = self.int_avg_det_spec
+            detector.always_prepare = True
+            detector.AWG = self.instr_pulsar.get_instr()
+            detector.prepare_function = lambda \
+                    alphaparam=self.ge_alpha, skewparam=self.ge_phi_skew: \
+                sq.pulse_list_list_seq([[self.get_acq_pars(), dict(
+                    pulse_type='GaussFilteredCosIQPulse',
+                    pulse_length=self.acq_length(),
+                    ref_point='start',
+                    amplitude=amplitude,
+                    I_channel=self.ge_I_channel(),
+                    Q_channel=self.ge_Q_channel(),
+                    mod_frequency=self.ge_mod_freq(),
+                    phase_lock=False,
+                    alpha=alphaparam(),
+                    phi_skew=skewparam(),
+                )]])
+            MC.set_detector_function(det.IndexDetector(detector, 0))
+            MC.run(name='drive_skewness_calibration' + self.msmt_suffix,
+                   mode='adaptive')
+
+        a = ma.OptimizationAnalysis(label='drive_skewness_calibration')
+        # v2 creates a pretty picture of the optimizations
+        ma.OptimizationAnalysis_v2(label='drive_skewness_calibration')
+
+        # phi and alpha are the coefficients that go in the predistortion matrix
+        alpha = a.optimization_result[0][0]
+        phi = a.optimization_result[0][1]
+        if update:
+            self.ge_alpha(alpha)
+            self.ge_phi_skew(phi)
         return alpha, phi
 
     def calibrate_drive_mixer_skewness(self, update=True, amplitude=0.5,
@@ -1914,11 +2072,11 @@ class QuDev_transmon(Qubit):
 
             s1 = swf.Hard_Sweep()
             s1.name = 'Amplitude ratio hardware sweep'
-            s1.label = r'Amplitude ratio, $\alpha$'
+            s1.parameter_name = r'Amplitude ratio, $\alpha$'
             s1.unit = ''
             s2 = swf.Hard_Sweep()
             s2.name = 'Phase skew hardware sweep'
-            s2.label = r'Phase skew, $\phi$'
+            s2.parameter_name = r'Phase skew, $\phi$'
             s2.unit = 'deg'
             MC.set_sweep_functions([s1, s2])
             MC.set_sweep_points(meas_grid.T)
@@ -3459,6 +3617,14 @@ class QuDev_transmon(Qubit):
         else:
             return
 
+    def measure_flux_pulse_timing(self, delays, analyze, label=None, **kw):
+        if label is None:
+            label = 'Flux_pulse_timing_{}'.format(self.name)
+        self.measure_flux_pulse_scope([self.ge_freq()], delays,
+                                      label=label, analyze=False, **kw)
+        if analyze:
+            tda.FluxPulseTimingAnalysis(qb_names=[self.name])
+
     def measure_flux_pulse_scope(self, freqs, delays, cz_pulse_name=None,
                                  analyze=True, cal_points=True,
                                  upload=True, label=None,
@@ -3522,11 +3688,22 @@ class QuDev_transmon(Qubit):
             name='Drive frequency',
             parameter_name='Drive frequency', unit='Hz'))
         MC.set_sweep_points_2D(sweep_points_2D)
-        MC.set_detector_function(self.int_avg_det)
+        det_func = self.int_avg_det
+        MC.set_detector_function(det_func)
+        sweep_points = SweepPoints('delay', delays, unit='s',
+                                   label=r'delay, $\tau$', dimension=0)
+        sweep_points.add_sweep_parameter('freq', freqs, unit='Hz',
+                                         label=r'drive frequency, $f_d$',
+                                         dimension=1)
+        mospm = {self.name: ['delay', 'freq']}
         if exp_metadata is None:
             exp_metadata = {}
         exp_metadata.update({'sweep_points_dict': {self.name: delays},
                              'sweep_points_dict_2D': {self.name: freqs},
+                             'sweep_points': sweep_points,
+                             'meas_obj_sweep_points_map': mospm,
+                             'meas_obj_value_names_map':
+                                 {self.name: det_func.value_names},
                              'use_cal_points': cal_points,
                              'preparation_params': prep_params,
                              'cal_points': repr(cp),
@@ -3538,8 +3715,9 @@ class QuDev_transmon(Qubit):
 
         if analyze:
             try:
-                tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name],
-                                                   options_dict=dict(TwoD=True))
+                tda.FluxPulseScopeAnalysis(
+                    qb_names=[self.name],
+                    options_dict=dict(TwoD=True, global_PCA=True,))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)
 
