@@ -622,7 +622,6 @@ class Cryoscope(CalibBuilder):
             concatenation of the truncation_lengths array for each pulse,
             defined between 0 and total length of each pulse.
         """
-        from pprint import pprint
         parallel_block_list = []
         for i, task in enumerate(self.preprocessed_task_list):
             sweep_points = task['sweep_points']
@@ -864,17 +863,31 @@ class SingleQubitGateCalib(CalibBuilder):
             self.TwoD_msmt = TwoD_msmt
 
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
-            self.add_to_preproc_tasks()
+            self.update_preproc_tasks()
             self.define_data_to_fit()
             transition_names = [task['transition_name_input'] for task in
                                 self.preprocessed_task_list]
             states = ''.join(set([s for s in ''.join(transition_names)]))
-            self.experiment_name += states
+            self.experiment_name += f'_{states}'
             self.create_cal_points(cal_states=states, **kw)
 
-            self.sequences, self.mc_points = self.parallel_sweep(
-                self.preprocessed_task_list, self.sweep_block,
-                block_align='end', **kw)
+            if 'qscale' in self.experiment_name.lower():
+                if len(self.sweep_points[1]) == 0:
+                    # Internally, 1D and 2D sweeps are handled as 2D sweeps.
+                    # With this dummy soft sweep, exactly one sequence will be
+                    # created and the data format will be the same as for a
+                    # true soft sweep.
+                    self.sweep_points.add_sweep_parameter('dummy_sweep_param',
+                                                          [0])
+                self.sequences, self.mc_points = self.sweep_n_dim(
+                    self.sweep_points, body_block=None,
+                    body_block_func=self.sweep_block,
+                    cal_points=self.cal_points,
+                    ro_qubits=self.meas_obj_names, **kw)
+            else:
+                self.sequences, self.mc_points = self.parallel_sweep(
+                    self.preprocessed_task_list, self.sweep_block,
+                    block_align='end', **kw)
             if not TwoD_msmt:
                 self.mc_points = [self.mc_points[0]]
             self.autorun(**kw)
@@ -889,14 +902,13 @@ class SingleQubitGateCalib(CalibBuilder):
             transition_name = task['transition_name_input']
             self.data_to_fit[qb_name] = f'p{transition_name[-1]}'
 
-    def add_to_preproc_tasks(self):
+    def update_preproc_tasks(self):
         pass
 
     def sweep_block(self, qb, sweep_points, transition_name, **kw):
 
         prepended_pulses = self.transition_order[
                            :self.transition_order.index(transition_name)]
-        print('prepended_pulses', prepended_pulses)
         return self.block_from_ops(
             'prepend', [f'X180{trn} {qb}' for trn in prepended_pulses])
 
@@ -958,8 +970,8 @@ class Ramsey(SingleQubitGateCalib):
             self.kw_for_task_keys += ['artificial_detuning']
             if 'artificial_detuning' not in kw:
                 kw['artificial_detuning'] = 0
-            self.experiment_name = 'Ramsey'
             self.echo = echo
+            self.experiment_name = 'Echo' if self.echo else 'Ramsey'
             super().__init__(task_list, qubits=qubits,
                              sweep_points=sweep_points,
                              delays=delays, **kw)
@@ -967,7 +979,7 @@ class Ramsey(SingleQubitGateCalib):
             self.exception = x
             traceback.print_exc()
 
-    def add_to_preproc_tasks(self):
+    def update_preproc_tasks(self):
         for task in self.preprocessed_task_list:
             sweep_points = task['sweep_points']
             task['first_delay_point'] = sweep_points.get_sweep_params_property(
@@ -999,9 +1011,80 @@ class Ramsey(SingleQubitGateCalib):
             ramsey_block = self.simultaneous_blocks(f'main_{qb}',
                                                     [ramsey_block, echo_block],
                                                     block_align='center')
-        # from pprint import pprint
-        # print()
-        # pprint(ramsey_block.pulses)
 
         return self.sequential_blocks(f'ramsey_{qb}',
                                       [prepend_block, ramsey_block])
+
+
+class T1(SingleQubitGateCalib):
+
+    kw_for_sweep_points = {
+        'delays': dict(param_name='pulse_delay', unit='s',
+                       label=r'Readout pulse delay', dimension=0),
+    }
+
+    def __init__(self, task_list=None, sweep_points=None, qubits=None,
+                 delays=None, **kw):
+        try:
+            self.experiment_name = 'T1'
+            super().__init__(task_list, qubits=qubits,
+                             sweep_points=sweep_points,
+                             delays=delays, **kw)
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def sweep_block(self, qb, sweep_points, transition_name, **kw):
+
+        prepend_block = super().sweep_block(qb, sweep_points, transition_name,
+                                            **kw)
+        t1_block = self.block_from_ops(f'pi_pulse_{qb}',
+                                       [f'X180{transition_name} {qb}'])
+        # create ParametricValue
+        t1_block.block_end.update({'ref_point': 'middle',
+                                   'pulse_delay': ParametricValue('pulse_delay')
+                                   })
+        return self.sequential_blocks(f'rabi_{qb}', [prepend_block, t1_block])
+
+
+class QScale(SingleQubitGateCalib):
+
+    kw_for_sweep_points = {
+        'qscales': dict(param_name='motzoi', unit='V',
+                        label='Pulse Amplitude', dimension=0,
+                        values_func=lambda q: np.repeat(q, 3))
+    }
+
+    def __init__(self, task_list=None, sweep_points=None, qubits=None,
+                 qscales=None, **kw):
+        try:
+            self.experiment_name = 'Qscale'
+            self.qscale_base_ops = [['X90', 'X180'], ['X90', 'Y180'],
+                                    ['X90', 'mY180']]
+            super().__init__(task_list, qubits=qubits,
+                             sweep_points=sweep_points,
+                             qscales=qscales, **kw)
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def sweep_block(self, sp1d_idx, sp2d_idx, **kw):
+        parallel_block_list = []
+        for i, task in enumerate(self.preprocessed_task_list):
+            transition_name = task['transition_name']
+            sweep_points = task['sweep_points']
+            qb = task['qb']
+
+            prepend_block = super().sweep_block(qb, sweep_points,
+                                                transition_name)
+            qscale_pulses_block = self.block_from_ops(
+                f'qscale_pulses_{qb}', [f'{p}{transition_name} {qb}' for p in
+                                        self.qscale_base_ops[sp1d_idx % 3]])
+            for p in qscale_pulses_block.pulses:
+                p['motzoi'] = sweep_points.get_sweep_params_property(
+                    'values', 0, 'motzoi')[sp1d_idx]
+            parallel_block_list += [self.sequential_blocks(
+                f'qscale_{qb}', [prepend_block, qscale_pulses_block])]
+
+        return self.simultaneous_blocks(f'qscale_{sp2d_idx}_{sp1d_idx}',
+                                        parallel_block_list, block_align='end')
