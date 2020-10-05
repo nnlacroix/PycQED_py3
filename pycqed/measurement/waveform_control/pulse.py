@@ -49,6 +49,7 @@ class Pulse:
         self.element_name = element_name
         self.codeword = kw.pop('codeword', 'no_codeword')
         self.pulse_off = kw.pop('pulse_off', False)
+        self.truncation_length = kw.pop('truncation_length', None)
         self.crosstalk_cancellation_channels = []
         self.crosstalk_cancellation_mtx = None
         self.crosstalk_cancellation_shift_mtx = None
@@ -79,11 +80,17 @@ class Pulse:
             if c in tvals_dict and c not in \
                     self.crosstalk_cancellation_channels:
                 wfs_dict[c] = self.chan_wf(c, tvals_dict[c])
+                truncation_length = getattr(self, 'truncation_length', None)
                 if getattr(self, 'pulse_off', False):
                     wfs_dict[c] = np.zeros_like(wfs_dict[c])
+                elif truncation_length is not None:
+                    # truncation_length should be (n+0.5) samples to avoid
+                    # rounding errors
+                    mask = tvals_dict[c] <= (tvals_dict[c][0] +
+                                             truncation_length)
+                    wfs_dict[c] *= mask
         for c in self.crosstalk_cancellation_channels:
             if c in tvals_dict:
-                print(f"adding cancellation to flux line: {c}")
                 idx_c = self.crosstalk_cancellation_channels.index(c)
                 wfs_dict[c] = np.zeros_like(tvals_dict[c])
                 if not getattr(self, 'pulse_off', False):
@@ -96,8 +103,6 @@ class Pulse:
                             idx_c, idx_c2] \
                             if self.crosstalk_cancellation_shift_mtx is not \
                             None else 0
-                        print(f"adding from pulse channel: {c2}, factor:"
-                              f" {factor}, shift: {shift}")
                         wfs_dict[c] += factor * self.chan_wf(
                             c2, tvals_dict[c] - shift)
         return wfs_dict
@@ -124,15 +129,26 @@ class Pulse:
         if getattr(self, 'pulse_off', False):
             return 0
 
-        if channel in self.channels:
+        if channel in self.crosstalk_cancellation_channels:
+            # if channel is a crosstalk cancellation channel, then the area
+            # of all flux pulses applied on this channel are
+            # retrieved and added together
+            wfs = [] # list of waveforms, area computed in return statement
+            idx_c = self.crosstalk_cancellation_channels.index(channel)
+            if not getattr(self, 'pulse_off', False):
+                for c2 in self.channels:
+                    if c2 not in self.crosstalk_cancellation_channels:
+                        continue
+                    idx_c2 = self.crosstalk_cancellation_channels.index(c2)
+                    factor = self.crosstalk_cancellation_mtx[idx_c, idx_c2]
+                    wfs.append(factor * self.chan_wf( c2, tvals))
+        elif channel in self.channels:
             wfs = self.chan_wf(channel, tvals)
         else:
-            # FIXME: it is a crosstalk cancellation channel and needs to be
-            #  handled separately
             wfs = np.zeros_like(tvals)
         dt = tvals[1] - tvals[0]
 
-        return sum(wfs) * dt
+        return np.sum(wfs) * dt
 
     def algorithm_time(self, val=None):
         """

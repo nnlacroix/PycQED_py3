@@ -71,7 +71,8 @@ class BaseDataAnalysis(object):
     def __init__(self, t_start: str = None, t_stop: str = None,
                  label: str = '', data_file_path: str = None,
                  close_figs: bool = True, options_dict: dict = None,
-                 extract_only: bool = False, do_fitting: bool = False):
+                 extract_only: bool = False, do_fitting: bool = False,
+                 raise_exceptions: bool = False):
         '''
         This is the __init__ of the abstract base class.
         It is intended to be called at the start of the init of the child
@@ -129,9 +130,14 @@ class BaseDataAnalysis(object):
                                 -'exact_label_match'
         :param extract_only: Should we also do the plots?
         :param do_fitting: Should the run_fitting method be executed?
+        :param raise_exceptions (bool): whether or not exceptions encountered
+            in __init__() and in run_analysis() should be raised or only logged.
         '''
 
         try:
+            # set error-handling behavior
+            self.raise_exceptions = raise_exceptions
+
             # initialize an empty dict to store results of analysis
             self.proc_data_dict = OrderedDict()
             if options_dict is None:
@@ -164,7 +170,6 @@ class BaseDataAnalysis(object):
             if self.timestamps is None or len(self.timestamps) == 0:
                 raise ValueError('No data file found.')
 
-
             ########################################
             # These options relate to the plotting #
             ########################################
@@ -187,7 +192,6 @@ class BaseDataAnalysis(object):
             self.options_dict['close_figs'] = self.options_dict.get(
                 'close_figs', close_figs)
 
-
             ####################################################
             # These options relate to what analysis to perform #
             ####################################################
@@ -199,9 +203,13 @@ class BaseDataAnalysis(object):
 
             if type(self.auto_keys) is str:
                 self.auto_keys = [self.auto_keys]
-        except Exception:
-            log.warning("Unhandled error during init of analysis!")
-            log.warning(traceback.format_exc())
+
+        except Exception as e:
+            if self.raise_exceptions:
+                raise e
+            else:
+                log.error("Unhandled error during init of analysis!")
+                log.error(traceback.format_exc())
 
     def run_analysis(self):
         """
@@ -226,9 +234,12 @@ class BaseDataAnalysis(object):
                 if self.options_dict.get('save_figs', False):
                     self.save_figures(close_figs=self.options_dict.get(
                         'close_figs', False))
-        except Exception:
-            log.warning("Unhandled error during analysis!")
-            log.warning(traceback.format_exc())
+        except Exception as e:
+            if self.raise_exceptions:
+                raise e
+            else:
+                log.error("Unhandled error during analysis!")
+                log.error(traceback.format_exc())
 
     def create_job(self, *args, **kwargs):
         """
@@ -255,14 +266,18 @@ class BaseDataAnalysis(object):
         # prepare import
         import_lines = f"from {self.__module__} import {class_name}\n"
 
+        # set default error handling of analysis to raise exceptions, such
+        # that they are caught by the Daemon reading the jobs
+        if "raise_exception" not in kwargs:
+            kwargs['raise_exceptions'] = True
         # if timestamp wasn't specified, specify it for the job
-        if not "t_start" in kwargs or kwargs["t_start"] is None:
+        if "t_start" not in kwargs or kwargs["t_start"] is None:
             kwargs["t_start"] = self.timestamps[0]
-        if (not "t_stop" in kwargs or kwargs["t_stop"] is None) and \
+        if ("t_stop" not in kwargs or kwargs["t_stop"] is None) and \
                 len(self.timestamps) > 1:
             kwargs['t_stop'] = self.timestamps[-1]
         kwargs_list = [f'{k}={v if not isinstance(v, str) else repr(v)}'
-                          for k, v in kwargs.items()]
+                       for k, v in kwargs.items()]
 
         job_lines = f"{class_name}({', '.join(args)}{sep}{', '.join(kwargs_list)})"
         self.job = f"{import_lines}{job_lines}"
@@ -303,7 +318,10 @@ class BaseDataAnalysis(object):
         # If it is an array of value decodes individual entries
         if type(s) == np.ndarray:
             s = [s.decode('utf-8') for s in s]
-        return s
+        try:
+            return eval(s)
+        except Exception:
+            return s
 
     def get_hdf_param_value(self, path_to_group, attribute, hdf_file_index=0):
         """
@@ -338,18 +356,19 @@ class BaseDataAnalysis(object):
         # multi timestamp with different metadata
         elif isinstance(self.metadata, (list, tuple)) and \
                 len(self.metadata) != 0:
-            return self.options_dict.get(param_name,
+            return self.options_dict.get(
+                param_name,
                 self.metadata[metadata_index].get(param_name, default_value))
         # base case
         else:
             return self.options_dict.get(param_name, self.metadata.get(
                 param_name, default_value))
 
-    def get_data_from_timestamp_list(self):
+    def get_data_from_timestamp_list(self, params_dict, numeric_params=()):
         raw_data_dict = []
         for timestamp in self.timestamps:
             raw_data_dict_ts = OrderedDict([(param, []) for param in
-                                           self.params_dict])
+                                            params_dict])
 
             folder = a_tools.get_folder(timestamp)
             h5mode = self.options_dict.get('h5mode', 'r+')
@@ -367,7 +386,7 @@ class BaseDataAnalysis(object):
                     raw_data_dict_ts['measured_data'] = \
                         np.array(data_file['Experimental Data']['Data']).T
 
-                for save_par, file_par in self.params_dict.items():
+                for save_par, file_par in params_dict.items():
                     if len(file_par.split('.')) == 1:
                         par_name = file_par.split('.')[0]
                         for group_name in data_file.keys():
@@ -391,10 +410,6 @@ class BaseDataAnalysis(object):
                             len(raw_data_dict_ts[save_par]) == 1:
                         raw_data_dict_ts[save_par] = \
                             raw_data_dict_ts[save_par][0]
-                for par_name in raw_data_dict_ts:
-                    if par_name in self.numeric_params:
-                        raw_data_dict_ts[par_name] = \
-                            np.double(raw_data_dict_ts[par_name])
             except Exception as e:
                 data_file.close()
                 raise e
@@ -402,6 +417,9 @@ class BaseDataAnalysis(object):
 
         if len(raw_data_dict) == 1:
             raw_data_dict = raw_data_dict[0]
+        for par_name in raw_data_dict:
+            if par_name in self.numeric_params:
+                raw_data_dict[par_name] = np.double(raw_data_dict[par_name])
         return raw_data_dict
 
     @staticmethod
@@ -458,7 +476,7 @@ class BaseDataAnalysis(object):
                 ssp, counts = np.unique(mc_points[1:], return_counts=True)
                 if counts[0] != len(hsp):
                     # ssro data
-                    hsp = np.tile(hsp, counts[0]//len(hsp))
+                    hsp = np.tile(hsp, counts[0] // len(hsp))
                 # if needed, decompress the data (assumes hsp and ssp are indices)
                 if compression_factor != 1:
                     hsp = hsp[:int(len(hsp) / compression_factor)]
@@ -476,7 +494,7 @@ class BaseDataAnalysis(object):
                     len_dim_1_sp = len(sp.get_sweep_params_property('values', 0))
                     if 'active' in prep_params.get('preparation_type', 'wait'):
                         reset_reps = prep_params.get('reset_reps', 1)
-                        len_dim_1_sp *= reset_reps+1
+                        len_dim_1_sp *= reset_reps + 1
                     elif "preselection" in prep_params.get('preparation_type',
                                                            'wait'):
                         len_dim_1_sp *= 2
@@ -503,7 +521,7 @@ class BaseDataAnalysis(object):
                         # segment, and reshape the remaining data based on the
                         # hard (1st dimension) and soft (1st dimension)
                         # sweep points
-                        data_no_cp = data[i][:len(data[i])-num_cal_segments]
+                        data_no_cp = data[i][:len(data[i]) - num_cal_segments]
                         measured_data = np.reshape(data_no_cp, (ssl, hsl)).T
                         if num_cal_segments > 0:
                             # add back ssl number of copies of the cal points
@@ -545,7 +563,8 @@ class BaseDataAnalysis(object):
              'exp_metadata':
                  'Experimental Data.Experimental Metadata'})
 
-        self.raw_data_dict = self.get_data_from_timestamp_list()
+        self.raw_data_dict = self.get_data_from_timestamp_list(
+            self.params_dict, self.numeric_params)
         if len(self.timestamps) == 1:
             # the if statement below is needed because if exp_metadata is not
             # found in the hdf file, then it is set to
@@ -580,7 +599,6 @@ class BaseDataAnalysis(object):
                         rd_dict,
                         self.get_param_value('compression_factor', 1, i)))
             self.raw_data_dict = tuple(temp_dict_list)
-
 
     def process_data(self):
         """
@@ -825,7 +843,7 @@ class BaseDataAnalysis(object):
             key: key of the data to save. All processed data is saved by 
                  default.
         """
-        #default: get all keys from proc_data_dict
+        # default: get all keys from proc_data_dict
         if key is None:
             try:
                 key = list(self.proc_data_dict.keys())
@@ -838,7 +856,7 @@ class BaseDataAnalysis(object):
             return
 
         # Check weather there is any data to save
-        if hasattr(self, 'proc_data_dict') and self.proc_data_dict is not None\
+        if hasattr(self, 'proc_data_dict') and self.proc_data_dict is not None \
                 and key in self.proc_data_dict:
             fn = self.options_dict.get('analysis_result_file', False)
             if fn == False:
@@ -990,7 +1008,7 @@ class BaseDataAnalysis(object):
                     else:
                         plotfn(pdict=pdict,
                                axs=self.axs[pdict['fig_id']].flatten()[
-                               pdict['ax_id']])
+                                   pdict['ax_id']])
                         self.axs[pdict['fig_id']].flatten()[
                             pdict['ax_id']].figure.subplots_adjust(
                             hspace=0.35)
@@ -1158,7 +1176,7 @@ class BaseDataAnalysis(object):
         if plot_barwidthx is None:
             plot_barwidthx = plot_xvals[1] - plot_xvals[0]
         if not hasattr(plot_barwidthx, '__iter__'):
-            plot_barwidthx = np.ones_like(zpos)*plot_barwidthx
+            plot_barwidthx = np.ones_like(zpos) * plot_barwidthx
         if plot_barwidthy is None:
             plot_barwidthy = plot_yvals[1] - plot_yvals[0]
         if not hasattr(plot_barwidthy, '__iter__'):
@@ -1186,7 +1204,7 @@ class BaseDataAnalysis(object):
                     plot_color = np.repeat(plot_color, n).reshape(-1, n).T
 
         zsort = plot_barkws.pop('zsort', 'max')
-        p_out = pfunc(xpos - plot_barwidthx/2, ypos - plot_barwidthy/2, zpos,
+        p_out = pfunc(xpos - plot_barwidthx / 2, ypos - plot_barwidthy / 2, zpos,
                       plot_barwidthx, plot_barwidthy, plot_barheight,
                       color=plot_color,
                       zsort=zsort, **plot_barkws)
@@ -1686,7 +1704,7 @@ class BaseDataAnalysis(object):
                 plot_cbarwidth = str_to_float(plot_cbarwidth)
                 plot_cbarpad = str_to_float(plot_cbarpad)
                 axs.cax, _ = mpl.colorbar.make_axes(
-                    axs, shrink=1-plot_cbarwidth-plot_cbarpad, pad=plot_cbarpad,
+                    axs, shrink=1 - plot_cbarwidth - plot_cbarpad, pad=plot_cbarpad,
                     orientation=orientation)
                 cmap = pdict.get('colormap')
         else:
@@ -1702,7 +1720,6 @@ class BaseDataAnalysis(object):
             axs.cbar.set_ticklabels(plot_ctick_labels)
         if not plot_nolabel and plot_clabel is not None:
             axs.cbar.set_label(plot_clabel)
-
 
         if self.tight_fig:
             axs.figure.tight_layout()
@@ -1862,9 +1879,9 @@ class BaseDataAnalysis(object):
         axes_labelcolor = kwargs.get('axes_labelcolor', 'k')
 
         fig_size_dim = 10
-        golden_ratio = (1+np.sqrt(5))/2
+        golden_ratio = (1 + np.sqrt(5)) / 2
         fig_size = kwargs.get('fig_size',
-                              (fig_size_dim, fig_size_dim/golden_ratio))
+                              (fig_size_dim, fig_size_dim / golden_ratio))
         dpi = kwargs.get('dpi', 300)
 
         params = {'figure.figsize': fig_size,
@@ -1897,18 +1914,17 @@ class BaseDataAnalysis(object):
 
     def plot_vlines_auto(self, pdict, axs):
         xs = pdict.get('xdata')
-        for i,x in enumerate(xs):
+        for i, x in enumerate(xs):
             d = {}
             for k in pdict:
                 lk = k[:-1]
-                #if lk in signature(axs.axvline).parameters:
+                # if lk in signature(axs.axvline).parameters:
                 if k not in ['xdata', 'plotfn', 'ax_id', 'do_legend']:
                     try:
                         d[lk] = pdict[k][i]
                     except:
                         pass
             axs.axvline(x=x, **d)
-
 
 
 def plot_scatter_errorbar(self, ax_id, xdata, ydata, xerr=None, yerr=None, pdict=None):
@@ -1987,6 +2003,6 @@ def _merge_dict_rec(dict_a: dict, dict_b: dict):
 
 def str_to_float(s):
     if s[-1] == '%':
-        return float(s.strip('%'))/100
+        return float(s.strip('%')) / 100
     else:
         return float(s)

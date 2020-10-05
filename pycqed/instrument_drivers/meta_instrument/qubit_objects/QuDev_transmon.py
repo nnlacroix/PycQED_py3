@@ -361,6 +361,9 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter(op_name, ps_name + '_pulse_length',
                                  'pulse_length',
                                  initial_value=100e-9, vals=vals.Numbers(0))
+        self.add_pulse_parameter(op_name, ps_name + '_truncation_length',
+                                 'truncation_length',
+                                 initial_value=None)
         self.add_pulse_parameter(op_name, ps_name + '_buffer_length_start',
                                  'buffer_length_start', initial_value=20e-9,
                                  vals=vals.Numbers(0))

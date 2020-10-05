@@ -578,7 +578,7 @@ def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
                          acq_length=4096/1.8e9, exp_metadata=None,
                          analyze=True, analysis_kwargs=None,
                          acq_weights_basis=None, orthonormalize=False,
-                         update=True, measure=True):
+                         update=True):
     """
     Measures time traces for specified states and
     Args:
@@ -612,78 +612,71 @@ def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
     """
     # check whether timetraces can be compute simultaneously
     qubits = dev.get_qubits(qubits)
+    uhf_names = np.array([qubit.instr_uhf.get_instr().name for qubit in qubits])
+    unique, counts = np.unique(uhf_names, return_counts=True)
+    for u, c in zip(unique, counts):
+        if c != 1:
+            raise ValueError(f"{np.array(qubits)[uhf_names == u]}"
+                             f" share the same UHF ({u}) and therefore"
+                             f" their timetraces cannot be computed "
+                             f"simultaneously.")
+
+    # combine operations and preparation dictionaries
+    operation_dict = dev.get_operation_dict(qubits=qubits)
     qb_names = dev.get_qubits(qubits, "str")
+    prep_params = dev.get_prep_params(qubits)
+    MC = qubits[0].instr_mc.get_instr()
 
-    if measure:
-        uhf_names = np.array([qubit.instr_uhf.get_instr().name for qubit in qubits])
-        unique, counts = np.unique(uhf_names, return_counts=True)
-        for u, c in zip(unique, counts):
-            if c != 1:
-                raise ValueError(f"{np.array(qubits)[uhf_names == u]}"
-                                 f" share the same UHF ({u}) and therefore"
-                                 f" their timetraces cannot be computed "
-                                 f"simultaneously.")
+    if exp_metadata is None:
+        exp_metadata = dict()
+    temp_val = [(qb.acq_length, acq_length) for qb in qubits]
+    with temporary_value(*temp_val):
+        [qb.prepare(drive='timedomain') for qb in qubits]
+        npoints = qubits[0].inp_avg_det.nr_samples # same for all qubits
+        sweep_points = np.linspace(0, npoints / 1.8e9, npoints,
+                                            endpoint=False)
+        channel_map = {qb.name: [vn + ' ' + qb.instr_uhf()
+                        for vn in qb.inp_avg_det.value_names]
+                        for qb in qubits}
+        exp_metadata.update(
+            {'sweep_name': 'time',
+             'sweep_unit': ['s'],
+             'sweep_points': sweep_points,
+             'acq_length': acq_length,
+             'channel_map': channel_map,
+             'orthonormalize': orthonormalize,
+             "acq_weights_basis": acq_weights_basis})
 
-        # combine operations and preparation dictionaries
-        operation_dict = dev.get_operation_dict(qubits=qubits)
-        prep_params = dev.get_prep_params(qubits)
-        MC = qubits[0].instr_mc.get_instr()
-
-        if exp_metadata is None:
-            exp_metadata = dict()
-        temp_val = [(qb.acq_length, acq_length) for qb in qubits]
-        with temporary_value(*temp_val):
-            [qb.prepare(drive='timedomain') for qb in qubits]
-            npoints = qubits[0].inp_avg_det.nr_samples # same for all qubits
-            sweep_points = np.linspace(0, npoints / 1.8e9, npoints,
-                                                endpoint=False)
-            channel_map = {qb.name: [vn + ' ' + qb.instr_uhf()
-                            for vn in qb.inp_avg_det.value_names]
-                            for qb in qubits}
-            exp_metadata.update(
-                {'sweep_name': 'time',
-                 'sweep_unit': ['s'],
-                 'sweep_points': sweep_points,
-                 'acq_length': acq_length,
-                 'channel_map': channel_map,
-                 'orthonormalize': orthonormalize,
-                 "acq_weights_basis": acq_weights_basis})
-
-            for state in states:
-                # create sequence
-                name = f'timetrace_{state}{get_multi_qubit_msmt_suffix(qubits)}'
-                if isinstance(state, str) and len(state) == 1:
-                    # same state for all qubits, e.g. "e"
-                    cp = CalibrationPoints.multi_qubit(qb_names, state,
-                                                       n_per_state=1)
-                else:
-                    # ('g','e','f') as qb1=g, qb2=e, qb3=f
-                    if len(qb_names) != len(state):
-                        raise ValueError(f"{len(qb_names)} qubits were given "
-                                         f"but custom states were "
-                                         f"specified for {len(state)} qubits.")
-                    cp = CalibrationPoints(qb_names, state)
-                exp_metadata.update({'cal_points': repr(cp)})
-                seq = sequence.Sequence("timetrace",
-                                        cp.create_segments(operation_dict,
-                                                           **prep_params))
-                # set sweep function and run measurement
-                MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq,
-                                                               upload=upload))
-                MC.set_sweep_points(sweep_points)
-                df = get_multiplexed_readout_detector_functions(
-                    qubits, nr_samples=npoints)["inp_avg_det"]
-                MC.set_detector_function(df)
-                MC.run(name=name, exp_metadata=exp_metadata)
+        for state in states:
+            # create sequence
+            name = f'timetrace_{state}{get_multi_qubit_msmt_suffix(qubits)}'
+            if isinstance(state, str) and len(state) == 1:
+                # same state for all qubits, e.g. "e"
+                cp = CalibrationPoints.multi_qubit(qb_names, state,
+                                                   n_per_state=1)
+            else:
+                # ('g','e','f') as qb1=g, qb2=e, qb3=f
+                if len(qb_names) != len(state):
+                    raise ValueError(f"{len(qb_names)} qubits were given "
+                                     f"but custom states were "
+                                     f"specified for {len(state)} qubits.")
+                cp = CalibrationPoints(qb_names, state)
+            exp_metadata.update({'cal_points': repr(cp)})
+            seq = sequence.Sequence("timetrace",
+                                    cp.create_segments(operation_dict,
+                                                       **prep_params))
+            # set sweep function and run measurement
+            MC.set_sweep_function(awg_swf.SegmentHardSweep(sequence=seq,
+                                                           upload=upload))
+            MC.set_sweep_points(sweep_points)
+            df = get_multiplexed_readout_detector_functions(
+                qubits, nr_samples=npoints)["inp_avg_det"]
+            MC.set_detector_function(df)
+            MC.run(name=name, exp_metadata=exp_metadata)
 
     if analyze:
-        # tps = a_tools.latest_data(n_matches=len(states),
-        #                           return_timestamp=True)[0]
-        #
-        tps = [a_tools.latest_data(
-            contains=f'timetrace_{s}{get_multi_qubit_msmt_suffix(qubits)}',
-            n_matches=1, return_timestamp=True)[0][0] for s in states]
-        print(tps)
+        tps = a_tools.latest_data(n_matches=len(states),
+                                  return_timestamp=True)[0]
         if analysis_kwargs is None:
             analysis_kwargs = {}
         if 't_start' not in analysis_kwargs:
@@ -1281,10 +1274,10 @@ def measure_two_qubit_randomized_benchmarking(
             qb1n=qb1n, qb2n=qb2n, operation_dict=operation_dict,
             cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
             max_clifford_idx=24 ** 2 if character_rb else 11520,
-            cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}', net_clifford=net_clifford,
+            cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}',
+            net_clifford=net_clifford, interleaved_gate=interleaved_gate,
             clifford_decomposition_name=clifford_decomposition_name,
-            interleaved_gate=interleaved_gate, upload=False,
-            cal_points=cp, prep_params=prep_params,
+            upload=False, cal_points=cp, prep_params=prep_params,
             cl_sequence=cl_seq, sampling_seeds=sampling_seeds)
 
     hard_sweep_func = awg_swf.SegmentHardSweep(
@@ -2567,7 +2560,7 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
                     classified=False, n_cal_points_per_state=1,
                     num_cz_gates=1, cal_states=('g', 'e', 'f'),
                     prep_params=None, exp_metadata=None, analyze=True,
-                    return_seq=False, channels_to_upload=None, **kw):
+                    return_seq=False, channels_to_upload=None):
 
     if isinstance(qbc, str):
         qbc = dev.get_qb(qbc)
@@ -2589,8 +2582,6 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
         log.warning('There is more than one soft sweep parameter.')
     if label is None:
         label = 'Chevron_{}{}'.format(qbc.name, qbt.name)
-    if exp_metadata is None:
-        exp_metadata = {}
     MC = dev.find_instrument('MC')
     for qb in [qbc, qbt]:
         qb.prepare(drive='timedomain')
@@ -2613,12 +2604,6 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
             cz_pulse_name=cz_pulse_name,
             num_cz_gates=num_cz_gates,
             cal_points=cp, upload=False, prep_params=prep_params)
-    # compress 2D sweep
-    if kw.get('compression_seg_lim', None) is not None:
-        sequences, hard_sweep_points, soft_sweep_points, cf = \
-            sequences[0].compress_2D_sweep(sequences,
-                                           kw.get("compression_seg_lim"))
-        exp_metadata.update({'compression_factor': cf})
 
     if return_seq:
         return sequences
@@ -2640,21 +2625,16 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
         list(soft_sweep_params)[0], list(soft_sweep_params.values())[0]['unit'],
         channels_to_upload=channels_to_upload))
     MC.set_sweep_points_2D(soft_sweep_points)
-    det_func = qbr.int_avg_classif_det if classified else qbr.int_avg_det
-    MC.set_detector_function(det_func)
-    sweep_points = SweepPoints(from_dict_list=[hard_sweep_params,
-                                               soft_sweep_params])
-    exp_metadata.update({
-        'preparation_params': prep_params,
-        'cal_points': repr(cp),
-        'rotate': len(cal_states) != 0,
-        'data_to_fit': {qbr.name: 'pe'},
-        'sweep_points': sweep_points,
-        'meas_obj_sweep_points_map':
-            sweep_points.get_meas_obj_sweep_points_map([qbr.name]),
-        'meas_obj_value_names_map':
-            get_meas_obj_value_names_map([qbr], det_func)
-    })
+    MC.set_detector_function(qbr.int_avg_classif_det if classified
+                             else qbr.int_avg_det)
+    if exp_metadata is None:
+        exp_metadata = {}
+    exp_metadata.update({'preparation_params': prep_params,
+                         'cal_points': repr(cp),
+                         'rotate': len(cal_states) != 0,
+                         'data_to_fit': {qbr.name: 'pe'},
+                         'hard_sweep_params': hard_sweep_params,
+                         'soft_sweep_params': soft_sweep_params})
     MC.run_2D(name=label, exp_metadata=exp_metadata)
 
     if analyze:
@@ -3997,18 +3977,13 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
+    delegate_plotting = kw.pop('delegate_plotting', False) # used in analysis
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
         exp_metadata = {}
-    # determine data type
-    if "log" in det_type or not \
-            kw.get("det_get_values_kws", {}).get('averaged', True):
-        data_type = "singleshot"
-    else:
-        data_type = "averaged"
     exp_metadata.update({'qb_names': qubit_names,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
@@ -4020,9 +3995,6 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
-                         'data_type': data_type,  # singleshot or averaged
-
-                         'classified_ro': 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})
@@ -4032,7 +4004,7 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
     if analyze:
         rabi_ana = tda.RabiAnalysis(
             qb_names=qubit_names, options_dict=dict(
-                delegate_plotting=kw.pop('delegate_plotting', False),
+                delegate_plotting=delegate_plotting,
                 channel_map=get_meas_obj_value_names_map(qubits, det_func)))
         if update:
             for qb in qubits:
@@ -4121,18 +4093,14 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
+    fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
+    delegate_plotting = kw.pop('delegate_plotting', False)   # used in analysi
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
         exp_metadata = {}
-    # determine data type
-    if "log" in det_type or not \
-            kw.get("det_get_values_kws", {}).get('averaged', True):
-        data_type = "singleshot"
-    else:
-        data_type = "averaged"
     exp_metadata.update({'qb_names': qubit_names,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
@@ -4145,9 +4113,6 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
-                         'data_type': data_type,  # singleshot or averaged
-
-                         'classified_ro': 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})
@@ -4157,8 +4122,8 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
     if analyze:
         ramsey_ana = tda.RamseyAnalysis(
             qb_names=qubit_names, options_dict=dict(
-                fit_gaussian_decay=kw.pop('fit_gaussian_decay', True),
-                delegate_plotting=kw.pop('delegate_plotting', False)))
+                fit_gaussian_decay=fit_gaussian_decay,
+                delegate_plotting=delegate_plotting))
         if update:
             for qb in qubits:
                 new_qubit_freq = ramsey_ana.proc_data_dict[
@@ -4250,18 +4215,13 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
+    delegate_plotting = kw.pop('delegate_plotting', False) # used in analysis
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
         exp_metadata = {}
-    # determine data type
-    if "log" in det_type or not \
-            kw.get("det_get_values_kws", {}).get('averaged', True):
-        data_type = "singleshot"
-    else:
-        data_type = "averaged"
     exp_metadata.update({'qb_names': qubit_names,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
@@ -4273,9 +4233,6 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
-                         'data_type': data_type,  # singleshot or averaged
-
-                         'classified_ro': 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})
@@ -4283,9 +4240,10 @@ def measure_n_qubit_qscale(dev, qubits, sweep_points=None, qscales=None,
 
     # Analyze this measurement
     if analyze:
-        qscale_ana = tda.QScaleAnalysis(
-            qb_names=qubit_names, options_dict=dict(
-                delegate_plotting=kw.pop('delegate_plotting', False)))
+        qscale_ana = tda.QScaleAnalysis(qb_names=qubit_names,
+                                        options_dict=dict(
+                                            delegate_plotting=delegate_plotting
+                                        ))
         if update:
             for qb in qubits:
                 qscale = qscale_ana.proc_data_dict['analysis_params_dict'][
@@ -4369,18 +4327,13 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
+    delegate_plotting = kw.pop('delegate_plotting', False) # used in analysis
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
         exp_metadata = {}
-    # determine data type
-    if "log" in det_type or not \
-            kw.get("det_get_values_kws", {}).get('averaged', True):
-        data_type = "singleshot"
-    else:
-        data_type = "averaged"
     exp_metadata.update({'qb_names': qubit_names,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
@@ -4392,8 +4345,6 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
-                         'data_type': data_type,  # singleshot or averaged
-                         'classified_ro': 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})
@@ -4401,9 +4352,9 @@ def measure_n_qubit_t1(dev, qubits, sweep_points=None, delays=None,
 
     # Analyze this measurement
     if analyze:
-        t1_ana = tda.T1Analysis(
-            qb_names=qubit_names, options_dict=dict(
-                delegate_plotting=kw.pop('delegate_plotting', False)))
+        t1_ana = tda.T1Analysis(qb_names=qubit_names,
+                                options_dict=dict(
+                                    delegate_plotting=delegate_plotting))
         if update:
             for qb in qubits:
                 T1 = t1_ana.proc_data_dict['analysis_params_dict'][
@@ -4489,18 +4440,15 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
         unit=list(sweep_points[0].values())[0][1]))
     MC.set_sweep_points(sp)
 
+    fit_gaussian_decay = kw.pop('fit_gaussian_decay', True)  # used in analysis
+    delegate_plotting = kw.pop('delegate_plotting', False) # used in analysis
+
     det_func = get_multiplexed_readout_detector_functions(
         qubits, **kw)[det_type]
     MC.set_detector_function(det_func)
 
     if exp_metadata is None:
         exp_metadata = {}
-    # determine data type
-    if "log" in det_type or not \
-            kw.get("det_get_values_kws", {}).get('averaged', True):
-        data_type = "singleshot"
-    else:
-        data_type = "averaged"
     exp_metadata.update({'qb_names': qubit_names,
                          'preparation_params': prep_params,
                          'cal_points': repr(cp),
@@ -4513,9 +4461,6 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
                              get_meas_obj_value_names_map(qubits, det_func),
                          'rotate': len(cp.states) != 0 and
                                    'classif' not in det_type,
-                         'data_type': data_type,  # singleshot or averaged
-
-                         'classified_ro': 'classif' in det_type,
                          'last_ge_pulses': [last_ge_pulse],
                          'data_to_fit': {qbn: 'pf' if for_ef else 'pe' for qbn
                                          in qubit_names}})
@@ -4526,10 +4471,8 @@ def measure_n_qubit_echo(dev, qubits, sweep_points=None, delays=None,
         echo_ana = tda.EchoAnalysis(
             qb_names=qubit_names,
             options_dict={'artificial_detuning': artificial_detuning,
-                          'fit_gaussian_decay': kw.pop('fit_gaussian_decay',
-                                                       True),
-                          'delegate_plotting': kw.pop('delegate_plotting',
-                                                      False)})
+                          'fit_gaussian_decay': fit_gaussian_decay,
+                          'delegate_plotting': delegate_plotting})
         if update:
             for qb in qubits:
                 T2_echo = echo_ana.proc_data_dict[

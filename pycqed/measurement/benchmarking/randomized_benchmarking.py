@@ -7,7 +7,7 @@ from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.measurement.randomized_benchmarking import \
     randomized_benchmarking as rb
 import pycqed.measurement.randomized_benchmarking.two_qubit_clifford_group as tqc
-from pycqed.analysis_v3 import pipeline_analysis as pla
+from pycqed.analysis_v3 import *
 import logging
 log = logging.getLogger(__name__)
 
@@ -15,16 +15,16 @@ log = logging.getLogger(__name__)
 class RandomizedBenchmarking(MultiTaskingExperiment):
 
     kw_for_sweep_points = {
-        'nr_seeds': dict(param_name='seeds', unit='',
-                         label='Seeds', dimension=1,
-                         values_func=lambda ns: np.random.randint(0, 1e8, ns)),
         'cliffords': dict(param_name='cliffords', unit='',
                           label='Nr. Cliffords',
                           dimension=0),
+        'nr_seeds': dict(param_name='seeds', unit='',
+                         label='Seeds', dimension=1,
+                         values_func=lambda ns: np.random.randint(0, 1e8, ns)),
     }
 
     def __init__(self, task_list=None, sweep_points=None, qubits=None,
-                 nr_seeds=None, cliffords=None,
+                 nr_seeds=None, cliffords=None, sweep_type=None,
                  interleaved_gate=None, gate_decomposition='HZ', **kw):
         """
         Class to run and analyze the randomized benchmarking experiment on
@@ -64,14 +64,22 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
          lengths for different qubits
         """
         try:
+            self.sweep_type = sweep_type
+            if self.sweep_type is None:
+                self.sweep_type = {'cliffords': 0, 'seeds': 1}
+            self.kw_for_sweep_points['nr_seeds']['dimension'] = \
+                self.sweep_type['seeds']
+            self.kw_for_sweep_points['cliffords']['dimension'] = \
+                self.sweep_type['cliffords']
+
             self.interleaved_gate = interleaved_gate
             if self.interleaved_gate is not None:
                 self.kw_for_sweep_points['nr_seeds'] = [
                     dict(param_name='seeds', unit='',
-                         label='Seeds', dimension=0,
+                         label='Seeds', dimension=self.sweep_type['seeds'],
                          values_func=lambda ns: np.random.randint(0, 1e8, ns)),
                     dict(param_name='seeds_irb', unit='',
-                         label='Seeds', dimension=0,
+                         label='Seeds', dimension=self.sweep_type['seeds'],
                          values_func=lambda ns: np.random.randint(0, 1e8, ns))]
             kw['cal_states'] = kw.get('cal_states', '')
 
@@ -90,8 +98,10 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
             # Can only do this if they have identical cliffords array
             if self.identical_pulses:
                 unique_clf_sets = np.unique([
-                    self.sweep_points.get_sweep_params_property('values', 1, k)
-                    for k in self.sweep_points.get_sweep_dimension(1) if
+                    self.sweep_points.get_sweep_params_property(
+                        'values', self.sweep_type['cliffords'], k)
+                    for k in self.sweep_points.get_sweep_dimension(
+                        self.sweep_type['cliffords']) if
                     k.endswith('cliffords')], axis=0)
                 if unique_clf_sets.shape[0] > 1:
                     raise ValueError('Cannot apply identical pulses. '
@@ -119,7 +129,7 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
             self.exp_metadata['gate_decomposition'] = self.gate_decomposition
             self.exp_metadata['identical_pulses'] = self.identical_pulses
 
-            self.add_processing_pipeline()
+            self.add_processing_pipeline(**kw)
             self.autorun(**kw)
 
         except Exception as x:
@@ -129,8 +139,24 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
     def rb_block(self, sp1d_idx, sp2d_idx, **kw):
         pass
 
-    def add_processing_pipeline(self):
-        pass
+    def add_processing_pipeline(self, **kw):
+        """
+        Creates and adds the analysis processing pipeline to exp_metadata.
+        """
+        if 'dim_hilbert' not in kw:
+            raise ValueError('Please specify the dimension of the Hilbert '
+                             'space "dim_hilbert" for this measurement.')
+        if 'log' in self.df_name:
+            pp = rb_ana.pipeline_ssro_measurement(
+                self.meas_obj_names, self.exp_metadata[
+                    'meas_obj_sweep_points_map'], self.sweep_points,
+                n_shots=max(qb.acq_shots() for qb in self.meas_objs),
+                cal_points=self.cal_points, sweep_type=self.sweep_type,
+                interleaved_irb=self.interleaved_gate is not None, **kw)
+            self.exp_metadata.update({'processing_pipeline': pp})
+        else:
+            log.debug(f'There is no support for automatic pipeline creation '
+                      f'for the detector type {self.df_name}')
 
     def run_analysis(self, **kw):
         """
@@ -160,6 +186,7 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
             if 'prefix' not in task:
                 task['prefix'] = f"{task['qb']}_"
 
+        kw['dim_hilbert'] = 2
         super().__init__(task_list, sweep_points=sweep_points, **kw)
 
     def rb_block(self, sp1d_idx, sp2d_idx, **kw):
@@ -170,9 +197,11 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
         for i, task in enumerate(tl):
             param_name = 'seeds' if interleaved_gate is None else 'seeds_irb'
             seed = task['sweep_points'].get_sweep_params_property(
-                'values', 1, param_name)[sp2d_idx]
+                'values', self.sweep_type['seeds'], param_name)[
+                sp1d_idx if self.sweep_type['seeds'] == 0 else sp2d_idx]
             clifford = task['sweep_points'].get_sweep_params_property(
-                'values', 0, 'cliffords')[sp1d_idx]
+                'values', self.sweep_type['cliffords'], 'cliffords')[
+                sp1d_idx if self.sweep_type['cliffords'] == 0 else sp2d_idx]
             cl_seq = rb.randomized_benchmarking_sequence(
                 clifford, seed=seed, interleaved_gate=interleaved_gate)
             pulse_op_codes_list += [rb.decompose_clifford_seq(
@@ -183,38 +212,8 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
                                  else i]])
             for i, task in enumerate(self.preprocessed_task_list)]
 
-        return self.simultaneous_blocks(f'sim_rb_{clifford}{sp1d_idx}',
+        return self.simultaneous_blocks(f'sim_rb_{sp1d_idx}{sp1d_idx}',
                                         rb_block_list, block_align='end')
-
-    def add_processing_pipeline(self):
-        """
-        Creates and adds the analysis processing pipeline to exp_metadata.
-        """
-        pp = ProcessingPipeline()
-        for task in self.preprocessed_task_list:
-            cliffords = task['sweep_points'].get_sweep_params_property(
-                'values', 1)
-            seeds = task['sweep_points'].get_sweep_params_property(
-                'values', 0)
-            if len(self.cal_points.states) != 0:
-                pp.add_node('rotate_iq', keys_in='raw',
-                            meas_obj_names=task['qb'],
-                            num_keys_out=1)
-            pp.add_node('average_data',
-                        keys_in='raw' if not self.classified else
-                        'previous rotate_iq',
-                        shape=(len(cliffords), len(seeds)),
-                        meas_obj_names=task['qb'])
-            pp.add_node('get_std_deviation',
-                        keys_in='raw' if not self.classified else
-                        'previous rotate_iq',
-                        shape=(len(cliffords), len(seeds)),
-                        meas_obj_names=task['qb'])
-            pp.add_node('rb_analysis', meas_obj_names=task['qb'],
-                        keys_out=None, d=2,
-                        keys_in=f'previous average_data',
-                        keys_in_std=f'previous get_std_deviation')
-        self.exp_metadata.update({'processing_pipeline': pp})
 
 
 class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
@@ -241,6 +240,8 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
         kw['for_ef'] = kw.get('for_ef', True)
         self.experiment_name = 'TwoQubitRB' if \
             kw.get('interleaved_gate', None) is None else 'TwoQubitIRB'
+
+        kw['dim_hilbert'] = 4
         super().__init__(task_list, sweep_points=sweep_points, **kw)
 
     def guess_label(self, **kw):
@@ -264,9 +265,11 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
         for i, task in enumerate(self.preprocessed_task_list):
             param_name = 'seeds' if interleaved_gate is None else 'seeds_irb'
             seed = task['sweep_points'].get_sweep_params_property(
-                'values', 0, param_name)[sp1d_idx]
+                'values', self.sweep_type['seeds'], param_name)[
+                sp1d_idx if self.sweep_type['seeds'] == 0 else sp2d_idx]
             clifford = task['sweep_points'].get_sweep_params_property(
-                'values', 1, 'cliffords')[sp2d_idx]
+                'values', self.sweep_type['cliffords'], 'cliffords')[
+                sp1d_idx if self.sweep_type['cliffords'] == 0 else sp2d_idx]
 
             cl_seq = rb.randomized_benchmarking_sequence_new(
                 clifford, number_of_qubits=2, seed=seed,
@@ -306,34 +309,3 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
 
         return self.simultaneous_blocks(
             f'sim_rb_{sp2d_idx}_{sp1d_idx}', rb_block_list, block_align='end')
-
-    def add_processing_pipeline(self):
-        """
-        Creates and adds the analysis processing pipeline to exp_metadata.
-        """
-        pp = ProcessingPipeline()
-        for task in self.preprocessed_task_list:
-            cliffords = task['sweep_points'].get_sweep_params_property(
-                'values', 1)
-            seeds = task['sweep_points'].get_sweep_params_property(
-                'values', 0)
-            if len(self.cal_points.states) != 0:
-                pp.add_node('rotate_iq', keys_in='raw',
-                            meas_obj_names=[task['qb_1'], task['qb_2']],
-                            num_keys_out=1)
-            pp.add_node('average_data',
-                        keys_in='raw' if not self.classified else
-                        'previous rotate_iq',
-                        shape=(len(cliffords), len(seeds)),
-                        meas_obj_names=[task['qb_1'], task['qb_2']],)
-            pp.add_node('get_std_deviation',
-                        keys_in='raw' if not self.classified else
-                        'previous rotate_iq',
-                        shape=(len(cliffords), len(seeds)),
-                        meas_obj_names=[task['qb_1'], task['qb_2']],)
-            pp.add_node('rb_analysis',
-                        meas_obj_names=[task['qb_1'], task['qb_2']],
-                        keys_out=None, d=4,
-                        keys_in=f'previous average_data',
-                        keys_in_std=f'previous get_std_deviation')
-        self.exp_metadata.update({'processing_pipeline': pp})
