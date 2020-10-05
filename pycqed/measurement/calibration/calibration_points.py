@@ -221,8 +221,8 @@ class CalibrationPoints:
 
     def extend_sweep_points(self, sweep_points, qb_name):
         """
-        Extends the sweep point array for plotting calibration points after
-        data for a particular qubit
+        Extends the sweep_points array for plotting calibration points after
+        data for a particular qubit.
         Args:
             sweep_points (array): physical sweep_points
             qb_name (str): qubit name
@@ -230,7 +230,18 @@ class CalibrationPoints:
             sweep_points + calib_fake_sweep points
         """
         n_cal_pts = len(self.get_states(qb_name)[qb_name])
+        return self.extend_sweep_points_by_n_cal_pts(n_cal_pts, sweep_points)
 
+    @staticmethod
+    def extend_sweep_points_by_n_cal_pts(n_cal_pts, sweep_points):
+        """
+        Extends the sweep_points array by n_cal_pts for the calibration points.
+        Args:
+            n_cal_pts (int): number of calibration points
+            sweep_points (array): physical sweep_points
+        Returns:
+            sweep_points + calib_fake_sweep points
+        """
         if len(sweep_points) == 0:
             log.warning("No sweep points, returning a range.")
             return np.arange(n_cal_pts)
