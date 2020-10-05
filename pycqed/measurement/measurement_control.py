@@ -1646,6 +1646,8 @@ class MeasurementControl(Instrument):
             total_nr_pts = len(self.get_sweep_points())
             percdone = self.get_percdone()
             elapsed_time = time.time() - self.begintime
+            # The trailing spaces are to overwrite some characters in case the
+            # previous progress message was longer.
             progress_message = "\r {percdone}% completed \telapsed time: "\
                 "{t_elapsed}s \ttime left: {t_left}s     ".format(
                     percdone=int(percdone),
