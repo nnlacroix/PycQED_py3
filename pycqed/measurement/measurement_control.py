@@ -214,6 +214,7 @@ class MeasurementControl(Instrument):
                 self.exp_metadata = deepcopy(exp_metadata)
                 self.save_exp_metadata(exp_metadata, self.data_object)
             else:
+                # delete metadata from previous measurement
                 self.exp_metadata = {}
             try:
                 self.check_keyboard_interrupt()
@@ -300,6 +301,9 @@ class MeasurementControl(Instrument):
         self.update_plotmon(force_update=True)
         if self.mode == '2D' and self.detector_function.detector_control != \
                 'hard':
+            # If self.detector_function.detector_control == 'hard' in 2D mode,
+            # the function update_plotmon_2D_hard is called inside
+            # measure_hard, and we should not call update_plotmon_2D.
             self.update_plotmon_2D(force_update=True)
         elif self.mode == 'adaptive':
             self.update_plotmon_adaptive(force_update=True)
@@ -639,6 +643,7 @@ class MeasurementControl(Instrument):
         object.
         '''
 
+        # extract sweep_points and related info from exp_metadata
         movnm = self.exp_metadata.get('meas_obj_value_names_map', None)
         mospm = self.exp_metadata.get('meas_obj_sweep_points_map', None)
         sp = self.exp_metadata.get('sweep_points', None)
@@ -647,57 +652,97 @@ class MeasurementControl(Instrument):
                 sp = sp_mod.SweepPoints.cast_init(sp)
             except Exception:
                 sp = None
+        # create a reverse lookup dictionary (value names measure object map)
         vnmom = None
         if movnm is not None:
             vnmom = {vn: mo for mo, vns in movnm.items() for vn in vns}
 
+        # The following values are available even if there are no
+        # sweep_points in exp_metadata.
+        # labels and units for sweep points (x axes of 1D plots, x axes and y
+        # axes of 2D plots)
         slabels = self.sweep_par_names
         sunits = self.sweep_par_units
+        # labels and units for measured values (each one will be used for
+        # the y axis of a 1D plot, and possible as the colorbar of a 2D plot)
         zlabels = self.detector_function.value_names
         zunits = self.detector_function.value_units
 
+        # cf != 1 indicates a compressed 2D sweep
         cf = self.exp_metadata.get("compression_factor", 1)
+        # Dict with infos for live plotting, indexed by value_names. This
+        # allows to format the axes differently for each measured quantity.
         plotmon_axes_info = {}
+        # This loop goes over the measured quantities, i.e., columns of
+        # measured data.
         for j, vn in enumerate(self.detector_function.value_names):
+            # The default if to use information that is always available.
             zlabel = zlabels[j]
             zunit = zunits[j]
             labels = [l for l in slabels]
             units = [u for u in sunits]
             sweep_vals = [[] for l in labels]
 
-            # The plotmon_axes_info created here will be updated
-            # multiple times inside the following try-except block in order to
-            # keep the results of as many steps as possible in case an
-            # execption occurs
+            # The plotmon_axes_info created here will be updated multiple
+            # times whenever additional information has been extracted
+            # inside the following try-except block. It is done like this in
+            # order to keep the results of as many steps as possible in case
+            # an execption occurs.
             plotmon_axes_info[vn] = dict(
+                # labels and units for x axis/es of 1D plot(s)
                 labels=labels,
                 units=units,
+                # label and unit for y axis of 1D plot / colorbar of 2D plot
                 zlabel=zlabel,
                 zunit=zunit,
+                # labels and units for x and y axes of the 2D plot
                 labels_2D=labels,
                 units_2D=units,
+                # Numerical values of the sweep points are used as x and y
+                # coordinates of the points in the 2D plot
                 sweep_vals=sweep_vals,
+                # A loopup table to translate sweep_par values to values of
+                # sweep_points corresponding to the respective measure
+                # object is needed for x axis/es of the 1D plot(s).
+                # If it stays empty, raw values will be used in the plots.
                 lookup=[{}] * len(sweep_vals)
             )
 
             try:
+                # Try to get the sweep_vals, which are used as x and y
+                # coordinates of the points in the 2D plot, and which are
+                # used to construct the lookup table below.
                 if self.mode == '2D':
+                    # For 2D measurements, these values have been created
+                    # before in self.tile_sweep_pts_for_2D
                     sweep_vals[0] = self.sweep_pts_x
                     sweep_vals[1] = self.sweep_pts_y
                 else:
                     sweep_vals[0] = self.get_sweep_points()
+                    # Use an empty list if no sweep_vals are available
                     if sweep_vals[0] is None:
                         sweep_vals[0] = []
+                    # In case of a 1D sweep over 2-dimensional vectors,
+                    # we get a list of the vectors, but the sweep_vals
+                    # should instead contain a list of x values in
+                    # sweep_vals[0] and a list of y values in sweep_vals[1].
                     if np.asarray(sweep_vals[0]).ndim == 2:
                         sweep_vals = [sweep_vals[0][:, i] for i in range(
                             np.asarray(sweep_vals[0]).shape[1])]
 
+                # Correct the sweep_vals if 2D sweep compression was used
                 if cf != 1:
-                    # if 2D sweep compression was used
                     x, y = sweep_vals
-                    n = int(len(y) * cf)
-                    m = int(len(x) / cf)
-                    new_x = x[:m]
+                    n = int(len(y) * cf)  # number of y vals w/o compression
+                    m = int(len(x) / cf)  # number of x vals w/o compression
+                    new_x = x[:m]  # undo tiling of x vals
+                    # Try to reconstruct reasonable y vals w/o compression.
+                    # FIXME: If the compression is done by
+                    #  Sequence.compress_2D_sweep, the points in the y
+                    #  direction are anyways just indices, so that the
+                    #  following code could be simplified. Will we ever use
+                    #  compression in a different context for which the
+                    #  following approach is needed and reasonable?
                     try:
                         # assumes constant spacing between swp for plotting
                         step = np.abs(y[-1] - y[-2])
@@ -709,25 +754,47 @@ class MeasurementControl(Instrument):
                     new_y = list(y[0] + step * np.arange(0, n))
                     sweep_vals = [new_x, new_y]
 
+                # We now try to extract better information about sweep_vals
+                # by accessing the metadata, but we need to keep the sweep_vals
+                # that are known to MC in order to construct the loopup
+                # table later.
                 new_sweep_vals = deepcopy(sweep_vals)
 
+                # Try to find a measured object (mo) to which the measured
+                # value belongs
                 mo = vnmom.get(zlabel, None) if vnmom is not None else None
+                # update the label of the measured value with the mo name
                 if mo is not None:
                     zlabel = f'{mo}: {zlabel}'
                     plotmon_axes_info[vn].update(dict(zlabel=zlabel))
+                # If sweep_points are available for this mo, we use those
+                # to update the labels, units, sweep_vals. (Note that
+                # sweep points can indeed be specific to a particular mo,
+                # e.g., in parallel calibration measurements).
                 if mo is not None and mospm is not None and sp is not None \
                         and mo in mospm:
+                    # lookup dict to get the dimension (dim) to which sweep
+                    # point (sp) belongs
                     dim_sp = {spn: sp.find_parameter(spn) for spn in
                               mospm[mo]}
                     for i in range(len(labels)):
+                        # Get a list of all sp in dim i. If there are
+                        # multiple sp for this mo in this dim, we use the
+                        # first one.
                         spi = [spn for spn, dim in dim_sp.items() if dim == i]
+                        # Only update labels, units, and sweep_vals if an sp
+                        # was found
                         if len(spi):
                             labels[i] = sp.get_sweep_params_property(
                                 'label', i, spi[0])
                             units[i] = sp.get_sweep_params_property(
                                 'unit', i, spi[0])
+                            # preliminary version of sweep_values,
+                            # might still need to be modified below
                             tmp_sweep_vals = sp.get_sweep_params_property(
                                 'values', i, spi[0])
+                            # In the dim 0 (hard sweep direction), we might
+                            # have to deal with calibration points (cp).
                             if i == 0:
                                 # Add sweep points for cal states in the
                                 # hard sweep direction.
@@ -747,8 +814,11 @@ class MeasurementControl(Instrument):
                                     n_cp = len(new_sweep_vals[i]) - len(
                                         tmp_sweep_vals)
                             else:
-                                n_cp = 0
+                                n_cp = 0  # number of cp is zero in other dims
 
+                            # If number of cp is nonzero we need to extend
+                            # the preliminary sweep_vals extracted above.
+                            # Otherwise, we can use them as they are.
                             if n_cp > 0:
                                 cp = cp_mod.CalibrationPoints
                                 new_sweep_vals[i] = \
@@ -757,8 +827,17 @@ class MeasurementControl(Instrument):
                             else:
                                 new_sweep_vals[i] = tmp_sweep_vals
 
+                # We can now already update labels and units with the values
+                # extracted from sweep_points. For the sweep_vals, we still
+                # have to handle some special cases below.
                 plotmon_axes_info[vn].update(dict(labels=labels, units=units))
 
+                # Here, we try to detect cases in which the sweep_points
+                # cannot be used as sweep_vals. In this case, we fall back
+                # to showing only the sweep indices (index of the sweep point).
+                # In these cases, and in cases where sweep indices have
+                # been provided in the first place, the label has to be
+                # changed to 'sweep index' and the unit has to be removed.
                 try:
                     for i in range(len(labels)):  # for each sweep dimension
                         if len(new_sweep_vals[i]) != len(sweep_vals[i]) or \
@@ -781,15 +860,25 @@ class MeasurementControl(Instrument):
                 except:
                     pass
 
+                # Update labels and units (in case we show sweep indices).
                 plotmon_axes_info[vn].update(dict(labels=labels, units=units))
 
-                # create look up table for main plotmon
+                # create lookup table for 1D plots (main plotmon)
                 try:
+                    # the lookup table maps values in sweep_vals (sweep
+                    # values used by MC) to values in new_sweep_vals (based
+                    # on sweep_points and on the above corrections)
                     plotmon_axes_info[vn].update(dict(lookup=[
                         {t: n for t, n in zip(ts, ns)}
                         for ts, ns in zip(sweep_vals, new_sweep_vals)]))
                     # if 2D sweep compression was used
                     if cf != 1:
+                        # In dim 0 (hard sweep), the sweep points known by
+                        # MC are segment indices after compression. Multiple
+                        # of these indices correspond to the same hard sweep
+                        # point before compression. Therefore, the original
+                        # sweep points (written into lookup above) have to
+                        # be tiled.
                         plotmon_axes_info[vn]['lookup'][0] = {
                             k: v for k, v in zip(
                                 self.sweep_pts_x,
@@ -797,6 +886,12 @@ class MeasurementControl(Instrument):
                                     list(plotmon_axes_info[vn]['lookup'][
                                              0].values()),
                                     cf))}
+                        # In dim 1 (soft sweep), update_plotmon will
+                        # reconstruct the sweep indices of the uncompressed
+                        # 2D sweep, so we can simply use the indices as keys
+                        # in the lookup table. The vals in the lookup table
+                        # are the original sweep points (written into lookup
+                        # above).
                         plotmon_axes_info[vn]['lookup'][1] = {
                             i: v for i, v in enumerate(
                                 plotmon_axes_info[vn]['lookup'][1].values())}
@@ -807,13 +902,17 @@ class MeasurementControl(Instrument):
 
                 # create axes info for 2D plot in secondary plotmon
                 if self.mode == '2D':
+                    # copy values that were obtained above for the 1D plots
                     new_sweep_vals_2D = deepcopy(new_sweep_vals)
                     labels_2D = deepcopy(labels)
                     units_2D = deepcopy(units)
 
-                    for i in range(len(labels)):
+                    # If the new_sweep_vals are not equidistant (not
+                    # supported by 2D plotmon), we have to fall back to
+                    # displaying sweep indices in the 2D plot.
+                    for i in range(len(labels)):  # for each sweep dim
+                        # Check if the new_sweep_vals are not equidistant
                         diff = np.diff(new_sweep_vals[i])
-                        # if the sweep_vals are not equidistant
                         if any([np.abs(d - diff[0]) / np.abs(diff[0]) > 1e-5
                                 for d in diff]):
                             # fall back to sweep indices in 2D plot
@@ -822,12 +921,15 @@ class MeasurementControl(Instrument):
                             labels_2D[i] = 'sweep index'
                             units_2D[i] = ''
 
+                    # Update the information for the 2D plot
                     plotmon_axes_info[vn].update(dict(
                         labels_2D=labels_2D,
                         units_2D=units_2D,
                         sweep_vals=new_sweep_vals_2D,
                     ))
             except Exception as e:
+                # Unhandled errors in live plotting are not critical for the
+                # measurement, so we log them as warnings.
                 log.warning(traceback.format_exc())
 
         return plotmon_axes_info
@@ -843,6 +945,8 @@ class MeasurementControl(Instrument):
             j = 0
             persist = self.persist_mode()
             if persist:
+                # If any plot settings have changed, the plots should be
+                # cleared by setting persist to False.
                 try:
                     np.testing.assert_equal(self._persist_plotmon_axes_info,
                                             self._plotmon_axes_info)
@@ -850,6 +954,8 @@ class MeasurementControl(Instrument):
                     persist = False
             for yi, vn in enumerate(self.detector_function.value_names):
                 axes_info = self._plotmon_axes_info[vn]
+                # The measured-value axis is called z axis in the axis info
+                # dict, but is the y axis of a 1D plot
                 ylabel = axes_info['zlabel']
                 yunit = axes_info['zunit']
                 for xi, (xlabel, xunit) in enumerate(zip(axes_info['labels'],
@@ -858,6 +964,9 @@ class MeasurementControl(Instrument):
                         yp = self._persist_dat[
                             :, yi+len(self.sweep_function_names)]
                         xp = self._persist_dat[:, xi]
+                        # Update the sweep point values in the
+                        # persist_data using the lookup table in the axis
+                        # info dict
                         xp = [axes_info['lookup'][xi].get(xk, xk) for
                              xk in xp]
                         if len(xp) < self.plotting_max_pts():
@@ -883,7 +992,7 @@ class MeasurementControl(Instrument):
         # Note: plotting_max_pts takes precendence over force update
         if self.live_plot_enabled() and (self.dset.shape[0] <
                                          self.plotting_max_pts()):
-            i = 0
+            i = 0  # index of the plot
             try:
                 time_since_last_mon_update = time.time() - self._mon_upd_time
             except:
@@ -896,21 +1005,39 @@ class MeasurementControl(Instrument):
                         force_update):
 
                     nr_sweep_funcs = len(self.sweep_function_names)
+                    # for each column of measured data
                     for y_ind, vn in enumerate(
                             self.detector_function.value_names):
+                        # get the axis info for this column
                         axes_info = self._plotmon_axes_info[vn]
+                        # The first nr_sweep_funcs columns are sweep values
+                        # (x axis in 1D plots), the following columns are
+                        # data columns (y axis in 1D plots).
                         y = self.dset[:, nr_sweep_funcs + y_ind]
                         x_vals = [self.dset[:, x_ind] for x_ind in range(
                             nr_sweep_funcs)]
+                        # If 2D sweep compression was used, calculate the soft
+                        # sweep index of the uncompressed 2D sweep. We will
+                        # either find the original soft sweep points in the
+                        # lookup table by using this sweep index, or we will
+                        # directly plot over the sweep index.
                         if cf != 1:
                             x_vals[1] = [int(x * cf
                                              + (i % len(self.sweep_pts_x)) /
                                              (len(self.sweep_pts_x) / cf))
                                          for i, x in enumerate(x_vals[1])]
+                        # For all sweep dimensions
                         for x_ind, x in enumerate(x_vals):
+                            # Update the sweep point values using the lookup
+                            # table in the axis info dict. If a value is not
+                            # found in the lookup table, the raw value is used.
                             x = [axes_info['lookup'][x_ind].get(xk, xk) for
                                  xk in x]
 
+                            # Update the i-th plot with the y-values of the
+                            # currently considered data column and the
+                            # x-values of the currently considered sweep
+                            # dimension.
                             self.curves[i]['config']['x'] = x
                             self.curves[i]['config']['y'] = y
                             i += 1
