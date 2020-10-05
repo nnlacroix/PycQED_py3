@@ -690,7 +690,7 @@ class CPhase(CalibBuilder):
         :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
     ...
     """
-    kw_for_task_keys = ['ref_pi_half']
+    kw_for_task_keys = ['ref_pi_half', 'num_cz_gates']
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
