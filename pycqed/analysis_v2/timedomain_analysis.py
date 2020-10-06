@@ -7089,8 +7089,14 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
         if self.ghost is None:
             self.ghost = {qbn: False for qbn in self.qb_names}
 
-    def prepare_fitting_slice(self, freqs, qbn, slice_idx, mu_guess):
-        data_slice = self.proc_data_dict['proc_data_to_fit'][qbn][:, slice_idx]
+    def prepare_fitting_slice(self, freqs, qbn, mu_guess,
+                              slice_idx=None, data_slice=None):
+        if slice_idx is None:
+            raise ValueError('"since_idx" cannot both be None. It is used '
+                             'for unique names in the fit_dicts.')
+        if data_slice is None:
+            data_slice = self.proc_data_dict['proc_data_to_fit'][qbn][
+                         :, slice_idx]
         GaussianModel = fit_mods.GaussianModel
         ampl_guess = (data_slice.max() - data_slice.min()) / \
                      0.4 * self.sign_of_peaks[qbn] * self.sigma_guess[qbn]
@@ -7122,12 +7128,13 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
         for qbn in self.qb_names:
             param_name = self.mospm[qbn][1]
             data = self.proc_data_dict['proc_data_to_fit'][qbn]
-            freqs = self.proc_data_dict['proc_sweep_points_2D_dict'][qbn][
-                param_name]
             delays = self.proc_data_dict['proc_sweep_points_dict'][qbn][
                 'sweep_points']
+            self.freqs_for_fit[qbn] = len(delays) * ['']
             for i, delay in enumerate(delays):
                 data_slice = data[:, i]
+                freqs = self.proc_data_dict['proc_sweep_points_2D_dict'][qbn][
+                    param_name]
                 if self.rectangles_exclude is not None and \
                         self.rectangles_exclude.get(qbn, None) is not None:
                     for rectangle in self.rectangles_exclude[qbn]:
@@ -7137,10 +7144,11 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                                                freqs < rectangle[3]))
                             freqs = freqs[reduction_arr]
                             data_slice = data_slice[reduction_arr]
-                self.freqs_for_fit[qbn] = freqs
+                self.freqs_for_fit[qbn][i] = freqs
                 mu_guess = freqs[np.argmax(
                     data_slice * self.sign_of_peaks[qbn])]
-                self.prepare_fitting_slice(freqs, qbn, i, mu_guess)
+                self.prepare_fitting_slice(freqs, qbn, mu_guess, i,
+                                           data_slice=data_slice)
 
     def analyze_fit_results(self):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
@@ -7149,9 +7157,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                 'sweep_points']
             fitted_freqs = np.zeros(len(delays))
             fitted_freqs_errs = np.zeros(len(delays))
-
             fit_keys = [k for k in self.fit_dicts if qbn in k]
-            assert len(fit_keys) == len(fitted_freqs)
+            assert len(fitted_freqs) == len(fit_keys)
             deep = False
             for i, fk in enumerate(fit_keys):
                 fit_res = self.fit_dicts[fk]['fit_res']
@@ -7171,7 +7178,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                             if deep:
                                 mu_guess = fitted_freqs[i-1]
                                 self.prepare_fitting_slice(
-                                    self.freqs_for_fit[qbn], qbn, i, mu_guess)
+                                    self.freqs_for_fit[qbn][i], qbn, mu_guess, i)
                                 self.run_fitting(keys_to_fit=[fk])
                                 fitted_freqs[i] = self.fit_dicts[fk][
                                     'fit_res'].best_values['mu']
@@ -7189,7 +7196,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                             if deep:
                                 mu_guess = fitted_freqs[i - 1]
                                 self.prepare_fitting_slice(
-                                    self.freqs_for_fit[qbn], qbn, i, mu_guess)
+                                    self.freqs_for_fit[qbn][i], qbn, mu_guess, i)
                                 self.run_fitting(keys_to_fit=[fk])
                                 fitted_freqs[i] = self.fit_dicts[fk][
                                     'fit_res'].best_values['mu']
