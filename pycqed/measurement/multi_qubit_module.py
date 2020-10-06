@@ -395,7 +395,7 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
                                 shots=5000,
                                 RO_spacing=None, preselection=True,
                                 thresholds=None, thresholded=False,
-                                analyse=True):
+                                analyse=True, upload=True):
     for qb in qubits:
         MC = qb.instr_mc.get_instr()
 
@@ -415,7 +415,8 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
         [operation_dict['RO ' + qb.name] for qb in qubits],
         preselection=preselection,
         parallel_pulses=True,
-        RO_spacing=RO_spacing)
+        RO_spacing=RO_spacing,
+        upload=upload)
 
     m = 2 ** (len(qubits))
     if preselection:
@@ -440,7 +441,7 @@ def measure_multiplexed_readout(dev, qubits, liveplot=False,
     if analyse and thresholds is not None:
         channel_map = {qb.name: qb.int_log_det.value_names[0]+' '+qb.instr_uhf()
                        for qb in qubits}
-        ra.Multiplexed_Readout_Analysis(options_dict=dict(
+        return ra.Multiplexed_Readout_Analysis(options_dict=dict(
             n_readouts=(2 if preselection else 1) * 2 ** len(qubits),
             thresholds=thresholds,
             channel_map=channel_map,
@@ -2424,7 +2425,7 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
                     classified=False, n_cal_points_per_state=1,
                     num_cz_gates=1, cal_states=('g', 'e', 'f'),
                     prep_params=None, exp_metadata=None, analyze=True,
-                    return_seq=False, channels_to_upload=None):
+                    return_seq=False, channels_to_upload=None, **kw):
 
     if isinstance(qbc, str):
         qbc = dev.get_qb(qbc)
@@ -2446,6 +2447,8 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
         log.warning('There is more than one soft sweep parameter.')
     if label is None:
         label = 'Chevron_{}{}'.format(qbc.name, qbt.name)
+    if exp_metadata is None:
+        exp_metadata = {}
     MC = dev.find_instrument('MC')
     for qb in [qbc, qbt]:
         qb.prepare(drive='timedomain')
@@ -2468,6 +2471,12 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
             cz_pulse_name=cz_pulse_name,
             num_cz_gates=num_cz_gates,
             cal_points=cp, upload=False, prep_params=prep_params)
+    # compress 2D sweep
+    if kw.get('compression_seg_lim', None) is not None:
+        sequences, hard_sweep_points, soft_sweep_points, cf = \
+            sequences[0].compress_2D_sweep(sequences,
+                                           kw.get("compression_seg_lim"))
+        exp_metadata.update({'compression_factor': cf})
 
     if return_seq:
         return sequences
@@ -2489,16 +2498,21 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
         list(soft_sweep_params)[0], list(soft_sweep_params.values())[0]['unit'],
         channels_to_upload=channels_to_upload))
     MC.set_sweep_points_2D(soft_sweep_points)
-    MC.set_detector_function(qbr.int_avg_classif_det if classified
-                             else qbr.int_avg_det)
-    if exp_metadata is None:
-        exp_metadata = {}
-    exp_metadata.update({'preparation_params': prep_params,
-                         'cal_points': repr(cp),
-                         'rotate': len(cal_states) != 0,
-                         'data_to_fit': {qbr.name: 'pe'},
-                         'hard_sweep_params': hard_sweep_params,
-                         'soft_sweep_params': soft_sweep_params})
+    det_func = qbr.int_avg_classif_det if classified else qbr.int_avg_det
+    MC.set_detector_function(det_func)
+    sweep_points = SweepPoints(from_dict_list=[hard_sweep_params,
+                                               soft_sweep_params])
+    exp_metadata.update({
+        'preparation_params': prep_params,
+        'cal_points': repr(cp),
+        'rotate': len(cal_states) != 0,
+        'data_to_fit': {qbr.name: 'pe'},
+        'sweep_points': sweep_points,
+        'meas_obj_sweep_points_map':
+            sweep_points.get_meas_obj_sweep_points_map([qbr.name]),
+        'meas_obj_value_names_map':
+            get_meas_obj_value_names_map([qbr], det_func)
+    })
     MC.run_2D(name=label, exp_metadata=exp_metadata)
 
     if analyze:

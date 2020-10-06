@@ -2138,7 +2138,9 @@ def convert_channel_names_to_index(cal_points, nr_segments, value_names,
     Returns:
         cal_points_list in the converted format
     """
-    
+
+    if isinstance(value_names, str):
+        value_names = [value_names]
     cal_points_list = []
     try:
         cp = CalibrationPoints.from_string(cal_points)
