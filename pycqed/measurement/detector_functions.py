@@ -554,23 +554,33 @@ class UHFQC_multi_detector(UHFQC_Base):
             state_prob_mtx_list = None
         d0 = self.detectors[0]
         nr_states = len(d0.state_labels)
-        all_ch_pairs = [d.channel_str_pairs for d in self.detectors]
+        all_ch_pairs = [d.channel_str_mobj for d in self.detectors]
         all_ch_pairs = [e0 for e1 in all_ch_pairs for e0 in e1]
 
         processed_data = data
         if self.detectors[0].get_values_function_kwargs.get(
                 'averaged', True):
+            ro_corrected_seq_cal_mtx = d0.get_values_function_kwargs.get(
+                'ro_corrected_seq_cal_mtx', False)
+            if ro_corrected_seq_cal_mtx:
+                raise NotImplementedError(
+                    'Cannot apply data correction based on calibration '
+                    'state_prob_mtx from measurement sequence when '
+                    'correlated==True because correlations are calculated '
+                    'per shot and then averaged over shots. It does not make '
+                    'sense to correct with the correlated calibration points.')
+
             d0_get_values_function_kwargs = d0.get_values_function_kwargs
-            d0_channel_str_pairs = d0.channel_str_pairs
+            d0_channel_str_mobj = d0.channel_str_mobj
             get_values_function_kwargs = deepcopy(d0_get_values_function_kwargs)
             get_values_function_kwargs.update({
                 'averaged': False,
                 'state_prob_mtx': state_prob_mtx_list,
                 'classifier_params': classifier_params_list})
-            d0.channel_str_pairs = all_ch_pairs
+            d0.channel_str_mobj = all_ch_pairs
             d0.get_values_function_kwargs = get_values_function_kwargs
             processed_data = d0.process_data(data)
-            d0.channel_str_pairs = d0_channel_str_pairs
+            d0.channel_str_mobj = d0_channel_str_mobj
             d0.get_values_function_kwargs = d0_get_values_function_kwargs
 
         # can only correlate corresponding probabilities on all channels;
@@ -1242,22 +1252,24 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
     """
 
     def __init__(self, UHFQC, *args, **kw):
+        self.qutrit = kw.pop('qutrit', True)
         super().__init__(UHFQC, *args, **kw)
 
         self.get_values_function_kwargs = kw.get('get_values_function_kwargs',
                                                  None)
         self.name = '{}_UHFQC_classifier_det'.format(self.result_logging_mode)
-        self.state_labels = ['pg', 'pe', 'pf']
 
-        # Currently doesn't work with single readout channel;
-        # assumes 2 channels per data point
-        channel_strings = [str(ch) for ch in self.channels]
-        self.channel_str_pairs = [''.join(channel_strings[2*j: 2*j+2]) for
-                                  j in range(len(self.channels)//2)]
+        self.state_labels = ['pg', 'pe', 'pf'] if self.qutrit else ['pg', 'pe']
+        self.n_meas_objs = len(self.get_values_function_kwargs.get(
+            'classifier_params', None))
+        k = len(self.channels) // self.n_meas_objs
+        self.channel_str_mobj = [str(ch) for ch in self.channels]
+        self.channel_str_mobj = [''.join(self.channel_str_mobj[k*j: k*j+k])
+                                 for j in range(self.n_meas_objs)]
         self.value_names = ['']*(
-                len(self.state_labels) * len(self.channel_str_pairs))
+                len(self.state_labels) * len(self.channel_str_mobj))
         idx = 0
-        for ch_pair in self.channel_str_pairs:
+        for ch_pair in self.channel_str_mobj:
             for state in self.state_labels:
                 self.value_names[idx] = '{}_{} w{}'.format(UHFQC.name,
                     state, ch_pair)
@@ -1346,11 +1358,7 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
                 raise NotImplementedError(
                     'Data correction based on calibration state_prob_mtx '
                     'from measurement sequence is currently only '
-                    'implemented for averaged data (averaged==True).'
-                    'Also, make sure correlated is not True in this case, '
-                    'because in the UHFQC_multi_detector.get_correlations'
-                    '_classif_det, this function is called again but '
-                    'with averaged=True.')
+                    'implemented for averaged data (averaged==True).')
             processed_data = self.correct_readout_seq_cal_mtx(processed_data,
                                                               nr_states)
 
@@ -1358,13 +1366,15 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
 
     def classify_shots(self, data, classifier_params_list, nr_states):
         classified_data = np.zeros((self.nr_sweep_points*self.nr_shots,
-                                    nr_states*len(self.channel_str_pairs)))
-        for i in range(len(self.channel_str_pairs)):
+                                    nr_states*len(self.channel_str_mobj)))
+        k = len(self.channels) // self.n_meas_objs
+        for i in range(len(self.channel_str_mobj)):
             # classify each shot into (pg, pe, pf)
             # clf_data will have shape
             # (nr_shots * self.nr_sweep_points, nr_states)
+            mobj_data = data[:, k*i: k*i+k]
             clf_data = a_tools.predict_gm_proba_from_clf(
-                data[:, 2*i: 2*i+2], classifier_params_list[i])
+                mobj_data, classifier_params_list[i])
             classified_data[:, nr_states * i: nr_states * i + nr_states] = \
                 clf_data
 
@@ -1372,7 +1382,7 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
 
     def threshold_shots(self, data, nr_states):
         thresholded_data = np.zeros_like(data)
-        for i in range(len(self.channel_str_pairs)):
+        for i in range(len(self.channel_str_mobj)):
             # For each shot, set the largest probability entry to 1, and the
             # other two to 0. I.e. assign to one state.
             # clf_data must be 2 dimensional, rows are shots*sweep_points,
@@ -1406,7 +1416,7 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
                 not isinstance(self.state_prob_mtx_list, list):
             self.state_prob_mtx_list = [self.state_prob_mtx_list]
 
-        for i in range(len(self.channel_str_pairs)):
+        for i in range(len(self.channel_str_mobj)):
             if self.state_prob_mtx_list is not None and \
                     self.state_prob_mtx_list[i] is not None:
                 corr_data = np.linalg.inv(self.state_prob_mtx_list[i]).T @ \
@@ -1424,7 +1434,7 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
         # correct data with the calibration matrix extracted from
         # the data array
         corrected_data = np.zeros_like(data)
-        for i in range(len(self.channel_str_pairs)):
+        for i in range(len(self.channel_str_mobj)):
             # get cal matrix
             calibration_matrix = data[:, nr_states*i: nr_states*(i+1)][
                                  -nr_states:, :]
