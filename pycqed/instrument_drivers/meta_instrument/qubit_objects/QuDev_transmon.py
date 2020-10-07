@@ -3848,7 +3848,8 @@ class QuDev_transmon(Qubit):
                     coeffs = fl_predist.gaussian_filter_kernel(
                         f.get('sigma', 1e-9),
                         f.get('nr_sigma', 40),
-                        f.get('dt', 1 / 2.4e9))
+                        f.get('dt', 1 / pulsar.clock(
+                            channel=self.flux_pulse_channel())))
                 elif f['type'] == 'csv':
                     filename = os.path.join(datadir,
                                             f['filename'].lstrip('\\'))
