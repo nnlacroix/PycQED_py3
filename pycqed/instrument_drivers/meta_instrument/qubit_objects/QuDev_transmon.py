@@ -41,6 +41,16 @@ except ModuleNotFoundError:
     log.warning('"readout_mode_simulations_for_CLEAR_pulse" not imported.')
 
 class QuDev_transmon(Qubit):
+    DEFAULT_FLUX_DISTORTION = dict(
+        IIR_filter_list=[],
+        FIR_filter_list=[],
+        scale_IIR=1,
+        distortion='off',
+        charge_buildup_compensation=True,
+        compensation_pulse_delay=100e-9,
+        compensation_pulse_gaussian_filter_sigma=0,
+    )
+
     def __init__(self, name, **kw):
         super().__init__(name, **kw)
 
@@ -382,17 +392,9 @@ class QuDev_transmon(Qubit):
                            parameter_class=ManualParameter)
 
         # ac flux parameters
-        DEFAULT_FLUX_DISTORTION = dict(
-            IIR_filter_list=[],
-            FIR_filter_list=[],
-            scale_IIR=1,
-            distortion='off',
-            charge_buildup_compensation=True,
-            compensation_pulse_delay=100e-9,
-            compensation_pulse_gaussian_filter_sigma=0,
-        )
         self.add_parameter('flux_distortion', parameter_class=ManualParameter,
-                           initial_value=DEFAULT_FLUX_DISTORTION,
+                           initial_value=deepcopy(
+                               self.DEFAULT_FLUX_DISTORTION),
                            vals=vals.Dict())
 
 
@@ -3835,16 +3837,7 @@ class QuDev_transmon(Qubit):
             pulsar = self.find_instrument('Pulsar')
         if datadir is None:
             datadir = self.find_instrument('MC').datadir()
-        DEFAULT_FLUX_DISTORTION = dict(
-            IIR_filter_list=[],
-            FIR_filter_list=[],
-            scale_IIR=1,
-            distortion='off',
-            charge_buildup_compensation=True,
-            compensation_pulse_delay=100e-9,
-            compensation_pulse_gaussian_filter_sigma=0,
-        )
-        flux_distortion = deepcopy(DEFAULT_FLUX_DISTORTION)
+        flux_distortion = deepcopy(self.DEFAULT_FLUX_DISTORTION)
         flux_distortion.update(self.flux_distortion())
 
         filterCoeffs = {}
