@@ -6999,7 +6999,34 @@ class FluxPulseTimingBetweenQubitsAnalysis(MultiQubit_TimeDomain_Analysis):
 
 
 class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
-
+    """
+    Analysis class for a flux pulse scope measurement.
+    options_dict parameters specific to this class:
+    - freq_ranges_remove/delay_ranges_remove: dict with keys qubit names and
+        values list of length-2 lists/tuples that specify frequency/delays
+        ranges to completely exclude (from both the fit and the plots)
+        Ex: delay_ranges_remove = {'qb1': [ [5e-9, 72e-9] ]}
+            delay_ranges_remove = {'qb1': [ [5e-9, 20e-9], [50e-9, 72e-9] ]}
+            freq_ranges_remove = {'qb1': [ [5.42e9, 5.5e9] ]}
+    - freq_ranges_to_fit/delay_ranges_to_fit: dict with keys qubit names and
+        values list of length-2 lists/tuples that specify frequency/delays
+        ranges that should be fitted (only these will be fitted!).
+        Plots will still show the full data.
+        Ex: delays_ranges_to_fit = {'qb1': [ [5e-9, 72e-9] ]}
+            delays_ranges_to_fit = {'qb1': [ [5e-9, 20e-9], [50e-9, 72e-9] ]}
+            freq_ranges_to_fit = {'qb1': [ [5.42e9, 5.5e9] ]}
+    - rectangles_exclude: dict with keys qubit names and
+        values list of length-4 lists/tuples that specify delays and frequency
+        ranges that should be excluded from  the fit (these will not be
+        fitted!). Plots will still show the full data.
+        Ex: {'qb1': [ [-10e-9, 5e-9, 5.42e9, 5.5e9], [...] ]}
+    - sigma_guess: dict with keys qubit names and values floats specifying the
+        fit guess value for the Gaussian sigma
+    - sign_of_peaks: dict with keys qubit names and values floats specifying the
+        the sign of the peaks used for setting the amplitude guess in the fit
+    - from_lower: unclear; should be cleaned up (TODO, Steph 07.10.2020)
+    - ghost: unclear; should be cleaned up (TODO, Steph 07.10.2020)
+    """
     def __init__(self, *args, **kwargs):
         options_dict = kwargs.pop('options_dict', {})
         options_dict['TwoD'] = True
@@ -7009,11 +7036,10 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):
         super().process_data()
 
-        self.rectangles_exclude = self.get_param_value('rectangles_exclude')
         # dictionaries with keys qubit names and values a list of tuples of
         # 2 numbers specifying ranges to exclude
-        freq_ranges_exclude = self.get_param_value('freq_ranges_exclude')
-        delay_ranges_exclude = self.get_param_value('delay_ranges_exclude')
+        freq_ranges_remove = self.get_param_value('freq_ranges_remove')
+        delay_ranges_remove = self.get_param_value('delay_ranges_remove')
 
         self.proc_data_dict['proc_data_to_fit'] = deepcopy(
             self.proc_data_dict['data_to_fit'])
@@ -7021,15 +7047,15 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             self.proc_data_dict['sweep_points_2D_dict'])
         self.proc_data_dict['proc_sweep_points_dict'] = deepcopy(
             self.proc_data_dict['sweep_points_dict'])
-        if freq_ranges_exclude is not None:
-            for qbn, freq_range_list in freq_ranges_exclude.items():
+        if freq_ranges_remove is not None:
+            for qbn, freq_range_list in freq_ranges_remove.items():
                 if freq_range_list is None:
                     continue
                 param_name = self.mospm[qbn][1]
-                freqs = self.proc_data_dict['proc_sweep_points_2D_dict'][qbn][
-                    param_name]
-                data = self.proc_data_dict['proc_data_to_fit'][qbn]
                 for freq_range in freq_range_list:
+                    freqs = self.proc_data_dict['proc_sweep_points_2D_dict'][
+                        qbn][param_name]
+                    data = self.proc_data_dict['proc_data_to_fit'][qbn]
                     reduction_arr = np.logical_not(
                         np.logical_and(freqs > freq_range[0],
                                        freqs < freq_range[1]))
@@ -7039,15 +7065,15 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     self.proc_data_dict['proc_sweep_points_2D_dict'][qbn][
                         param_name] = freqs_reshaped
 
-        # exclude delays
-        if delay_ranges_exclude is not None:
-            for qbn, delay_range_list in delay_ranges_exclude.items():
+        # remove delays
+        if delay_ranges_remove is not None:
+            for qbn, delay_range_list in delay_ranges_remove.items():
                 if delay_range_list is None:
                     continue
-                delays = self.proc_data_dict['proc_sweep_points_dict'][qbn][
-                    'msmt_sweep_points']
-                data = self.proc_data_dict['proc_data_to_fit'][qbn]
                 for delay_range in delay_range_list:
+                    delays = self.proc_data_dict['proc_sweep_points_dict'][qbn][
+                        'msmt_sweep_points']
+                    data = self.proc_data_dict['proc_data_to_fit'][qbn]
                     reduction_arr = np.logical_not(
                         np.logical_and(delays > delay_range[0],
                                        delays < delay_range[1]))
@@ -7090,7 +7116,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
     def prepare_fitting_slice(self, freqs, qbn, mu_guess,
                               slice_idx=None, data_slice=None):
         if slice_idx is None:
-            raise ValueError('"since_idx" cannot both be None. It is used '
+            raise ValueError('"since_idx" cannot be None. It is used '
                              'for unique names in the fit_dicts.')
         if data_slice is None:
             data_slice = self.proc_data_dict['proc_data_to_fit'][qbn][
@@ -7101,7 +7127,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
         offset_guess = data_slice[0]
         GaussianModel.set_param_hint('sigma',
                                      value=self.sigma_guess[qbn],
-                                     vary=False)
+                                     vary=True)
         GaussianModel.set_param_hint('mu',
                                      value=mu_guess,
                                      vary=True)
@@ -7121,42 +7147,64 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             'guess_pars': guess_pars}
 
     def prepare_fitting(self):
+        self.rectangles_exclude = self.get_param_value('rectangles_exclude')
+        self.delay_ranges_to_fit = self.get_param_value(
+            'delay_ranges_to_fit', default_value={})
+        self.freq_ranges_to_fit = self.get_param_value(
+            'freq_ranges_to_fit', default_value={})
+
         self.fit_dicts = OrderedDict()
+        self.delays_for_fit = OrderedDict()
         self.freqs_for_fit = OrderedDict()
         for qbn in self.qb_names:
             param_name = self.mospm[qbn][1]
             data = self.proc_data_dict['proc_data_to_fit'][qbn]
             delays = self.proc_data_dict['proc_sweep_points_dict'][qbn][
                 'sweep_points']
+            self.delays_for_fit[qbn] = np.array([])
             self.freqs_for_fit[qbn] = len(delays) * ['']
+            dr_fit = self.delay_ranges_to_fit.get(qbn, [(min(delays),
+                                                        max(delays))])
+            fr_fit = self.freq_ranges_to_fit.get(qbn, [])
             for i, delay in enumerate(delays):
-                data_slice = data[:, i]
-                freqs = self.proc_data_dict['proc_sweep_points_2D_dict'][qbn][
-                    param_name]
-                if self.rectangles_exclude is not None and \
-                        self.rectangles_exclude.get(qbn, None) is not None:
-                    for rectangle in self.rectangles_exclude[qbn]:
-                        if rectangle[0] < delay < rectangle[1]:
-                            reduction_arr = np.logical_not(
-                                np.logical_and(freqs > rectangle[2],
-                                               freqs < rectangle[3]))
-                            freqs = freqs[reduction_arr]
-                            data_slice = data_slice[reduction_arr]
-                self.freqs_for_fit[qbn][i] = freqs
-                mu_guess = freqs[np.argmax(
-                    data_slice * self.sign_of_peaks[qbn])]
-                self.prepare_fitting_slice(freqs, qbn, mu_guess, i,
-                                           data_slice=data_slice)
+                if any([t[0] <= delay <= t[1] for t in dr_fit]):
+                    data_slice = data[:, i]
+                    freqs = self.proc_data_dict['proc_sweep_points_2D_dict'][
+                        qbn][param_name]
+                    if len(fr_fit):
+                        mask = [np.logical_and(t[0] < freqs, freqs < t[1])
+                                for t in fr_fit]
+                        if len(mask) > 1:
+                            mask = np.logical_or(*mask)
+                        freqs = freqs[mask]
+                        data_slice = data_slice[mask]
+
+                    if self.rectangles_exclude is not None and \
+                            self.rectangles_exclude.get(qbn, None) is not None:
+                        for rectangle in self.rectangles_exclude[qbn]:
+                            if rectangle[0] < delay < rectangle[1]:
+                                reduction_arr = np.logical_not(
+                                    np.logical_and(freqs > rectangle[2],
+                                                   freqs < rectangle[3]))
+                                freqs = freqs[reduction_arr]
+                                data_slice = data_slice[reduction_arr]
+
+                    self.freqs_for_fit[qbn][i] = freqs
+                    self.delays_for_fit[qbn] = np.append(
+                        self.delays_for_fit[qbn], delay)
+                    mu_guess = freqs[np.argmax(
+                        data_slice * self.sign_of_peaks[qbn])]
+                    self.prepare_fitting_slice(freqs, qbn, mu_guess, i,
+                                               data_slice=data_slice)
 
     def analyze_fit_results(self):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
         for qbn in self.qb_names:
             delays = self.proc_data_dict['proc_sweep_points_dict'][qbn][
                 'sweep_points']
-            fitted_freqs = np.zeros(len(delays))
-            fitted_freqs_errs = np.zeros(len(delays))
             fit_keys = [k for k in self.fit_dicts if qbn in k]
-            assert len(fitted_freqs) == len(fit_keys)
+            fitted_freqs = np.zeros(len(fit_keys))
+            fitted_freqs_errs = np.zeros(len(fit_keys))
             deep = False
             for i, fk in enumerate(fit_keys):
                 fit_res = self.fit_dicts[fk]['fit_res']
@@ -7241,10 +7289,11 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                 self.plot_dicts[f'{base_plot_name}_fit'] = {
                     'fig_id': base_plot_name,
                     'plotfn': self.plot_line,
-                    'xvals': self.proc_data_dict['proc_sweep_points_dict'][qbn][
-                        'sweep_points'],
+                    'xvals': self.delays_for_fit[qbn],
                     'yvals': self.proc_data_dict['analysis_params_dict'][
                                                  f'fitted_freqs_{qbn}']['val'],
+                    'yerr': self.proc_data_dict['analysis_params_dict'][
+                        f'fitted_freqs_{qbn}']['stderr'],
                     'color': 'r',
                     'linestyle': '-',
-                    'marker': None,}
+                    'marker': 'o'}
