@@ -4169,6 +4169,30 @@ class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
 
 
 class FluxlineCrosstalkAnalysis(MultiQubit_TimeDomain_Analysis):
+    """Analysis for the measure_fluxline_crosstalk measurement.
+
+    The measurement involves Ramsey measurements on a set of crosstalk qubits,
+    which have been brought to a flux-sensitive position with a flux pulse.
+    The first dimension is the ramsey-phase of these qubits.
+
+    In the second sweep dimension, the amplitude of a flux pulse on another
+    (target) qubit is swept.
+
+    The analysis extracts the change in Ramsey phase offset, which gets
+    converted to a frequency offset due to the flux pulse on the target qubit.
+    The frequency offset is then converted to a flux offset, which is a measure
+    of the crosstalk between the target fluxline and the crosstalk qubit.
+
+    The measurement is hard-compressed, meaning the raw data is inherently 1d,
+    with one set of calibration points as the final segments. The experiment
+    part of the measured values are reshaped to the correct 2d shape for
+    the analysis. The sweep points passed into the analysis should still reflect
+    the 2d nature of the measurement, meaning the ramsey phase values should be
+    passed in the first dimension and the target fluxpulse amplitudes in the
+    second sweep dimension.
+    """
+
+
     def __init__(self, qb_names, *args, **kwargs):
         params_dict = {f'{qbn}.amp_to_freq_model':
                        f'Instrument settings.{qbn}.fit_ge_freq_from_flux_pulse_amp'
@@ -4184,9 +4208,7 @@ class FluxlineCrosstalkAnalysis(MultiQubit_TimeDomain_Analysis):
                              'class instance.')
 
         pdd = self.proc_data_dict
-        # get the ramsey phases as the values of the first sweep parameter
-        # in the 1st sweep dimension.
-        # !!! This assumes all qubits have the same ramsey phases !!!
+
         pdd['ramsey_phases'] = self.sp.get_sweep_params_property('values', 0)
         pdd['target_amps'] = self.sp.get_sweep_params_property('values', 1)
         pdd['target_fluxpulse_length'] = \
