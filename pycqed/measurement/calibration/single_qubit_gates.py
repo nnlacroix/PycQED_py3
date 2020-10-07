@@ -869,7 +869,6 @@ class SingleQubitGateCalib(CalibBuilder):
                                 self.preprocessed_task_list]
             states = ''.join(set([s for s in ''.join(transition_names)]))
             self.experiment_name += f'_{states}'
-            self.create_cal_points(cal_states=states, **kw)
 
             if 'qscale' in self.experiment_name.lower():
                 if len(self.sweep_points[1]) == 0:
