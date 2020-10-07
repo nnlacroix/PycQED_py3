@@ -3850,7 +3850,7 @@ class QuDev_transmon(Qubit):
         filterCoeffs = {}
         for fclass in 'IIR', 'FIR':
             filterCoeffs[fclass] = []
-            for f in self.flux_distortion()[f'{fclass}_filter_list']:
+            for f in flux_distortion[f'{fclass}_filter_list']:
                 if f['type'] == 'Gaussian':
                     coeffs = fl_predist.gaussian_filter_kernel(
                         f.get('sigma', 1e-9),
