@@ -837,7 +837,10 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
 
 
 class SingleQubitGateCalib(CalibBuilder):
-
+    """
+    Base class for single qubit gate tuneup measurement classes (Rabi, Ramsey,
+    T1, QScale).
+    """
     kw_for_task_keys = ['transition_name']
 
     def __init__(self, task_list=None, sweep_points=None, qubits=None,
@@ -889,7 +892,7 @@ class SingleQubitGateCalib(CalibBuilder):
                     block_align='end', **kw)
             if not TwoD_msmt:
                 self.mc_points = [self.mc_points[0]]
-            self.autorun(**kw)
+            self.autorun(store_preprocessed_task_list=True, **kw)
 
         except Exception as x:
             self.exception = x
@@ -910,6 +913,9 @@ class SingleQubitGateCalib(CalibBuilder):
                            :self.transition_order.index(transition_name)]
         return self.block_from_ops(
             'prepend', [f'X180{trn} {qb}' for trn in prepended_pulses])
+
+    def run_analysis(self, **kw):
+        pass
 
 
 class Rabi(SingleQubitGateCalib):
@@ -952,6 +958,27 @@ class Rabi(SingleQubitGateCalib):
                         pulse_dict[param_name] = ParametricValue(param_name)
 
         return self.sequential_blocks(f'rabi_{qb}', [prepend_block, rabi_block])
+
+    def run_analysis(self, analysis_kwargs=None, **kw):
+        """
+        Runs analysis and stores analysis instances in self.analysis.
+        :param analysis_kwargs: (dict) keyword arguments for analysis
+        :param kw: currently ignored
+        """
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+
+        self.analysis = tda.RabiAnalysis(
+            qb_names=self.meas_obj_names, t_start=self.timestamp,
+            **analysis_kwargs)
+
+        if self.update:
+            for task in self.preprocessed_task_list:
+                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']]
+                amp180 = self.analysis.proc_data_dict['analysis_params_dict'][
+                    qubit.name]['piPulse']
+                qubit.set(f'{task["transition_name_input"]}_amp180', amp180)
+                qubit.set(f'{task["transition_name_input"]}_amp90_scale', 0.5)
 
 
 class Ramsey(SingleQubitGateCalib):
@@ -1014,6 +1041,40 @@ class Ramsey(SingleQubitGateCalib):
         return self.sequential_blocks(f'ramsey_{qb}',
                                       [prepend_block, ramsey_block])
 
+    def run_analysis(self, analysis_kwargs=None, **kw):
+        """
+        Runs analysis and stores analysis instances in self.analysis.
+        :param analysis_kwargs: (dict) keyword arguments for analysis
+        :param kw: currently ignored
+        """
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+
+        options_dict = analysis_kwargs.pop('options_dict', {})
+        options_dict.update(dict(
+            fit_gaussian_decay=kw.pop('fit_gaussian_decay', True)))
+        self.analysis = tda.EchoAnalysis if self.echo else tda.RamseyAnalysis
+        self.analysis = self.analysis(
+            qb_names=self.meas_obj_names, t_start=self.timestamp,
+            options_dict=options_dict, **analysis_kwargs)
+
+        if self.update:
+            for task in self.preprocessed_task_list:
+                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']]
+                if self.echo:
+                    T2_echo = self.analysis.proc_data_dict[
+                        'analysis_params_dict'][qubit.name]['T2_echo']
+                    qubit.set(f'T2{task["transition_name"]}', T2_echo)
+                else:
+                    qb_freq = self.analysis.proc_data_dict[
+                        'analysis_params_dict'][qubit.name][
+                        'exp_decay_' + qubit.name]['new_qb_freq']
+                    T2_star = self.analysis.proc_data_dict[
+                        'analysis_params_dict'][qubit.name][
+                        'exp_decay_' + qubit.name]['T2_star']
+                    qubit.set(f'{task["transition_name_input"]}_freq', qb_freq)
+                    qubit.set(f'T2_star{task["transition_name"]}', T2_star)
+
 
 class T1(SingleQubitGateCalib):
 
@@ -1044,6 +1105,26 @@ class T1(SingleQubitGateCalib):
                                    'pulse_delay': ParametricValue('pulse_delay')
                                    })
         return self.sequential_blocks(f'rabi_{qb}', [prepend_block, t1_block])
+
+    def run_analysis(self, analysis_kwargs=None, **kw):
+        """
+        Runs analysis and stores analysis instances in self.analysis.
+        :param analysis_kwargs: (dict) keyword arguments for analysis
+        :param kw: currently ignored
+        """
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+
+        self.analysis = tda.T1Analysis(
+            qb_names=self.meas_obj_names, t_start=self.timestamp,
+            **analysis_kwargs)
+
+        if self.update:
+            for task in self.preprocessed_task_list:
+                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']]
+                T1 = self.analysis.proc_data_dict['analysis_params_dict'][
+                    qubit.name]['T1']
+                qubit.set(f'T1{task["transition_name"]}', T1)
 
 
 class QScale(SingleQubitGateCalib):
@@ -1087,3 +1168,23 @@ class QScale(SingleQubitGateCalib):
 
         return self.simultaneous_blocks(f'qscale_{sp2d_idx}_{sp1d_idx}',
                                         parallel_block_list, block_align='end')
+
+    def run_analysis(self, analysis_kwargs=None, **kw):
+        """
+        Runs analysis and stores analysis instances in self.analysis.
+        :param analysis_kwargs: (dict) keyword arguments for analysis
+        :param kw: currently ignored
+        """
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+
+        self.analysis = tda.QScaleAnalysis(
+            qb_names=self.meas_obj_names, t_start=self.timestamp,
+            **analysis_kwargs)
+
+        if self.update:
+            for task in self.preprocessed_task_list:
+                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']]
+                qscale = self.analysis.proc_data_dict['analysis_params_dict'][
+                    qubit.name]['qscale']
+                qubit.set(f'{task["transition_name_input"]}_motzoi', qscale)
