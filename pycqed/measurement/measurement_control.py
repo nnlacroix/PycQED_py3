@@ -212,7 +212,9 @@ class MeasurementControl(Instrument):
                       datadir=self.datadir()) as self.data_object:
             if exp_metadata is not None:
                 self.exp_metadata = deepcopy(exp_metadata)
-                self.save_exp_metadata(exp_metadata, self.data_object)
+                metadata = self.detector_function.generate_metadata()
+                metadata.update(exp_metadata)
+                self.save_exp_metadata(metadata, self.data_object)
             else:
                 # delete metadata from previous measurement
                 self.exp_metadata = {}
