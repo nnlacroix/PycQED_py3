@@ -365,6 +365,28 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
                                  averaging_axis=1,
                                  keys_in='previous threshold_data',
                                  meas_obj_names=meas_obj_names)
+    if plot_all_shots:
+        for mobjn in meas_obj_names:
+            cliffords = sweep_points.get_sweep_params_property(
+                'values', sweep_type['cliffords'], mospm[mobjn])[0]
+            keys_in = 'previous combine_datafiles_split_by_seeds' \
+                if nreps > 1 else 'raw'
+            if slow_cliffords:
+                xvals = np.repeat(cliffords, 2*n_segments*n_shots if
+                interleaved_irb else n_segments*n_shots)
+            else:
+                xvals = np.repeat(cliffords, n_sequences*n_shots)
+            processing_pipeline.add_node('prepare_1d_raw_data_plot_dicts',
+                                         sp_name=mospm[mobjn][-1],
+                                         xvals=xvals,
+                                         do_plotting=False,
+                                         figname_suffix=f'shots',
+                                         title_suffix=' - All shots',
+                                         plot_params={'linestyle': 'none'},
+                                         keys_in=keys_in,
+                                         keys_out=None,
+                                         meas_obj_names=mobjn)
+
     if dim_hilbert == 4:
         processing_pipeline.add_node('correlate_qubits',
                                      keys_in='previous threshold_data',
@@ -382,6 +404,7 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
 
         meas_obj_names = deepcopy(meas_obj_names)
         meas_obj_names += ['correlation_object']
+        mospm['correlation_object'] = list(mospm.values())[0]
     labels = ['rb', 'irb'] if interleaved_irb else ['rb']
     for label in labels:
         pp = pp_mod.ProcessingPipeline(global_keys_out_container=label)
@@ -411,28 +434,10 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
                     do_plotting=False,
                     keys_out=None,
                     meas_obj_names=meas_obj_names)
+
         for mobjn in meas_obj_names:
             cliffords = sweep_points.get_sweep_params_property(
                 'values', sweep_type['cliffords'], mospm[mobjn])[0]
-            if plot_all_shots and mobjn != 'correlation_object':
-                keys_in = 'previous combine_datafiles_split_by_seeds' \
-                    if nreps > 1 else 'raw'
-                if slow_cliffords:
-                    xvals = np.repeat(cliffords, n_segments_all*n_shots if
-                        interleaved_irb else n_segments*n_shots)
-                else:
-                    xvals = np.repeat(cliffords, n_sequences*n_shots)
-                pp.add_node('prepare_1d_raw_data_plot_dicts',
-                            sp_name=mospm[mobjn][-1],
-                            xvals=xvals,
-                            do_plotting=False,
-                            figname_suffix=f'shots_{label}',
-                            title_suffix=' - All shots',
-                            plot_params={'linestyle': 'none'},
-                            keys_in=keys_in,
-                            keys_out=None,
-                            meas_obj_names=mobjn)
-
             xvals = np.repeat(cliffords, n_segments) if slow_cliffords else \
                 np.tile(cliffords, n_sequences)
             pp.add_node('prepare_1d_raw_data_plot_dicts',
