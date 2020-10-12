@@ -30,6 +30,9 @@ from pycqed.measurement import mc_parameter_wrapper
 import pycqed.analysis_v2.spectroscopy_analysis as sa
 from pycqed.utilities import math
 import pycqed.analysis.fitting_models as fit_mods
+import os
+import \
+    pycqed.measurement.waveform_control.fluxpulse_predistortion as fl_predist
 
 try:
     import pycqed.simulations.readout_mode_simulations_for_CLEAR_pulse \
@@ -38,6 +41,16 @@ except ModuleNotFoundError:
     log.warning('"readout_mode_simulations_for_CLEAR_pulse" not imported.')
 
 class QuDev_transmon(Qubit):
+    DEFAULT_FLUX_DISTORTION = dict(
+        IIR_filter_list=[],
+        FIR_filter_list=[],
+        scale_IIR=1,
+        distortion='off',
+        charge_buildup_compensation=True,
+        compensation_pulse_delay=100e-9,
+        compensation_pulse_gaussian_filter_sigma=0,
+    )
+
     def __init__(self, name, **kw):
         super().__init__(name, **kw)
 
@@ -377,6 +390,13 @@ class QuDev_transmon(Qubit):
         self.add_parameter('dc_flux_parameter', initial_value=None,
                            label='QCoDeS parameter to sweep the dc flux',
                            parameter_class=ManualParameter)
+
+        # ac flux parameters
+        self.add_parameter('flux_distortion', parameter_class=ManualParameter,
+                           initial_value=deepcopy(
+                               self.DEFAULT_FLUX_DISTORTION),
+                           vals=vals.Dict())
+
 
         # Pulse preparation parameters
         DEFAULT_PREP_PARAMS = dict(preparation_type='wait',
@@ -3801,6 +3821,68 @@ class QuDev_transmon(Qubit):
         MC.run_2D('Flux_scope_nzcz_alpha' + self.msmt_suffix)
 
         ma.MeasurementAnalysis(TwoD=True)
+
+    def set_distortion_in_pulsar(self, pulsar=None, datadir=None):
+        """
+        Configures the fluxline distortion in a pulsar object according to the
+        settings in the parameter flux_distortion of the qubit object.
+
+        :param pulse: the pulsar object. If None, self.find_instrument is
+            used to find an obejct called 'Pulsar'.
+        :param datadir: path to the pydata directory. If None,
+            self.find_instrument is used to find an obejct called 'MC' and
+            the datadir of MC is used.
+        """
+        if pulsar is None:
+            pulsar = self.find_instrument('Pulsar')
+        if datadir is None:
+            datadir = self.find_instrument('MC').datadir()
+        flux_distortion = deepcopy(self.DEFAULT_FLUX_DISTORTION)
+        flux_distortion.update(self.flux_distortion())
+
+        filterCoeffs = {}
+        for fclass in 'IIR', 'FIR':
+            filterCoeffs[fclass] = []
+            for f in flux_distortion[f'{fclass}_filter_list']:
+                if f['type'] == 'Gaussian':
+                    coeffs = fl_predist.gaussian_filter_kernel(
+                        f.get('sigma', 1e-9),
+                        f.get('nr_sigma', 40),
+                        f.get('dt', 1 / pulsar.clock(
+                            channel=self.flux_pulse_channel())))
+                elif f['type'] == 'csv':
+                    filename = os.path.join(datadir,
+                                            f['filename'].lstrip('\\'))
+                    if fclass == 'IIR':
+                        coeffs = fl_predist.import_iir(filename)
+                    else:
+                        coeffs = np.loadtxt(filename)
+                else:
+                    raise KeyError(f"Unknown filter type {f['type']}")
+                filterCoeffs[fclass].append(coeffs)
+
+        if len(filterCoeffs['FIR']) > 0:
+            filterCoeffs['FIR'] = [
+                fl_predist.combine_FIR_filters(filterCoeffs['FIR'])]
+        else:
+            del filterCoeffs['FIR']
+        if len(filterCoeffs['IIR']) > 1:
+            log.warning('For now, only one IIR filter can be used. Taking '
+                        'the last one.')
+        if len(filterCoeffs['IIR']) > 0:
+            filterCoeffs['IIR'] = filterCoeffs['IIR'][-1]
+            fl_predist.scale_and_negate_IIR(filterCoeffs['IIR'],
+                                 flux_distortion['scale_IIR'])
+        else:
+            del filterCoeffs['IIR']
+
+        pulsar.set(f'{self.flux_pulse_channel()}_distortion_dict',
+                   filterCoeffs)
+        for param in ['distortion', 'charge_buildup_compensation',
+                      'compensation_pulse_delay',
+                      'compensation_pulse_gaussian_filter_sigma']:
+            pulsar.set(f'{self.flux_pulse_channel()}_{param}',
+                       flux_distortion[param])
 
 
 def add_CZ_pulse(qbc, qbt):
