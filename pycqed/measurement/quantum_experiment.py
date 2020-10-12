@@ -33,7 +33,8 @@ class QuantumExperiment(CircuitBuilder):
                  sequence_kwargs=None, df_kwargs=None, df_name=None,
                  mc_points=None, sweep_functions=(awg_swf.SegmentHardSweep,
                                                       awg_swf.SegmentSoftSweep),
-                 compression_seg_lim=None, force_2D_sweep=True, **kw):
+                 compression_seg_lim=None, force_2D_sweep=True, callback=None,
+                 callback_condition=lambda : True, **kw):
         """
         Initializes a QuantumExperiment.
 
@@ -95,6 +96,11 @@ class QuantumExperiment(CircuitBuilder):
                 In that case, even if there is only one sequence, a second
                 sweep_function dimension is added. The idea is to use this more
                 and more to generalize data format passed to the analysis.
+            callback (func): optional function to call after run_analysis() in
+                autorun(). All arguments passed to autorun will be passed down to
+                the callback.
+            callback_condition (func): function returning a bool to decide whether or
+                not the callback function should be executed. Defaults to always True.
             **kw:
                 further keyword arguments are passed to the CircuitBuilder __init__
         """
@@ -124,6 +130,8 @@ class QuantumExperiment(CircuitBuilder):
         self.temporary_values = list(temporary_values)
         self.analyze = analyze
         self.drive = drive
+        self.callback = callback
+        self.callback_condition = callback_condition
 
         self.sequences = list(sequences)
         self.sequence_function = sequence_function
@@ -308,6 +316,9 @@ class QuantumExperiment(CircuitBuilder):
             self.run_measurement(**kw)
         if self.analyze:
             self.run_analysis(**kw)
+        if self.callback is not None and self.callback_condition():
+            self.callback(**kw)
+        return self
 
     def serialize(self, omitted_attrs=('MC', 'device', 'qubits')):
         """
