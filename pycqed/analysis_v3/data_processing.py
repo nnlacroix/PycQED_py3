@@ -170,6 +170,42 @@ def classify_gm(data_dict, keys_out, keys_in, **params):
     # return data_dict
 
 
+def do_standard_preselection(data_dict, keys_in, keys_out=None, **params):
+    """
+    Does standard preselection on the data shot arrays in data_dict specified
+    by keys_in. Only the data shots for which the preselection readout
+    preceding it found the qubit in the 0 state.
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+    :param keys_out: list of key names or dictionary keys paths in
+                    data_dict for the processed data to be saved into
+    :param params: keyword arguments.:
+        num_bins (int): number of averaging bins for each entry in keys_in
+
+    Assumptions:
+        - the data pointed to by keys_in is assumed to be 1D array of
+            thresholded shots
+        - every other shot starting at 0 is assumed to be a preselection readout
+
+    WARNING! The processed data array will not necessarily have the same length
+    as the input array.
+    """
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+    for k, keyi in enumerate(data_to_proc_dict):
+        th_shots = data_to_proc_dict[keyi]
+        if not all(e in [0, 1, 2] for e in np.unique(th_shots)):
+            raise TypeError(f'The data corresponding to {keyi} does not '
+                            f'contain thresholded shots.')
+        presel_shots = th_shots[::2]
+        data_shots = th_shots[1::2]
+        hlp_mod.add_param(
+            keys_out[k], data_shots[
+                np.logical_not(np.ma.make_mask(presel_shots))] ,
+            data_dict, update_value=params.get('update_value', False), **params)
+
+
 def do_preselection(data_dict, classified_data, keys_out, **params):
     """
     Keeps only the data for which the preselection readout data in
