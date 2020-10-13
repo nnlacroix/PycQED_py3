@@ -1,5 +1,4 @@
 import numpy as np
-from copy import copy
 from copy import deepcopy
 import traceback
 from pycqed.measurement.calibration.two_qubit_gates import CalibBuilder
@@ -9,7 +8,6 @@ from pycqed.measurement.waveform_control import segment as seg_mod
 from pycqed.measurement.sweep_points import SweepPoints
 from pycqed.analysis import fitting_models as fit_mods
 import pycqed.analysis_v2.timedomain_analysis as tda
-from pycqed.analysis import measurement_analysis as ma
 from pycqed.utilities.general import temporary_value
 import logging
 
@@ -387,17 +385,28 @@ class Cryoscope(CalibBuilder):
         a task (= keyword arguments for the block creation function)
     :param sweep_points: SweepPoints class instance. Can also be specified
         separately in each task.
-    :param estimation_window: (float or None) delta_tau in the cryoscope paper.
-        The extra bit of flux pulse length before truncation in the second
-        Ramsey measurement. If None, only one set of Ramsey measurements are
-        done. Can also be specified separately in each task.
-    :param separation_buffer: (float) extra delay between the (truncated)
-        flux pulse and the last pi-half pulse. Can also be specified separately
-        in each task.
-    :param awg_sample_length: (float) the length of one sample on the flux
-        AWG used by the measurement objects in this experiment. Can also be
-        specified separately in each task.
     :param kw: keyword arguments: passed down to parent class(es)
+        kw specific to this class :
+        (all can also be specified separately in each task)
+             - estimation_window: (float or None) delta_tau in the cryoscope
+                paper. The extra bit of flux pulse length before truncation in
+                the second Ramsey measurement. If None, only one set of Ramsey
+                measurements are done.
+             - separation_buffer: (float) extra delay between the (truncated)
+                flux pulse and the last pi-half pulse.
+             - awg_sample_length: (float) the length of one sample on the flux
+                AWG used by the measurement objects in this experiment.
+             - truncation_decay_length: (float) the duration of the truncation
+                exponential decay, defined as the time between start of
+                truncation and the time point after this where pulse amplitude
+                is 1e-10 V. If not specified, truncation will be sharp.
+             - truncation_decay_const: (float) the decay constant of the
+                transition exponential decay. Only relevant if
+                truncation_decay_length is specified. IF NOT SPECIFIED,
+                THIS PARAMETER IS CALCULATED in
+                calculate_truncation_decay_const() (see docstring there).
+                THIS PARAMETER SHOULD NOT BE SPECIFIED UNLESS YOU KNOW WHAT
+                YOU'RE DOING.
 
     The sweep_points for this measurements must contain
         - 0'th sweep dimension: the Ramsey phases, and, optionally, the
@@ -442,7 +451,7 @@ class Cryoscope(CalibBuilder):
             prepend_pulse_dicts entry in each task.
             See CalibBuilder.prepend_pulses_block() for details.
 
-    Example of a task with all possible entry recognized by this class.
+    Example of a task with all possible entries recognized by this class.
     See above for details on how they are used and which ones have priority
         {'qb': qb,
         'flux_op_code': flux_op_code,
@@ -458,12 +467,17 @@ class Cryoscope(CalibBuilder):
         'awg_sample_length': hdawg_sample_length,
         'estimation_window': hdawg_sample_length,
         'separation_buffer': 50e-9,
+        'truncation_decay_length': 20e-9,
+        'truncation_decay_const': 1e-9, (ideally not needed, will be calculated)
         'reparking_flux_pulse': {'op_code': f'FP {qb.name}',
                                  'amplitude': -0.5}}
     """
 
-    def __init__(self, task_list, sweep_points=None, estimation_window=None,
-                 separation_buffer=50e-9, awg_sample_length=None, **kw):
+    kw_for_task_keys = ['awg_sample_length', 'estimation_window',
+                        'separation_buffer', 'truncation_decay_length',
+                        'truncation_decay_const']
+
+    def __init__(self, task_list, sweep_points=None, **kw):
         try:
             self.experiment_name = 'Cryoscope'
             for task in task_list:
@@ -471,12 +485,11 @@ class Cryoscope(CalibBuilder):
                     task['qb'] = task['qb'].name
                 if 'prefix' not in task:
                     task['prefix'] = f"{task['qb']}_"
-                if 'awg_sample_length' not in task:
-                    task['awg_sample_length'] = awg_sample_length
-                if 'estimation_window' not in task:
-                    task['estimation_window'] = estimation_window
-                if 'separation_buffer' not in task:
-                    task['separation_buffer'] = separation_buffer
+                for param in self.kw_for_task_keys:
+                    if param not in task:
+                        task[param] = 50e-9 if param == 'separation_buffer' \
+                            else kw.get(param, None)
+
             # check estimation window
             none_est_windows = [task['estimation_window'] is None for task in
                                 task_list]
@@ -491,6 +504,7 @@ class Cryoscope(CalibBuilder):
             super().__init__(task_list, sweep_points=sweep_points, **kw)
             self.add_default_soft_sweep_points(**kw)
             self.add_default_hard_sweep_points(**kw)
+            self.calculate_truncation_decay_const(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.sequences, self.mc_points = self.sweep_n_dim(
                 self.sweep_points, body_block=None,
@@ -505,11 +519,14 @@ class Cryoscope(CalibBuilder):
     def add_default_soft_sweep_points(self, **kw):
         """
         Adds soft sweep points (truncation_lengths) to each task in
-        self.task_list if flux_pulse_dicts in task. The truncation_lengths
-        array is a concatenation of the truncation lengths created between 0 and
-        total length of each pulse in flux_pulse_dicts.
-        I also adds continuous_truncation_lengths to each task which contains
-        the continuous-time version of the truncation_lengths described above.
+        self.task_list if flux_pulse_dicts in task. They are added to the
+        task_list because I don't want to deal with the setting correct prefixes
+        if I were to add them to the preprocessed_task_list.
+        The truncation_lengths array is a concatenation of the truncation
+        lengths created between 0 and total length of each pulse in
+        flux_pulse_dicts. It also adds continuous_truncation_lengths to each
+        task which contains the continuous-time version of the
+        truncation_lengths described above.
         :param kw: keyword_arguments (to allow pass through kw even if it
             contains entries that are not needed)
         """
@@ -583,6 +600,9 @@ class Cryoscope(CalibBuilder):
             self.sweep_points, tile=0 if any(none_est_windows) else 2,
             repeat=0, **kw)
 
+        # Add this here to the task_list instead of later to the
+        # preprocessed_task_list because I don't want to deal with the setting
+        # correct prefixes.
         for task in self.task_list:
             estimation_window = task['estimation_window']
             if estimation_window is None:
@@ -598,6 +618,56 @@ class Cryoscope(CalibBuilder):
                                            [estimation_window] * nr_phases,
                                            's', 'Pulse length', dimension=0))
                 task['sweep_points'] = task_sp
+
+    def calculate_truncation_decay_const(self, **kw):
+        """
+        Goes through the tasks in self.task_list and, if truncation_decay_length
+        is not None and truncation_decay_const is not specified, calculated the
+        latter such that the pulse amplitude is 1e-10 V at
+        truncation_decay_length after start of truncation.
+        !!! An exponential truncation decay is hardcoded here !!!
+        :param kw: keyword_arguments (to allow pass through kw even if it
+            contains entries that are not needed)
+        """
+        for task in self.task_list:
+            trunc_dec_len = task['truncation_decay_length']
+            trunc_sigma = task['truncation_decay_const']
+            if trunc_dec_len is not None and trunc_sigma is None:
+                if 'flux_pulse_dicts' in task:
+                    del task['truncation_decay_const']
+                    for i, fpd in enumerate(task['flux_pulse_dicts']):
+                        fp = self.get_pulse(fpd['op_code'])
+                        fp_sigma = fp.get('gaussian_filter_sigma', 0)
+                        pd_temp = {'element_name': 'dummy'}
+                        pd_temp.update(fp)
+                        pls = seg_mod.UnresolvedPulse(pd_temp).pulse_obj
+                        pls.algorithm_time(0)  # needed for CZ_nztc
+                        tvals = np.linspace(0, pls.length, 100)
+                        amps = pls.chan_wf(fp['channel'], tvals)
+                        mask = np.logical_and(
+                            tvals > fp.get('buffer_length_start', 0) + fp_sigma,
+                            tvals < pls.length/2 - fp_sigma)
+                        tr_sigma = 0
+                        for amp in amps[mask]:
+                            tr_sigma += -trunc_dec_len/np.log(1e-10/np.abs(amp))
+                        task['flux_pulse_dicts'][i][
+                            'truncation_decay_const'] = tr_sigma/len(amps[mask])
+                else:
+                    flux_op_code = task.get('flux_op_code', None)
+                    fp = self.get_pulse(flux_op_code)
+                    pd_temp = {'element_name': 'dummy'}
+                    pd_temp.update(fp)
+                    pls = seg_mod.UnresolvedPulse(pd_temp).pulse_obj
+                    pls.algorithm_time(0)  # needed for CZ_nztc
+                    tvals = np.linspace(0, pls.length, 100)
+                    amps = pls.chan_wf(fp['channel'], tvals)
+                    mask = np.logical_and(
+                        tvals > fp.get('buffer_length_start', 0) + fp_sigma,
+                        tvals < pls.length/2 - fp_sigma)
+                    tr_sigma = 0
+                    for amp in amps[mask]:
+                        tr_sigma += -trunc_dec_len/np.log(1e-10/np.abs(amp))
+                    task['truncation_decay_const'] = tr_sigma/len(amps[mask])
 
     def sweep_block(self, sp1d_idx, sp2d_idx, **kw):
         """
@@ -641,13 +711,26 @@ class Cryoscope(CalibBuilder):
                                                          {}))
 
             # pulse(s) to measure with cryoscope
+            trunc_dec_const = task.get('truncation_decay_const', None)
+            trunc_dec_len = task['truncation_decay_length']
             if 'flux_pulse_dicts' in task:
                 ops = [fpd['op_code'] for fpd in task['flux_pulse_dicts']]
                 main_fpbk = self.block_from_ops(f'fp_main_{qb}', ops)
+                # find the pulse that is being truncated
                 n_pts_per_pulse = [fpd['nr_points'] for fpd in
                                    task['flux_pulse_dicts']]
                 mask = (np.cumsum(n_pts_per_pulse) <= sp2d_idx)
                 meas_pulse_idx = np.count_nonzero(mask)
+                # set truncation decay length and sigma
+                if meas_pulse_idx == len(mask) - 1:
+                    main_fpbk.pulses[meas_pulse_idx]['buffer_length_end'] += \
+                        trunc_dec_len
+                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_length'] = \
+                    trunc_dec_len
+                trunc_dec_const = task['flux_pulse_dicts'][meas_pulse_idx].get(
+                    'truncation_decay_const', trunc_dec_const)
+                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_const'] = \
+                    trunc_dec_const
                 # set soft sweep truncation_length
                 main_fpbk.pulses[meas_pulse_idx]['truncation_length'] = \
                     sweep_points.get_sweep_params_property(
@@ -670,6 +753,13 @@ class Cryoscope(CalibBuilder):
                 ops = [flux_op_code]
                 main_fpbk = self.block_from_ops(f'fp_main_{qb}', ops)
                 meas_pulse_idx = 0
+                # set truncation decay length and sigma
+                main_fpbk.pulses[meas_pulse_idx]['buffer_length_end'] += \
+                    trunc_dec_len
+                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_length'] = \
+                    trunc_dec_len
+                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_const'] = \
+                    trunc_dec_const
                 # set soft sweep truncation_length
                 for k in sweep_points[1]:
                     main_fpbk.pulses[meas_pulse_idx][k] = \
@@ -682,6 +772,11 @@ class Cryoscope(CalibBuilder):
 
             # reparking flux pulse
             if 'reparking_flux_pulse' in task:
+                if trunc_dec_len is not None:
+                    raise NotImplementedError(
+                        'The reparking feature is not available with a slow '
+                        'truncation decay. Plese either remove the reparking '
+                        'pulse or set the truncation_decay_length to None.')
                 reparking_fp_params = task['reparking_flux_pulse']
                 if 'pulse_length' not in reparking_fp_params:
                     # set pulse length
@@ -702,7 +797,7 @@ class Cryoscope(CalibBuilder):
                                                      :meas_pulse_idx])
 
                 main_fpbk = self.simultaneous_blocks(
-                    'flux_pulses_{qb}', [main_fpbk, repark_fpbk],
+                    'flux_pulses_{qb}', [repark_fpbk, main_fpbk],
                     block_align='center')
 
             cryo_blk = self.sequential_blocks(f'cryoscope {qb}',
