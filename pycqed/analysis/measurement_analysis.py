@@ -6761,6 +6761,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         deep = False
         self.fitted_freqs = np.zeros(len(delays))
         fitted_stds = np.zeros(len(delays))
+        self.fit_res = [None]*len(delays)
         for i,delay in enumerate(delays):
             data_slice = self.data_rotated[:,i]
             freqs = self.sweep_points_2D
@@ -6779,7 +6780,6 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                                             sign_of_peaks=sign_of_peaks,
                                             freqs=freqs,
                                             plot=False, print_res=False)
-            self.fit_res = fit_res
             self.fitted_freqs[i] = fit_res.best_values['mu']
             if self.from_lower:
                 if self.ghost:
@@ -6797,7 +6797,6 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                                                             sign_of_peaks=sign_of_peaks,
                                                             freqs=freqs,
                                                             plot=False, print_res=False)
-                            self.fit_res = fit_res
                             self.fitted_freqs[i] = fit_res.best_values['mu']
                         deep = True
             else:
@@ -6816,11 +6815,10 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                                                             freqs=freqs,
                                                             plot=False,
                                                             print_res=False)
-                            self.fit_res = fit_res
                             self.fitted_freqs[i] = fit_res.best_values['mu']
                         deep = True
     
-            self.fit_res = fit_res
+            self.fit_res[i] = fit_res
             self.fitted_freqs[i] = fit_res.best_values['mu']
 
         if plot:
