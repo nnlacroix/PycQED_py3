@@ -171,7 +171,8 @@ def classify_gm(data_dict, keys_out, keys_in, **params):
     # return data_dict
 
 
-def do_standard_preselection(data_dict, keys_in, keys_out=None, **params):
+def do_standard_preselection(data_dict, keys_in, keys_out=None,
+                             joint_processing=False, **params):
     """
     Does standard preselection on the data shot arrays in data_dict specified
     by keys_in. Only the data shots for which the preselection readout
@@ -182,6 +183,8 @@ def do_standard_preselection(data_dict, keys_in, keys_out=None, **params):
                     data_dict for the data to be processed
     :param keys_out: list of key names or dictionary keys paths in
                     data_dict for the processed data to be saved into
+    :param joint_processing: bool specifying whether to preselect on all the
+        measurement objects (arrays specified by keys_in) being in ground state
     :param params: keyword arguments
 
     Assumptions:
@@ -193,17 +196,30 @@ def do_standard_preselection(data_dict, keys_in, keys_out=None, **params):
     as the input array.
     """
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
-    for k, keyi in enumerate(data_to_proc_dict):
-        th_shots = data_to_proc_dict[keyi]
-        if not all(e in [0, 1, 2] for e in np.unique(th_shots)):
-            raise TypeError(f'The data corresponding to {keyi} does not '
-                            f'contain thresholded shots.')
-        presel_shots = th_shots[::2]
-        data_shots = th_shots[1::2]
-        hlp_mod.add_param(
-            keys_out[k], data_shots[
-                np.logical_not(np.ma.make_mask(presel_shots))] ,
-            data_dict, update_value=params.get('update_value', False), **params)
+    if not joint_processing:
+        for k, keyi in enumerate(data_to_proc_dict):
+            th_shots = data_to_proc_dict[keyi]
+            if not all(e in [0, 1, 2] for e in np.unique(th_shots)):
+                raise TypeError(f'The data corresponding to {keyi} does not '
+                                f'contain thresholded shots.')
+            presel_shots = th_shots[::2]
+            data_shots = th_shots[1::2]
+            hlp_mod.add_param(
+                keys_out[k], data_shots[
+                    np.logical_not(np.ma.make_mask(presel_shots))] ,
+                data_dict, update_value=params.get('update_value', False),
+                **params)
+    else:
+        all_shots = np.array(list(data_to_proc_dict.values()))
+        presel_states = all_shots[:, ::2]
+        data_states = all_shots[:, 1::2]
+        presel_data = data_states[:, np.where(
+            np.all(presel_states.transpose() == (0, 0, 0, 0), axis=1))[0]]
+        for k, keyo in enumerate(keys_out):
+            hlp_mod.add_param(
+                keyo, presel_data[k],
+                data_dict, update_value=params.get('update_value', False),
+                **params)
 
 
 def do_preselection(data_dict, classified_data, keys_out, **params):
@@ -753,6 +769,9 @@ def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
     :param params: keyword arguments: used if get_observables is called
         - preselection_shift (int, default: -1)
         - do_preselection (bool, default: False)
+        - return_counts (bool, default: False): whether to return raw counts
+            for each state (True), or normalize the counts by
+            n_readouts/n_shots (False)
     :return adds to data_dict, under keys_out, a dict with observables as keys
         and np.array of normalized counts with size n_readouts as values
 
@@ -769,6 +788,9 @@ def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
                                    **params)
     observables = hlp_mod.get_param('observables', data_dict,
                                     raise_error=True, **params)
+
+    return_counts = hlp_mod.get_param('return_counts', data_dict,
+                                      default_value=False, **params)
 
     n_shots = next(iter(data_to_proc_dict.values())).shape[0]
     table = OrderedDict({obs: np.zeros(n_readouts) for obs in observables})
@@ -797,7 +819,8 @@ def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
                     mask = np.logical_and(mask, res_e[mobjn][seg])
                 else:
                     mask = np.logical_and(mask, res_g[mobjn][seg])
-            table[obs][readout_n] = np.count_nonzero(mask)*n_readouts/n_shots
+            table[obs][readout_n] = np.count_nonzero(mask) * (
+                    n_readouts/n_shots if not return_counts else 1)
 
     if keys_out is not None:
         if len(keys_out) != 1:
