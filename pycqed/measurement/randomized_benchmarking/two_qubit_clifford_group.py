@@ -1,9 +1,9 @@
 import numpy as np
 from os.path import join, dirname, abspath
 from pycqed.measurement.randomized_benchmarking.clifford_group import \
-    clifford_group_single_qubit as C1, CZ, S1
+    clifford_group_single_qubit as C1, CZ, S1, xeb_gates, iSWAP
 from pycqed.measurement.randomized_benchmarking.clifford_decompositions \
-    import epstein_efficient_decomposition
+    import epstein_efficient_decomposition, XEB_gate_decomposition
 
 hash_dir = join(abspath(dirname(__file__)), 'clifford_hash_tables')
 
@@ -75,12 +75,13 @@ Important clifford indices:
 # set as a module wide variable instead of argument to function for speed
 # reasons
 gate_decomposition = epstein_efficient_decomposition
+gate_decomposition_xeb  = XEB_gate_decomposition
 
 # used to transform the S1 subgroup
 X90 = C1[16]
 Y90 = C1[21]
 mY90 = C1[15]
-
+I = C1[0]
 
 class Clifford(object):
 
@@ -119,6 +120,62 @@ class Clifford(object):
     @property
     def gate_decomposition(self):
         raise NotImplementedError()
+
+
+class SingleQubitXEB(Clifford):
+
+    def __init__(self, idx: int):
+        assert idx < 3
+        super().__init__(idx)
+        self._pauli_transfer_matrix = None
+        self._gate_decomposition = None
+
+    @property
+    def pauli_transfer_matrix(self):
+        if self._pauli_transfer_matrix is None:
+            self._pauli_transfer_matrix = xeb_gates[self.idx]
+        return self._pauli_transfer_matrix
+
+    @property
+    def gate_decomposition(self):
+        """
+        Returns the gate decomposition of the single qubit Clifford group
+        according to the decomposition by Epstein et al.
+        """
+        if self._gate_decomposition is None:
+            self._gate_decomposition = [(g, 'q0') for g in
+                                        gate_decomposition[self.idx]]
+        return self._gate_decomposition
+
+
+class TwoQubitXEB(Clifford):
+
+    def __init__(self, idx: int):
+        assert idx < 11
+        super().__init__(idx)
+        self._pauli_transfer_matrix = None
+        self._gate_decomposition = None
+
+    @property
+    def pauli_transfer_matrix(self):
+        if self._pauli_transfer_matrix is None:
+            self._pauli_transfer_matrix = xeb_gates_2qb_PTM(self.idx)
+        return self._pauli_transfer_matrix
+
+    @property
+    def gate_decomposition(self):
+        """
+        Returns the gate decomposition of the two qubit Clifford group.
+
+        Single qubit Cliffords are decompesed according to Epstein et al.
+
+        Using the method to get this avoids expensive function calls
+        whenever the Clifford is instantiated
+        """
+        if self._gate_decomposition is None:
+            self._gate_decomposition = xeb_gates_2qb_gates(self.idx)
+
+        return self._gate_decomposition
 
 
 class SingleQubitClifford(Clifford):
@@ -194,6 +251,40 @@ class TwoQubitClifford(Clifford):
 
         return self._gate_decomposition
 
+
+def xeb_gates_2qb_PTM(idx):
+    """
+    Returns the pauli transfer matrix for xeb gates performed on two qubits simultaneously
+        (q0)  -- xeb --
+        (q1)  -- xeb --
+    """
+    assert idx < 10
+    if idx < 9:
+        idx_q0 = idx % 3
+        idx_q1 = idx // 3
+        pauli_transfer_matrix = np.kron(xeb_gates[idx_q1], xeb_gates[idx_q0])
+    elif idx == 9:
+        pauli_transfer_matrix = CZ
+    elif idx == 10:
+        pauli_transfer_matrix = iSWAP
+    return pauli_transfer_matrix
+
+def xeb_gates_2qb_gates(idx):
+    """
+    Returns the gates for xeb gates performed on two qubits simultaneously, CZ included
+        (q0)  -- C1 --
+        (q1)  -- C1 --
+    """
+    assert idx < 10
+    idx_q0 = idx % 3
+    idx_q1 = idx // 3
+    if idx < 9:
+        g_q0 = [(g, 'q0') for g in gate_decomposition_xeb[idx_q0]]
+        g_q1 = [(g, 'q1') for g in gate_decomposition_xeb[idx_q1]]
+        gates = g_q0 + g_q1
+    elif idx == 9:
+        gates = [('CZ', ['q0', 'q1'])]
+    return gates
 
 def single_qubit_like_PTM(idx):
     """

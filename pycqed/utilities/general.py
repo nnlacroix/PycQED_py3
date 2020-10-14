@@ -758,8 +758,8 @@ def find_symmetry_index(data):
     data = data.copy()
     data -= data.mean()
     corr = []
-    for iflip in range(len(data)):
+    for iflip in np.arange(0, len(data)-0.5, 0.5):
         span = min(iflip, len(data)-1-iflip)
-        data_filtered = data[iflip-span:iflip+span+1]
+        data_filtered = data[np.int(iflip-span):np.int(iflip+span+1)]
         corr.append((data_filtered*data_filtered[::-1]).sum())
     return np.argmax(corr), corr

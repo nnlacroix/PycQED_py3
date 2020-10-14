@@ -41,6 +41,17 @@ Five_primitives_decomposition[21] = ['Y90']
 Five_primitives_decomposition[22] = ['X90', 'mX180', 'mY180']
 Five_primitives_decomposition[23] = ['X90', 'Y90', 'X90', 'mX180']
 
+
+'''
+Gate decomposition of XEB gates
+'''
+XEB_gate_decomposition = [[]]*(3)
+# explictly reversing order because order of operators is order in time
+XEB_gate_decomposition[0] = ['X90']
+XEB_gate_decomposition[1] = ['Y90']
+XEB_gate_decomposition[2] = ['mZ45', 'X90', 'Z45']
+
+
 '''
 Gate decomposition decomposition of the clifford group as per
 Eptstein et al. Phys. Rev. A 89, 062321 (2014)

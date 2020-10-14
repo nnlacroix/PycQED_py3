@@ -287,3 +287,74 @@ def randomized_benchmarking_sequence_new(
     return rb_clifford_indices
 
 
+def cross_entropy_benchmarking_sequence(
+        n_xeb: int,
+        number_of_qubits:int = 1,
+        max_xeb_idx: int = 11520,
+        interleaving_cl: int = None,
+        seed: int=None):
+    """
+    Generates a randomized benchmarking sequence for the one or two qubit
+    clifford group.
+
+    Args:
+        n_cl           (int) : number of gates
+        desired_net_cl (int) : idx of the desired net clifford
+        number_of_qubits(int): used to determine if Cliffords are drawn
+            from the single qubit or two qubit clifford group.
+        max_clifford_idx (int): used to set the index of the highest random
+            clifford generated. Useful to generate e.g., simultaneous two
+            qubit RB sequences.
+        interleaving_cl (int): interleaves the sequence with a specific
+            clifford if desired
+        seed           (int) : seed used to initialize the random number
+            generator.
+    Returns:
+        list of clifford indices (ints)
+
+    N.B. in the case of the 1 qubit clifford group this function does the
+    same as "randomized_benchmarking_sequence_old" but
+    does not use the 24 by 24 lookuptable method to calculate the
+    net clifford. It instead uses the "Clifford" objects used in
+    constructing the two qubit Clifford classes.
+    The old method exists to establish the equivalence between the two methods.
+
+    """
+
+    # Define Clifford group
+    if number_of_qubits == 1:
+        Cl = tqc.SingleQubitXEB
+        group_size = np.min([3, max_xeb_idx])
+        Id_gate = tqc.I
+    elif number_of_qubits == 2:
+        Cl = tqc.TwoQubitXEB
+        group_size = np.min([9, max_xeb_idx])
+        Id_gate = np.kron(tqc.I, tqc.I)
+    else:
+        raise NotImplementedError()
+
+    # Generate a random sequence of gates
+    if seed is None:
+        xeb_gate_indices = np.random.randint(0, group_size, int(n_xeb))
+    if seed is not None:
+        rng_seed = np.random.RandomState(seed)
+        xeb_gate_indices = rng_seed.randint(0, group_size, int(n_xeb))
+
+    # Add interleaving cliffords if applicable
+    if interleaving_cl is not None:
+        xeb_gate_ind_intl = np.empty(xeb_gate_indices.size*2, dtype=int)
+        xeb_gate_ind_intl[0::2] = xeb_gate_indices
+        xeb_gate_ind_intl[1::2] = interleaving_cl
+        xeb_gate_indices = xeb_gate_ind_intl
+
+    # Calculate the net gate
+    net_gate = Id_gate
+    for idx in xeb_gate_indices:
+        # print('current net gate:', net_gate)
+        gate = Cl(idx).pauli_transfer_matrix
+        # print('gate to be applied:', gate)
+        # order of operators applied in is right to left, therefore
+        # the new operator is applied on the left side.
+        net_gate = np.dot(gate, net_gate)
+
+    return xeb_gate_indices, net_gate

@@ -1,9 +1,14 @@
 import numpy as np
-from pycqed.simulations.pauli_transfer_matrices import I, X, Y, Z, S, S2, H, CZ
+from pycqed.simulations.pauli_transfer_matrices import I, X, Y, Z, S, S2, H, CZ, iSWAP, sqrtX, sqrtY, sqrtW
 '''
 Decomposition of the single qubit clifford group as per
 Eptstein et al. Phys. Rev. A 89, 062321 (2014)
 '''
+
+xeb_gates = [np.empty([4, 4])]*(3)
+xeb_gates[0] = sqrtX
+xeb_gates[1] = sqrtY
+xeb_gates[2] = sqrtW
 
 clifford_group_single_qubit = [np.empty([4, 4])]*(24)
 # explictly reversing order because order of operators is order in time
