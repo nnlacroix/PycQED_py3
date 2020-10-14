@@ -1032,6 +1032,21 @@ class Segment:
 
     @staticmethod
     def hashables(pulse, tstart, channel):
+        """
+        Wrapper for Pulse.hashables making sure to deal correctly with
+        crosstalk cancellation channels.
+
+        The hashables of a cancellation pulse has to include the hashables
+        of all pulses that it cancels. This is needed to ensure that the
+        cancellation pulse gets re-uploaded when any of the cancelled pulses
+        changes. In addition it has to include the parameters of
+        cancellation calibration, i.e., the relevant entries of the
+        crosstalk cancellation matrix and of the shift matrix.
+
+        :param pulse: a Pulse object
+        :param tstart: (float) start time of the element
+        :param channel: (str) channel name
+        """
         if channel in pulse.crosstalk_cancellation_channels:
             hashables = []
             idx_c = pulse.crosstalk_cancellation_channels.index(channel)
@@ -1311,8 +1326,10 @@ class Segment:
     def rename(self, new_name):
         """
         Renames a segment with the given new name. Hunts down element names in
-        unresolved pulses that might have made use of the old segment_name and renames
-        them too.
+        unresolved pulses and acquisition elements that might have made use of
+        the old segment_name and renames them too.
+        Note: this function relies on the convention that the element_name ends with
+        "_segmentname".
         Args:
             new_name:
 
@@ -1329,14 +1346,23 @@ class Segment:
                 p.pulse_obj.element_name = \
                     p.pulse_obj.element_name[:-(len(old_name) + 1)] + '_' \
                     + new_name
-        # rename segment name
-        self.name = new_name
+
+        # rebuild acquisition elements that used the old segment name
         new_acq_elements = set()
         for el in self.acquisition_elements:
             if el.endswith(f"_{old_name}"):
                 new_acq_elements.add(el[:-(len(old_name) + 1)] + '_' \
-                    + new_name)
+                                     + new_name)
+            else:
+                new_acq_elements.add(el)
+                log.warning(f'Acquisition element name: {el} not ending'
+                            f' with "_segmentname": {old_name}. Keeping '
+                            f'current element name when renaming '
+                            f'the segment.')
         self.acquisition_elements = new_acq_elements
+
+        # rename segment name
+        self.name = new_name
 
     def __deepcopy__(self, memo):
         cls = self.__class__
