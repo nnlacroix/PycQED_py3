@@ -955,7 +955,8 @@ class GaussFilteredCosIQPulse(pulse.Pulse):
         self.channels = [self.I_channel, self.Q_channel]
 
         self.phase_lock = kw.pop('phase_lock', False)
-        self.length = self.pulse_length + self.gaussian_filter_sigma * self.nr_sigma
+        self.length = self.pulse_length + self.buffer_length_start + \
+                      self.buffer_length_end
 
     @classmethod
     def pulse_params(cls):
@@ -971,7 +972,8 @@ class GaussFilteredCosIQPulse(pulse.Pulse):
             'pulse_length': 0,
             'mod_frequency': 0,
             'phase': 0,
-            'nr_sigma': 5,
+            'buffer_length_start': 10e-9,
+            'buffer_length_end': 10e-9,
             'alpha': 1,
             'phi_skew': 0,
             'gaussian_filter_sigma': 0,
@@ -981,10 +983,12 @@ class GaussFilteredCosIQPulse(pulse.Pulse):
     def chan_wf(self, chan, tvals, **kw):
         if self.gaussian_filter_sigma == 0:
             wave = np.ones_like(tvals) * self.amplitude
-            wave *= (tvals >= tvals[0])
-            wave *= (tvals < tvals[0] + self.pulse_length)
+            wave *= (tvals >= self.algorithm_time() + self.buffer_length_start)
+            wave *= (tvals <
+                     self.algorithm_time() + self.buffer_length_start +
+                     self.pulse_length)
         else:
-            tstart = tvals[0] + 0.5 * self.gaussian_filter_sigma * self.nr_sigma
+            tstart = self.algorithm_time() + self.buffer_length_start
             tend = tstart + self.pulse_length
             scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
             wave = 0.5 * (sp.special.erf(
@@ -1012,12 +1016,70 @@ class GaussFilteredCosIQPulse(pulse.Pulse):
         hashlist = [type(self), self.algorithm_time() - tstart]
         hashlist += [channel == self.I_channel, self.amplitude]
         hashlist += [self.mod_frequency, self.gaussian_filter_sigma]
-        hashlist += [self.nr_sigma, self.pulse_length]
+        hashlist += [self.buffer_length_start, self.buffer_length_end, self.pulse_length]
         phase = self.phase
         phase += 360 * self.phase_lock * self.mod_frequency \
                  * self.algorithm_time()
         hashlist += [self.alpha, self.phi_skew, phase]
         return hashlist
+
+
+class GaussFilteredCosIQPulseWithFlux(GaussFilteredCosIQPulse):
+    def __init__(self,
+                 I_channel,
+                 Q_channel,
+                 flux_channel,
+                 element_name,
+                 name='gauss filtered cos IQ pulse with flux pulse',
+                 **kw):
+        super().__init__(I_channel,
+                         Q_channel,
+                         element_name,
+                         name=name,
+                         **kw)
+        self.flux_channel = flux_channel
+        self.flux_pulse_length = self.pulse_length + self.flux_extend_start + self.flux_extend_end
+        self.flux_buffer_length_start = self.buffer_length_start - self.flux_extend_start
+        self.flux_buffer_length_end = self.length - self.flux_buffer_length_start - self.flux_pulse_length
+        self.fp = BufferedSquarePulse(element_name=self.element_name,
+                                      channel=self.flux_channel,
+                                      amplitude=self.flux_amplitude,
+                                      pulse_length=self.flux_pulse_length,
+                                      buffer_length_start=self.flux_buffer_length_start,
+                                      buffer_length_end=self.flux_buffer_length_end,
+                                      gaussian_filter_sigma=self.flux_gaussian_filter_sigma)
+
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values. These parameters are set upon calling the
+        super().__init__ method.
+        """
+        params_super = super().pulse_params()
+        params = {
+            **params_super,
+            'pulse_type': 'GaussFilteredCosIQPulseWithFlux',
+            'flux_channel': None,
+            'flux_amplitude': 0,
+            'flux_extend_start': 20e-9,
+            'flux_extend_end': 150e-9,
+            'flux_gaussian_filter_sigma': 0.5e-9
+        }
+        return params
+
+    def chan_wf(self, chan, tvals, **kw):
+        if chan == self.I_channel or chan == self.Q_channel:
+            return super().chan_wf(chan, tvals, **kw)
+        if chan == self.flux_channel:
+            self.fp.algorithm_time(self.algorithm_time())
+            return self.fp.chan_wf(chan, tvals)
+
+    def hashables(self, tstart, channel):
+        if channel == self.I_channel or channel == self.Q_channel:
+            return super().hashables(tstart, channel)
+        if channel == self.flux_channel:
+            self.fp.algorithm_time(self.algorithm_time())
+            return self.fp.hashables(tstart, channel)
 
 
 class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
@@ -1039,8 +1101,8 @@ class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
                              f"was given")
 
         self.phase_lock = kw.pop('phase_lock', False)
-        self.length = self.pulse_length + \
-                      self.gaussian_filter_sigma * self.nr_sigma
+        self.length = self.pulse_length + self.buffer_length_start + \
+                      self.buffer_length_end
 
         params = dict(amplitude=self.amplitude,
                       phase=self.phase,
@@ -1068,7 +1130,8 @@ class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
             'pulse_length': 0,
             'mod_frequency': [0],
             'phase': 0,
-            'nr_sigma': 5,
+            'buffer_length_start': 10e-9,
+            'buffer_length_end': 10e-9,
             'alpha': 1,
             'phi_skew': 0,
             'gaussian_filter_sigma': 0,
@@ -1082,11 +1145,12 @@ class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
                                         self.alpha):
             if self.gaussian_filter_sigma == 0:
                 wave = np.ones_like(tvals) * a
-                wave *= (tvals >= tvals[0])
-                wave *= (tvals < tvals[0] + self.pulse_length)
+                wave *= (tvals >= self.algorithm_time() + self.buffer_length_start)
+                wave *= (tvals <
+                         self.algorithm_time() + self.buffer_length_start +
+                         self.pulse_length)
             else:
-                tstart = tvals[
-                             0] + 0.5 * self.gaussian_filter_sigma * self.nr_sigma
+                tstart = self.algorithm_time() + self.buffer_length_start
                 tend = tstart + self.pulse_length
                 scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
                 wave = 0.5 * (sp.special.erf(
@@ -1118,7 +1182,7 @@ class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
         hashlist += list(self.amplitude)
         hashlist += self.mod_frequency
         hashlist += [self.gaussian_filter_sigma]
-        hashlist += [self.nr_sigma, self.pulse_length]
+        hashlist += [self.buffer_length_start, self.buffer_length_end, self.pulse_length]
         phase = [p + 360 * (not self.phase_lock) * f * self.algorithm_time() \
                  for p, f in zip(self.phase, self.mod_frequency)]
         hashlist += self.alpha
