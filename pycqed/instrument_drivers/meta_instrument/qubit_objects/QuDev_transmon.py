@@ -41,6 +41,16 @@ except ModuleNotFoundError:
     log.warning('"readout_mode_simulations_for_CLEAR_pulse" not imported.')
 
 class QuDev_transmon(Qubit):
+    DEFAULT_FLUX_DISTORTION = dict(
+        IIR_filter_list=[],
+        FIR_filter_list=[],
+        scale_IIR=1,
+        distortion='off',
+        charge_buildup_compensation=True,
+        compensation_pulse_delay=100e-9,
+        compensation_pulse_gaussian_filter_sigma=0,
+    )
+
     def __init__(self, name, **kw):
         super().__init__(name, **kw)
 
@@ -370,6 +380,9 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter(op_name, ps_name + '_pulse_length',
                                  'pulse_length',
                                  initial_value=100e-9, vals=vals.Numbers(0))
+        self.add_pulse_parameter(op_name, ps_name + '_truncation_length',
+                                 'truncation_length',
+                                 initial_value=None)
         self.add_pulse_parameter(op_name, ps_name + '_buffer_length_start',
                                  'buffer_length_start', initial_value=20e-9,
                                  vals=vals.Numbers(0))
@@ -395,17 +408,9 @@ class QuDev_transmon(Qubit):
                            parameter_class=ManualParameter)
 
         # ac flux parameters
-        DEFAULT_FLUX_DISTORTION = dict(
-            IIR_filter_list=[],
-            FIR_filter_list=[],
-            scale_IIR=1,
-            distortion='off',
-            charge_buildup_compensation=True,
-            compensation_pulse_delay=100e-9,
-            compensation_pulse_gaussian_filter_sigma=0,
-        )
         self.add_parameter('flux_distortion', parameter_class=ManualParameter,
-                           initial_value=DEFAULT_FLUX_DISTORTION,
+                           initial_value=deepcopy(
+                               self.DEFAULT_FLUX_DISTORTION),
                            vals=vals.Dict())
 
 
@@ -3989,32 +3994,33 @@ class QuDev_transmon(Qubit):
         ma.MeasurementAnalysis(TwoD=True)
 
     def set_distortion_in_pulsar(self, pulsar=None, datadir=None):
+        """
+        Configures the fluxline distortion in a pulsar object according to the
+        settings in the parameter flux_distortion of the qubit object.
 
+        :param pulse: the pulsar object. If None, self.find_instrument is
+            used to find an obejct called 'Pulsar'.
+        :param datadir: path to the pydata directory. If None,
+            self.find_instrument is used to find an obejct called 'MC' and
+            the datadir of MC is used.
+        """
         if pulsar is None:
             pulsar = self.find_instrument('Pulsar')
         if datadir is None:
             datadir = self.find_instrument('MC').datadir()
-        DEFAULT_FLUX_DISTORTION = dict(
-            IIR_filter_list=[],
-            FIR_filter_list=[],
-            scale_IIR=1,
-            distortion='off',
-            charge_buildup_compensation=True,
-            compensation_pulse_delay=100e-9,
-            compensation_pulse_gaussian_filter_sigma=0,
-        )
-        flux_distortion = deepcopy(DEFAULT_FLUX_DISTORTION)
+        flux_distortion = deepcopy(self.DEFAULT_FLUX_DISTORTION)
         flux_distortion.update(self.flux_distortion())
 
         filterCoeffs = {}
         for fclass in 'IIR', 'FIR':
             filterCoeffs[fclass] = []
-            for f in self.flux_distortion()[f'{fclass}_filter_list']:
+            for f in flux_distortion[f'{fclass}_filter_list']:
                 if f['type'] == 'Gaussian':
                     coeffs = fl_predist.gaussian_filter_kernel(
                         f.get('sigma', 1e-9),
                         f.get('nr_sigma', 40),
-                        f.get('dt', 1 / 2.4e9))
+                        f.get('dt', 1 / pulsar.clock(
+                            channel=self.flux_pulse_channel())))
                 elif f['type'] == 'csv':
                     filename = os.path.join(datadir,
                                             f['filename'].lstrip('\\'))

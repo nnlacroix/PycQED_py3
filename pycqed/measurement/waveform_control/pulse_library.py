@@ -44,7 +44,8 @@ class SSB_DRAG_pulse(pulse.Pulse):
             addition to the nominal 90 degrees. Defaults to 0.
     """
 
-    def __init__(self, name, element_name, I_channel, Q_channel, **kw):
+    def __init__(self, element_name, I_channel, Q_channel,
+                 name='SSB Drag pulse', **kw):
         super().__init__(name, element_name, **kw)
 
         self.I_channel = I_channel
@@ -329,7 +330,7 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
     The zero area is achieved by adjusting the lengths for the intermediate
     pulses.
     """
-    def __init__(self, name, element_name, **kw):
+    def __init__(self, element_name, name='NZTC pulse', **kw):
         super().__init__(name, element_name, **kw)
         self._update_lengths_amps_channels()
 
@@ -711,6 +712,10 @@ class BufferedNZFLIPPulse(pulse.Pulse):
             'flux_buffer_length2': 0,
             'channel_relative_delay': 0,
             'gaussian_filter_sigma': 1e-9,
+            'sin_amp': 0,
+            'sin_phase': 0,
+            'kick_amp': 0,
+            'kick_length': 10e-9,
         }
         return params
 
@@ -774,7 +779,7 @@ class BufferedFLIPPulse(pulse.Pulse):
         self.channel2 = channel2
         self.channels = [self.channel, self.channel2]
 
-        self.amps = {channel: self.amplitude, channel2: self.amplitude2}
+        self._update_amplitudes()
 
         delay = self.channel_relative_delay  # delay of pulse on channel2 wrt pulse on channel
         bls = self.buffer_length_start  # initial value for buffer length start passed with kw
@@ -815,6 +820,8 @@ class BufferedFLIPPulse(pulse.Pulse):
             'channel2': None,
             'amplitude': 0,
             'amplitude2': 0,
+            'mirror_pattern': None,
+            'mirror_correction': None,
             'pulse_length': 0,
             'buffer_length_start': 30e-9,
             'buffer_length_end': 30e-9,
@@ -822,11 +829,19 @@ class BufferedFLIPPulse(pulse.Pulse):
             'flux_buffer_length2': 0,
             'channel_relative_delay': 0,
             'gaussian_filter_sigma': 1e-9,
+            'sin_amp': 0,
+            'sin_phase': 0,
+            'kick_amp': 0,
+            'kick_length': 10e-9,
         }
         return params
 
-    def chan_wf(self, chan, tvals):
+    def _update_amplitudes(self):
+        self.amps = {self.channel: self.amplitude,
+                     self.channel2: self.amplitude2}
 
+    def chan_wf(self, chan, tvals):
+        self._update_amplitudes()
         amp = self.amps[chan]
         buffer_start = self.buffer_length_start[chan]
         l1 = self.length1[chan]
@@ -843,6 +858,23 @@ class BufferedFLIPPulse(pulse.Pulse):
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
                 (tvals - tend) * scaling)) * amp
+
+            wave_sin = np.sin(2*np.pi*(tvals - tstart)/l1 +
+                              self.sin_phase)*self.sin_amp
+            wave_sin -= np.sin(self.sin_phase)*self.sin_amp
+            wave_sin *= (tvals >= tvals[0] + buffer_start)
+            wave_sin *= (tvals < tvals[0] + buffer_start + l1)
+            wave += wave_sin
+
+            # kick_start = (tstart + tend) / 2 - self.kick_length / 2
+            # kick_end = (tstart + tend) / 2 + self.kick_length / 2
+            kick_start = tstart
+            kick_end = tstart + self.kick_length
+
+            wave_kick = 0.5 * (sp.special.erf(
+                (tvals - kick_start) * scaling) - sp.special.erf(
+                (tvals - kick_end) * scaling)) * self.kick_amp *np.sign(amp)
+            wave += wave_kick
         return wave
 
     def hashables(self, tstart, channel):
@@ -852,6 +884,7 @@ class BufferedFLIPPulse(pulse.Pulse):
             return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
 
+        self._update_amplitudes()
         amp = self.amps[channel]
         buffer_start = self.buffer_length_start[channel]
         buffer_end = self.buffer_length_end[channel]
@@ -1192,7 +1225,7 @@ class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
 
 
 class VirtualPulse(pulse.Pulse):
-    def __init__(self, name, element_name, **kw):
+    def __init__(self, element_name, name='virtual pulse', **kw):
         super().__init__(name, element_name, **kw)
         self.length = self.pulse_length
         self.channels = []

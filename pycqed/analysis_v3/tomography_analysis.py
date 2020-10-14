@@ -789,7 +789,7 @@ def prepare_pauli_basis_plot(data_dict, estimation_type='least_squares',
                                         data_dict)
         if concurrence is not None:
             legend_str += '\n' + r'Concurrence, $C = {:.1f}\%$'.format(
-                100 * concurrence)
+                concurrence)
 
     plot_dicts[f'pauli_info_labels_{estimation_type}_{"".join(meas_obj_names)}'] = {
         'fig_id': f'pauli_basis_{estimation_type}_{"".join(meas_obj_names)}',
