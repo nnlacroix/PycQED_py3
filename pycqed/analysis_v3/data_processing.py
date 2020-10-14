@@ -1,6 +1,7 @@
 import logging
 log = logging.getLogger(__name__)
 
+import itertools
 import numpy as np
 from collections import OrderedDict
 from pycqed.analysis import analysis_toolbox as a_tools
@@ -181,12 +182,11 @@ def do_standard_preselection(data_dict, keys_in, keys_out=None, **params):
                     data_dict for the data to be processed
     :param keys_out: list of key names or dictionary keys paths in
                     data_dict for the processed data to be saved into
-    :param params: keyword arguments.:
-        num_bins (int): number of averaging bins for each entry in keys_in
+    :param params: keyword arguments
 
     Assumptions:
-        - the data pointed to by keys_in is assumed to be 1D array of
-            thresholded shots
+        - the data pointed to by keys_in is assumed to be 1D arrays of
+            thresholded/classified shots
         - every other shot starting at 0 is assumed to be a preselection readout
 
     WARNING! The processed data array will not necessarily have the same length
@@ -973,3 +973,48 @@ def calculate_meas_ops_and_covariations_cal_points(
 
     hlp_mod.add_param(keys_out[0], Fs, data_dict, **params)
     hlp_mod.add_param(keys_out[1], Omega, data_dict, **params)
+
+
+def count_states(data_dict, keys_in, keys_out, states=None, n_meas_objs=None,
+                 **params):
+    """
+    Averages data in data_dict specified by keys_in into num_bins.
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+    :param keys_out: list of key names or dictionary keys paths in
+                    data_dict for the processed data to be saved into
+    :param states: list of tuples of 0, 1, (2 if qutrits) denoting qubit/qutrit
+        basis states to match
+    :param n_meas_objs: number of measurement objects. If this is given and
+        states is None, all possible basis states for n_meas_objs qubits will
+        be generated
+    :param params: keyword arguments
+
+    Assumptions:
+        - each array pointed to by keys_in is assumed to correspond to one of
+            the qubits/qutrits in the basis states. IMPORTANT TO SPECIFY
+            KEYS_IN IN THE CORRECT ORDER, SUCH THAT ARRAYS CORRESPOND TO YOUR
+            STATE
+        - the data pointed to by keys_in is assumed to be 1D arrays of
+            thresholded/classified shots
+        - len(keys_out) == 1
+    """
+
+    if len(keys_out) != 1:
+        raise ValueError(f'keys_out must have length one. {len(keys_out)} '
+                         f'entries were given.')
+    if states is None:
+        if n_meas_objs is None:
+            raise ValueError('Please specify either states or n_meas_objs.')
+        states = itertools.product((0, 1), repeat=n_meas_objs)
+
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+    shots = np.array(list(data_to_proc_dict.values()))
+    state_counts = np.array([
+        np.count_nonzero(np.all(shots.transpose() == state, axis=1))
+        for state in states])
+    hlp_mod.add_param(
+        keys_out[0], state_counts,
+        data_dict, update_value=params.get('update_value', False), **params)
