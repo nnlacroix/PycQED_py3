@@ -788,7 +788,6 @@ class CPhase(CalibBuilder):
         ref_pi_half = kw.get('ref_pi_half', False)
 
         hard_sweep_dict, soft_sweep_dict = sweep_points
-        assert num_cz_gates % 2 != 0
 
         pb = self.prepend_pulses_block(prepend_pulse_dicts)
 
