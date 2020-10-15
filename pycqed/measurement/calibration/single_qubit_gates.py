@@ -649,7 +649,7 @@ class Cryoscope(CalibBuilder):
                             tvals < pls.length/2 - fp_sigma)
                         tr_sigma = 0
                         for amp in amps[mask]:
-                            tr_sigma += -trunc_dec_len/np.log(1e-10/np.abs(amp))
+                            tr_sigma += -trunc_dec_len/np.log(1e-5/np.abs(amp))
                         task['flux_pulse_dicts'][i][
                             'truncation_decay_const'] = tr_sigma/len(amps[mask])
                 else:
