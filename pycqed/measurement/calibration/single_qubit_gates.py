@@ -657,6 +657,7 @@ class Cryoscope(CalibBuilder):
                 else:
                     flux_op_code = task.get('flux_op_code', None)
                     fp = self.get_pulse(flux_op_code)
+                    fp_sigma = fp.get('gaussian_filter_sigma', 0)
                     pd_temp = {'element_name': 'dummy'}
                     pd_temp.update(fp)
                     pls = seg_mod.UnresolvedPulse(pd_temp).pulse_obj
