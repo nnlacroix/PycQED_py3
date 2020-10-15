@@ -745,6 +745,8 @@ class Cryoscope(CalibBuilder):
             contains entries that are not needed)
         """
         qb_names = [task['qb'] for task in self.task_list]
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
         self.analysis = tda.CryoscopeAnalysis(
             qb_names=qb_names, **analysis_kwargs)
 
