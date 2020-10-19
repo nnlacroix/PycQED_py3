@@ -115,6 +115,7 @@ def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
                     meas_obj_names=meas_obj_names)
         pp.add_node('rb_analysis',
                     d=dim_hilbert,
+                    sweep_type=sweep_type,
                     keys_in=f'previous {label}.average_data',
                     keys_in_std=f'previous {label}.get_std_deviation',
                     keys_in_all_seeds_data='previous average_data',
@@ -434,7 +435,6 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
                     do_plotting=False,
                     keys_out=None,
                     meas_obj_names=meas_obj_names)
-
         for mobjn in meas_obj_names:
             cliffords = sweep_points.get_sweep_params_property(
                 'values', sweep_type['cliffords'], mospm[mobjn])[0]
