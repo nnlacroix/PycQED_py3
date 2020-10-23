@@ -2,6 +2,7 @@
 Module containing a collection of detector functions used by the
 Measurement Control.
 """
+import traceback
 import numpy as np
 from copy import deepcopy
 import time
@@ -48,22 +49,27 @@ class Detector_Function(object):
         Creates a dict det_metadata with all the attributes of itself.
         :return: {'Detector Metadata': det_metadata}
         """
+        try:
+            # Go through all the attributes of itself, pass them to
+            # savable_attribute_value, and store them in det_metadata
+            det_metadata = {k: self.savable_attribute_value(v, self.name)
+                            for k, v in self.__dict__.items()}
 
-        # Go through all the attributes of itself, pass them to
-        # savable_attribute_value, and store them in det_metadata
-        det_metadata = {k: self.savable_attribute_value(v, self.name)
-                        for k, v in self.__dict__.items()}
+            # Change the 'detectors' entry from a list of dicts to a dict with keys
+            # uhfName_detectorName
+            detectors_dict = {}
+            for d in det_metadata.pop('detectors', []):
+                if isinstance(d, dict):
+                    detectors_dict.update({f'{d["UHFs"][0]} {d["name"]}': d})
+            if len(detectors_dict):
+                det_metadata['detectors'] = detectors_dict
 
-        # Change the 'detectors' entry from a list of dicts to a dict with keys
-        # uhfName_detectorName
-        detectors_dict = {}
-        for d in det_metadata.pop('detectors', []):
-            if isinstance(d, dict):
-                detectors_dict.update({f'{d["UHFs"][0]} {d["name"]}': d})
-        if len(detectors_dict):
-            det_metadata['detectors'] = detectors_dict
-
-        return {'Detector Metadata': det_metadata}
+            return {'Detector Metadata': det_metadata}
+        except Exception as e:
+            # Unhandled errors in metadata creation are not critical for the
+            # measurement, so we log them as warnings.
+            log.warning(traceback.format_exc())
+            return {}
 
     @staticmethod
     def savable_attribute_value(attr_val, det_name):
