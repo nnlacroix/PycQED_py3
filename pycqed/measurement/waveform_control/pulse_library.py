@@ -1071,6 +1071,7 @@ class GaussFilteredCosIQPulseWithFlux(GaussFilteredCosIQPulse):
                          name=name,
                          **kw)
         self.flux_channel = flux_channel
+        self.channels.append(flux_channel)
         self.flux_pulse_length = self.pulse_length + self.flux_extend_start + self.flux_extend_end
         self.flux_buffer_length_start = self.buffer_length_start - self.flux_extend_start
         self.flux_buffer_length_end = self.length - self.flux_buffer_length_start - self.flux_pulse_length
