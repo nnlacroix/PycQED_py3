@@ -55,17 +55,29 @@ class Detector_Function(object):
             det_metadata = {k: self.savable_attribute_value(v, self.name)
                             for k, v in self.__dict__.items()}
 
-            # Change the 'detectors' entry from a list of dicts to a dict with keys
-            # uhfName_detectorName
+            # Change the 'detectors' entry from a list of dicts to a dict with
+            # keys uhfName_detectorName
             detectors_dict = {}
             for d in det_metadata.pop('detectors', []):
+                # isinstance(d, dict) only if self was a multi-detector function
                 if isinstance(d, dict):
-                    detectors_dict.update({f'{d["UHFs"][0]} {d["name"]}': d})
+                    # d will never contain the key "detectors" because the
+                    # framework currently does not allow to pass an instance of
+                    # UHFQC_multi_detector in the "detectors" attribute of
+                    # UHFQC_Base since UHFQC_multi_detector does not have the
+                    # attribute "UHFQC" (Steph, 23.10.2020)
+                    if 'UHFs' in d:
+                        # d["UHFs"] will always contain one item because of how
+                        # savable_attribute_value was written.
+                        detectors_dict.update(
+                            {f'{d["UHFs"][0]} {d["name"]}': d})
+                    else:
+                        detectors_dict.update({f'{d["name"]}': d})
             if len(detectors_dict):
                 det_metadata['detectors'] = detectors_dict
 
             return {'Detector Metadata': det_metadata}
-        except Exception as e:
+        except Exception:
             # Unhandled errors in metadata creation are not critical for the
             # measurement, so we log them as warnings.
             log.warning(traceback.format_exc())
@@ -81,12 +93,15 @@ class Detector_Function(object):
         attributes are class instances (like det_func.AWG), they are passed to
         the metadata as class_instance.name instead of class_instance, in which
         case it would be saves as a string "<Pulsar: Pulsar>".
+
         This function also nicely resolves the detectors attribute of the
         detector functions, which would otherwise also be saved as
         ["<pycqed.measurement.detector_functions.UHFQC_classifier_detector
          at 0x22bf280a400>",
          "<pycqed.measurement.detector_functions.UHFQC_classifier_detector
          at 0x22bf280a208>"].
+         It parses this list and replaces each instance with its __dict__
+         attribute.
 
         :param attr_val: attribute value of a Detector_Function instance or
             an instance of its children
