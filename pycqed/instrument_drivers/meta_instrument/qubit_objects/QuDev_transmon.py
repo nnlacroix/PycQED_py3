@@ -137,11 +137,14 @@ class QuDev_transmon(Qubit):
         self.add_operation('RO')
         self.add_pulse_parameter('RO', 'ro_pulse_type', 'pulse_type',
                                  vals=vals.Enum('GaussFilteredCosIQPulse',
-                                                'GaussFilteredCosIQPulseMultiChromatic'),
+                                                'GaussFilteredCosIQPulseMultiChromatic',
+                                                'GaussFilteredCosIQPulseWithFlux'),
                                  initial_value='GaussFilteredCosIQPulse')
         self.add_pulse_parameter('RO', 'ro_I_channel', 'I_channel',
                                  initial_value=None, vals=vals.Strings())
         self.add_pulse_parameter('RO', 'ro_Q_channel', 'Q_channel',
+                                 initial_value=None, vals=vals.Strings())
+        self.add_pulse_parameter('RO', 'ro_flux_channel', 'flux_channel',
                                  initial_value=None, vals=vals.Strings())
         self.add_pulse_parameter('RO', 'ro_amp', 'amplitude',
                                  initial_value=0.001,
@@ -165,8 +168,10 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter('RO', 'ro_sigma',
                                  'gaussian_filter_sigma',
                                  initial_value=10e-9, vals=vals.Numbers())
-        self.add_pulse_parameter('RO', 'ro_nr_sigma', 'nr_sigma',
-                                 initial_value=5, vals=vals.Numbers())
+        self.add_pulse_parameter('RO', 'ro_buffer_length_start', 'buffer_length_start',
+                                 initial_value=10e-9, vals=vals.Numbers())
+        self.add_pulse_parameter('RO', 'ro_buffer_length_end', 'buffer_length_end',
+                                 initial_value=10e-9, vals=vals.Numbers())
         self.add_pulse_parameter('RO', 'ro_phase_lock', 'phase_lock',
                                  initial_value=False, vals=vals.Bool())
         self.add_pulse_parameter('RO', 'ro_basis_rotation',
@@ -176,6 +181,14 @@ class QuDev_transmon(Qubit):
                                            ' this qubit.',
                                  label='RO pulse basis rotation dictionary',
                                  vals=vals.Dict())
+        self.add_pulse_parameter('RO', 'ro_flux_amplitude', 'flux_amplitude',
+                                 initial_value=0, vals=vals.Numbers())
+        self.add_pulse_parameter('RO', 'ro_flux_extend_start', 'flux_extend_start',
+                                 initial_value=20e-9, vals=vals.Numbers())
+        self.add_pulse_parameter('RO', 'ro_flux_extend_end', 'flux_extend_end',
+                                 initial_value=150e-9, vals=vals.Numbers())
+        self.add_pulse_parameter('RO', 'ro_flux_gaussian_filter_sigma', 'flux_gaussian_filter_sigma',
+                                 initial_value=0.5e-9, vals=vals.Numbers())
 
         # acquisition parameters
         self.add_parameter('acq_I_channel', initial_value=0,

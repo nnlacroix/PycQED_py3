@@ -58,7 +58,9 @@ class Detector_Function(object):
         # uhfName_detectorName
         detectors_dict = {}
         for d in det_metadata.pop('detectors', []):
-            detectors_dict.update({f'{d["UHFs"][0]} {d["name"]}': d})
+            # FIXME: Nathan 14.10.20: bug here to investigate
+            # detectors_dict.update({f'{d["UHFs"][0]} {d["name"]}': d})
+            pass
         if len(detectors_dict):
             det_metadata['detectors'] = detectors_dict
 

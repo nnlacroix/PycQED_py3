@@ -89,27 +89,40 @@ class SweepPoints(list):
     def add_sweep_dimension(self):
         self.append(dict())
 
-    def get_sweep_dimension(self, dimension='all'):
+    def get_sweep_dimension(self, dimension='all', pop=False):
         """
         Returns the sweep dict of the sweep dimension specified by dimension.
         :param dimension: int specifying a sweep dimension or
             the string 'all'
+        :param pop: bool specifying whether to pop (True) or get(False) the
+            sweep dimension.
         :return: self if dimension == 'all', else self[dimension]
         """
         if dimension == 'all':
-            return self
+            if pop:
+                to_return = deepcopy(self)
+                self.clear()
+                return to_return
+            else:
+                return self
         else:
             if len(self) < dimension:
                 raise ValueError(f'Dimension {dimension} not found.')
-            return self[dimension]
+            to_return = self[dimension]
+            if pop:
+                self[dimension] = {}
+            return to_return
 
-    def get_sweep_params_description(self, param_names, dimension='all'):
+    def get_sweep_params_description(self, param_names, dimension='all',
+                                     pop=False):
         """
         Get the sweep tuples for the sweep parameters param_names if they are
         found in the sweep dimension dict specified by dimension.
         :param param_names: string or list of strings corresponding to keys in
             the dictionaries in self. Can also be 'all'
         :param dimension: 'all' or int specifying a sweep dimension
+        :param pop: bool specifying whether to pop (True) or get(False) the
+            sweep parameters.
         :return:
             If the param_names are found in self or self[dimension]:
             if param_names == 'all': list with all the sweep tuples
@@ -122,7 +135,8 @@ class SweepPoints(list):
                 first sweep parameter in the sweep dimension dict
             If none of param_names are found, raises KeyError.
         """
-        sweep_points_dim = self.get_sweep_dimension(dimension)
+        sweep_points_dim = self.get_sweep_dimension(
+            dimension, pop=pop and param_names == 'all')
         is_list = True
         if param_names != 'all' and not isinstance(param_names, list):
             param_names = [param_names]
@@ -136,15 +150,16 @@ class SweepPoints(list):
                 else:
                     for pn in param_names:
                         if pn in sweep_dim_dict:
-                            sweep_param_values += [sweep_dim_dict[pn]]
+                            sweep_param_values += [sweep_dim_dict.pop(pn) if pop
+                                                   else sweep_dim_dict[pn]]
         else:  # it is a dict
             if param_names == 'all':
                 sweep_param_values += list(sweep_points_dim.values())
             else:
                 for pn in param_names:
                     if pn in sweep_points_dim:
-                        sweep_param_values += [sweep_points_dim[pn]]
-
+                        sweep_param_values += [sweep_points_dim.pop(pn) if pop
+                                               else sweep_points_dim[pn]]
         if len(sweep_param_values) == 0:
             s = "sweep points" if dimension == "all" else f'sweep dimension ' \
                                                           f'{dimension}'
