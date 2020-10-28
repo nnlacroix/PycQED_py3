@@ -811,7 +811,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     def rotate_data_TwoD_same_fixed_cal_idxs(qb_name, meas_results_per_qb,
                                              channel_map, cal_states_dict,
                                              data_to_fit):
-        print('here')
         meas_res_dict = meas_results_per_qb[qb_name]
         if list(meas_res_dict) != channel_map[qb_name]:
             raise NotImplementedError('rotate_data_TwoD_same_fixed_cal_idxs '
@@ -834,7 +833,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         rot_dat_e /= len(cal_one_points)
 
         # find the values of the zero and one cal points
-        col_idx = np.argmax(rot_dat_e)
+        col_idx = np.argmax(np.abs(rot_dat_e))
         zero_coord = [np.mean([v[r, col_idx] for r in cal_zero_points])
                       for v in meas_res_dict.values()]
         one_coord = [np.mean([v[r, col_idx] for r in cal_one_points])
