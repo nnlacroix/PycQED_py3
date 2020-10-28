@@ -1319,7 +1319,8 @@ def rotate_and_normalize_data_no_cal_points(data, **kw):
 
 
 def rotate_and_normalize_data_1ch(data, cal_zero_points=np.arange(-4, -2, 1),
-                                  cal_one_points=np.arange(-2, 0, 1), **kw):
+                                  cal_one_points=np.arange(-2, 0, 1),
+                                  zero_coord=None, one_coord=None, **kw):
     '''
     Normalizes data according to calibration points
     Inputs:
@@ -1330,8 +1331,15 @@ def rotate_and_normalize_data_1ch(data, cal_zero_points=np.arange(-4, -2, 1),
                                  correspond to one
     '''
     # Extract zero and one coordinates
-    I_zero = np.mean(data[cal_zero_points])
-    I_one = np.mean(data[cal_one_points])
+    if zero_coord is not None:
+        I_zero = zero_coord[0]
+    else:
+        I_zero = np.mean(data[cal_zero_points])
+
+    if one_coord is not None:
+        I_one = one_coord[0]
+    else:
+        I_one = np.mean(data[cal_one_points])
     # Translate the date
     trans_data = data - I_zero
     # Normalize the data
