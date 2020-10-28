@@ -7361,4 +7361,4 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                         f'fitted_freqs_{qbn}']['stderr'],
                     'color': 'r',
                     'linestyle': '-',
-                    'marker': 'o'}
+                    'marker': 'x'}
