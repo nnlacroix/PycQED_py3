@@ -192,7 +192,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     Types of rotations supported by this class:
         - rotation based on CalibrationPoints for 1D and TwoD data. Supports
          2 and 3 cal states per qubit
-            - fixed_cal_points_rotation (only for TwoD, with 2 cal states):
+            - fixed_cal_points_rotation flag (only for TwoD, with 2 cal states):
                 does PCA on the columns corresponding to the highest cal state
                 to find the indices of that cal state in the columns, then uses
                 those to get the data points for the other cal state. Does
@@ -558,11 +558,15 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             self.channel_map,
                             self.cal_states_dict_for_rotation))
                 elif self.get_param_value('fixed_cal_points_rotation', False):
-                    self.proc_data_dict['projected_data_dict'].update(
+                    rotated_data_dict, zero_coord, one_coord = \
                         self.rotate_data_TwoD_same_fixed_cal_idxs(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.cal_states_dict_for_rotation,
-                            self.data_to_fit))
+                            self.data_to_fit)
+                    self.proc_data_dict['projected_data_dict'].update(
+                        rotated_data_dict)
+                    self.proc_data_dict['rotation_coordinates'] = \
+                        [zero_coord, one_coord]
                 else:
                     self.proc_data_dict['projected_data_dict'].update(
                         self.rotate_data_TwoD(
@@ -853,7 +857,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     zero_coord=zero_coord,
                     one_coord=one_coord)
 
-        return rotated_data_dict
+        return rotated_data_dict, zero_coord, one_coord
 
     def get_xaxis_label_unit(self, qb_name):
         hard_sweep_params = self.get_param_value('hard_sweep_params')
