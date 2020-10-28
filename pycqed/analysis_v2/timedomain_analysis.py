@@ -189,27 +189,23 @@ class Single_Qubit_TimeDomainAnalysis(ba.BaseDataAnalysis):
 class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     """
     Base class for multi-qubit time-domain analyses.
-    Types of rotations supported by this class:
-        - rotation based on CalibrationPoints for 1D and TwoD data. Supports
-         2 and 3 cal states per qubit
-            - fixed_cal_points_rotation flag (only for TwoD, with 2 cal states):
-                does PCA on the columns corresponding to the highest cal state
-                to find the indices of that cal state in the columns, then uses
-                those to get the data points for the other cal state. Does
-                rotation using the mean of the data points corresponding to the
-                two cal states as the zero and one coordinates to rotate
-                the data.
-        - do_PCA/do_column_PCA flags: ignores cal points and does pca; in the
-            case of TwoD data it does PCA row by row/column by column
+    Raw data rotation is specified in the option_dict under the keys
+    rotation_type. Types of rotations supported by this class:
+        - 'cal_states' (default, no need to specify): rotation based on
+            CalibrationPoints for 1D and TwoD data. Supports 2 and 3 cal states
+            per qubit
+        - 'fixed_cal_points' (only for TwoD, with 2 cal states):
+            does PCA on the columns corresponding to the highest cal state
+            to find the indices of that cal state in the columns, then uses
+            those to get the data points for the other cal state. Does
+            rotation using the mean of the data points corresponding to the
+            two cal states as the zero and one coordinates to rotate
+            the data.
+        - 'PCA': ignores cal points and does pca; in the case of TwoD data it
+            does PCA row by row
+        - 'column_PCA': cal points and does pca; in the case of TwoD data it
+            does PCA column by column
         - global_PCA flag (only for TwoD): does PCA on the whole 2D array
-
-    The priority for the following flags is a follows:
-        - global_PCA
-        - 3-state rotation
-        - fixed_cal_points_rotation
-        - normal rotation/do_PCA/do_column_PCA
-            - do_column_PCA will rotate column by column even when do_PCA is
-            also True
     """
     def __init__(self,
                  qb_names: list=None, label: str='',
@@ -413,14 +409,11 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             # for now assuming the same for all qubits.
             self.cal_states_dict = self.cp.get_indices(
                 self.qb_names, prep_params)[self.qb_names[0]]
-            if self.rotate:
-                cal_states_rots = self.cp.get_rotations(last_ge_pulses,
-                        self.qb_names[0])[self.qb_names[0]] if self.rotate \
-                    else None
-                self.cal_states_rotations = self.get_param_value(
-                    'cal_states_rotations', default_value=cal_states_rots)
-            else:
-                self.cal_states_rotations = None
+            cal_states_rots = self.cp.get_rotations(last_ge_pulses,
+                    self.qb_names[0])[self.qb_names[0]] if self.rotate \
+                else None
+            self.cal_states_rotations = self.get_param_value(
+                'cal_states_rotations', default_value=cal_states_rots)
             sweep_points_w_calpts = \
                 {qbn: {'sweep_points': self.cp.extend_sweep_points(
                     self.proc_data_dict['sweep_points_dict'][qbn][
@@ -436,6 +429,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 if self.rotate else None
             self.cal_states_dict = self.get_param_value('cal_states_dict',
                                                          default_value={})
+        self.rotation_type = self.get_param_value(
+            'rotation_type',
+            default_value='cal_states' if self.rotate else 'no_rotation')
 
         # create projected_data_dict
         self.data_to_fit = deepcopy(self.get_param_value('data_to_fit', {}))
@@ -445,11 +441,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         for qbn in self.data_to_fit:
             if isinstance(self.data_to_fit[qbn], (list, tuple)):
                 self.data_to_fit[qbn] = self.data_to_fit[qbn][0]
-        self.global_PCA = self.get_param_value('global_PCA',
-                                               default_value=False)
-        self.do_PCA = self.get_param_value('do_PCA', False) or \
-                      self.get_param_value('do_column_PCA', False)
-        if self.rotate or self.global_PCA:
+        if self.rotate or self.rotation_type == 'global_PCA':
             self.cal_states_analysis()
         else:
             # this assumes data obtained with classifier detector!
@@ -515,6 +507,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         self.num_cal_points = np.array(list(
             self.cal_states_dict.values())).flatten().size
 
+        do_PCA = self.rotation_type == 'PCA' or \
+                 self.rotation_type == 'column_PCA'
         self.cal_states_dict_for_rotation = OrderedDict()
         states = False
         cal_states_rotations = self.cal_states_rotations
@@ -532,7 +526,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     [k for k, idx in cal_states_rot_qb.items()
                      if idx == i][0]
                 self.cal_states_dict_for_rotation[qbn][cal_state] = \
-                    None if self.do_PCA and self.num_cal_points != 3 else \
+                    None if do_PCA and self.num_cal_points != 3 else \
                         self.cal_states_dict[cal_state]
 
     def cal_states_analysis(self):
@@ -547,7 +541,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                           '2, or 3 cal states per qubit.')
 
             if self.get_param_value('TwoD', default_value=False):
-                if self.global_PCA:
+                if self.rotation_type == 'global_PCA':
                     self.proc_data_dict['projected_data_dict'].update(
                         self.global_pca_TwoD(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
@@ -560,7 +554,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map,
                             self.cal_states_dict_for_rotation))
-                elif self.get_param_value('fixed_cal_points_rotation', False):
+                elif self.rotation_type == 'fixed_cal_points':
                     rotated_data_dict, zero_coord, one_coord = \
                         self.rotate_data_TwoD_same_fixed_cal_idxs(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
@@ -576,7 +570,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.cal_states_dict_for_rotation,
                             self.data_to_fit,
-                            self.get_param_value('do_column_PCA', False)))
+                            self.rotation_type=='do_column_PCA'))
             else:
                 if len(cal_states_dict) == 3:
                     self.proc_data_dict['projected_data_dict'].update(
@@ -947,7 +941,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             plot_cal_points = (
                                 not self.options_dict.get('TwoD', False))
                             data_axis_label = 'Rotated signal (arb.)' if \
-                                (self.do_PCA or self.global_PCA) else \
+                                'pca' in self.rotation_type.lower() else \
                                 '{} state population'.format(
                                 self.get_latex_prob_label(data_key))
                         self.prepare_projected_data_plot(
@@ -1069,7 +1063,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         title_suffix = qb_name + title_suffix
         if data_axis_label == '':
             data_axis_label = 'Rotated signal (arb.)' if \
-                (self.do_PCA or self.global_PCA) else \
+                'pca' in self.rotation_type.lower() else \
                 '{} state population'.format(self.get_latex_prob_label(
                     self.data_to_fit[qb_name]))
         plotsize = self.get_default_plot_params(set=False)['figure.figsize']
