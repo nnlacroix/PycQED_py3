@@ -1142,6 +1142,12 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 'do_legend': do_legend_data,
                 'legend_bbox_to_anchor': (1, 0.5),
                 'legend_pos': 'center left'}
+
+        # add plot_params to each plot dict
+        plot_params = self.get_param_value('plot_params', default_value={})
+        for plt_name in self.plot_dicts:
+            self.plot_dicts[plt_name].update(plot_params)
+
         if len(plot_names_cal) > 0:
             if do_legend_data and not do_legend_cal_states:
                 for plot_name in plot_names_cal:
