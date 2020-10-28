@@ -187,7 +187,28 @@ class Single_Qubit_TimeDomainAnalysis(ba.BaseDataAnalysis):
 
 
 class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
+    """
+    Base class for multi-qubit time-domain analyses.
+    Types of rotations supported by this class:
+        - rotation based on CalibrationPoints for 1D and TwoD data. Supports
+         2 and 3 cal states per qubit
+            - fixed_cal_points_rotation (only for TwoD, with 2 cal states):
+                does PCA on the columns corresponding to the highest cal state
+                to find the indices of that cal state in the columns, then uses
+                those to get the data points for the other cal state. Does
+                rotation using the mean of the data points corresponding to the
+                two cal states as the zero and one coordinates to rotate
+                the data.
+        - do_pca flag: ignores cal points and does pca; in the case of TwoD data
+            it does PCA row by row
+        - global_PCA flag (only for TwoD): does PCA on the whole 2D array
 
+    The priority for the following flags is a follows:
+        - global_PCA
+        - 3-state rotation
+        - fixed_cal_points_rotation
+        - normal rotation/do_pca
+    """
     def __init__(self,
                  qb_names: list=None, label: str='',
                  t_start: str=None, t_stop: str=None, data_file_path: str=None,
@@ -381,7 +402,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         # temporary fix for appending calibration points to x values but
         # without breaking sequences not yet using this interface.
-        rotate = self.get_param_value('rotate', default_value=False)
+        self.rotate = self.get_param_value('rotate', default_value=False)
         cal_points = self.get_param_value('cal_points')
         last_ge_pulses = self.get_param_value('last_ge_pulses',
                                               default_value=False)
@@ -390,9 +411,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             # for now assuming the same for all qubits.
             self.cal_states_dict = self.cp.get_indices(
                 self.qb_names, prep_params)[self.qb_names[0]]
-            if rotate:
+            if self.rotate:
                 cal_states_rots = self.cp.get_rotations(last_ge_pulses,
-                        self.qb_names[0])[self.qb_names[0]] if rotate else None
+                        self.qb_names[0])[self.qb_names[0]] if self.rotate \
+                    else None
                 self.cal_states_rotations = self.get_param_value(
                     'cal_states_rotations', default_value=cal_states_rots)
             else:
@@ -407,11 +429,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             log.warning("Failed retrieving cal point objects or states. "
                         "Please update measurement to provide cal point object "
                         "in metadata. Trying to get them using the old way ...")
-            if rotate:
-                self.cal_states_rotations = self.get_param_value(
-                    'cal_states_rotations', default_value=None)
-            else:
-                self.cal_states_rotations = None
+            self.cal_states_rotations = self.get_param_value(
+                'cal_states_rotations', default_value=None) \
+                if self.rotate else None
             self.cal_states_dict = self.get_param_value('cal_states_dict',
                                                          default_value={})
 
@@ -423,8 +443,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         for qbn in self.data_to_fit:
             if isinstance(self.data_to_fit[qbn], (list, tuple)):
                 self.data_to_fit[qbn] = self.data_to_fit[qbn][0]
-        global_PCA = self.get_param_value('global_PCA', default_value=False)
-        if self.cal_states_rotations is not None or global_PCA:
+        self.global_PCA = self.get_param_value('global_PCA',
+                                               default_value=False)
+        if self.rotate or self.global_PCA:
             self.cal_states_analysis()
         else:
             # this assumes data obtained with classifier detector!
@@ -487,50 +508,29 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             self.create_sweep_points_2D_dict()
 
     def get_cal_data_points(self):
-        if len(self.cal_states_rotations) == 0:
-            # "To use PCA (no cal states rotation), the measurement function
-            # has to specify the following in the metadata:
-            # - CalibrationPoints with qubit names but empty states
-            # - cal_states_rotations = {}
-            # - rotate = True
-            # - data_to_fit defined ({qbn: 'prob_to_fit'})
-            self.cal_states_dict = {qbn: [] for qbn in self.qb_names}
-            self.cal_states_dict_for_rotation = self.cal_states_dict
-        else:
-            if self.cal_states_dict is None:
-                log.info('Assuming two cal states, |g> and |e>, and using '
-                      'sweep_points[-4:-2] as |g> cal points, and '
-                      'sweep_points[-2::] as |e> cal points.')
-                self.cal_states_dict = OrderedDict()
-                indices = list(range(-len(self.cal_states_rotations)*2, 0))
-                for state, rot_idx in self.cal_states_rotations.items():
-                    self.cal_states_dict[self.get_latex_prob_label(state)] = \
-                        indices[2*rot_idx: 2*rot_idx+2]
-                self.cal_states_dict_for_rotation = OrderedDict()
-                for qbn in self.qb_names:
-                    self.cal_states_dict_for_rotation[qbn] = self.cal_states_dict
-            else:
-                self.cal_states_dict_for_rotation = OrderedDict()
-                states = False
-                cal_states_rotations = self.cal_states_rotations
-                for key in cal_states_rotations.keys():
-                    if key == 'g' or key == 'e' or key == 'f':
-                        states = True
-                for qbn in self.qb_names:
-                    self.cal_states_dict_for_rotation[qbn] = OrderedDict()
-                    if states:
-                        cal_states_rot_qb = cal_states_rotations
-                    else:
-                        cal_states_rot_qb = cal_states_rotations[qbn]
-                    for i in range(len(cal_states_rot_qb)):
-                        cal_state = \
-                            [k for k, idx in cal_states_rot_qb.items()
-                             if idx == i][0]
-                        self.cal_states_dict_for_rotation[qbn][cal_state] = \
-                            self.cal_states_dict[cal_state]
-
         self.num_cal_points = np.array(list(
             self.cal_states_dict.values())).flatten().size
+
+        self.cal_states_dict_for_rotation = OrderedDict()
+        states = False
+        cal_states_rotations = self.cal_states_rotations
+        for key in cal_states_rotations.keys():
+            if key == 'g' or key == 'e' or key == 'f':
+                states = True
+        for qbn in self.qb_names:
+            self.cal_states_dict_for_rotation[qbn] = OrderedDict()
+            if states:
+                cal_states_rot_qb = cal_states_rotations
+            else:
+                cal_states_rot_qb = cal_states_rotations[qbn]
+            for i in range(len(cal_states_rot_qb)):
+                cal_state = \
+                    [k for k, idx in cal_states_rot_qb.items()
+                     if idx == i][0]
+                self.cal_states_dict_for_rotation[qbn][cal_state] = \
+                    None if self.get_param_value('do_pca', False) and \
+                        self.num_cal_points != 3 else \
+                        self.cal_states_dict[cal_state]
 
     def cal_states_analysis(self):
         self.get_cal_data_points()
@@ -544,22 +544,31 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                           '2, or 3 cal states per qubit.')
 
             if self.get_param_value('TwoD', default_value=False):
-                if len(cal_states_dict) == 3:
+                if self.global_PCA:
+                    self.proc_data_dict['projected_data_dict'].update(
+                        self.global_pca_TwoD(
+                            qbn, self.proc_data_dict['meas_results_per_qb'],
+                            self.channel_map, self.data_to_fit,
+                            data_mostly_g=self.get_param_value(
+                                'data_mostly_g', default_value=None)))
+                elif len(cal_states_dict) == 3:
                     self.proc_data_dict['projected_data_dict'].update(
                         self.rotate_data_3_cal_states_TwoD(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map,
                             self.cal_states_dict_for_rotation))
+                elif self.get_param_value('fixed_cal_points_rotation', False):
+                    self.proc_data_dict['projected_data_dict'].update(
+                        self.rotate_data_TwoD_same_fixed_cal_idxs(
+                            qbn, self.proc_data_dict['meas_results_per_qb'],
+                            self.channel_map, self.cal_states_dict_for_rotation,
+                            self.data_to_fit))
                 else:
                     self.proc_data_dict['projected_data_dict'].update(
                         self.rotate_data_TwoD(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.cal_states_dict_for_rotation,
-                            self.data_to_fit,
-                            global_PCA=self.get_param_value(
-                                'global_PCA', default_value=False),
-                            data_mostly_g=self.get_param_value(
-                                'data_mostly_g', default_value=True)))
+                            self.data_to_fit))
             else:
                 if len(cal_states_dict) == 3:
                     self.proc_data_dict['projected_data_dict'].update(
@@ -579,7 +588,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                  cal_states_dict):
         # FOR 3 CAL STATES
         rotated_data_dict = OrderedDict()
-        meas_res_dict  =meas_results_per_qb[qb_name]
+        meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict[qb_name] = OrderedDict()
         cal_pts_idxs = list(cal_states_dict[qb_name].values())
         cal_points_data = np.zeros((len(cal_pts_idxs), 2))
@@ -699,11 +708,32 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 rotated_data_dict[qb_name][f'p{state}'].T
         return rotated_data_dict
 
+    @staticmethod
+    def global_pca_TwoD(qb_name, meas_results_per_qb, channel_map,
+                        data_to_fit, data_mostly_g=None):
+        meas_res_dict = meas_results_per_qb[qb_name]
+        if list(meas_res_dict) != channel_map[qb_name]:
+            raise NotImplementedError('Global PCA is only implemented '
+                                      'for two-channel RO!')
+
+        raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
+        rotated_data_dict = OrderedDict({qb_name: OrderedDict()})
+        rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
+            deepcopy(raw_data_arr.transpose())
+        data_array = np.array(
+            [v.T.flatten() for v in meas_res_dict.values()])
+        rot_flat_data, _, _ = \
+            a_tools.rotate_and_normalize_data_IQ(
+                data=data_array,
+                data_mostly_g=data_mostly_g)
+        rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
+            np.reshape(rot_flat_data, raw_data_arr.T.shape)
+
+        return rotated_data_dict
 
     @staticmethod
     def rotate_data_TwoD(qb_name, meas_results_per_qb, channel_map,
-                         cal_states_dict, data_to_fit,
-                         global_PCA=False, data_mostly_g=None):
+                         cal_states_dict, data_to_fit):
         meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict = OrderedDict()
         if len(cal_states_dict[qb_name]) == 0:
@@ -714,9 +744,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             cal_one_points = list(cal_states_dict[qb_name].values())[1]
         rotated_data_dict[qb_name] = OrderedDict()
         if len(meas_res_dict) == 1:
-            if global_PCA:
-                raise NotImplementedError('Global PCA is not implemented \
-                                        for one channel RO!')
             # one RO channel per qubit
             raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
             rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
@@ -732,32 +759,16 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
             rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
                 deepcopy(raw_data_arr.transpose())
-            if not global_PCA:
-                for col in range(raw_data_arr.shape[1]):
-                    data_array = np.array(
-                        [v[:, col] for v in meas_res_dict.values()])
-                    rotated_data_dict[qb_name][
-                            data_to_fit[qb_name]][col], _, _ = \
-                        a_tools.rotate_and_normalize_data_IQ(
-                            data=data_array,
-                            cal_zero_points=cal_zero_points,
-                            cal_one_points=cal_one_points)
-            else:
+            for col in range(raw_data_arr.shape[1]):
                 data_array = np.array(
-                    [v.T.flatten() for v in meas_res_dict.values()])
-                rot_flat_data, _, _ = \
+                    [v[:, col] for v in meas_res_dict.values()])
+                rotated_data_dict[qb_name][
+                        data_to_fit[qb_name]][col], _, _ = \
                     a_tools.rotate_and_normalize_data_IQ(
                         data=data_array,
-                        cal_zero_points=None,  # if cal_points are None, rotation via PCA
-                        cal_one_points=None,
-                        data_mostly_g=data_mostly_g  # True if most points are expected to be ground state
-                    )
-                rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
-                    np.reshape(rot_flat_data, raw_data_arr.T.shape)
+                        cal_zero_points=cal_zero_points,
+                        cal_one_points=cal_one_points)
         else:
-            if global_PCA:
-                raise NotImplementedError('Global PCA is not implemented \
-                                        for multiple RPs per qubit channel!')
             # multiple readouts per qubit per channel
             if isinstance(channel_map[qb_name], str):
                 qb_ro_ch0 = channel_map[qb_name]
@@ -794,6 +805,55 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                 data=data_array,
                                 cal_zero_points=cal_zero_points,
                                 cal_one_points=cal_one_points)
+        return rotated_data_dict
+
+    @staticmethod
+    def rotate_data_TwoD_same_fixed_cal_idxs(qb_name, meas_results_per_qb,
+                                             channel_map, cal_states_dict,
+                                             data_to_fit):
+        print('here')
+        meas_res_dict = meas_results_per_qb[qb_name]
+        if list(meas_res_dict) != channel_map[qb_name]:
+            raise NotImplementedError('rotate_data_TwoD_same_fixed_cal_idxs '
+                                      'only implemented for two-channel RO!')
+
+        if len(cal_states_dict[qb_name]) == 0:
+            cal_zero_points = None
+            cal_one_points = None
+        else:
+            cal_zero_points = list(cal_states_dict[qb_name].values())[0]
+            cal_one_points = list(cal_states_dict[qb_name].values())[1]
+
+        # do pca on the one cal states
+        raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
+        rot_dat_e = np.zeros(raw_data_arr.shape[1])
+        for row in cal_one_points:
+            rot_dat_e += a_tools.rotate_and_normalize_data_IQ(
+                data=np.array([v[row, :] for v in meas_res_dict.values()]),
+                cal_zero_points=None, cal_one_points=None)[0]
+        rot_dat_e /= len(cal_one_points)
+
+        # find the values of the zero and one cal points
+        col_idx = np.argmax(rot_dat_e)
+        zero_coord = [np.mean([v[r, col_idx] for r in cal_zero_points])
+                      for v in meas_res_dict.values()]
+        one_coord = [np.mean([v[r, col_idx] for r in cal_one_points])
+                     for v in meas_res_dict.values()]
+
+        # rotate all data based on the fixed zero_coord and one_coord
+        rotated_data_dict = OrderedDict({qb_name: OrderedDict()})
+        rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
+            deepcopy(raw_data_arr.transpose())
+        for col in range(raw_data_arr.shape[1]):
+            data_array = np.array(
+                [v[:, col] for v in meas_res_dict.values()])
+            rotated_data_dict[qb_name][
+                data_to_fit[qb_name]][col], _, _ = \
+                a_tools.rotate_and_normalize_data_IQ(
+                    data=data_array,
+                    zero_coord=zero_coord,
+                    one_coord=one_coord)
+
         return rotated_data_dict
 
     def get_xaxis_label_unit(self, qb_name):
@@ -846,7 +906,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 fig_name = 'projected_plot_' + qb_name
                 if isinstance(corr_data, dict):
                     for data_key, data in corr_data.items():
-                        if self.cal_states_rotations is None:
+                        if not self.rotate:
                             data_label = data_key
                             title_suffix = ''
                             plot_name_suffix = data_key
@@ -878,7 +938,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             not self.options_dict.get('TwoD', False)))
 
         if self.get_param_value('plot_raw_data', default_value=True):
-            # self.cal_states_rotations is not None:
+            # self.rotate == True:
             self.prepare_raw_data_plots(plot_filtered=False)
             if 'preparation_params' in self.metadata:
                 if 'active' in self.metadata['preparation_params'].get(
