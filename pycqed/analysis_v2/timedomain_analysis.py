@@ -199,15 +199,17 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 rotation using the mean of the data points corresponding to the
                 two cal states as the zero and one coordinates to rotate
                 the data.
-        - do_pca flag: ignores cal points and does pca; in the case of TwoD data
-            it does PCA row by row
+        - do_PCA/do_column_PCA flags: ignores cal points and does pca; in the
+            case of TwoD data it does PCA row by row/column by column
         - global_PCA flag (only for TwoD): does PCA on the whole 2D array
 
     The priority for the following flags is a follows:
         - global_PCA
         - 3-state rotation
         - fixed_cal_points_rotation
-        - normal rotation/do_pca
+        - normal rotation/do_PCA/do_column_PCA
+            - do_column_PCA will rotate column by column even when do_PCA is
+            also True
     """
     def __init__(self,
                  qb_names: list=None, label: str='',
@@ -445,6 +447,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 self.data_to_fit[qbn] = self.data_to_fit[qbn][0]
         self.global_PCA = self.get_param_value('global_PCA',
                                                default_value=False)
+        self.do_PCA = self.get_param_value('do_PCA', False) or \
+                      self.get_param_value('do_column_PCA', False)
         if self.rotate or self.global_PCA:
             self.cal_states_analysis()
         else:
@@ -528,8 +532,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     [k for k, idx in cal_states_rot_qb.items()
                      if idx == i][0]
                 self.cal_states_dict_for_rotation[qbn][cal_state] = \
-                    None if self.get_param_value('do_pca', False) and \
-                        self.num_cal_points != 3 else \
+                    None if self.do_PCA and self.num_cal_points != 3 else \
                         self.cal_states_dict[cal_state]
 
     def cal_states_analysis(self):
@@ -572,7 +575,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         self.rotate_data_TwoD(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.cal_states_dict_for_rotation,
-                            self.data_to_fit))
+                            self.data_to_fit,
+                            self.get_param_value('do_column_PCA', False)))
             else:
                 if len(cal_states_dict) == 3:
                     self.proc_data_dict['projected_data_dict'].update(
@@ -737,7 +741,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     @staticmethod
     def rotate_data_TwoD(qb_name, meas_results_per_qb, channel_map,
-                         cal_states_dict, data_to_fit):
+                         cal_states_dict, data_to_fit, do_column_PCA=False):
         meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict = OrderedDict()
         if len(cal_states_dict[qb_name]) == 0:
@@ -752,26 +756,45 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
             rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
                 deepcopy(raw_data_arr.transpose())
-            for col in range(raw_data_arr.shape[1]):
-                rotated_data_dict[qb_name][data_to_fit[qb_name]][col] = \
-                    a_tools.rotate_and_normalize_data_1ch(
-                        data=raw_data_arr[:, col],
-                        cal_zero_points=cal_zero_points,
-                        cal_one_points=cal_one_points)
+            if do_column_PCA:
+                for row in range(raw_data_arr.shape[0]):
+                    rotated_data_dict[qb_name][data_to_fit[qb_name]][:, row] = \
+                        a_tools.rotate_and_normalize_data_1ch(
+                            data=raw_data_arr[row, :],
+                            cal_zero_points=cal_zero_points,
+                            cal_one_points=cal_one_points)
+            else:
+                for col in range(raw_data_arr.shape[1]):
+                    rotated_data_dict[qb_name][data_to_fit[qb_name]][col] = \
+                        a_tools.rotate_and_normalize_data_1ch(
+                            data=raw_data_arr[:, col],
+                            cal_zero_points=cal_zero_points,
+                            cal_one_points=cal_one_points)
         elif list(meas_res_dict) == channel_map[qb_name]:
             # two RO channels per qubit
             raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
             rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
                 deepcopy(raw_data_arr.transpose())
-            for col in range(raw_data_arr.shape[1]):
-                data_array = np.array(
-                    [v[:, col] for v in meas_res_dict.values()])
-                rotated_data_dict[qb_name][
-                        data_to_fit[qb_name]][col], _, _ = \
-                    a_tools.rotate_and_normalize_data_IQ(
-                        data=data_array,
-                        cal_zero_points=cal_zero_points,
-                        cal_one_points=cal_one_points)
+            if do_column_PCA:
+                for row in range(raw_data_arr.shape[0]):
+                    data_array = np.array(
+                        [v[row, :] for v in meas_res_dict.values()])
+                    rotated_data_dict[qb_name][
+                        data_to_fit[qb_name]][:, row], _, _ = \
+                        a_tools.rotate_and_normalize_data_IQ(
+                            data=data_array,
+                            cal_zero_points=cal_zero_points,
+                            cal_one_points=cal_one_points)
+            else:
+                for col in range(raw_data_arr.shape[1]):
+                    data_array = np.array(
+                        [v[:, col] for v in meas_res_dict.values()])
+                    rotated_data_dict[qb_name][
+                            data_to_fit[qb_name]][col], _, _ = \
+                        a_tools.rotate_and_normalize_data_IQ(
+                            data=data_array,
+                            cal_zero_points=cal_zero_points,
+                            cal_one_points=cal_one_points)
         else:
             # multiple readouts per qubit per channel
             if isinstance(channel_map[qb_name], str):
@@ -923,7 +946,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             plot_name_suffix = ''
                             plot_cal_points = (
                                 not self.options_dict.get('TwoD', False))
-                            data_axis_label = '{} state population'.format(
+                            data_axis_label = 'Rotated signal (arb.)' if \
+                                (self.do_PCA or self.global_PCA) else \
+                                '{} state population'.format(
                                 self.get_latex_prob_label(data_key))
                         self.prepare_projected_data_plot(
                             fig_name, data, qb_name=qb_name,
@@ -1043,8 +1068,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             data_axis_label='', do_legend_data=True, do_legend_cal_states=True):
         title_suffix = qb_name + title_suffix
         if data_axis_label == '':
-            data_axis_label = '{} state population'.format(
-                self.get_latex_prob_label(self.data_to_fit[qb_name]))
+            data_axis_label = 'Rotated signal (arb.)' if \
+                (self.do_PCA or self.global_PCA) else \
+                '{} state population'.format(self.get_latex_prob_label(
+                    self.data_to_fit[qb_name]))
         plotsize = self.get_default_plot_params(set=False)['figure.figsize']
         plotsize = (plotsize[0], plotsize[0]/1.25)
 
