@@ -6613,10 +6613,10 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                 tupes [(f1, f2), ...]. Will be excluded from both fitting
                 and plotting.
             delay_ranges_exclude: (list) delay ranges to exclude as list of
-                tupes [(f1, f2), ...]. Will be excluded from both fitting
+                tupes [(t1, t2), ...]. Will be excluded from both fitting
                 and plotting.
             rectangles_exclude: (list) rectangles to exclude as list of
-                tupes [(f1, f2), ...]. Will be excluded from fitting,
+                tupes [(t1, t2, f1, f2), ...]. Will be excluded from fitting,
                 but not from plotting.
             **kw (dict): keywords passed to the init of the base class
         '''
