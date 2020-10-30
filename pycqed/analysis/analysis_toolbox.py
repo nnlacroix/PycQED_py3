@@ -1348,6 +1348,10 @@ def rotate_and_normalize_data_1ch(data, cal_zero_points=np.arange(-4, -2, 1),
 
     return normalized_data
 
+def set_background_sign(data, background_sign=-1):
+    # print(np.median(data), np.mean(data))
+    return data * (np.sign(background_sign) *
+                   np.sign(np.median(data) - np.mean(data)))
 
 def predict_gm_proba_from_cal_points(X, cal_points):
     """

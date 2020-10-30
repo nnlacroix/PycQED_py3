@@ -771,11 +771,12 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 deepcopy(raw_data_arr.transpose())
             if do_column_PCA:
                 for row in range(raw_data_arr.shape[0]):
-                    rotated_data_dict[qb_name][data_to_fit[qb_name]][:, row] = \
-                        a_tools.rotate_and_normalize_data_1ch(
-                            data=raw_data_arr[row, :],
-                            cal_zero_points=cal_zero_points,
-                            cal_one_points=cal_one_points)
+                    data = a_tools.rotate_and_normalize_data_1ch(
+                        data=raw_data_arr[row, :],
+                        cal_zero_points=cal_zero_points,
+                        cal_one_points=cal_one_points)
+                    rotated_data_dict[qb_name][data_to_fit[qb_name]][
+                        :, row] = a_tools.set_background_sign(data)
             else:
                 for col in range(raw_data_arr.shape[1]):
                     rotated_data_dict[qb_name][data_to_fit[qb_name]][col] = \
@@ -792,12 +793,13 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 for row in range(raw_data_arr.shape[0]):
                     data_array = np.array(
                         [v[row, :] for v in meas_res_dict.values()])
-                    rotated_data_dict[qb_name][
-                        data_to_fit[qb_name]][:, row], _, _ = \
+                    data, _, _ = \
                         a_tools.rotate_and_normalize_data_IQ(
                             data=data_array,
                             cal_zero_points=cal_zero_points,
                             cal_one_points=cal_one_points)
+                    rotated_data_dict[qb_name][data_to_fit[qb_name]][
+                        :, row] = a_tools.set_background_sign(data)
             else:
                 for col in range(raw_data_arr.shape[1]):
                     data_array = np.array(
