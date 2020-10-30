@@ -570,7 +570,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.cal_states_dict_for_rotation,
                             self.data_to_fit,
-                            self.rotation_type=='do_column_PCA'))
+                            self.rotation_type=='column_PCA'))
             else:
                 if len(cal_states_dict) == 3:
                     self.proc_data_dict['projected_data_dict'].update(
