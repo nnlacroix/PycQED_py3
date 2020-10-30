@@ -7193,7 +7193,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             self.sign_of_peaks = {qbn: None for qbn in self.qb_names}
         for qbn in self.qb_names:
             if self.sign_of_peaks.get(qbn, None) is None:
-                if self.rotation_type == 'fixed_cal_points':
+                if self.rotation_type in ['column_PCA', 'fixed_cal_points']:
                     # e state corresponds to larger values than g state
                     self.sign_of_peaks[qbn] = 1
                 else:
