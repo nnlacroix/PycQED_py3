@@ -1375,6 +1375,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     'xunit': xunit,
                     'ylabel': ylabel,
                     'yunit': yunit,
+                    'zrange': self.get_param_value('zrange', None),
                     'title': title,
                     'clabel': data_axis_label}
         else:
