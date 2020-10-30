@@ -7184,13 +7184,17 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
         self.sign_of_peaks = self.get_param_value('sign_of_peaks',
                                                   default_value=OrderedDict())
         if self.sign_of_peaks is None:
-            self.sign_of_peaks = {}
-        if len(self.sign_of_peaks) == 0:
-            for qbn in self.qb_names:
-                msmt_data = self.proc_data_dict['proc_data_to_fit'][qbn][
-                    :, :-self.num_cal_points]
-                self.sign_of_peaks[qbn] = np.sign(np.mean(msmt_data) -
-                                                  np.median(msmt_data))
+            self.sign_of_peaks = {qbn: None for qbn in self.qb_names}
+        for qbn in self.qb_names:
+            if self.sign_of_peaks[qbn] is None:
+                if self.rotation_type == 'fixed_cal_points':
+                    # e state corresponds to larger values than g state
+                    self.sign_of_peaks[qbn] = 1
+                else:
+                    msmt_data = self.proc_data_dict['proc_data_to_fit'][qbn][
+                        :, :-self.num_cal_points]
+                    self.sign_of_peaks[qbn] = np.sign(np.mean(msmt_data) -
+                                                      np.median(msmt_data))
 
         self.sigma_guess = self.get_param_value('sigma_guess')
         if self.sigma_guess is None:
