@@ -6714,7 +6714,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         axc = plt.colorbar(im)
         axc.set_label('transmission, $|S_{21}|$ (mV)')
 
-        ax.set_xlabel(r'delay, $\tau$ (ns)')
+        ax.set_xlabel(r'delay, $t$ (ns)')
         ax.set_ylabel(r'drive frequency, $f_d$ (GHz)')
         ax.set_title('{} {}'.format(self.timestamp_string, self.measurementstring))
 
@@ -6831,7 +6831,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                             yerr=fitted_stds/1e6)
             else:
                 ax.plot(delays/1e-9, self.fitted_freqs/1e6)
-            ax.set_xlabel(r'delay, $\tau$ (ns)')
+            ax.set_xlabel(r'delay, $t$ (ns)')
             ax.set_ylabel(r'fitted qubit frequency, $f_q$ (MHz)')
             plt.show()
 
@@ -6875,7 +6875,7 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
         if plot:
             fig, ax = plt.subplots()
             ax.plot(self.sweep_points/1e-9, self.fitted_volts)
-            ax.set_xlabel(r'delay, $\tau$ (ns)')
+            ax.set_xlabel(r'delay, $t$ (ns)')
             ax.set_ylabel(r'fitted voltage, $U$ (V)')
             plt.show()
 
