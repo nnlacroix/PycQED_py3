@@ -7471,6 +7471,8 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
         # reshape data per prepared state before reset for each pg, pe, (pf),
         # for the projected data dict and possibly the readout-corrected version
         pdd = 'projected_data_dict'
+        self.proc_data_dict[pdd]["qb10"]["pe"] = self.proc_data_dict[pdd]["qb10"]["pe"].T
+        self.proc_data_dict[pdd]["qb10"]["pg"] = (1 - self.proc_data_dict[pdd]["qb10"]["pe"])
         for suffix in ["", "_corrected"]:
             projdd_per_prep_state = \
                 deepcopy(self.proc_data_dict.get(pdd + suffix, {}))
@@ -7659,6 +7661,7 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
                                     'legend_ncol': legend_ncol,
                                     'legend_bbox_to_anchor': legend_bbox_to_anchor,
                                     'legend_pos': legend_pos}
+
                             # plot fit results
                             fit_key = \
                                 f'fit_rate_{qbn}_{prep_state}_seq_{seq_nr}{keys[k]}'
