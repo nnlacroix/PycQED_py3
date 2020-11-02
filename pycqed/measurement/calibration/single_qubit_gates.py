@@ -572,11 +572,6 @@ class ActiveReset(CalibBuilder):
                                  CalibrationPoints([qb.name for qb in qb_in_exp],
                                                    ()))
         self.cal_states = kw.get('cal_states', ())
-        # should transform raw voltage to probas in analysis if no cal points
-        # and not classified readout already
-        predict_proba = len(self.cal_states) == 0 and  not self.classified
-        self.exp_metadata.update({"n_shots": self.n_shots,
-                                  "predict_proba":  predict_proba})
 
     def prepare_measurement(self, **kw):
 
@@ -595,11 +590,19 @@ class ActiveReset(CalibBuilder):
                     classifier_params['mapping']
         if self.set_thresholds:
             self._set_thresholds(self.qubits)
-
+        self.exp_metadata.update({"thresholds":
+                                      self._get_thresholds(self.qubits)})
         self.preprocessed_task_list = self.preprocess_task_list(**kw)
         self.sequences, self.mc_points = \
             self.parallel_sweep(self.preprocessed_task_list,
                                 self.reset_block, block_align="start", **kw)
+
+        # should transform raw voltage to probas in analysis if no cal points
+        # and not classified readout already
+        predict_proba = len(self.cal_states) == 0 and not self.classified
+        self.exp_metadata.update({"n_shots": self.n_shots,
+                                  "predict_proba": predict_proba,
+                                  "reset_reps": self.reset_reps})
 
     def reset_block(self, qubit, **kw):
         _ , qubit = self.get_qubits(qubit) # ensure qubit in list format
@@ -671,3 +674,48 @@ class ActiveReset(CalibBuilder):
                 qb.instr_uhf.get_instr().set(
                     f'qas_0_thresholds_{channels[unit]}_level', thresh)
 
+    @staticmethod
+    def _get_thresholds(qubits, from_clf_params=False, all_qb_channels=False):
+        """
+        Gets the UHF channel thresholds for each qubit in qubits.
+        Args:
+            qubits (list, QuDevTransmon): (list of) qubit(s)
+            from_clf_params (bool): whether thresholds should be retrieved
+                from the classifier parameters (when True) or from the UHF
+                channel directly (when False).
+            all_qb_channels (bool): whether all thresholds should be retrieved
+                or only the ones in use for the current weight type of the qubit.
+        Returns:
+
+        """
+
+        # check if single qubit provided
+        if np.ndim(qubits) == 0:
+            qubits = [qubits]
+
+        thresholds = {}
+        for qb in qubits:
+            # perpare correspondance between integration unit (key)
+            # and uhf channel; check if only one channel is asked for
+            # (not asked for all qb channels and weight type uses only 1)
+            if not all_qb_channels and qb.acq_weights_type() \
+                    in ('square_root', 'optimal'):
+                chs = {0: qb.acq_I_channel()}
+            else:
+                # other weight types have 2 channels
+                chs = {0: qb.acq_I_channel(), 1: qb.acq_Q_channel()}
+
+            #get clf thresholds
+            if from_clf_params:
+                thresh_qb = deepcopy(
+                    qb.acq_classifier_params().get("thresholds", {}))
+                thresholds[qb.name] = {u: thr for u, thr in thresh_qb.items()
+                                       if u in chs}
+            # get UHF thresholds
+            else:
+                thresholds[qb.name] = \
+                    {u: qb.instr_uhf.get_instr()
+                          .get(f'qas_0_thresholds_{ch}_level')
+                     for u, ch in chs.items()}
+
+        return thresholds
