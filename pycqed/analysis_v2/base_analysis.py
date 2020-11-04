@@ -335,7 +335,7 @@ class BaseDataAnalysis(object):
         Returns:
 
         """
-        h5mode = self.options_dict.get('h5mode', 'r+')
+        h5mode = self.options_dict.get('h5mode', 'r')
         folder = a_tools.get_folder(self.timestamps[hdf_file_index])
         h5filepath = a_tools.measurement_filename(folder)
         data_file = h5py.File(h5filepath, h5mode)
@@ -371,7 +371,7 @@ class BaseDataAnalysis(object):
                                             params_dict])
 
             folder = a_tools.get_folder(timestamp)
-            h5mode = self.options_dict.get('h5mode', 'r+')
+            h5mode = self.options_dict.get('h5mode', 'r')
             h5filepath = a_tools.measurement_filename(folder)
             data_file = h5py.File(h5filepath, h5mode)
             try:
