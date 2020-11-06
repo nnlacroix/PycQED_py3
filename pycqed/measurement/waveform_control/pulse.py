@@ -170,7 +170,7 @@ class Pulse:
                     factor = self.crosstalk_cancellation_mtx[idx_c, idx_c2]
                     wfs.append(factor * self.chan_wf( c2, tvals))
         elif channel in self.channels:
-            wfs = self.chan_wf(channel, tvals)
+            wfs = self.waveforms({channel: tvals})[channel]
         else:
             wfs = np.zeros_like(tvals)
         dt = tvals[1] - tvals[0]
