@@ -1162,36 +1162,34 @@ class ZI_base_instrument(Instrument):
     def start(self):
         self.check_errors()
 
-        # FIXME
-        # Loop through each AWG and check whether to reconfigure it
-        if self.devtype != 'PQSC':
-            for awg_nr in range(self._num_channels()//2):
-                self._length_match_waveforms(awg_nr)
+        if self.devtype == 'PQSC':
+            self.set('execution_enable', 1)
+            return
 
-                # If the reconfiguration flag is set, upload new program
-                if self._awg_needs_configuration[awg_nr]:
-                    self._configure_awg_from_variable(awg_nr)
-                    self._awg_needs_configuration[awg_nr] = False
-                    self._clear_dirty_waveforms(awg_nr)
-                else:
-                    # Loop through all waveforms and update accordingly
-                    self._upload_updated_waveforms(awg_nr)
-                    self._clear_dirty_waveforms(awg_nr)
+        # Loop through each AWG and check whether to reconfigure it
+        for awg_nr in range(self._num_channels()//2):
+            self._length_match_waveforms(awg_nr)
+
+            # If the reconfiguration flag is set, upload new program
+            if self._awg_needs_configuration[awg_nr]:
+                self._configure_awg_from_variable(awg_nr)
+                self._awg_needs_configuration[awg_nr] = False
+                self._clear_dirty_waveforms(awg_nr)
+            else:
+                # Loop through all waveforms and update accordingly
+                self._upload_updated_waveforms(awg_nr)
+                self._clear_dirty_waveforms(awg_nr)
 
         # Start all AWG's
-        # FIXME: make this if clause nicer
-        if self.devtype != 'PQSC':
-            for awg_nr in range(self._num_channels()//2):
-                # Skip AWG's without programs
-                if self._awg_program[awg_nr] is None:
-                    continue
-                # Check that the AWG is ready
-                if not self.get('awgs_{}_ready'.format(awg_nr)):
-                    raise ziReadyError('Tried to start AWG {} that is not ready!'.format(awg_nr))
-                # Enable it
-                self.set('awgs_{}_enable'.format(awg_nr), 1)
-        else: 
-            self.set('execution_enable', 1)
+        for awg_nr in range(self._num_channels()//2):
+            # Skip AWG's without programs
+            if self._awg_program[awg_nr] is None:
+                continue
+            # Check that the AWG is ready
+            if not self.get('awgs_{}_ready'.format(awg_nr)):
+                raise ziReadyError('Tried to start AWG {} that is not ready!'.format(awg_nr))
+            # Enable it
+            self.set('awgs_{}_enable'.format(awg_nr), 1)
 
     def stop(self): 
         # Stop all AWG's
