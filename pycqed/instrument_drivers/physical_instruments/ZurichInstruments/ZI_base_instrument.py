@@ -1239,7 +1239,7 @@ class ZI_base_instrument(Instrument):
 
             self.configure_awg_from_string(awg_nr, full_program)
         else:
-            logging.warning(f"{self.devname}: No program configured for awg_nr {awg_nr}.")
+            logging.info(f"{self.devname}: No program configured for awg_nr {awg_nr}.")
 
     def _write_cmd_to_logfile(self, cmd):
         if self._logfile is not None:
@@ -1371,7 +1371,7 @@ class ZI_base_instrument(Instrument):
             if self._awg_program[awg_nr] is None:
                 # to configure all awgs use "upload_codeword_program" or specify
                 # another program
-                logging.warning(f"{self.devname}: Not starting awg_nr {awg_nr}.")
+                logging.info(f"{self.devname}: Not starting awg_nr {awg_nr}.")
                 continue
             # Check that the AWG is ready
             if not self.get('awgs_{}_ready'.format(awg_nr)):
