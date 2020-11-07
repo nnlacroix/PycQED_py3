@@ -700,6 +700,8 @@ class ZI_base_instrument(Instrument):
         # Create other neat parameters
         self._add_extra_parameters()
 
+        self._awg_source_strings = {}
+
         # Structure for storing errors
         self._errors = None
         # Structure for storing errors that should be demoted to warnings
@@ -1416,6 +1418,9 @@ class ZI_base_instrument(Instrument):
         log.info('Configuring awg_nr {} from string.'.format(awg_nr))
         # Check that awg_nr is set in accordance with devtype
         self._check_awg_nr(awg_nr)
+
+        self._awg_source_strings[awg_nr] = program_string
+
 
         t0 = time.time()
         success_and_ready = False

@@ -262,8 +262,8 @@ class ZI_HDAWG_core(zibase.ZI_base_instrument):
                         'severity': severity,
                         'message' : message}
 
-        # if found_errors:
-        #     raise zibase.ziRuntimeError('Errors detected during run-time!')
+        if found_errors:
+            raise zibase.ziRuntimeError('Errors detected during run-time!')
 
     def clear_errors(self):
         self.seti('raw/error/clear', 1)
