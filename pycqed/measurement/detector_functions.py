@@ -237,10 +237,26 @@ class Multi_Detector_UHF(Multi_Detector):
 
     def get_values(self):
         values_list = []
+
+
+        # Since master (holding cc object) is first in self.detectors,
+        self.detectors[0].AWG.stop()
+        self.detectors[0].AWG.get_operation_complete()
+
+        # Prepare and arm
         for detector in self.detectors:
+            # Ramiro pointed out that prepare gets called by MC
+            # detector.prepare()
             detector.arm()
+            detector.UHFQC.sync()
+
+        # Run (both in parallel and implicitly)
+        self.detectors[0].AWG.start()
+        self.detectors[0].AWG.get_operation_complete()
+
+        # Get data
         for detector in self.detectors:
-            new_values = detector.get_values(arm=False)
+            new_values = detector.get_values(arm=False, is_single_detector=False)
             values_list.append(new_values)
         values = np.concatenate(values_list)
         return values
@@ -331,7 +347,7 @@ class Dummy_Detector_Hard(Hard_Detector):
         x = self.sweep_points
         noise = self.noise * (np.random.rand(2, len(x)) - .5)
         data = np.array([np.sin(x / np.pi),
-                         np.cos(x/np.pi)])
+                         np.cos(x / np.pi)])
         data += noise
         time.sleep(self.delay)
         # Counter used in test suite to test how many times data was acquired.
@@ -1485,12 +1501,9 @@ class CBox_v3_single_integration_average_det(Soft_Detector):
         # import sys
         # tb.print_tb(sys.last_traceback)
         while not success:
-            print("acquiring")
-
             self.CBox.set('acquisition_mode', 'integration averaging mode')
             try:
                 data = self.CBox.get_integrated_avg_results()
-                print("detector function, data", data)
                 success = True
             except Exception as e:
                 log.warning(e)
@@ -1647,13 +1660,14 @@ class UHFQC_spectroscopy_detector(Soft_Detector):
                  AWG=None, channels=(0, 1),
                  nr_averages=1024, integration_length=4096, **kw):
         super().__init__()
+        # FIXME: code commented out, some __init__ parameters no longer used
         #UHFQC=UHFQC, AWG=AWG, channels=channels,
         # nr_averages=nr_averages, nr_samples=nr_samples, **kw
         self.UHFQC = UHFQC
         self.ro_freq_mod = ro_freq_mod
 
     def acquire_data_point(self):
-        RESULT_LENGTH = 1600
+        RESULT_LENGTH = 1600  # FIXME: hardcoded
         vals = self.UHFQC.acquisition(
             samples=RESULT_LENGTH, acquisition_time=0.010, timeout=10)
         a = max(np.abs(fft.fft(vals[0][1:int(RESULT_LENGTH/2)])))
@@ -1827,32 +1841,38 @@ class UHFQC_integrated_average_detector(Hard_Detector):
     def arm(self):
         # resets UHFQC internal readout counters
         self.UHFQC.acquisition_arm()
+        self.UHFQC.sync()
 
-    def get_values(self, arm=True):
-        if self.always_prepare:
-            self.prepare()
+    def get_values(self, arm=True, is_single_detector=True):
+        if is_single_detector:
+            if self.always_prepare:
+                self.prepare()
 
-        if self.AWG is not None:
-            self.AWG.stop()
+            if self.AWG is not None:
+                self.AWG.stop()
+                self.AWG.get_operation_complete()
 
-        if arm:
-            self.arm()
+            if arm:
+                self.arm()
+                self.UHFQC.sync()
 
-        # starting AWG
-        if self.AWG is not None:
-            self.AWG.start()
+            # starting AWG
+            if self.AWG is not None:
+                self.AWG.start()
+                # FIXME: attempted solution to enforce program upload completion before start
+                self.AWG.get_operation_complete()
 
         data_raw = self.UHFQC.acquisition_poll(
             samples=self.nr_sweep_points, arm=False, acquisition_time=0.01)
-        if len(data_raw[next(iter(data_raw))])>1:
-            print('[DEBUG UHF SWF] SHOULD HAVE HAD AN ERROR')
+
+        # if len(data_raw[next(iter(data_raw))])>1:
+        #     print('[DEBUG UHF SWF] SHOULD HAVE HAD AN ERROR')
         # data = np.array([data_raw[key]
-        data = np.array([data_raw[key][-1]
-        # data = np.array([data_raw[key][-1]
+        data = np.array([data_raw[key]
                          for key in sorted(data_raw.keys())])*self.scaling_factor
-        # print('[DEBUG UHF SWF] RAW shape',[data_raw[key]
+        # log.debug('[UHF detector] RAW shape',[data_raw[key]
         #                  for key in sorted(data_raw.keys())])
-        # print('[DEBUG UHF SWF] shape 1',data.shape)
+        # log.debug('[UHF detector] shape 1',data.shape)
 
         # Corrects offsets after crosstalk suppression matrix in UFHQC
         if self.result_logging_mode == 'lin_trans':
@@ -1867,9 +1887,6 @@ class UHFQC_integrated_average_detector(Hard_Detector):
         data = np.reshape(data.T,
                           (-1, no_virtual_channels, len(self.channels))).T
         data = data.reshape((len(self.value_names), -1))
-        # print('[DEBUG UHF SWF] shape 6',data.shape)
-        # if data.shape[1]>1:
-        #     print('[DEBUG UHF SWF] data',data)
 
         return data
 
@@ -1894,6 +1911,8 @@ class UHFQC_integrated_average_detector(Hard_Detector):
     def prepare(self, sweep_points=None):
         if self.AWG is not None:
             self.AWG.stop()
+            # FIXME: attempted solution to enforce program upload completion before start
+            self.AWG.get_operation_complete()
 
         # Determine the number of sweep points and set them
         if sweep_points is None or self.single_int_avg:
@@ -1937,6 +1956,8 @@ class UHFQC_integrated_average_detector(Hard_Detector):
 
         if self.AWG is not None:
             self.AWG.stop()
+            # FIXME: attempted solution to enforce program upload completion before start
+            self.AWG.get_operation_complete()
 
 
 class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
@@ -2208,26 +2229,32 @@ class UHFQC_integration_logging_det(Hard_Detector):
     def arm(self):
         # UHFQC internal readout counters reset as part of the call to acquisition_initialize
         self.UHFQC.acquisition_arm()
+        self.UHFQC.sync()
 
-    def get_values(self, arm=True):
-        if self.always_prepare:
-            # NB sweep_points argument not used in self.prepare
-            self.prepare()
+    def get_values(self, arm=True, is_single_detector=True):
+        if is_single_detector:
+            if self.always_prepare:
+                self.prepare()
 
-        if self.AWG is not None:
-            self.AWG.stop()
+            if self.AWG is not None:
+                self.AWG.stop()
+                self.AWG.get_operation_complete()
 
-        if arm:
-            self.arm()
+            if arm:
+                self.arm()
+                self.UHFQC.sync()
 
-        # starting AWG
-        if self.AWG is not None:
-            self.AWG.start()
+            # starting AWG
+            if self.AWG is not None:
+                self.AWG.start()
+                # FIXME: attempted solution to enforce program upload completion before start
+                self.AWG.get_operation_complete()
 
         # Get the data
         data_raw = self.UHFQC.acquisition_poll(
             samples=self.nr_shots, arm=False, acquisition_time=0.01)
         data = np.array([data_raw[key]
+        # data = np.array([data_raw[key][-1]
                          for key in sorted(data_raw.keys())])*self.scaling_factor
 
         # Corrects offsets after crosstalk suppression matrix in UFHQC
@@ -2240,6 +2267,8 @@ class UHFQC_integration_logging_det(Hard_Detector):
     def prepare(self, sweep_points):
         if self.AWG is not None:
             self.AWG.stop()
+            # FIXME: attempted solution to enforce program upload completion before start
+            self.AWG.get_operation_complete()
 
         if self.prepare_function_kwargs is not None:
             if self.prepare_function is not None:
@@ -2255,6 +2284,8 @@ class UHFQC_integration_logging_det(Hard_Detector):
     def finish(self):
         if self.AWG is not None:
             self.AWG.stop()
+            # FIXME: attempted solution to enforce program upload completion before start
+            self.AWG.get_operation_complete()
 
 
 class UHFQC_statistics_logging_det(Soft_Detector):

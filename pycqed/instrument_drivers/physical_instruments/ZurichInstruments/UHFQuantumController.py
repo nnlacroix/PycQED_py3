@@ -622,10 +622,10 @@ class UHFQC(zibase.ZI_base_instrument):
         self._awg_program[0] = \
             awg_sequence_acquisition_preamble() + """
 // Mask for selecting our codeword bits
-const CW_MASK = ({:08x} << 17);
+const CW_MASK = (0x1ff << 17);
 // Counts wrong codewords
 var err_cnt = 0;
-""".format(self._cw_mask)
+"""
 
         if self._awg_program_features['diocws']:
             self._awg_program[0] += \
@@ -761,16 +761,19 @@ setUserReg(4, err_cnt);"""
     ##########################################################################
 
     def acquisition(self, samples=100, averages=1, acquisition_time=0.010, timeout=10,
-                    channels=(0, 1), mode='rl') -> None:
+                    channels=(0, 1), mode='rl', poll=True):
         self.timeout(timeout)
-        self.acquisition_initialize(samples, averages, channels, mode)
-        data = self.acquisition_poll(samples, True, acquisition_time)
+        self.acquisition_initialize(samples, averages, channels, mode, poll)
+        if poll:
+            data = self.acquisition_poll(samples, True, acquisition_time)
+        else:
+            data = self.acquisition_get(samples, True, acquisition_time)
         self.acquisition_finalize()
 
         return data
 
     def acquisition_initialize(self, samples, averages, channels=(0, 1),
-                               mode='rl') -> None:
+                               mode='rl', poll=True) -> None:
         # Define the channels to use and subscribe to them
         self._acquisition_nodes = []
 
@@ -791,7 +794,9 @@ setUserReg(4, err_cnt);"""
                 path = self._get_full_path(
                     'qas/0/result/data/{}/wave'.format(c))
                 self._acquisition_nodes.append(path)
-                self.subs(path)
+                if poll:
+                    self.subs(path)
+
             # Enable automatic readout
             self.qas_0_result_reset(1)
             self.qas_0_result_enable(1)
@@ -803,7 +808,9 @@ setUserReg(4, err_cnt);"""
                 path = self._get_full_path(
                     'qas/0/monitor/inputs/{}/wave'.format(c))
                 self._acquisition_nodes.append(path)
-                self.subs(path)
+                if poll:
+                    self.subs(path)
+
             # Enable automatic readout
             self.qas_0_monitor_reset(1)
             self.qas_0_monitor_enable(1)
@@ -818,7 +825,8 @@ setUserReg(4, err_cnt);"""
             raise ziUHFQCSeqCError(
                 'Trying to use a delay of {} using an AWG program that does not use \'wait_dly\'.'.format(self.wait_dly()))
         self.set('awgs_0_userregs_{}'.format(UHFQC.USER_REG_WAIT_DLY), self.wait_dly())
-        self.subs(self._get_full_path('auxins/0/sample'))
+        if poll:
+            self.subs(self._get_full_path('auxins/0/sample'))
 
         # Generate more dummy data
         self.auxins_0_averaging(8)
@@ -861,7 +869,7 @@ setUserReg(4, err_cnt);"""
         self.start()
 
     def acquisition_poll(self, samples, arm=True,
-                         acquisition_time=0.010) -> None:
+                         acquisition_time=0.010):
         """
         Polls the UHFQC for data.
 
@@ -869,7 +877,7 @@ setUserReg(4, err_cnt);"""
             samples (int): the expected number of samples
             arm    (bool): if true arms the acquisition, disable when you
                            need synchronous acquisition with some external dev
-            acquisition_time (float): time in sec between polls? # TODO check with Niels H
+            acquisition_time (float): time in sec between polls
             timeout (float): time in seconds before timeout Error is raised.
 
         """
@@ -912,14 +920,48 @@ setUserReg(4, err_cnt);"""
 
         return data
 
+    def acquisition_get(self, samples, arm=True,
+                         acquisition_time=0.010):
+        """
+        Waits for the UHFQC to finish a measurement then reads the data.
+
+        Args:
+            samples (int): the expected number of samples
+            arm    (bool): if true arms the acquisition, disable when you
+                           need synchronous acquisition with some external dev
+            acquisition_time (float): time in sec between polls
+            timeout (float): time in seconds before timeout Error is raised.
+
+        """
+        data = {k: [] for k, dummy in enumerate(self._acquisition_nodes)}
+
+        # Start acquisition
+        if arm:
+            self.acquisition_arm()
+            self.sync()
+
+        done = False
+        start = time.time()
+        while (time.time()-start) < self.timeout():
+            status = self.getdeep('awgs/0/sequencer/status')
+            if status['value'][0] == 0:
+                done = True
+                break
+
+        if not done:
+            self.acquisition_finalize()
+            raise TimeoutError("Error: Didn't get all results!")
+
+        for n, p in enumerate(self._acquisition_nodes):
+            data[n] = self.getv(p)
+
+        return data
+
     def acquisition_finalize(self) -> None:
         self.stop()
+        self.unsubs()
 
-        for p in self._acquisition_nodes:
-            self.unsubs(p)
-        self.unsubs(self._get_full_path('auxins/0/sample'))
-
-    def check_errors(self) -> None:
+    def check_errors(self, errors_to_ignore=None) -> None:
         """
         Checks the instrument for errors. As the UHFQA does not yet support the same error
         stack as the HDAWG instruments we do the checks by reading specific nodes
@@ -1309,6 +1351,26 @@ setTrigger(0);
         self.wait_dly(0)
         self._awg_needs_configuration[0] = True
 
+    def awg_debug_acquisition(self, dly=0):
+        self._reset_awg_program_features()
+        self._awg_program_features['avg_cnt']  = True
+        self._awg_program_features['loop_cnt'] = True
+        self._awg_program_features['wait_dly'] = True
+
+        self._awg_program[0] = awg_sequence_acquisition_preamble() + """
+repeat (avg_cnt) {
+  repeat (loop_cnt) {
+      setTrigger(ro_trig);
+      setTrigger(ro_arm);
+      wait(wait_dly);
+  }
+}
+setTrigger(0);
+"""
+        # Reset delay
+        self.wait_dly(dly)
+        self._awg_needs_configuration[0] = True
+
     def awg_sequence_acquisition_and_pulse_SSB(
             self, f_RO_mod, RO_amp, RO_pulse_length, acquisition_delay, dig_trigger=True) -> None:
         f_sampling = 1.8e9
@@ -1688,6 +1750,16 @@ setTrigger(0);
         else:
             raise ValueError('Invalid feedline {} selected for calibration.'.format(feedline))
 
+    def _prepare_CC_dio_calibration(self, CC, verbose=False):
+        test_fp = os.path.abspath(os.path.join(pycqed.__path__[0],
+                                      '..', 'examples','CC_examples',
+                                      'uhfqc_calibration.vq1asm'))
+
+        # Set the DIO calibration mask to enable 9 bit measurement
+        self._dio_calibration_mask = 0x1ff
+        CC.eqasm_program(test_fp)
+        CC.start()
+
     def _prepare_QCC_dio_calibration(self, QCC, verbose=False):
         """Configures a QCC with a default program that generates data suitable for DIO calibration. Also starts the QCC."""
 
@@ -1738,10 +1810,11 @@ while (1) {
     def calibrate_CC_dio_protocol(self, CC, feedline=None, verbose=False, repetitions=1):
         log.info('Calibrating DIO delays')
         if verbose: print("Calibrating DIO delays")
-        if feedline is None:
-            raise ziUHFQCDIOCalibrationError('No feedline specified for calibration')
 
         CC_model = CC.IDN()['model']
+        if feedline is None and 'CCL' in CC_model:
+            raise ziUHFQCDIOCalibrationError('No feedline specified for calibration')
+
         if 'QCC' in CC_model:
             self._prepare_QCC_dio_calibration(
                 QCC=CC, verbose=verbose)
@@ -1751,9 +1824,7 @@ while (1) {
         elif 'HDAWG8' in CC_model:
             self._prepare_HDAWG8_dio_calibration(HDAWG=CC, verbose=verbose)
         elif 'cc' in CC_model:
-            # expected_sequence = self._prepare_CC_dio_calibration(
-            #     CC=CC, verbose=verbose)
-            return
+            self._prepare_CC_dio_calibration(CC=CC, verbose=verbose)
         else:
             raise ValueError('CC model ({}) not recognized.'.format(CC_model))
 
@@ -1768,18 +1839,23 @@ while (1) {
         if len(valid_delays) == 0:
             raise ziUHFQCDIOCalibrationError('DIO calibration failed! No valid delays found')
 
-        min_valid_delay = min(valid_delays)
-        # Heuristics to get the 'best' delay in a sequence
-        if (min_valid_delay+1) in valid_delays and (min_valid_delay+2) in valid_delays:
-            min_valid_delay = min_valid_delay + 1
+        subseq = [[]]
+        for e in valid_delays:
+            if not subseq[-1] or subseq[-1][-1] == e - 1:
+                subseq[-1].append(e)
+            else:
+                subseq.append([e])
+
+        subseq = max(subseq, key=len)
+        delay = len(subseq)//2 + subseq[0]
 
         # Print information
         if verbose: print("  Valid delays are {}".format(valid_delays))
-        if verbose: print("  Setting delay to {}".format(min_valid_delay))
+        if verbose: print("  Setting delay to {}".format(delay))
 
         # And configure the delays
-        self._set_dio_calibration_delay(min_valid_delay)
+        self._set_dio_calibration_delay(delay)
 
         # Clear all detected errors (caused by DIO timing calibration)
-        self.clear_errors()
+        self.check_errors(errors_to_ignore=['AWGDIOTIMING'])
 
