@@ -52,6 +52,7 @@ import pycqed.instrument_drivers.physical_instruments.ZurichInstruments.ZI_base_
 
 log = logging.getLogger(__name__)
 
+
 class ZI_HDAWG_core(zibase.ZI_base_instrument):
     """
     This is PycQED/QCoDeS driver driver for the Zurich Instruments HDAWG.
@@ -88,14 +89,22 @@ class ZI_HDAWG_core(zibase.ZI_base_instrument):
             num_codewords   (int) the number of codeword-based waveforms to prepare
         """
         t0 = time.time()
-        super().__init__(name=name, device=device, interface=interface, server=server, port=port, num_codewords=num_codewords, **kw)
+        super().__init__(
+            name=name,
+            device=device,
+            interface=interface,
+            server=server,
+            port=port,
+            num_codewords=num_codewords,
+            **kw)
 
         # Set default waveform length to 20 ns at 2.4 GSa/s
         self._default_waveform_length = 48
 
         # show some info
-        log.info('{}: DIO interface found in mode {}'
-                 .format(self.devname, 'CMOS' if self.get('dios_0_interface') == 0 else 'LVDS')) # NB: mode is persistent across device restarts
+        log.info('{}: DIO interface found in mode {}'.format(
+            self.devname, 'CMOS' if self.get('dios_0_interface') == 0 else
+            'LVDS'))  # NB: mode is persistent across device restarts
 
         # NB: we don't want to load defaults automatically, but leave it up to the user
 
@@ -104,11 +113,14 @@ class ZI_HDAWG_core(zibase.ZI_base_instrument):
         self.seti('raw/error/blinkforever', 1)
 
         t1 = time.time()
-        print('Initialized ZI_HDAWG_core', self.devname, 'in %.2fs' % (t1-t0))
+        print('Initialized ZI_HDAWG_core', self.devname,
+              'in %.2fs' % (t1 - t0))
 
     def _check_devtype(self):
         if self.devtype != 'HDAWG8' and self.devtype != 'HDAWG4':
-            raise zibase.ziDeviceError('Device {} of type {} is not a HDAWG instrument!'.format(self.devname, self.devtype))
+            raise zibase.ziDeviceError(
+                'Device {} of type {} is not a HDAWG instrument!'.format(
+                    self.devname, self.devtype))
 
     def _check_options(self):
         """
@@ -116,31 +128,44 @@ class ZI_HDAWG_core(zibase.ZI_base_instrument):
         """
         options = self.gets('features/options').split('\n')
         if 'ME' not in options:
-            raise zibase.ziOptionsError('Device {} is missing the ME option!'.format(self.devname))
+            raise zibase.ziOptionsError(
+                'Device {} is missing the ME option!'.format(self.devname))
         if 'PC' not in options:
-            raise zibase.ziOptionsError('Device {} is missing the PC option!'.format(self.devname))
+            raise zibase.ziOptionsError(
+                'Device {} is missing the PC option!'.format(self.devname))
 
     def _check_awg_nr(self, awg_nr):
         """
         Checks that the given AWG index is valid for the device.
         """
         if self.devtype == 'HDAWG8' and (awg_nr < 0 or awg_nr > 3):
-            raise zibase.ziValueError('Invalid AWG index of {} detected!'.format(awg_nr))
+            raise zibase.ziValueError(
+                'Invalid AWG index of {} detected!'.format(awg_nr))
         elif self.devtype == 'HDAWG4' and (awg_nr < 0 or awg_nr > 1):
-            raise zibase.ziValueError('Invalid AWG index of {} detected!'.format(awg_nr))
+            raise zibase.ziValueError(
+                'Invalid AWG index of {} detected!'.format(awg_nr))
 
     def _check_versions(self):
         """
         Checks that sufficient versions of the firmware are available.
         """
         if self.geti('system/fwrevision') < ZI_HDAWG_core.MIN_FWREVISION:
-            raise zibase.ziVersionError('Insufficient firmware revision detected! Need {}, got {}!'.format(ZI_HDAWG_core.MIN_FWREVISION, self.geti('system/fwrevision')))
+            raise zibase.ziVersionError(
+                'Insufficient firmware revision detected! Need {}, got {}!'.
+                format(ZI_HDAWG_core.MIN_FWREVISION,
+                       self.geti('system/fwrevision')))
 
         if self.geti('system/fpgarevision') < ZI_HDAWG_core.MIN_FPGAREVISION:
-            raise zibase.ziVersionError('Insufficient FPGA revision detected! Need {}, got {}!'.format(ZI_HDAWG_core.MIN_FPGAREVISION, self.geti('system/fpgarevision')))
+            raise zibase.ziVersionError(
+                'Insufficient FPGA revision detected! Need {}, got {}!'.format(
+                    ZI_HDAWG_core.MIN_FPGAREVISION,
+                    self.geti('system/fpgarevision')))
 
         if self.geti('system/slaverevision') < ZI_HDAWG_core.MIN_SLAVEREVISION:
-            raise zibase.ziVersionError('Insufficient FPGA Slave revision detected! Need {}, got {}!'.format(ZI_HDAWG_core.MIN_SLAVEREVISION, self.geti('system/slaverevision')))
+            raise zibase.ziVersionError(
+                'Insufficient FPGA Slave revision detected! Need {}, got {}!'.
+                format(ZI_HDAWG_core.MIN_SLAVEREVISION,
+                       self.geti('system/slaverevision')))
 
     def _num_channels(self):
         if self.devtype == 'HDAWG8':
@@ -155,8 +180,9 @@ class ZI_HDAWG_core(zibase.ZI_base_instrument):
         bring device into known state
         """
 
-        log.warning('{}: loading default settings (FIXME: still incomplete)'
-                    .format(self.devname))
+        log.warning(
+            '{}: loading default settings (FIXME: still incomplete)'.format(
+                self.devname))
 
         # clear output
 
@@ -193,11 +219,11 @@ class ZI_HDAWG_core(zibase.ZI_base_instrument):
                 #   1: sync failed (will force clock source to internal and retry)
                 #   2: syncing
                 status = self.system_clocks_referenceclock_status()
-                if status == 0:             # synced
+                if status == 0:  # synced
                     break
-                elif status == 2:           # syncing
+                elif status == 2:  # syncing
                     print('.', end='')
-                else:                       # sync failed
+                else:  # sync failed
                     print('X', end='')
                 time.sleep(0.1)
             if self.system_clocks_referenceclock_source() != 1:
@@ -223,41 +249,47 @@ class ZI_HDAWG_core(zibase.ZI_base_instrument):
 
         # First report if anything has changed
         if errors['new_errors'] > 0:
-            log.warning('{}: Found {} new errors!'.format(self.devname, errors['new_errors']))
+            log.warning('{}: Found {} new errors!'.format(
+                self.devname, errors['new_errors']))
 
         # Asserted in case errors were found
         found_errors = False
 
         # Go through the errors and update our structure, raise exceptions if anything changed
         for m in errors['messages']:
-            code     = m['code']
-            count    = m['count']
+            code = m['code']
+            count = m['count']
             severity = m['severity']
-            message  = m['message']
+            message = m['message']
 
             if not raise_exceptions:
                 self._errors[code] = {
-                    'count'   : count,
+                    'count': count,
                     'severity': severity,
-                    'message' : message}
-                log.warning('{}: Code {}: "{}" ({})'.format(self.devname, code, message, severity))
+                    'message': message
+                }
+                log.warning('{}: Code {}: "{}" ({})'.format(
+                    self.devname, code, message, severity))
             else:
                 # Optionally skip the error completely
                 if code in self._errors_to_ignore:
                     continue
 
                 # Check if there are new errors
-                if code not in self._errors or count > self._errors[code]['count']:
-                    log.error('{}: {} ({}/{})'.format(self.devname, message, code, severity))
+                if code not in self._errors or count > self._errors[code][
+                        'count']:
+                    log.error('{}: {} ({}/{})'.format(self.devname, message,
+                                                      code, severity))
                     found_errors = True
 
                 if code in self._errors:
                     self._errors[code]['count'] = count
                 else:
                     self._errors[code] = {
-                        'count'   : count,
+                        'count': count,
                         'severity': severity,
-                        'message' : message}
+                        'message': message
+                    }
 
         if found_errors:
             raise zibase.ziRuntimeError('Errors detected during run-time!')
@@ -272,6 +304,9 @@ class ZI_HDAWG_core(zibase.ZI_base_instrument):
         idn_dict = super().get_idn()
         idn_dict['slave_firmware'] = self.geti('system/slaverevision')
         return idn_dict
+
+    def clock_freq(self):
+        return 2.4e9
 
     ##########################################################################
     # 'public' functions: generic AWG/waveform support
@@ -295,7 +330,9 @@ class ZI_HDAWG_core(zibase.ZI_base_instrument):
         - loading speed depends on the size of w0 and w1 and is ~80ms for 20us.
 
         """
-        raise NotImplementedError('Please use the waveform parameters ("wave_chN_cwM") of the object to change waveforms!')
+        raise NotImplementedError(
+            'Please use the waveform parameters ("wave_chN_cwM") of the object to change waveforms!'
+        )
 
     ##########################################################################
     # 'public' functions: DIO debug support
