@@ -36,6 +36,7 @@ import datetime
 from pycqed.instrument_drivers.physical_instruments.QuTech_AWG_Module \
     import QuTech_AWG_Module
 
+log = logging.getLogger(__name__)
 
 class CCLight_Transmon(Qubit):
 
@@ -567,6 +568,11 @@ class CCLight_Transmon(Qubit):
             vals=vals.Numbers(-70, 20),
             parameter_class=ManualParameter,
             initial_value=-30)
+        self.add_parameter(
+            'spec_wait_time', unit='s',
+            vals=vals.Numbers(0,100e-6),
+            parameter_class=ManualParameter,
+            initial_value=0)
 
     def add_flux_parameters(self):
         # fl_dc_ is the prefix for DC flux bias related params
@@ -931,6 +937,18 @@ class CCLight_Transmon(Qubit):
         LO.on()
         LO.power(self.ro_pow_LO())
 
+    # def _prep_ro_sources(self, qubits):
+    #     """
+    #     turn on and configure the RO LO's of all qubits to be measured.
+    #     """
+
+    #     for qb_name in qubits:
+    #         LO = self.find_instrument(qb_name).instr_LO_ro.get_instr()
+    #         LO.frequency.set(self.ro_lo_freq())
+    #         LO.power(self.ro_pow_LO())
+    #         LO.on()
+
+
     def _prep_ro_pulse(self, upload=True, CW=False):
         """
         Sets the appropriate parameters in the RO LutMan and uploads the
@@ -959,9 +977,9 @@ class CCLight_Transmon(Qubit):
 
         """
         if CW:
-            ro_amp=self.ro_pulse_amp_CW()
+            ro_amp = self.ro_pulse_amp_CW()
         else:
-            ro_amp=self.ro_pulse_amp()
+            ro_amp = self.ro_pulse_amp()
 
         if 'UHFQC' not in self.instr_acquisition():
             raise NotImplementedError()
@@ -2272,7 +2290,8 @@ class CCLight_Transmon(Qubit):
                 qubit_idx=self.cfg_qubit_nr(),
                 spec_pulse_length=self.spec_pulse_length(),
                 platf_cfg=self.cfg_openql_platform_fn(),
-                trigger_idx=0)
+                spec_instr='sf_square',
+                trigger_idx=15)
         else:
             p = sqo.pulsed_spec_seq(
                 qubit_idx=self.cfg_qubit_nr(),
@@ -2443,13 +2462,18 @@ class CCLight_Transmon(Qubit):
             UHFQC.spec_mode_on(IF=self.ro_freq_mod(),
                                ro_amp=self.ro_pulse_amp_CW())
 
+        wait_time_ns = self.spec_wait_time()*1e9
+
         # Snippet here to create and upload the CCL instructions
         CCL = self.instr_CC.get_instr()
         p = sqo.pulsed_spec_seq_marked(
             qubit_idx=self.cfg_qubit_nr(),
             spec_pulse_length=self.spec_pulse_length(),
             platf_cfg=self.cfg_openql_platform_fn(),
-            trigger_idx=0)
+            cc=self.instr_CC(),
+            trigger_idx=15,
+            wait_time_ns=wait_time_ns)
+
         CCL.eqasm_program(p.filename)
         # CCL gets started in the int_avg detector
 
@@ -3364,6 +3388,7 @@ class CCLight_Transmon(Qubit):
                                   disable_metadata: bool=False,
                                   nr_shots_per_case: int =2**13,
                                   post_select: bool = False,
+                                  averages: int=2**15,
                                   post_select_threshold: float = None,
                                   )->bool:
         """
@@ -3385,6 +3410,7 @@ class CCLight_Transmon(Qubit):
             update (bool):
                 specifies whether to update the weights in the qubit object
         """
+        log.info('Calibrating optimal weights for {}'.format(self.name))
         if MC is None:
             MC = self.instr_MC.get_instr()
         if prepare:
@@ -3393,7 +3419,7 @@ class CCLight_Transmon(Qubit):
         # Ensure that enough averages are used to get accurate weights
         old_avg = self.ro_acq_averages()
 
-        self.ro_acq_averages(2**15)
+        self.ro_acq_averages(averages)
         if measure_transients_CCL_switched:
             transients = self.measure_transients_CCL_switched(MC=MC,
                                                               analyze=analyze,
@@ -3434,7 +3460,7 @@ class CCLight_Transmon(Qubit):
                 self._prep_ro_instantiate_detectors()
                 ssro_dict = self.measure_ssro(
                     no_figs=no_figs, update=update,
-                    prepare=False, disable_metadata=disable_metadata,
+                    prepare=True, disable_metadata=disable_metadata,
                     nr_shots_per_case=nr_shots_per_case,
                     post_select=post_select,
                     post_select_threshold=post_select_threshold)

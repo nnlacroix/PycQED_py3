@@ -63,14 +63,13 @@ Changelog:
 
 import time
 import logging
-import numpy
+import numpy as np
 import re
 import os
 import pycqed
 
 import pycqed.instrument_drivers.physical_instruments.ZurichInstruments.ZI_base_instrument as zibase
 import pycqed.instrument_drivers.physical_instruments.ZurichInstruments.ZI_HDAWG_core as zicore
-import pycqed.instrument_drivers.physical_instruments.QuTech_CCL as qtccl
 
 from qcodes.utils import validators
 from qcodes.instrument.parameter import ManualParameter
@@ -96,11 +95,11 @@ class ziDIOCalibrationError(Exception):
 
 class ZI_HDAWG8(zicore.ZI_HDAWG_core):
 
-    def __init__(self, 
+    def __init__(self,
                  name: str,
                  device: str,
                  interface: str = '1GbE',
-                 server: str = 'localhost', 
+                 server: str = 'localhost',
                  port = 8004,
                  num_codewords: int = 32, **kw) -> None:
         """
@@ -112,31 +111,72 @@ class ZI_HDAWG8(zicore.ZI_HDAWG_core):
             port            (int) the port to connect to
             num_codewords   (int) the number of codeword-based waveforms to prepare
         """
+        t0 = time.time()
         super().__init__(name=name, device=device, interface=interface, server=server, port=port, num_codewords=num_codewords, **kw)
+        # Set default waveform length to 20 ns at 2.4 GSa/s
+        self._default_waveform_length = 48
 
-        # Ensure snapshot is fairly small for HDAWGs 
+         # show some info
+        log.info('{}: DIO interface found in mode {}'
+                 .format(self.devname, 'CMOS' if self.get('dios_0_interface') == 0 else 'LVDS')) # NB: mode is persistent across device restarts
+        # Ensure snapshot is fairly small for HDAWGs
         self._snapshot_whitelist = {
-            'IDN', 
-            'clockbase', 
-            'system_clocks_referenceclock_source', 
-            'system_clocks_referenceclock_status', 
+            'IDN',
+            'clockbase',
+            'system_clocks_referenceclock_source',
+            'system_clocks_referenceclock_status',
             'system_clocks_referenceclock_freq'}
-        for i in range(4): 
+        for i in range(4):
             self._snapshot_whitelist.update({
-                'awgs_{}_enable'.format(i), 
-                'awgs_{}_outputs_0_amplitude'.format(i), 
-                'awgs_{}_outputs_1_amplitude'.format(i), 
-                'awgs_{}_sequencer_program_crc32_hash'.format(i)})
+                'awgs_{}_enable'.format(i),
+                'awgs_{}_outputs_0_amplitude'.format(i),
+                'awgs_{}_outputs_1_amplitude'.format(i)})
 
-        for i in range(8): 
+        for i in range(8):
             self._snapshot_whitelist.update({
                 'sigouts_{}_direct'.format(i), 'sigouts_{}_offset'.format(i),
                 'sigouts_{}_on'.format(i) , 'sigouts_{}_range'.format(i)})
 
         self._params_to_exclude = set(self.parameters.keys()) - self._snapshot_whitelist
-        
+
+
+         # NB: we don't want to load defaults automatically, but leave it up to the user
+         # Configure instrument to blink forever
+        self.seti('raw/error/blinkseverity', 1)
+        self.seti('raw/error/blinkforever', 1)
+
+        t1 = time.time()
+        print('Initialized ZI_HDAWG_core', self.devname, 'in %.2fs' % (t1-t0))
+
+    def _add_extra_parameters(self):
+        self.add_parameter('timeout', unit='s',
+                           initial_value=10,
+                           parameter_class=ManualParameter)
+        self.add_parameter(
+            'cfg_num_codewords', label='Number of used codewords', docstring=(
+                'This parameter is used to determine how many codewords to '
+                'upload in "self.upload_codeword_program".'),
+            initial_value=self._num_codewords,
+            # N.B. I have commentd out numbers larger than self._num_codewords
+            # see also issue #358
+            vals=vals.Enum(2, 4, 8, 16, 32),  # , 64, 128, 256, 1024),
+            parameter_class=ManualParameter)
+
+        self.add_parameter(
+            'cfg_codeword_protocol', initial_value='identical',
+            vals=vals.Enum('identical', 'microwave', 'new_microwave', 'new_novsm_microwave', 'flux'), docstring=(
+                'Used in the configure codeword method to determine what DIO'
+                ' pins are used in for which AWG numbers.'),
+            parameter_class=ManualParameter)
+
+        for i in range(4):
+            self.add_parameter(
+                'awgs_{}_sequencer_program_crc32_hash'.format(i),
+                parameter_class=ManualParameter,
+                initial_value=0, vals=vals.Ints())
+
     def snapshot_base(self, update: bool=False,
-                      params_to_skip_update =None, 
+                      params_to_skip_update =None,
                       params_to_exclude = None ):
         """
         State of the instrument as a JSON-compatible dict.
@@ -152,7 +192,7 @@ class ZI_HDAWG8(zicore.ZI_HDAWG_core):
         """
 
 
-        if params_to_exclude is None: 
+        if params_to_exclude is None:
             params_to_exclude = self._params_to_exclude
 
         snap = {
@@ -166,7 +206,7 @@ class ZI_HDAWG8(zicore.ZI_HDAWG_core):
         snap['parameters'] = {}
         for name, param in self.parameters.items():
             if params_to_exclude and name in params_to_exclude:
-                pass 
+                pass
             elif params_to_skip_update and name in params_to_skip_update:
                 update_par = False
             else:
@@ -186,7 +226,7 @@ class ZI_HDAWG8(zicore.ZI_HDAWG_core):
     # 'public' functions: application specific/codeword support
     ##########################################################################
 
-    def upload_codeword_program(self, awgs=numpy.arange(4), cfg_num_codewords=None, cfg_codeword_protocol=None):
+    def upload_codeword_program(self, awgs=np.arange(4), cfg_num_codewords=None, cfg_codeword_protocol=None):
         """
         Generates a program that plays the codeword waves for each channel.
 
@@ -203,8 +243,10 @@ class ZI_HDAWG8(zicore.ZI_HDAWG_core):
         self._configure_codeword_protocol()
 
         # Type conversion to ensure lists do not produce weird results
-        awgs = numpy.array(awgs)
-    
+        awgs = np.array(awgs)
+        if awgs.shape == ():
+            awgs = np.array([awgs])
+
         for awg_nr in awgs:
             self._awg_program[awg_nr] = '''
 while (1) {
@@ -219,6 +261,37 @@ while (1) {
     # 'private' functions: application specific/codeword support
     ##########################################################################
 
+    def _get_waveform_table(self, awg_nr: int) -> list:
+        """
+        Returns the waveform table.
+
+        The waveform table determines the mapping of waveforms to DIO codewords.
+        The index of the table corresponds to the DIO codeword.
+        The entry is a tuple of waveform names.
+
+        Example:
+            ["wave_ch7_cw000", "wave_ch8_cw000",
+            "wave_ch7_cw001", "wave_ch8_cw001",
+            "wave_ch7_cw002", "wave_ch8_cw002"]
+
+        The waveform table generated depends on the awg_nr and the codeword
+        protocol.
+        """
+        ch = awg_nr*2
+        wf_table = []
+        if 'flux' in self.cfg_codeword_protocol():
+            for cw_r in range(8):
+                for cw_l in range(8):
+                    wf_table.append((zibase.gen_waveform_name(ch, cw_l),
+                                     zibase.gen_waveform_name(ch+1, cw_r)))
+        else:
+            for dio_cw in range(self._num_codewords):
+                wf_table.append((zibase.gen_waveform_name(ch, dio_cw),
+                                 zibase.gen_waveform_name(ch+1, dio_cw)))
+        return wf_table
+
+
+
     def _codeword_table_preamble(self, awg_nr):
         """
         Defines a snippet of code to use in the beginning of an AWG program in order to define the waveforms.
@@ -226,19 +299,14 @@ while (1) {
         function.
         """
         program = ''
-        
-        # because awg_channels come in pairs
-        ch = awg_nr*2           
 
-        for cw in range(self._num_codewords):
-            parnames = 2*['']
-            csvnames = 2*['']
-            # Every AWG drives two channels
-            for i in range(2):
-                parnames[i] = zibase.gen_waveform_name(ch+i, cw)  # NB: parameter naming identical to QWG
-                csvnames[i] = self.devname + '_' + parnames[i]
-            
-            program += 'setWaveDIO({}, \"{}\", \"{}\");\n'.format(cw, csvnames[0], csvnames[1])
+        wf_table = self._get_waveform_table(awg_nr=awg_nr)
+        for dio_cw, (wf_l, wf_r) in enumerate(wf_table):
+            csvname_l = self.devname + '_' + wf_l
+            csvname_r = self.devname + '_' + wf_r
+
+            program += 'setWaveDIO({}, \"{}\", \"{}\");\n'.format(
+                dio_cw, csvname_l, csvname_r)
 
         return program
 
@@ -286,7 +354,7 @@ while (1) {
             # the mask determines how many bits will be used in the protocol
             # e.g., mask 3 will mask the bits with bin(3) = 00000011 using
             # only the 2 Least Significant Bits.
-            num_codewords = int(2**numpy.ceil(numpy.log2(self._num_codewords)))
+            num_codewords = int(2**np.ceil(np.log2(self._num_codewords)))
 
             self.set('awgs_{}_dio_mask_value'.format(awg_nr), num_codewords-1)
 
@@ -307,39 +375,61 @@ while (1) {
                 if awg_nr in [0, 1]:
                     self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 0)
                 elif awg_nr in [2, 3]:
-                    # FIXME: this is no longer true for HDAWG V2
-                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 9)    
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 9)
+
+            # NEW
+            # In the new mw protocol bits [0:7] -> CW0 and bits [23:16] -> CW1
+            elif self.cfg_codeword_protocol() == 'new_microwave':
+                if awg_nr in [0, 1]:
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 0)
+                elif awg_nr in [2, 3]:
+
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 16)
+
+            # NEW
+            # In the NO-VSM mw protocol bits [0:6] -> CW0, bits [13, 7] -> CW1,
+            # bits [22:16] -> CW2 and bits [29:23] -> CW4
+            elif self.cfg_codeword_protocol() == 'new_novsm_microwave':
+                if awg_nr == 0:
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 0)
+                elif awg_nr == 1:
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 7)
+                elif awg_nr == 2:
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 16)
+                elif awg_nr == 3:
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 23)
+
+            # NEW
+            # Proper use of flux AWG to allow independent trigerring of flux
+            # bits[0:2] for awg0_ch0, bits[3:5] for awg0_ch1,
+            # bits[6:8] for awg0_ch2, bits[9:11] for awg0_ch3,
+            # bits[16:18] for awg0_ch4, bits[19:21] for awg0_ch5,
+            # bits[22:24] for awg0_ch6, bits[25:27] for awg0_ch7
             elif self.cfg_codeword_protocol() == 'flux':
-                # We need 64 codewords defined for the flux protocol
-                if self._num_codewords != 64:
-                    raise zibase.ziConfigurationError("Incorrect number of codewords defined! Need exactly 64 codewords for the 'flux' protocol.")
-
-                # FIXME: Check that this configuration is correct when used with both
-                # CC-Light and CC.
-                # bits[0:3] for awg0_ch0, bits[4:6] for awg0_ch1 etc.
                 self.set('awgs_{}_dio_mask_value'.format(awg_nr), 2**6-1)
-                self.set('awgs_{}_dio_mask_shift'.format(awg_nr), awg_nr*6)
 
-                mask_0 = 0b000111  # AWGx_ch0 uses lower bits for CW
-                mask_1 = 0b111000  # AWGx_ch1 uses higher bits for CW
+                if awg_nr == 0:
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 0)
+                elif awg_nr == 1:
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 6)
+                elif awg_nr == 2:
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 16)
+                elif awg_nr == 3:
+                    self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 22)
 
-                for cw in range(2**6):
-                    # If either codeword is zero, fill that waveform with zeros
-                    # and mark it as read-only
-                    if (cw & mask_0) == 0:
-                        self.set(zibase.gen_waveform_name(2*awg_nr+0, cw), numpy.zeros(self._default_waveform_length))
-                        self._set_readonly_waveform(2*awg_nr+0, cw)
-
-                    if ((cw & mask_1) >> 3) == 0:
-                        self.set(zibase.gen_waveform_name(2*awg_nr+1, cw), numpy.zeros(self._default_waveform_length))
-                        self._set_readonly_waveform(2*awg_nr+1, cw)
-            else:
-                raise zibase.ziValueError('Invalid value {} selected for cfg_codeword_protocol!'.format(self.cfg_codeword_protocol()))
+                # self.set('awgs_{}_dio_mask_value'.format(awg_nr), 2**3-1)
+                # self.set('awgs_{}_dio_mask_shift'.format(awg_nr), 0)
+        ####################################################
+        # Turn on device
+        ####################################################
+        time.sleep(.05)
+        self.daq.setInt('/' + self.devname + '/awgs/*/enable', 1)
 
         # Disable all function generators
-        for param in [key for key in self.parameters.keys() if re.match(r'sines_\d+_enables_\d+', key)]:
+        for param in [key for key in self.parameters.keys() if
+                      re.match(r'sines_\d+_enables_\d+', key)]:
             self.set(param, 0)
-        
+
         # Set amp or direct mode
         if self.cfg_codeword_protocol() == 'flux':
             # when doing flux pulses, set everything to amp mode
@@ -373,7 +463,7 @@ while (1) {
 
         self.add_parameter(
             'cfg_codeword_protocol', initial_value='identical',
-            vals=validators.Enum('identical', 'microwave', 'flux'), docstring=(
+            vals=validators.Enum('identical', 'microwave', 'flux', 'new_microwave', 'new_novsm_microwave'), docstring=(
                 'Used in the configure codeword method to determine what DIO'
                 ' pins are used in for which AWG numbers.'),
             parameter_class=ManualParameter)
@@ -401,7 +491,7 @@ while (1) {
         vld_polarity = self.geti('awgs/{}/dio/valid/polarity'.format(awg_nr))
         strb_mask    = (1 << self.geti('awgs/{}/dio/strobe/index'.format(awg_nr)))
         strb_slope   = self.geti('awgs/{}/dio/strobe/slope'.format(awg_nr))
-        
+
         if mask_value is None:
             mask_value = self.geti('awgs/{}/dio/mask/value'.format(awg_nr))
 
@@ -480,12 +570,97 @@ while (1) {
 
         return set(valid_delays)
 
-    def calibrate_CCL_dio_protocol(self, CCL=None, verbose=False, repetitions=1):
+
+    def _prepare_QCC_dio_calibration(self, QCC, verbose=False):
+        """
+        Prepares the appropriate program to calibrate DIO and returns
+        expected sequence.
+
+        N.B. only works for microwave on DIO4 and for Flux on DIO3
+            (TODO add support for microwave on DIO5)
+        """
         log.info('Calibrating DIO delays')
         if verbose: print("Calibrating DIO delays")
 
-        if CCL is None:
-            CCL = qtccl.CCL('CCL', address='192.168.0.11', port=5025)
+        cs_filepath = os.path.join(pycqed.__path__[0],
+            'measurement',
+            'openql_experiments',
+            's17', 'cs.txt')
+
+        opc_filepath = os.path.join(pycqed.__path__[0],
+            'measurement',
+            'openql_experiments',
+            's17', 'qisa_opcodes.qmap')
+
+        # Configure QCC
+        QCC.control_store(cs_filepath)
+        QCC.qisa_opcode(opc_filepath)
+
+        if self.cfg_codeword_protocol() == 'flux':
+            test_fp = os.path.abspath(os.path.join(pycqed.__path__[0],
+                '..',
+                'examples','QCC_example',
+                'qisa_test_assembly','flux_calibration.qisa'))
+
+            sequence_length = 8
+            staircase_sequence = np.arange(1, sequence_length)
+
+            # expected sequence should be ([9, 18, 27, 36, 45, 54, 63])
+            expected_sequence = [(0, list(staircase_sequence + (staircase_sequence << 3))), \
+                                 (1, list(staircase_sequence + (staircase_sequence << 3))), \
+                                 (2, list(staircase_sequence + (staircase_sequence << 3))), \
+                                 (3, list(staircase_sequence+ (staircase_sequence << 3)))]
+
+
+        elif self.cfg_codeword_protocol() == 'microwave':
+            raise zibase.ziConfigurationError('old_microwave DIO scheme not supported on QCC.')
+
+        elif self.cfg_codeword_protocol() == 'new_microwave':
+
+            test_fp = os.path.abspath(os.path.join(pycqed.__path__[0],
+                '..',
+                'examples','QCC_example',
+                'qisa_test_assembly','withvsm_calibration.qisa'))
+
+            sequence_length = 32
+            staircase_sequence = range(1, sequence_length)
+            expected_sequence =  [(0, list(staircase_sequence)), \
+                                 (1, list(staircase_sequence)), \
+                                 (2, list(reversed(staircase_sequence))), \
+                                 (3, list(reversed(staircase_sequence)))]
+
+
+        elif self.cfg_codeword_protocol() == 'new_novsm_microwave':
+           
+            test_fp = os.path.abspath(os.path.join(pycqed.__path__[0],
+                '..','examples','QCC_example',
+                'qisa_test_assembly','novsm_calibration.qisa'))
+
+            sequence_length = 32
+            staircase_sequence = range(1, sequence_length)
+            expected_sequence = [(0, list(staircase_sequence)), \
+                                 (1, list(reversed(staircase_sequence))), \
+                                 (2, list(staircase_sequence)), \
+                                 (3, list(reversed(staircase_sequence))) ]
+
+        else:
+            zibase.ziConfigurationError("Can only calibrate DIO protocol for 'flux' or 'microwave' mode!")
+
+        # Start the QCC with the program configured above
+        QCC.eqasm_program(test_fp)
+        QCC.start()
+        return expected_sequence
+
+    def _prepare_CCL_dio_calibration(self, CCL, verbose=False):
+        """
+        Prepares the appropriate program to calibrate DIO and returns
+        expected sequence.
+
+        N.B. only works for microwave on DIO4 and for Flux on DIO3
+            (TODO add support for microwave on DIO5)
+        """
+        log.info('Calibrating DIO delays')
+        if verbose: print("Calibrating DIO delays")
 
         cs_filepath = os.path.join(pycqed.__path__[0],
             'measurement',
@@ -508,7 +683,7 @@ while (1) {
                 'qisa_test_assembly','calibration_cws_flux.qisa'))
 
             sequence_length = 8
-            staircase_sequence = numpy.arange(1, sequence_length)
+            staircase_sequence = np.arange(1, sequence_length)
             expected_sequence = [(0, list(staircase_sequence + (staircase_sequence << 3))), \
                                  (1, list(staircase_sequence + (staircase_sequence << 3))), \
                                  (2, list(staircase_sequence + (staircase_sequence << 3))), \
@@ -531,13 +706,34 @@ while (1) {
         # Start the CCL with the program configured above
         CCL.eqasm_program(test_fp)
         CCL.start()
+        return expected_sequence
+
+
+    def calibrate_CC_dio_protocol(self, CC, verbose=False, repetitions=1):
+        """
+        Calibrates the DIO communication between CC and HDAWG.
+
+        Arguments:
+            CC (instr) : an instance of a CCL or QCC
+            verbose (bool): if True prints to stdout
+        """
+
+        CC_model = CC.IDN()['Model']
+        if 'QCC' in CC_model:
+            expected_sequence = self._prepare_QCC_dio_calibration(
+                QCC=CC, verbose=verbose)
+        elif 'CCL' in CC_model:
+            expected_sequence = self._prepare_CCL_dio_calibration(
+                CCL=CC, verbose=verbose)
+        else:
+            raise ValueError('CC model ({}) not recognized.'.format(CC_model))
 
         # Make sure the configuration is up-to-date
         self.assure_ext_clock()
         self.upload_codeword_program()
 
         for awg, sequence in expected_sequence:
-            if not self._ensure_activity(awg, mask_value=numpy.bitwise_or.reduce(sequence), verbose=verbose):
+            if not self._ensure_activity(awg, mask_value=np.bitwise_or.reduce(sequence), verbose=verbose):
                 raise ziDIOActivityError('No or insufficient activity found on the DIO bits associated with AWG {}'.format(awg))
 
         valid_delays = self._find_valid_delays(expected_sequence, repetitions, verbose=verbose)
@@ -553,3 +749,5 @@ while (1) {
 
         # And configure the delays
         self.setd('raw/dios/0/delays/*', min_valid_delay)
+        # If succesful return True
+        return True
