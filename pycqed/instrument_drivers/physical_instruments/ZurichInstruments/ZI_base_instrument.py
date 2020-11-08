@@ -497,7 +497,8 @@ class MockDAQServer():
         Takes in a node_doc JSON file auto generates paths based on
         the contents of this file.
         """
-        f = open(filename).read()
+        with open(filename) as fo:
+            f = fo.read()
         node_pars = json.loads(f)
         for par in node_pars.values():
             node = par['Node'].split('/')
@@ -839,7 +840,8 @@ class ZI_base_instrument(Instrument):
         Takes in a node_doc JSON file auto generates parameters based on
         the contents of this file.
         """
-        f = open(filename).read()
+        with open(filename) as fo:
+            f = fo.read()
         node_pars = json.loads(f)
         for par in node_pars.values():
             node = par['Node'].split('/')
