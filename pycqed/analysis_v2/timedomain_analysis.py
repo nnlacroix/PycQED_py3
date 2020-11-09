@@ -205,7 +205,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             does PCA row by row
         - 'column_PCA': cal points and does pca; in the case of TwoD data it
             does PCA column by column
-        - global_PCA flag (only for TwoD): does PCA on the whole 2D array
+        - 'global_PCA' (only for TwoD): does PCA on the whole 2D array
     """
     def __init__(self,
                  qb_names: list=None, label: str='',
@@ -429,6 +429,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 if self.rotate else None
             self.cal_states_dict = self.get_param_value('cal_states_dict',
                                                          default_value={})
+
+        if self.get_param_value('global_PCA') is not None:
+            log.warning('Parameter "global_PCA" is deprecated. Please set '
+                        'rotation_type="global_PCA" instead.')
         self.rotation_type = self.get_param_value(
             'rotation_type',
             default_value='cal_states' if self.rotate else 'no_rotation')
