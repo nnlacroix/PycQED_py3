@@ -278,7 +278,7 @@ def measurement_filename(directory=os.getcwd(), file_id=None, ext='hdf5', **kw):
 
 
 def get_instr_setting_value_from_file(file_path, instr_name, param_name,
-                                      h5mode='r+'):
+                                      h5mode='r'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
     try:
         instr_settings = data_file['Instrument settings']
@@ -299,7 +299,7 @@ def get_instr_setting_value_from_file(file_path, instr_name, param_name,
         raise e
 
 
-def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r+'):
+def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
     try:
         instr_settings = data_file['Instrument settings']
@@ -336,7 +336,7 @@ def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r+'):
         raise e
 
 
-def get_qb_thresholds_from_file(qb_names, file_path, th_scaling=1, h5mode='r+'):
+def get_qb_thresholds_from_file(qb_names, file_path, th_scaling=1, h5mode='r'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
     try:
         instr_settings = data_file['Instrument settings']
@@ -372,7 +372,7 @@ def compare_instrument_settings_timestamp(timestamp_a, timestamp_b):
     arguments.
     '''
 
-    h5mode = 'r+'
+    h5mode = 'r'
     h5filepath = measurement_filename(get_folder(timestamp_a))
     analysis_object_a = h5py.File(h5filepath, h5mode)
     try:
