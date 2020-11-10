@@ -234,7 +234,10 @@ class CircuitBuilder:
                 else:
                     param = angle
 
-            if not self.decompose_rotation_gates.get(op_name[0], False):
+            if self.decompose_rotation_gates.get(op_name[0], False):
+                raise NotImplementedError('Decomposed rotations not '
+                                          'implemented yet.')
+            else:
                 p = self.get_pulse(f"{op_name[0]}180 {qbn}")
                 if op_name[0] == 'Z':
                     if param is not None:  # angle depends on a parameter
@@ -268,9 +271,6 @@ class CircuitBuilder:
                         angle = factor * float(angle)
                         # configure drive pulse amplitude for this angle
                         p['amplitude'] *= ((angle + 180) % (-360) + 180) / 180
-            else:
-                raise NotImplementedError('Decomposed rotations not '
-                                          'implemented yet.')
         else:
             p = deepcopy(self.operation_dict[op])
         p['op_code'] = op
