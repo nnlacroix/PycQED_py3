@@ -19,6 +19,11 @@ class CircuitBuilder:
         act only on a subset of qubits (default: all qubits of the device)
     :param kw: keyword arguments
          cz_pulse_name: (str) the prefix of CZ gates (default: upCZ)
+         decompose_rotation_gates: (dict of bool) whether arbitrary
+            rotation gates should be decomposed into pi rotations
+            and virtual Z gates, e.g., {'X': True, 'Y': False}.
+            False means direct implementation. For gate types not specified
+            here, the default is False.
          prep_params: (dict) custom preparation params (default: from
             instrument settings)
     """
@@ -162,18 +167,22 @@ class CircuitBuilder:
         Gets a pulse from the operation dictionary, and possibly parses
         logical indexing as well as arbitrary angle from Z gate operation.
         Examples:
-             >>> get_pulse('CZ 0 2', parse_z_gate=True)
+             >>> get_pulse('CZ 0 2', parse_rotation_gates=True)
              will perform a CZ gate (according to cz_pulse_name)
              between the qubits with logical indices 0 and 2
-             >>> get_pulse('Z100 qb1', parse_z_gate=True)
+             >>> get_pulse('Z100 qb1', parse_rotation_gates=True)
              will perform a 100 degree Z rotation
-             >>> get_pulse('Z:theta qb1', parse_z_gate=True)
+             >>> get_pulse('Z:theta qb1', parse_rotation_gates=True)
              will perform a parametric Z rotation with parameter name theta
-             >>> get_pulse('Z:2*[theta] qb1', parse_z_gate=True)
+             >>> get_pulse('Z:2*[theta] qb1', parse_rotation_gates=True)
              will perform a parametric Z rotation with twice the
              value of the parameter named theta. The brackets are used to
              indicated the parameter name. This feature has also been tested
              with some more complicated mathematical expression.
+             Note: the mathematical expression should be entered without any
+             spaces in between operands. For instance,
+             'Z:2*[theta]/180+[theta]**2 qb1' and not
+             'Z: 2 * [theta] / 180 + [theta]**2 qb1
         Adding 's' (for simultaneous) in front of an op_code (e.g.,
         'sZ:theta qb1') will reference the pulse to the start of the
         previous pulse.
