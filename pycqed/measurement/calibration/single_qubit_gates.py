@@ -390,25 +390,27 @@ class Cryoscope(CalibBuilder):
     :param kw: keyword arguments: passed down to parent class(es)
         kw specific to this class :
         (all can also be specified separately in each task)
-             - estimation_window: (float or None) delta_tau in the cryoscope
-                paper. The extra bit of flux pulse length before truncation in
-                the second Ramsey measurement. If None, only one set of Ramsey
-                measurements are done.
-             - separation_buffer: (float) extra delay between the (truncated)
-                flux pulse and the last pi-half pulse.
-             - awg_sample_length: (float) the length of one sample on the flux
-                AWG used by the measurement objects in this experiment.
-             - truncation_decay_length: (float) the duration of the truncation
-                exponential decay, defined as the time between start of
-                truncation and the time point after this where pulse amplitude
-                is 1e-10 V. If not specified, truncation will be sharp.
-             - truncation_decay_const: (float) the decay constant of the
-                transition exponential decay. Only relevant if
-                truncation_decay_length is specified. IF NOT SPECIFIED,
-                THIS PARAMETER IS CALCULATED in
-                calculate_truncation_decay_const() (see docstring there).
-                THIS PARAMETER SHOULD NOT BE SPECIFIED UNLESS YOU KNOW WHAT
-                YOU'RE DOING.
+             - estimation_window: (float or None; default: None) delta_tau in
+                the cryoscope paper. The extra bit of flux pulse length before
+                truncation in the second Ramsey measurement. If None, only one
+                set of Ramsey measurements are done.
+             - separation_buffer: (float; default: 50e-9) extra delay between
+                the (truncated) flux pulse and the last pi-half pulse.
+             - awg_sample_length: (float or None; default: None) the length of
+                one sample on the flux AWG used by the measurement objects in
+                this experiment.
+             - truncation_decay_sigma: (float; default: 0) sigma of the Gaussian
+                decay after start of truncation. If 0, then truncation is sharp.
+             - truncation_decay_nr_sigma: (float; default: 6) used to define the
+                duration of the Gaussian decay after start of truncation;
+                decay duration defined as
+                truncation_decay_sigma * truncation_decay_nr_sigma.
+                Only relevant if truncation_decay_sigma is specified.
+             - nr_points_spline: (int; default: 5) the total number of waveform
+                data points at the point where the Gaussian decay starts that
+                will be replaced with a cubic spline (in order to smooth out
+                the kink). Set to 0 to keep the shark change (kink from the
+                concatenation).
 
     The sweep_points for this measurements must contain
         - 0'th sweep dimension: the Ramsey phases, and, optionally, the
@@ -469,15 +471,20 @@ class Cryoscope(CalibBuilder):
         'awg_sample_length': hdawg_sample_length,
         'estimation_window': hdawg_sample_length,
         'separation_buffer': 50e-9,
-        'truncation_decay_length': 20e-9,
-        'truncation_decay_const': 1e-9, (ideally not needed, will be calculated)
+        'truncation_decay_sigma': 3e-9,
+        'truncation_decay_nr_sigma': 6,
+        'nr_points_spline': 5,
         'reparking_flux_pulse': {'op_code': f'FP {qb.name}',
                                  'amplitude': -0.5}}
     """
 
-    kw_for_task_keys = ['awg_sample_length', 'estimation_window',
-                        'separation_buffer', 'truncation_decay_length',
-                        'truncation_decay_const']
+    kw_for_task_keys_defaults_dict = {'awg_sample_length': None,
+                                      'estimation_window': None,
+                                      'separation_buffer': 50e-9,
+                                      'truncation_decay_sigma': 3e-9,
+                                      'truncation_decay_nr_sigma': 6,
+                                      'nr_points_spline': 5}
+    kw_for_task_keys = list(kw_for_task_keys_defaults_dict)
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
@@ -487,14 +494,13 @@ class Cryoscope(CalibBuilder):
                     task['qb'] = task['qb'].name
                 if 'prefix' not in task:
                     task['prefix'] = f"{task['qb']}_"
-                for param in self.kw_for_task_keys:
+                for param, value in self.kw_for_task_keys_defaults_dict.items():
                     if param not in task:
-                        task[param] = 50e-9 if param == 'separation_buffer' \
-                            else kw.get(param, None)
+                        task[param] = kw.get(param, value)
 
             # check estimation window
-            none_est_windows = [task['estimation_window'] is None for task in
-                                task_list]
+            none_est_windows = [task['estimation_window'] is None
+                                for task in task_list]
             if any(none_est_windows) and not all(none_est_windows):
                 raise ValueError('Some tasks have estimation_window == None. '
                                  'You can have different values for '
@@ -506,7 +512,6 @@ class Cryoscope(CalibBuilder):
             super().__init__(task_list, sweep_points=sweep_points, **kw)
             self.add_default_soft_sweep_points(**kw)
             self.add_default_hard_sweep_points(**kw)
-            self.calculate_truncation_decay_const(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.sequences, self.mc_points = self.sweep_n_dim(
                 self.sweep_points, body_block=None,
@@ -621,57 +626,6 @@ class Cryoscope(CalibBuilder):
                                            's', 'Pulse length', dimension=0))
                 task['sweep_points'] = task_sp
 
-    def calculate_truncation_decay_const(self, **kw):
-        """
-        Goes through the tasks in self.task_list and, if truncation_decay_length
-        is not None and truncation_decay_const is not specified, calculated the
-        latter such that the pulse amplitude is 1e-10 V at
-        truncation_decay_length after start of truncation.
-        !!! An exponential truncation decay is hardcoded here !!!
-        :param kw: keyword_arguments (to allow pass through kw even if it
-            contains entries that are not needed)
-        """
-        for task in self.task_list:
-            trunc_dec_len = task['truncation_decay_length']
-            trunc_sigma = task['truncation_decay_const']
-            if trunc_dec_len is not None and trunc_sigma is None:
-                if 'flux_pulse_dicts' in task:
-                    del task['truncation_decay_const']
-                    for i, fpd in enumerate(task['flux_pulse_dicts']):
-                        fp = self.get_pulse(fpd['op_code'])
-                        fp_sigma = fp.get('gaussian_filter_sigma', 0)
-                        pd_temp = {'element_name': 'dummy'}
-                        pd_temp.update(fp)
-                        pls = seg_mod.UnresolvedPulse(pd_temp).pulse_obj
-                        pls.algorithm_time(0)  # needed for CZ_nztc
-                        tvals = np.linspace(0, pls.length, 100)
-                        amps = pls.chan_wf(fp['channel'], tvals)
-                        mask = np.logical_and(
-                            tvals > fp.get('buffer_length_start', 0) + fp_sigma,
-                            tvals < pls.length/2 - fp_sigma)
-                        tr_sigma = 0
-                        for amp in amps[mask]:
-                            tr_sigma += -trunc_dec_len/np.log(1e-5/np.abs(amp))
-                        task['flux_pulse_dicts'][i][
-                            'truncation_decay_const'] = tr_sigma/len(amps[mask])
-                else:
-                    flux_op_code = task.get('flux_op_code', None)
-                    fp = self.get_pulse(flux_op_code)
-                    fp_sigma = fp.get('gaussian_filter_sigma', 0)
-                    pd_temp = {'element_name': 'dummy'}
-                    pd_temp.update(fp)
-                    pls = seg_mod.UnresolvedPulse(pd_temp).pulse_obj
-                    pls.algorithm_time(0)  # needed for CZ_nztc
-                    tvals = np.linspace(0, pls.length, 100)
-                    amps = pls.chan_wf(fp['channel'], tvals)
-                    mask = np.logical_and(
-                        tvals > fp.get('buffer_length_start', 0) + fp_sigma,
-                        tvals < pls.length/2 - fp_sigma)
-                    tr_sigma = 0
-                    for amp in amps[mask]:
-                        tr_sigma += -trunc_dec_len/np.log(1e-10/np.abs(amp))
-                    task['truncation_decay_const'] = tr_sigma/len(amps[mask])
-
     def sweep_block(self, sp1d_idx, sp2d_idx, **kw):
         """
         Performs a Ramsey phase measurement with a truncated flux pulse between
@@ -714,8 +668,9 @@ class Cryoscope(CalibBuilder):
                                                          {}))
 
             # pulse(s) to measure with cryoscope
-            trunc_dec_const = task.get('truncation_decay_const', None)
-            trunc_dec_len = task['truncation_decay_length']
+            trunc_dec_sigma = task.get('truncation_decay_sigma', 0)
+            trunc_dec_nr_sigma = task.get('truncation_decay_nr_sigma', 6)
+            trunc_dec_len = trunc_dec_sigma * trunc_dec_nr_sigma
             if 'flux_pulse_dicts' in task:
                 ops = [fpd['op_code'] for fpd in task['flux_pulse_dicts']]
                 main_fpbk = self.block_from_ops(f'fp_main_{qb}', ops)
@@ -728,12 +683,12 @@ class Cryoscope(CalibBuilder):
                 if meas_pulse_idx == len(mask) - 1:
                     main_fpbk.pulses[meas_pulse_idx]['buffer_length_end'] += \
                         trunc_dec_len
-                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_length'] = \
-                    trunc_dec_len
-                trunc_dec_const = task['flux_pulse_dicts'][meas_pulse_idx].get(
-                    'truncation_decay_const', trunc_dec_const)
-                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_const'] = \
-                    trunc_dec_const
+                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_sigma'] = \
+                    trunc_dec_sigma
+                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_nr_sigma'] = \
+                    trunc_dec_nr_sigma
+                main_fpbk.pulses[meas_pulse_idx]['nr_points_spline'] = \
+                    task['nr_points_spline']
                 # set soft sweep truncation_length
                 main_fpbk.pulses[meas_pulse_idx]['truncation_length'] = \
                     sweep_points.get_sweep_params_property(
@@ -759,10 +714,12 @@ class Cryoscope(CalibBuilder):
                 # set truncation decay length and sigma
                 main_fpbk.pulses[meas_pulse_idx]['buffer_length_end'] += \
                     trunc_dec_len
-                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_length'] = \
-                    trunc_dec_len
-                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_const'] = \
-                    trunc_dec_const
+                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_sigma'] = \
+                    trunc_dec_sigma
+                main_fpbk.pulses[meas_pulse_idx]['truncation_decay_nr_sigma'] = \
+                    trunc_dec_nr_sigma
+                main_fpbk.pulses[meas_pulse_idx]['nr_points_spline'] = \
+                    task['nr_points_spline']
                 # set soft sweep truncation_length
                 for k in sweep_points[1]:
                     main_fpbk.pulses[meas_pulse_idx][k] = \
@@ -775,7 +732,7 @@ class Cryoscope(CalibBuilder):
 
             # reparking flux pulse
             if 'reparking_flux_pulse' in task:
-                if trunc_dec_len is not None:
+                if trunc_dec_len > 0:
                     raise NotImplementedError(
                         'The reparking feature is not available with a slow '
                         'truncation decay. Plese either remove the reparking '

@@ -51,8 +51,10 @@ class Pulse:
         self.codeword = kw.pop('codeword', 'no_codeword')
         self.pulse_off = kw.pop('pulse_off', False)
         self.truncation_length = kw.pop('truncation_length', None)
-        self.truncation_decay_length = kw.pop('truncation_decay_length', None)
-        self.truncation_decay_const = kw.pop('truncation_decay_const', None)
+        self.truncation_decay_sigma = kw.pop('truncation_decay_sigma', 0)
+        self.truncation_decay_nr_sigma = kw.pop('truncation_decay_nr_sigma',
+                                                None)
+        self.nr_points_spline = kw.pop('nr_points_spline', 0)
         self.crosstalk_cancellation_channels = []
         self.crosstalk_cancellation_mtx = None
         self.crosstalk_cancellation_shift_mtx = None
@@ -80,15 +82,56 @@ class Pulse:
         # truncation_length should be (n+0.5) samples to avoid
         # rounding errors
         mask = tvals <= (tvals[0] + trunc_len)
-        trunc_dec_len = getattr(self, 'truncation_decay_length', None)
-        if trunc_dec_len is not None:
-            trunc_dec_const = getattr(self, 'truncation_decay_const', None)
-            # add slow decay after truncation
+        tr_dec_sigma = getattr(self, 'truncation_decay_sigma')
+        nr_points_spline = getattr(self, 'nr_points_spline')
+        if tr_dec_sigma > 0:
+            tr_dec_nr_sigma = getattr(self, 'truncation_decay_nr_sigma')
+            if tr_dec_nr_sigma is None:
+                raise ValueError('Please specify truncation_decay_nr_sigma.')
+            tr_dec_length = tr_dec_sigma * tr_dec_nr_sigma
+
+            # add slow Gaussian decay after truncation
             decay_func = lambda sigma, t, amp, offset: \
-                amp*np.exp(-(t-offset)/sigma)
-            wave_end = decay_func(trunc_dec_const, tvals[np.logical_not(mask)],
-                                  wave[mask][-1], tvals[mask][-1])
-            wave = np.concatenate([wave[mask], wave_end])
+                amp * 0.5 * (1 - sp.special.erf(
+                    (t - offset) / np.sqrt(2) / sigma))
+            ts_start_idx = np.count_nonzero(mask) - 1
+            gauss_start_idx = ts_start_idx + nr_points_spline//2
+            wave_end = decay_func(tr_dec_sigma, tvals, wave[gauss_start_idx],
+                                  tvals[0] + trunc_len + tr_dec_length/2)[
+                       gauss_start_idx:]
+            wave = np.concatenate([wave[:gauss_start_idx], wave_end])
+
+            if nr_points_spline > 0:
+                # add cubic spline to smooth out kink at the start of truncation
+                spline_func = lambda t, a, b, c, d: a*t**3 + b*t**2 + c*t + d
+                # define spline start and end
+                spl_start_idx = ts_start_idx
+                spl_stop_idx = ts_start_idx + nr_points_spline
+                t_spline = tvals[spl_start_idx:spl_stop_idx]
+                # compute a, b, c, d of spline function by solving linear
+                # equation such that the points at spl_start_idx,
+                # spl_start_idx - 1, spl_stop_idx, spl_stop_idx + 1 are part of
+                # the spline
+                A = []
+                B = []
+                for offset in [-1, 0]:
+                    A += [[tvals[spl_start_idx+offset]**3,
+                           tvals[spl_start_idx+offset]**2,
+                           tvals[spl_start_idx+offset],
+                           1]]
+                    B += [wave[spl_start_idx+offset]]
+                for offset in [0, 1]:
+                    A += [[tvals[spl_stop_idx+offset]**3,
+                           tvals[spl_stop_idx+offset]**2,
+                           tvals[spl_stop_idx+offset],
+                           1]]
+                    B += [wave[spl_stop_idx+offset]]
+                wave = np.concatenate([wave[:spl_start_idx],
+                                       spline_func(t_spline,
+                                                   *np.linalg.solve(
+                                                       np.array(A),
+                                                       np.array(B))),
+                                       wave[spl_stop_idx:]])
         else:
             wave *= mask
         return wave
