@@ -1809,13 +1809,17 @@ class Oscillation_Analysis(ba.BaseDataAnalysis):
 
     def prepare_fitting(self):
         self.fit_dicts = OrderedDict()
-        cos_mod = lmfit.Model(fit_mods.CosFunc)
-        cos_mod.guess = fit_mods.Cos_guess.__get__(cos_mod, cos_mod.__class__)
+        cos_mod = fit_mods.CosModel
+        guess_pars = fit_mods.Cos_guess(
+            model=cos_mod, t=self.raw_data_dict['xvals'][0],
+            data=self.proc_data_dict['yvals'], freq_guess=1/360)
+        guess_pars['frequency'].value = 1/360
+        guess_pars['frequency'].vary = False
         self.fit_dicts['cos_fit'] = {
-            'model': cos_mod,
-            'guess_dict': {'frequency': {'value': 1/360, 'vary': False}},
+            'fit_fn': fit_mods.CosFunc,
             'fit_xvals': {'t': self.raw_data_dict['xvals'][0]},
-            'fit_yvals': {'data': self.proc_data_dict['yvals']}}
+            'fit_yvals': {'data': self.proc_data_dict['yvals']},
+            'guess_pars': guess_pars}
 
     def analyze_fit_results(self):
         fr = self.fit_res['cos_fit'].best_values
@@ -1918,25 +1922,34 @@ class Conditional_Oscillation_Analysis(ba.BaseDataAnalysis):
                 self.proc_data_dict['xvals_off'] = self.raw_data_dict['xvals'][0][::2]
                 self.proc_data_dict['xvals_on'] = self.raw_data_dict['xvals'][0][1::2]
 
-
-
     def prepare_fitting(self):
         self.fit_dicts = OrderedDict()
-        cos_mod0 = lmfit.Model(fit_mods.CosFunc)
-        cos_mod0.guess = fit_mods.Cos_guess.__get__(cos_mod0, cos_mod0.__class__)
+        cos_mod = fit_mods.CosModel
+        guess_pars = fit_mods.Cos_guess(
+            model=cos_mod, t=self.proc_data_dict['xvals_off'][:-2],
+            data=self.proc_data_dict['yvals_osc_off'][:-2],
+            freq_guess=1/360)
+        guess_pars['frequency'].value = 1/360
+        guess_pars['frequency'].vary = False
         self.fit_dicts['cos_fit_off'] = {
-            'model': cos_mod0,
-            'guess_dict': {'frequency': {'value': 1/360, 'vary': False}},
+            'fit_fn': fit_mods.CosFunc,
             'fit_xvals': {'t': self.proc_data_dict['xvals_off'][:-2]},
-            'fit_yvals': {'data': self.proc_data_dict['yvals_osc_off'][:-2]}}
+            'fit_yvals': {'data': self.proc_data_dict['yvals_osc_off'][:-2]},
+            'guess_pars': guess_pars}
 
-        cos_mod1 = lmfit.Model(fit_mods.CosFunc)
-        cos_mod1.guess = fit_mods.Cos_guess.__get__(cos_mod1, cos_mod1.__class__)
+
+        cos_mod = fit_mods.CosModel
+        guess_pars = fit_mods.Cos_guess(
+            model=cos_mod, t=self.proc_data_dict['xvals_on'][:-2],
+            data=self.proc_data_dict['yvals_osc_on'][:-2],
+            freq_guess=1/360)
+        guess_pars['frequency'].value = 1/360
+        guess_pars['frequency'].vary = False
         self.fit_dicts['cos_fit_on'] = {
-            'model': cos_mod1,
-            'guess_dict': {'frequency': {'value': 1/360, 'vary': False}},
+            'fit_fn': fit_mods.CosFunc,
             'fit_xvals': {'t': self.proc_data_dict['xvals_on'][:-2]},
-            'fit_yvals': {'data': self.proc_data_dict['yvals_osc_on'][:-2]}}
+            'fit_yvals': {'data': self.proc_data_dict['yvals_osc_on'][:-2]},
+            'guess_pars': guess_pars}
 
     def analyze_fit_results(self):
         fr_0 = self.fit_res['cos_fit_off'].params
@@ -3622,23 +3635,24 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def prepare_fitting(self):
         pdd = self.proc_data_dict
-
         self.fit_dicts = OrderedDict()
-
         nr_amps = len(self.metadata['amplitudes'])
 
-
-        cos_mod = lmfit.Model(fit_mods.CosFunc)
-        cos_mod.guess = fit_mods.Cos_guess.__get__(cos_mod, cos_mod.__class__)
         for qb in self.qb_names:
             for i in range(nr_amps):
                 for j, data in enumerate(pdd['data_reshaped_no_cp'][qb][i]):
+                    cos_mod = fit_mods.CosModel
+                    guess_pars = fit_mods.Cos_guess(
+                        model=cos_mod, t=self.metadata['phases'],
+                        data=data,
+                        freq_guess=1/360)
+                    guess_pars['frequency'].value = 1/360
+                    guess_pars['frequency'].vary = False
                     self.fit_dicts[f'cos_fit_{qb}_{i}_{j}'] = {
-                        'model': cos_mod,
+                        'fit_fn': fit_mods.CosFunc,
                         'fit_xvals': {'t': self.metadata['phases']},
-                        'guess_dict': {'frequency': {'value': 1/360,
-                                                 'vary': False}},
-                        'fit_yvals': {'data': data}}
+                        'fit_yvals': {'data': data},
+                        'guess_pars': guess_pars}
 
     def analyze_fit_results(self):
         pdd = self.proc_data_dict
@@ -3752,6 +3766,7 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                                         else f'amp={fitid:.4f}',
                 }
 
+
 class MeasurementInducedDephasingAnalysis(MultiQubit_TimeDomain_Analysis):
     def process_data(self):
         super().process_data()
@@ -3772,16 +3787,19 @@ class MeasurementInducedDephasingAnalysis(MultiQubit_TimeDomain_Analysis):
         pdd = self.proc_data_dict
         rdd = self.raw_data_dict
         self.fit_dicts = OrderedDict()
-        cos_mod = lmfit.Model(fit_mods.CosFunc)
-        cos_mod.guess = fit_mods.Cos_guess.__get__(cos_mod, cos_mod.__class__)
         for qb in self.qb_names:
             for i, data in enumerate(pdd['data_reshaped'][qb]):
+                cos_mod = fit_mods.CosModel
+                guess_pars = fit_mods.Cos_guess(
+                    model=cos_mod, t=pdd['phases_reshaped'][i],
+                    data=data, freq_guess=1/360)
+                guess_pars['frequency'].value = 1/360
+                guess_pars['frequency'].vary = False
                 self.fit_dicts[f'cos_fit_{qb}_{i}'] = {
-                    'model': cos_mod,
-                    'guess_dict': {'frequency': {'value': 1/360,
-                                                 'vary': False}},
+                    'fit_fn': fit_mods.CosFunc,
                     'fit_xvals': {'t': pdd['phases_reshaped'][i]},
-                    'fit_yvals': {'data': data}}
+                    'fit_yvals': {'data': data},
+                    'guess_pars': guess_pars}
 
     def analyze_fit_results(self):
         pdd = self.proc_data_dict
@@ -4013,16 +4031,19 @@ class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
     def prepare_fitting(self):
         pdd = self.proc_data_dict
         self.fit_dicts = OrderedDict()
-        cos_mod = lmfit.Model(fit_mods.CosFunc)
-        cos_mod.guess = fit_mods.Cos_guess.__get__(cos_mod, cos_mod.__class__)
         for qb in self.qb_names:
             for i, data in enumerate(pdd['qb_msmt_vals'][qb]):
+                cos_mod = fit_mods.CosModel
+                guess_pars = fit_mods.Cos_guess(
+                    model=cos_mod, t=pdd['ramsey_phases'],
+                    data=data, freq_guess=1/360)
+                guess_pars['frequency'].value = 1/360
+                guess_pars['frequency'].vary = False
                 self.fit_dicts[f'cos_fit_{qb}_{i}'] = {
-                    'model': cos_mod,
-                    'guess_dict': {'frequency': {'value': 1/360,
-                                                 'vary': False}},
+                    'fit_fn': fit_mods.CosFunc,
                     'fit_xvals': {'t': pdd['ramsey_phases']},
-                    'fit_yvals': {'data': data}}
+                    'fit_yvals': {'data': data},
+                    'guess_pars': guess_pars}
 
     def analyze_fit_results(self):
         pdd = self.proc_data_dict
@@ -4167,6 +4188,287 @@ class DriveCrosstalkCancellationAnalysis(MultiQubit_TimeDomain_Analysis):
                     'do_legend': True,
                 }
 
+
+class FluxlineCrosstalkAnalysis(MultiQubit_TimeDomain_Analysis):
+    """Analysis for the measure_fluxline_crosstalk measurement.
+
+    The measurement involves Ramsey measurements on a set of crosstalk qubits,
+    which have been brought to a flux-sensitive position with a flux pulse.
+    The first dimension is the ramsey-phase of these qubits.
+
+    In the second sweep dimension, the amplitude of a flux pulse on another
+    (target) qubit is swept.
+
+    The analysis extracts the change in Ramsey phase offset, which gets
+    converted to a frequency offset due to the flux pulse on the target qubit.
+    The frequency offset is then converted to a flux offset, which is a measure
+    of the crosstalk between the target fluxline and the crosstalk qubit.
+
+    The measurement is hard-compressed, meaning the raw data is inherently 1d,
+    with one set of calibration points as the final segments. The experiment
+    part of the measured values are reshaped to the correct 2d shape for
+    the analysis. The sweep points passed into the analysis should still reflect
+    the 2d nature of the measurement, meaning the ramsey phase values should be
+    passed in the first dimension and the target fluxpulse amplitudes in the
+    second sweep dimension.
+    """
+
+
+    def __init__(self, qb_names, *args, **kwargs):
+        params_dict = {f'{qbn}.amp_to_freq_model':
+                       f'Instrument settings.{qbn}.fit_ge_freq_from_flux_pulse_amp'
+                       for qbn in qb_names}
+        kwargs['params_dict'] = kwargs.get('params_dict', {})
+        kwargs['params_dict'].update(params_dict)
+        super().__init__(qb_names, *args, **kwargs)
+
+    def process_data(self):
+        super().process_data()
+        if self.sp is None:
+            raise ValueError('This analysis needs a SweepPoints '
+                             'class instance.')
+
+        pdd = self.proc_data_dict
+
+        pdd['ramsey_phases'] = self.sp.get_sweep_params_property('values', 0)
+        pdd['target_amps'] = self.sp.get_sweep_params_property('values', 1)
+        pdd['target_fluxpulse_length'] = \
+            self.get_param_value('target_fluxpulse_length')
+        pdd['crosstalk_qubits_amplitudes'] = \
+            self.get_param_value('crosstalk_qubits_amplitudes')
+
+        pdd['qb_msmt_vals'] = {qb:
+            pdd['data_to_fit'][qb][:, :-self.num_cal_points].reshape(
+                len(pdd['target_amps']), len(pdd['ramsey_phases']))
+            for qb in self.qb_names}
+        pdd['qb_cal_vals'] = {
+            qb: pdd['data_to_fit'][qb][0, -self.num_cal_points:]
+            for qb in self.qb_names}
+
+    def prepare_fitting(self):
+        pdd = self.proc_data_dict
+        self.fit_dicts = OrderedDict()
+        cos_mod = lmfit.Model(fit_mods.CosFunc)
+        cos_mod.guess = fit_mods.Cos_guess.__get__(cos_mod, cos_mod.__class__)
+        for qb in self.qb_names:
+            for i, data in enumerate(pdd['qb_msmt_vals'][qb]):
+                self.fit_dicts[f'cos_fit_{qb}_{i}'] = {
+                    'model': cos_mod,
+                    'guess_dict': {'frequency': {'value': 1 / 360,
+                                                 'vary': False}},
+                    'fit_xvals': {'t': pdd['ramsey_phases']},
+                    'fit_yvals': {'data': data}}
+
+    def analyze_fit_results(self):
+        pdd = self.proc_data_dict
+
+        pdd['phase_contrast'] = {}
+        pdd['phase_offset'] = {}
+        pdd['freq_offset'] = {}
+        pdd['freq'] = {}
+
+        self.skip_qb_freq_fits = self.get_param_value('skip_qb_freq_fits', False)
+
+        if not self.skip_qb_freq_fits:
+            pdd['flux'] = {}
+
+        for qb in self.qb_names:
+            pdd['phase_contrast'][qb] = np.array([
+                2 * self.fit_res[f'cos_fit_{qb}_{i}'].best_values['amplitude']
+                for i, _ in enumerate(pdd['qb_msmt_vals'][qb])])
+            pdd['phase_offset'][qb] = np.array([
+                self.fit_res[f'cos_fit_{qb}_{i}'].best_values['phase']
+                for i, _ in enumerate(pdd['qb_msmt_vals'][qb])])
+            pdd['phase_offset'][qb] *= 180 / np.pi
+            pdd['phase_offset'][qb] += 180 * (pdd['phase_contrast'][qb] < 0)
+            pdd['phase_offset'][qb] = (pdd['phase_offset'][qb] + 180) % 360 - 180
+            pdd['phase_offset'][qb] = \
+                np.unwrap(pdd['phase_offset'][qb] / 180 * np.pi) * 180 / np.pi
+            pdd['phase_contrast'][qb] = np.abs(pdd['phase_contrast'][qb])
+            pdd['freq_offset'][qb] = pdd['phase_offset'][qb] / 360 / pdd[
+                'target_fluxpulse_length']
+            fr = lmfit.Model(lambda a, f_a=1, f0=0: a * f_a + f0).fit(
+                data=pdd['freq_offset'][qb], a=pdd['target_amps'])
+            pdd['freq_offset'][qb] -= fr.best_values['f0']
+
+            if not self.skip_qb_freq_fits:
+                mpars = eval(self.raw_data_dict[f'{qb}.amp_to_freq_model'])
+                freq_idle = fit_mods.Qubit_dac_to_freq(
+                    pdd['crosstalk_qubits_amplitudes'].get(qb, 0), **mpars)
+                pdd['freq'][qb] = pdd['freq_offset'][qb] + freq_idle
+                mpars.update({'V_per_phi0': 1, 'dac_sweet_spot': 0})
+                pdd['flux'][qb] = fit_mods.Qubit_freq_to_dac(
+                    pdd['freq'][qb], **mpars)
+
+
+
+        # fit fitted results to linear models
+        lin_mod = lmfit.Model(lambda x, a=1, b=0: a*x + b)
+        def guess(model, data, x, **kwargs):
+            a_guess = (data[-1] - data[0])/(x[-1] - x[0])
+            b_guess = data[0] - x[0]*a_guess
+            return model.make_params(a=a_guess, b=b_guess)
+        lin_mod.guess = guess.__get__(lin_mod, lin_mod.__class__)
+
+        keys_to_fit = []
+        for qb in self.qb_names:
+            for param in ['phase_offset', 'freq_offset', 'flux']:
+                if param == 'flux' and self.skip_qb_freq_fits:
+                    continue
+                key = f'{param}_fit_{qb}'
+                self.fit_dicts[key] = {
+                    'model': lin_mod,
+                    'fit_xvals': {'x': pdd['target_amps']},
+                    'fit_yvals': {'data': pdd[param][qb]}}
+                keys_to_fit.append(key)
+        self.run_fitting(keys_to_fit=keys_to_fit)
+
+    def prepare_plots(self):
+        pdd = self.proc_data_dict
+        rdd = self.raw_data_dict
+
+        for qb in self.qb_names:
+            self.plot_dicts[f'data_2d_{qb}'] = {
+                'title': rdd['measurementstring'] +
+                         '\n' + rdd['timestamp'] + '\n' + qb,
+                'plotfn': self.plot_colorxy,
+                'xvals': pdd['ramsey_phases'],
+                'yvals': pdd['target_amps'],
+                'zvals': pdd['qb_msmt_vals'][qb],
+                'xlabel': r'Ramsey phase, $\phi$',
+                'xunit': 'deg',
+                'ylabel': self.sp.get_sweep_params_property('label', 1,
+                                                            'target_amp'),
+                'yunit': self.sp.get_sweep_params_property('unit', 1,
+                                                           'target_amp'),
+                'zlabel': 'Excited state population',
+            }
+
+            colormap = self.options_dict.get('colormap', mpl.cm.plasma)
+            for i, pval in enumerate(pdd['target_amps']):
+                legendlabel = f'data, amp. = {pval:.4f} V'
+                color = colormap(i / (len(pdd['target_amps']) - 1))
+                label = f'cos_data_{qb}_{i}'
+
+                self.plot_dicts[label] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'] + '\n' + qb,
+                    'ax_id': f'param_crossections_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['ramsey_phases'],
+                    'yvals': pdd['qb_msmt_vals'][qb][i],
+                    'xlabel': r'Ramsey phase, $\phi$',
+                    'xunit': 'deg',
+                    'ylabel': 'Excited state population',
+                    'linestyle': '',
+                    'color': color,
+                    'setlabel': legendlabel,
+                    'do_legend': False,
+                    'legend_bbox_to_anchor': (1, 1),
+                    'legend_pos': 'upper left',
+                }
+            if self.do_fitting:
+                for i, pval in enumerate(pdd['target_amps']):
+                    legendlabel = f'fit, amp. = {pval:.4f} V'
+                    color = colormap(i / (len(pdd['target_amps']) - 1))
+                    label = f'cos_fit_{qb}_{i}'
+                    self.plot_dicts[label] = {
+                        'ax_id': f'param_crossections_{qb}',
+                        'plotfn': self.plot_fit,
+                        'fit_res': self.fit_res[label],
+                        'plot_init': self.options_dict.get('plot_init', False),
+                        'color': color,
+                        'setlabel': legendlabel,
+                        'do_legend': False,
+                    }
+
+                # Phase contrast
+                self.plot_dicts[f'phase_contrast_data_{qb}'] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'] + '\n' + qb,
+                    'ax_id': f'phase_contrast_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['target_amps'],
+                    'yvals': pdd['phase_contrast'][qb] * 100,
+                    'xlabel':self.sp.get_sweep_params_property('label', 1,
+                                                               'target_amp'),
+                    'xunit': self.sp.get_sweep_params_property('unit', 1,
+                                                               'target_amp'),
+                    'ylabel': 'Phase contrast',
+                    'yunit': '%',
+                    'linestyle': '-',
+                    'marker': 'o',
+                    'color': 'C0',
+                }
+
+                # Phase offset
+                self.plot_dicts[f'phase_offset_data_{qb}'] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'] + '\n' + qb,
+                    'ax_id': f'phase_offset_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['target_amps'],
+                    'yvals': pdd['phase_offset'][qb],
+                    'xlabel':self.sp.get_sweep_params_property('label', 1,
+                                                               'target_amp'),
+                    'xunit': self.sp.get_sweep_params_property('unit', 1,
+                                                               'target_amp'),
+                    'ylabel': 'Phase offset',
+                    'yunit': 'deg',
+                    'linestyle': 'none',
+                    'marker': 'o',
+                    'color': 'C0',
+                }
+
+                # Frequency offset
+                self.plot_dicts[f'freq_offset_data_{qb}'] = {
+                    'title': rdd['measurementstring'] +
+                             '\n' + rdd['timestamp'] + '\n' + qb,
+                    'ax_id': f'freq_offset_{qb}',
+                    'plotfn': self.plot_line,
+                    'xvals': pdd['target_amps'],
+                    'yvals': pdd['freq_offset'][qb],
+                    'xlabel':self.sp.get_sweep_params_property('label', 1,
+                                                               'target_amp'),
+                    'xunit': self.sp.get_sweep_params_property('unit', 1,
+                                                               'target_amp'),
+                    'ylabel': 'Freq. offset, $\\Delta f$',
+                    'yunit': 'Hz',
+                    'linestyle': 'none',
+                    'marker': 'o',
+                    'color': 'C0',
+                }
+
+                if not self.skip_qb_freq_fits:
+                    # Flux
+                    self.plot_dicts[f'flux_data_{qb}'] = {
+                        'title': rdd['measurementstring'] +
+                                 '\n' + rdd['timestamp'] + '\n' + qb,
+                        'ax_id': f'flux_{qb}',
+                        'plotfn': self.plot_line,
+                        'xvals': pdd['target_amps'],
+                        'yvals': pdd['flux'][qb],
+                        'xlabel': self.sp[1]['target_amp'][2],
+                        'xunit': self.sp[1]['target_amp'][1],
+                        'ylabel': 'Flux, $\\Phi$',
+                        'yunit': '$\\Phi_0$',
+                        'linestyle': 'none',
+                        'marker': 'o',
+                        'color': 'C0',
+                    }
+
+                for param in ['phase_offset', 'freq_offset', 'flux']:
+                    if param == 'flux' and self.skip_qb_freq_fits:
+                        continue
+                    self.plot_dicts[f'{param}_fit_{qb}'] = {
+                        'ax_id': f'{param}_{qb}',
+                        'plotfn': self.plot_fit,
+                        'fit_res': self.fit_res[f'{param}_fit_{qb}'],
+                        'plot_init': self.options_dict.get('plot_init', False),
+                        'linestyle': '-',
+                        'marker': '',
+                        'color': 'C1',
+                    }
 
 class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
 
@@ -5618,12 +5920,9 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                         guess_pars = fit_mods.Cos_guess(
                             model=model,
                             t=phases,
-                            data=data)
-                        guess_pars['amplitude'].vary = True
-                        guess_pars['offset'].vary = True
+                            data=data, freq_guess=1/(2*np.pi))
                         guess_pars['frequency'].value = 1/(2*np.pi)
                         guess_pars['frequency'].vary = False
-                        guess_pars['phase'].vary = True
 
                         self.fit_dicts[f'Cos_{key}'] = {
                             'fit_fn': fit_mods.CosFunc,
@@ -5980,12 +6279,9 @@ class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
                 guess_pars = fit_mods.Cos_guess(
                     model=cos_mod,
                     t=sweep_points,
-                    data=data)
-                guess_pars['amplitude'].vary = True
-                guess_pars['offset'].vary = True
+                    data=data, freq_guess=1/(2*np.pi))
                 guess_pars['frequency'].value = 1/(2*np.pi)
                 guess_pars['frequency'].vary = False
-                guess_pars['phase'].vary = True
 
                 key = 'cos_fit_{}_{}'.format(qbn, 'wfp' if i == 0 else 'nofp')
                 self.fit_dicts[key] = {
