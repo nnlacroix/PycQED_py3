@@ -79,7 +79,6 @@ class Pulse:
 
         # truncation_length should be (n+0.5) samples to avoid
         # rounding errors
-        print(tvals[0], trunc_len)
         mask = tvals <= (tvals[0] + trunc_len)
         trunc_dec_len = getattr(self, 'truncation_decay_length', None)
         if trunc_dec_len is not None:
@@ -171,7 +170,7 @@ class Pulse:
                     factor = self.crosstalk_cancellation_mtx[idx_c, idx_c2]
                     wfs.append(factor * self.chan_wf( c2, tvals))
         elif channel in self.channels:
-            wfs = self.chan_wf(channel, tvals)
+            wfs = self.waveforms({channel: tvals})[channel]
         else:
             wfs = np.zeros_like(tvals)
         dt = tvals[1] - tvals[0]
