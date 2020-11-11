@@ -132,6 +132,7 @@ class Pulse:
                             None else 0
                         wfs_dict[c] += factor * self.chan_wf(
                             c2, tvals_dict[c] - shift)
+                    wfs_dict[c] = self.truncate_wave(tvals_dict[c], wfs_dict[c])
         return wfs_dict
 
     def masked_channels(self):
