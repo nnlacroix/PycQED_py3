@@ -132,6 +132,7 @@ class Segment:
         self.enforce_single_element()
         self.resolve_timing()
         self.resolve_Z_gates()
+        self.add_flux_crosstalk_cancellation_channels()
         self.gen_trigger_el()
         self.add_charge_compensation()
 
@@ -303,6 +304,18 @@ class Segment:
             ordered_unres_pulses.append(p)
 
         self.resolved_pulses = ordered_unres_pulses
+
+    def add_flux_crosstalk_cancellation_channels(self):
+        if self.pulsar.flux_crosstalk_cancellation():
+            for p in self.resolved_pulses:
+                if any([ch in self.pulsar.flux_channels() for ch in
+                        p.pulse_obj.channels]):
+                    p.pulse_obj.crosstalk_cancellation_channels = \
+                        self.pulsar.flux_channels()
+                    p.pulse_obj.crosstalk_cancellation_mtx = \
+                        self.pulsar.flux_crosstalk_cancellation_mtx()
+                    p.pulse_obj.crosstalk_cancellation_shift_mtx = \
+                        self.pulsar.flux_crosstalk_cancellation_shift_mtx()
 
     def add_charge_compensation(self):
         """
@@ -981,9 +994,43 @@ class Segment:
 
         for pulse in self.elements[elname]:
             if pulse.codeword in {'no_codeword', codeword}:
-                hashlist += pulse.hashables(tstart, channel)
+                hashlist += self.hashables(pulse, tstart, channel)
         return tuple(hashlist)
 
+    @staticmethod
+    def hashables(pulse, tstart, channel):
+        """
+        Wrapper for Pulse.hashables making sure to deal correctly with
+        crosstalk cancellation channels.
+
+        The hashables of a cancellation pulse has to include the hashables
+        of all pulses that it cancels. This is needed to ensure that the
+        cancellation pulse gets re-uploaded when any of the cancelled pulses
+        changes. In addition it has to include the parameters of
+        cancellation calibration, i.e., the relevant entries of the
+        crosstalk cancellation matrix and of the shift matrix.
+
+        :param pulse: a Pulse object
+        :param tstart: (float) start time of the element
+        :param channel: (str) channel name
+        """
+        if channel in pulse.crosstalk_cancellation_channels:
+            hashables = []
+            idx_c = pulse.crosstalk_cancellation_channels.index(channel)
+            for c in pulse.channels:
+                if c in pulse.crosstalk_cancellation_channels:
+                    idx_c2 = pulse.crosstalk_cancellation_channels.index(c)
+                    factor = pulse.crosstalk_cancellation_mtx[idx_c, idx_c2]
+                    shift = pulse.crosstalk_cancellation_shift_mtx[
+                        idx_c, idx_c2] \
+                        if pulse.crosstalk_cancellation_shift_mtx is not \
+                           None else 0
+                    if factor != 0:
+                        hashables += pulse.hashables(tstart, c)
+                        hashables += [factor, shift]
+            return hashables
+        else:
+            return pulse.hashables(tstart, channel)
 
     def tvals(self, channel_list, element):
         """
