@@ -12,6 +12,7 @@ The module variable `pulse_libraries` is a
 """
 
 import numpy as np
+import scipy as sp
 
 pulse_libraries = set()
 """set of module: The set of pulse implementation libraries.
@@ -50,6 +51,8 @@ class Pulse:
         self.codeword = kw.pop('codeword', 'no_codeword')
         self.pulse_off = kw.pop('pulse_off', False)
         self.truncation_length = kw.pop('truncation_length', None)
+        self.truncation_decay_length = kw.pop('truncation_decay_length', None)
+        self.truncation_decay_const = kw.pop('truncation_decay_const', None)
         self.crosstalk_cancellation_channels = []
         self.crosstalk_cancellation_mtx = None
         self.crosstalk_cancellation_shift_mtx = None
@@ -60,6 +63,35 @@ class Pulse:
             setattr(self, k, kw.get(k, v))
 
         self._t0 = None
+
+    def truncate_wave(self, tvals, wave):
+        """
+        Truncate a waveform.
+        :param tvals: sample start times for the channels to generate
+            the waveforms for
+        :param wave: waveform sample amplitudes corresponding to tvals
+        :return: truncated waveform if truncation_length attribute is not None,
+            else unmodified waveform
+        """
+        trunc_len = getattr(self, 'truncation_length', None)
+        if trunc_len is None:
+            return wave
+
+        # truncation_length should be (n+0.5) samples to avoid
+        # rounding errors
+        mask = tvals <= (tvals[0] + trunc_len)
+        trunc_dec_len = getattr(self, 'truncation_decay_length', None)
+        if trunc_dec_len is not None:
+            trunc_dec_const = getattr(self, 'truncation_decay_const', None)
+            # add slow decay after truncation
+            decay_func = lambda sigma, t, amp, offset: \
+                amp*np.exp(-(t-offset)/sigma)
+            wave_end = decay_func(trunc_dec_const, tvals[np.logical_not(mask)],
+                                  wave[mask][-1], tvals[mask][-1])
+            wave = np.concatenate([wave[mask], wave_end])
+        else:
+            wave *= mask
+        return wave
 
     def waveforms(self, tvals_dict):
         """Generate waveforms for any channels of the pulse.
@@ -80,15 +112,9 @@ class Pulse:
             if c in tvals_dict and c not in \
                     self.crosstalk_cancellation_channels:
                 wfs_dict[c] = self.chan_wf(c, tvals_dict[c])
-                truncation_length = getattr(self, 'truncation_length', None)
                 if getattr(self, 'pulse_off', False):
                     wfs_dict[c] = np.zeros_like(wfs_dict[c])
-                elif truncation_length is not None:
-                    # truncation_length should be (n+0.5) samples to avoid
-                    # rounding errors
-                    mask = tvals_dict[c] <= (tvals_dict[c][0] +
-                                             truncation_length)
-                    wfs_dict[c] *= mask
+                wfs_dict[c] = self.truncate_wave(tvals_dict[c], wfs_dict[c])
         for c in self.crosstalk_cancellation_channels:
             if c in tvals_dict:
                 idx_c = self.crosstalk_cancellation_channels.index(c)
@@ -105,6 +131,7 @@ class Pulse:
                             None else 0
                         wfs_dict[c] += factor * self.chan_wf(
                             c2, tvals_dict[c] - shift)
+                    wfs_dict[c] = self.truncate_wave(tvals_dict[c], wfs_dict[c])
         return wfs_dict
 
     def masked_channels(self):
