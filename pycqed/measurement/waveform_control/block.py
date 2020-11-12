@@ -1,4 +1,5 @@
 import logging
+import numpy as np
 from copy import deepcopy
 
 log = logging.getLogger(__name__)
@@ -242,7 +243,8 @@ class Block:
                 if getattr(s, '_is_parametric_value', False):
                     for sweep_dict, ind in zip(sweep_dicts_list, index_list):
                         if s.param in sweep_dict:
-                            p[attr] = s.resolve(sweep_dict, ind)
+                            p[attr], p['op_code'] = s.resolve(
+                                sweep_dict, ind, p['op_code'])
 
         # resolve pulse modifiers now (they could overwrite parametric values)
         def check_candidate(k, v, p):
@@ -313,15 +315,19 @@ class ParametricValue:
 
     :param param: a string specifying the name of the parameter.
     :param func: (optional) a function applied to the value of the parameter.
+    :param op_split: (optional) cache a splitted version of the op_code of
+        the pulse to allow for correct op_code resolution in cases of spaces
+        in a mathematical expression in an op_code.
 
     """
     _is_parametric_value = True
 
-    def __init__(self, param, func=None):
+    def __init__(self, param, func=None, op_split=None):
         self.param = param
         self.func = func
+        self.op_split = op_split
 
-    def resolve(self, sweep_dict, ind=None):
+    def resolve(self, sweep_dict, ind=None, op_code=None):
         """
         Returns the resolved value of a pulse attribute for a chosen sweep
         point.
@@ -332,8 +338,11 @@ class ParametricValue:
         :param ind: The index of the desired sweep point in sweep_dict.
             None is only allowed in the case where ind is ignored (see
             above).
+        :param op_code: (optional str) the op_code of the pulse to allow
+            resolving a parametric expression in the op_code
 
-        :return:
+        :return: the resolved numerical value. If op_code was provided,
+            the resolved op_code is returned in addition.
         """
         d = sweep_dict[self.param]
         if not isinstance(d, list) and not isinstance(d, dict) and not \
@@ -344,7 +353,24 @@ class ParametricValue:
             v = d['values'][ind]
         else: # convention in SweepPoints class
             v = d[0][ind]
-        if self.func is None:
-            return v
+        v_processed = v if self.func is None else self.func(v)
+        if op_code is not None:
+            if f'[{self.param}]' in op_code:
+                # if the is a cached splitted version, use that one instead
+                # in order to allow for correct op_code resolution in cases
+                # of in a mathematical expression in an op_code.
+                # FIXME: remove op_code caching as soon as a new op_code
+                #  concept (e.g. tuples instead of space-separated strings)
+                #  makes it obsolete
+                op_split = [s for s in self.op_split] if self.op_split is not \
+                            None else op_code.split(' ')
+                param_start = op_split[0].find(':')
+                v_code = eval(op_split[0][(param_start + 1):].replace(
+                    f'[{self.param}]', f"{v}"))
+                op_split[0] = f"{op_split[0][:param_start]}{v_code}"
+                op_code = ' '.join(op_split)
+            else:
+                op_code = op_code.replace(f':{self.param} ', f"{v} ")
+            return v_processed, op_code
         else:
-            return self.func(v)
+            return v_processed

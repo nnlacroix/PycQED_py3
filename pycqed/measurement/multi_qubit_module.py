@@ -2002,7 +2002,7 @@ def measure_fluxline_crosstalk(
         analyze=True):
     """
     Applies a flux pulse on the target qubit with various amplitudes.
-    Measure the phase shift due to these pulses on the crosstalk qubit,s which
+    Measure the phase shift due to these pulses on the crosstalk qubits which
     are measured in a Ramsey setting and fluxed to a more sensitive frequency.
 
     Args:
