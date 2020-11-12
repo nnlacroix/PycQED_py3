@@ -1078,7 +1078,7 @@ class Segment:
     def plot(self, instruments=None, channels=None, legend=True,
              delays=None, savefig=False, prop_cycle=None, frameon=True,
              channel_map=None, plot_kwargs=None, axes=None, demodulate=False,
-             show_and_close=True):
+             show_and_close=True, col_ind=0):
         """
         Plots a segment. Can only be done if the segment can be resolved.
         :param instruments (list): instruments for which pulses have to be
@@ -1100,6 +1100,9 @@ class Segment:
         :param demodulate (bool): plot only envelope of pulses by temporarily
             setting modulation and phase to 0. Need to recompile the sequence
         :param show_and_close: (bool) show and close the plot (default: True)
+        :param col_ind: (int) when passed together with axes, this specifies
+            in which column of subfigures the plots should be added
+            (default: 0)
         :return: The figure and axes objects if show_and_close is False,
             otherwise no return value.
         """
@@ -1132,7 +1135,7 @@ class Segment:
                                        squeeze=False,
                                        figsize=(16, n_instruments * 3))
             if prop_cycle is not None:
-                for a in ax[:,0]:
+                for a in ax[:,col_ind]:
                     a.set_prop_cycle(**prop_cycle)
             sorted_keys = sorted(wfs.keys()) if instruments is None \
                 else [i for i in instruments if i in wfs]
@@ -1150,8 +1153,8 @@ class Segment:
                                     f"{instr}_{ch}"] - delays.get(instr, 0)
                                 if channel_map is None:
                                     # plot per device
-                                    ax[i, 0].set_title(instr)
-                                    ax[i, 0].plot(
+                                    ax[i, col_ind].set_title(instr)
+                                    ax[i, col_ind].plot(
                                         tvals * 1e6, wf,
                                         label=f"{elem_name[1]}_{k}_{ch}",
                                         **plot_kwargs)
@@ -1163,14 +1166,14 @@ class Segment:
                                              enumerate(channel_map.items())
                                              if f"{instr}_{ch}" in qb_chs}
                                     for qbi, qb_name in match.items():
-                                        ax[qbi, 0].set_title(qb_name)
-                                        ax[qbi, 0].plot(
+                                        ax[qbi, col_ind].set_title(qb_name)
+                                        ax[qbi, col_ind].plot(
                                             tvals * 1e6, wf,
                                             label=f"{elem_name[1]}"
                                                   f"_{k}_{instr}_{ch}",
                                             **plot_kwargs)
                                         if demodulate: # filling
-                                            ax[qbi, 0].fill_between(
+                                            ax[qbi, col_ind].fill_between(
                                                 tvals * 1e6, wf,
                                                 label=f"{elem_name[1]}_"
                                                       f"{k}_{instr}_{ch}",
@@ -1178,7 +1181,7 @@ class Segment:
                                                 **plot_kwargs)
 
             # formatting
-            for a in ax[:, 0]:
+            for a in ax[:, col_ind]:
                 if isinstance(frameon, bool):
                     frameon = {k: frameon for k in ['top', 'bottom',
                                                     "right", "left"]}
@@ -1189,7 +1192,7 @@ class Segment:
                 if legend:
                     a.legend(loc=[1.02, 0], prop={'size': 8})
                 a.set_ylabel('Voltage (V)')
-            ax[-1, 0].set_xlabel('time ($\mu$s)')
+            ax[-1, col_ind].set_xlabel('time ($\mu$s)')
             fig.suptitle(f'{self.name}', y=1.01)
             plt.tight_layout()
             if savefig:
