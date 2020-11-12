@@ -431,10 +431,12 @@ class ProcessingPipeline(list):
                 else:
                     raise ValueError('The first node in the pipeline cannot '
                                      'have "keys_in" = "previous".')
-        try:
-            keys_in.sort()
-        except AttributeError:
-            pass
+
+        if keys_in != keys_in_temp:
+            try:
+                keys_in.sort()
+            except AttributeError:
+                pass
 
         if len(keys_in) == 0 or keys_in is None:
             raise ValueError(f'No "keys_in" could be determined '
