@@ -258,13 +258,14 @@ class ProcessingPipeline(list):
         """
         super().__init__()
         self.global_keys_out_container = global_keys_out_container
+        self.meaj_obj_names = meaj_obj_names
         if node_name is not None:
             if 'keys_out_container' not in node_params:
                 node_params['keys_out_container'] = \
                     self.global_keys_out_container
-            if meaj_obj_names is not None and \
+            if self.meaj_obj_names is not None and \
                     'meaj_obj_names' not in node_params:
-                node_params['meaj_obj_names'] = meaj_obj_names
+                node_params['meaj_obj_names'] = self.meaj_obj_names
             node_params['node_name'] = node_name
             self.append(node_params)
         elif from_dict_list is not None:
@@ -368,6 +369,9 @@ class ProcessingPipeline(list):
         """
         if 'keys_out_container' not in node_params:
             node_params['keys_out_container'] = self.global_keys_out_container
+        if self.meaj_obj_names is not None and \
+                'meaj_obj_names' not in node_params:
+            node_params['meaj_obj_names'] = self.meaj_obj_names
         node_params['node_name'] = node_name
         self.append(node_params)
 
