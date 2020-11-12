@@ -110,15 +110,11 @@ def fd_load_qb_params(data_dict, params_dict, timestamp=None, **params):
         data_dict, props_to_extract=['mobjn'], **params)
     if timestamp is None:
         timestamp = hlp_mod.get_param('timestamps', data_dict, **params)[0]
-    pulse_params_dict = {}
     params_dict = {k: f'Instrument settings.{mobjn}.{v}'
                    for k, v in params_dict.items()}
-    hlp_mod.get_params_from_hdf_file(pulse_params_dict, params_dict,
+    hlp_mod.get_params_from_hdf_file(data_dict, params_dict,
                                      folder=a_tools.get_folder(timestamp),
-                                     **params)
-    for k in params_dict.keys():
-        hlp_mod.add_param(k, pulse_params_dict[k], data_dict,
-                          replace_value=True, **params)
+                                     replace_value=True, **params)
 
 def fd_load_distortion_dict(data_dict, timestamp=None, **params):
     mobjn = hlp_mod.get_measurement_properties(
@@ -139,7 +135,6 @@ def fd_load_distortion_dict(data_dict, timestamp=None, **params):
                             f"{params_dict['ch']}_distortion_dict",
         },
         folder=a_tools.get_folder(timestamp), **params)
-    print(params_dict)
     if params_dict['distortion'] == 'off':
         params_dict['distortion_dict'] = {}
     elif isinstance(params_dict['distortion_dict'], str):
@@ -166,8 +161,8 @@ def fd_freq_to_volt(data_dict, keys_in, keys_out, **params):
         data_dict, **params)
 
 def fd_apply_predistortion(data_dict, keys_in, keys_out, **params):
-    def my_resample(tvals_gen_new, tvals_gen, freqs_meas):
-        return np.interp(tvals_gen_new, tvals_gen, freqs_meas)
+    def my_resample(tvals_new, tvals, wf):
+        return np.interp(tvals_new, tvals, wf)
 
     if 'distortion_dict' not in data_dict:
         fd_load_distortion_dict(data_dict)
@@ -175,22 +170,24 @@ def fd_apply_predistortion(data_dict, keys_in, keys_out, **params):
     dt = hlp_mod.get_param('dt', data_dict, **params)
     for ki, ko in zip(keys_in, keys_out):
         tvals, wf = hlp_mod.get_param(ki, data_dict, **params)
-
-        tvals_rs = np.arange(tvals[0], tvals[-1], dt)
-        wf_rs = my_resample(tvals_rs, tvals, wf)
+        resampling = not np.all(np.abs(np.diff(tvals) - dt) < 1e-14)
+        if resampling:
+            tvals_rs = np.arange(tvals[0], tvals[-1], dt)
+            wf = my_resample(tvals_rs, tvals, wf)
 
         fir_kernels = distortion_dict.get('FIR', None)
         if fir_kernels is not None:
             if hasattr(fir_kernels, '__iter__') and not \
                     hasattr(fir_kernels[0], '__iter__'):  # 1 kernel
-                wf_rs = fpdist.filter_fir(fir_kernels, wf_rs)
+                wf = fpdist.filter_fir(fir_kernels, wf)
             else:
                 for kernel in fir_kernels:
-                    wf_rs = fpdist.filter_fir(kernel, wf_rs)
+                    wf = fpdist.filter_fir(kernel, wf)
 
         iir_filters = distortion_dict.get('IIR', None)
         if iir_filters is not None:
-            wf_rs = fpdist.filter_iir(iir_filters[0], iir_filters[1], wf_rs)
+            wf = fpdist.filter_iir(iir_filters[0], iir_filters[1], wf)
 
-        wf = my_resample(tvals, tvals_rs, wf_rs)
+        if resampling:
+            wf = my_resample(tvals, tvals_rs, wf)
         hlp_mod.add_param(ko, [tvals, wf], data_dict, **params)
