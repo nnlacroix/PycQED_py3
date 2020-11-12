@@ -1087,7 +1087,8 @@ class Segment:
         :param delays (dict): keys are instruments, values are additional
             delays. If passed, the delay is substracted to the time values of
             this instrument, such that the pulses are plotted at timing when
-            they physically occur.
+            they physically occur. A key 'default' can be used to specify a
+            delay for all instruments that are not explicitly given as keys.
         :param savefig: save the plot
         :param channel_map (dict): indicates which instrument channels
             correspond to which qubits. Keys = qb names, values = list of
@@ -1140,6 +1141,8 @@ class Segment:
             sorted_keys = sorted(wfs.keys()) if instruments is None \
                 else [i for i in instruments if i in wfs]
             for i, instr in enumerate(sorted_keys):
+                if instr not in delays and 'default' in delays:
+                    delays[instr] = delays['default']
                 # plotting
                 for elem_name, v in wfs[instr].items():
                     for k, wf_per_ch in v.items():
