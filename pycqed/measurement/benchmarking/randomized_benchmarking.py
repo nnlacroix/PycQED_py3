@@ -18,12 +18,14 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
         'cliffords': dict(param_name='cliffords', unit='',
                           label='Nr. Cliffords',
                           dimension=0),
-        'nr_seeds': dict(param_name='seeds', unit='',
+        'nr_seeds,nr_m': dict(param_name='seeds', unit='',
                          label='Seeds', dimension=1,
-                         values_func=lambda ns: np.random.randint(0, 1e8, ns)),
+                         values_func=lambda ns, nm: np.array(
+                             [np.random.randint(0, 1e8, ns)
+                              for _ in range(nm)]).T),
     }
 
-    def __init__(self, task_list=None, sweep_points=None, qubits=None,
+    def __init__(self, task_list, sweep_points=None, qubits=None,
                  nr_seeds=None, cliffords=None, sweep_type=None,
                  interleaved_gate=None, gate_decomposition='HZ', **kw):
         """
@@ -67,30 +69,42 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
             self.sweep_type = sweep_type
             if self.sweep_type is None:
                 self.sweep_type = {'cliffords': 0, 'seeds': 1}
-            self.kw_for_sweep_points['nr_seeds']['dimension'] = \
+            self.kw_for_sweep_points['nr_seeds,nr_m']['dimension'] = \
                 self.sweep_type['seeds']
             self.kw_for_sweep_points['cliffords']['dimension'] = \
                 self.sweep_type['cliffords']
 
             self.interleaved_gate = interleaved_gate
             if self.interleaved_gate is not None:
-                self.kw_for_sweep_points['nr_seeds'] = [
+                self.kw_for_sweep_points['nr_seeds,nr_m'] = [
                     dict(param_name='seeds', unit='',
                          label='Seeds', dimension=self.sweep_type['seeds'],
-                         values_func=lambda ns: np.random.randint(0, 1e8, ns)),
+                         values_func=lambda ns, nm: np.array(
+                             [np.random.randint(0, 1e8, ns)
+                              for _ in range(nm)]).T),
                     dict(param_name='seeds_irb', unit='',
                          label='Seeds', dimension=self.sweep_type['seeds'],
-                         values_func=lambda ns: np.random.randint(0, 1e8, ns))]
+                         values_func=lambda ns, nm: np.array(
+                             [np.random.randint(0, 1e8, ns)
+                              for _ in range(nm)]).T)]
             kw['cal_states'] = kw.get('cal_states', '')
+
+            if cliffords is not None:
+                nr_m = len(cliffords)
+            else:
+                nr_m = len(task_list[0].get('cliffords', []))
+            for task in task_list:
+                task['nr_m'] = nr_m
 
             super().__init__(task_list, qubits=qubits,
                              sweep_points=sweep_points,
-                             nr_seeds=nr_seeds,
+                             nr_seeds=nr_seeds, nr_m=nr_m,
                              cliffords=cliffords, **kw)
             if self.experiment_name is None:
                 self.experiment_name = f'RB_{gate_decomposition}' if \
                     interleaved_gate is None else f'IRB_{gate_decomposition}'
-            self.identical_pulses = nr_seeds is not None
+            self.identical_pulses = nr_seeds is not None and all([
+                task.get('nr_seeds', None) is None for task in task_list])
             self.gate_decomposition = gate_decomposition
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
 
@@ -110,6 +124,12 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
                                      'move nr_seeds from keyword arguments '
                                      'into the tasks.')
 
+            # # remove the redundant 'seeds' entry in self.sweep_points which
+            # # might have been left over from self.generate_kw_sweep_points
+            # dim = self.sweep_points.find_parameter('seeds')
+            # if dim is not None:
+            #     self.sweep_points.get_sweep_params_description('seeds', dim,
+            #                                                    pop=True)
             self.sequences, self.mc_points = self.sweep_n_dim(
                 self.sweep_points, body_block=None,
                 body_block_func=self.rb_block, cal_points=self.cal_points,
@@ -196,14 +216,16 @@ class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
             self.preprocessed_task_list
         for i, task in enumerate(tl):
             param_name = 'seeds' if interleaved_gate is None else 'seeds_irb'
+            seed_idx = sp1d_idx if self.sweep_type['seeds'] == 0 else sp2d_idx
+            clf_idx = sp1d_idx if self.sweep_type['cliffords'] == 0 else sp2d_idx
             seed = task['sweep_points'].get_sweep_params_property(
                 'values', self.sweep_type['seeds'], param_name)[
-                sp1d_idx if self.sweep_type['seeds'] == 0 else sp2d_idx]
+                seed_idx, clf_idx]
             clifford = task['sweep_points'].get_sweep_params_property(
-                'values', self.sweep_type['cliffords'], 'cliffords')[
-                sp1d_idx if self.sweep_type['cliffords'] == 0 else sp2d_idx]
+                'values', self.sweep_type['cliffords'], 'cliffords')[clf_idx]
             cl_seq = rb.randomized_benchmarking_sequence(
-                clifford, seed=seed, interleaved_gate=interleaved_gate)
+                clifford, seed=seed,
+                interleaved_gate=interleaved_gate)
             pulse_op_codes_list += [rb.decompose_clifford_seq(
                 cl_seq, gate_decomp=self.gate_decomposition)]
         rb_block_list = [self.block_from_ops(
@@ -264,13 +286,13 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
         rb_block_list = []
         for i, task in enumerate(self.preprocessed_task_list):
             param_name = 'seeds' if interleaved_gate is None else 'seeds_irb'
+            seed_idx = sp1d_idx if self.sweep_type['seeds'] == 0 else sp2d_idx
+            clf_idx = sp1d_idx if self.sweep_type['cliffords'] == 0 else sp2d_idx
             seed = task['sweep_points'].get_sweep_params_property(
                 'values', self.sweep_type['seeds'], param_name)[
-                sp1d_idx if self.sweep_type['seeds'] == 0 else sp2d_idx]
+                seed_idx, clf_idx]
             clifford = task['sweep_points'].get_sweep_params_property(
-                'values', self.sweep_type['cliffords'], 'cliffords')[
-                sp1d_idx if self.sweep_type['cliffords'] == 0 else sp2d_idx]
-
+                'values', self.sweep_type['cliffords'], 'cliffords')[clf_idx]
             cl_seq = rb.randomized_benchmarking_sequence_new(
                 clifford, number_of_qubits=2, seed=seed,
                 max_clifford_idx=kw.get('max_clifford_idx',
