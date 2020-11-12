@@ -1396,7 +1396,7 @@ def plot_line(pdict, axs, tight_fig=True):
         # plot_*vals is the list of *vals arrays
         pfunc = getattr(axs, pdict.get('func', 'plot'))
         for i, (xvals, yvals) in enumerate(zip(plot_xvals, plot_yvals)):
-            plot_out = p_out.append(pfunc(xvals, yvals,
+            p_out.append(pfunc(xvals, yvals,
                                linestyle=plot_linestyle,
                                marker=plot_marker,
                                color=plot_linekws.pop(
@@ -1408,7 +1408,7 @@ def plot_line(pdict, axs, tight_fig=True):
 
     else:
         pfunc = getattr(axs, pdict.get('func', 'plot'))
-        plot_out = p_out = pfunc(plot_xvals, plot_yvals, zorder=zorder,
+        p_out = pfunc(plot_xvals, plot_yvals, zorder=zorder,
                                  linestyle=plot_linestyle, marker=plot_marker,
                                  label='%s%s' % (dataset_desc, dataset_label),
                                  **plot_linekws)
@@ -1416,8 +1416,8 @@ def plot_line(pdict, axs, tight_fig=True):
 
     if plot_errorbars:
         # loop through bars and caps and set the alpha value
-        [bar.set_alpha(alpha_errorbars) for bar in plot_out[2]]
-        [cap.set_alpha(alpha_errorbars) for cap in plot_out[1]]
+        [bar.set_alpha(alpha_errorbars) for bar in p_out[2]]
+        [cap.set_alpha(alpha_errorbars) for cap in p_out[1]]
 
     if plot_xrange is None:
         pass  # Do not set xlim if xrange is None as the axs gets reused

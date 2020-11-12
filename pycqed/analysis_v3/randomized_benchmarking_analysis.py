@@ -115,6 +115,7 @@ def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
                     meas_obj_names=meas_obj_names)
         pp.add_node('rb_analysis',
                     d=dim_hilbert,
+                    sweep_type=sweep_type,
                     keys_in=f'previous {label}.average_data',
                     keys_in_std=f'previous {label}.get_std_deviation',
                     keys_in_all_seeds_data='previous average_data',
@@ -434,7 +435,6 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
                     do_plotting=False,
                     keys_out=None,
                     meas_obj_names=meas_obj_names)
-
         for mobjn in meas_obj_names:
             cliffords = sweep_points.get_sweep_params_property(
                 'values', sweep_type['cliffords'], mospm[mobjn])[0]
@@ -472,7 +472,7 @@ def combine_datafiles_split_by_seeds(data_dict, keys_in, keys_out,
                                      interleaved_irb=False, **params):
     """
     NOT FULLY IMPLEMENTED FOR slow_cliffords == True!!!
-    Combines the data from an interleaved RB/IRB measurement that was saved in
+    Combines the data from an (interleaved) RB/IRB measurement that was saved in
     multiple files into one data set that would look as if it had all been
     taken in one measurement (one file).
     :param data_dict: OrderedDict containing data to be processed and where
@@ -509,6 +509,7 @@ def combine_datafiles_split_by_seeds(data_dict, keys_in, keys_out,
 
     nr_segments = sp0.length(0) + len(cp.states)
     nr_uploads = sp0.length(1)
+    chunk = nr_segments*n_shots
 
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     for keyi, keyo in zip(keys_in, keys_out):
@@ -520,9 +521,10 @@ def combine_datafiles_split_by_seeds(data_dict, keys_in, keys_out,
         # them. Put all the nr_cliffords concatenations in the
         # list data_combined
         data_combined = [np.concatenate(
-            [d[j*nr_segments*n_shots:(j+1)*nr_segments*n_shots]
-             for d in data]) for j in np.arange(
-            (interleaved_irb+1)*nr_uploads)]
+            [d[m * chunk + j * nr_segments: m * chunk + (j + 1) * nr_segments]
+             for d in data])
+            for m in np.arange((interleaved_irb + 1)*nr_uploads)
+            for j in np.arange(n_shots)]
         # concatenate all the lists in data_combined to get one complete
         # array of data
         data_combined = np.concatenate(data_combined)
@@ -531,7 +533,7 @@ def combine_datafiles_split_by_seeds(data_dict, keys_in, keys_out,
     # update the sweep_points if they were a list
     nr_sp0 = sp0.length(0)
     nr_exp = len(sp_list)
-    sp_all_vals_list = [np.zeros(nr_exp*nr_sp0) for _
+    sp_all_vals_list = [np.zeros(nr_exp*nr_sp0, dtype=int) for _
                         in range(len(sp0.get_sweep_dimension(0)))]
 
     for i, sp in enumerate(sp_list):
@@ -1263,15 +1265,15 @@ def irb_gate_error(data_dict, **params):
 
 def calc_rb_coherence_limited_fidelity(T1, T2, pulse_length, gate_decomp='HZ'):
     """
-    Formula from Asaad et al.
-    pulse separation is time between start of pulses
+    Formula from Asaad et al. (2016):
+    https://www.nature.com/articles/npjqi201629
 
     Returns:
         F_cl (float): decoherence limited fildelity
         p (float): decoherence limited depolarization parameter
     """
     # Np = 1.875  # Avg. number of gates per Clifford for XY decomposition
-    # Np = 0.9583  # Avg. number of gates per Clifford for HZ decomposition
+    # Np = 1.125  # Avg. number of gates per Clifford for HZ decomposition
     if gate_decomp == 'HZ':
         Np = 1.125
     elif gate_decomp == 'XY':
