@@ -6,12 +6,14 @@ import sys
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.measurement.waveform_control import segment as seg_mod
+from pycqed.analysis import fitting_models as fit_mods
+from pycqed.measurement.waveform_control import fluxpulse_predistortion as fpdist
 
 from pycqed.analysis_v3 import pipeline_analysis as pla
 pla.search_modules.add(sys.modules[__name__])
 
 
-def create_pulse(data_dict, keys_in, keys_out, **params):
+def fd_create_pulse(data_dict, keys_in, keys_out, **params):
     """
     keys_out = ['tvals', 'volts']
     keys_out = ['volts', 'tvals']
@@ -36,15 +38,16 @@ def create_pulse(data_dict, keys_in, keys_out, **params):
                 entry
     """
 
-    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+    # data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
 
     mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], **params)
 
     pulse_params_dict = {}
 
-    timestamp = hlp_mod.get_param('timestamp', data_dict, **params)
-    if timestamp is not None:
+    timestamps = hlp_mod.get_param('timestamps', data_dict, **params)
+    if timestamps is not None:
+        timestamp = timestamps[0]
         # Flux pulse parameters
         # Needs to be changed when support for other pulses is added.
         params_dict = {
@@ -79,7 +82,6 @@ def create_pulse(data_dict, keys_in, keys_out, **params):
         hlp_mod.get_params_from_hdf_file(pulse_params_dict, params_dict,
                                          folder=a_tools.get_folder(timestamp),
                                          **params)
-        hlp_mod.add_param('timestamps', [timestamp], data_dict, **params)
 
     pulse_dict = hlp_mod.get_param('pulse_dict', data_dict, default_value={},
                                    **params)
@@ -89,16 +91,106 @@ def create_pulse(data_dict, keys_in, keys_out, **params):
     pulse = seg_mod.UnresolvedPulse(pulse_params_dict).pulse_obj
     pulse.algorithm_time(0)
 
-    tvals = hlp_mod.get_param('tvals', data_dict, **params)
+    tvals = hlp_mod.get_param(keys_in[0], data_dict, **params)
     if tvals is None:
         tvals = np.arange(0, pulse.length, 1 / 2.4e9)
 
-    hlp_mod.add_param('volt_freq_conv', pulse_params_dict['volt_freq_conv'],
-                      data_dict, **params)
-    hlp_mod.add_param('volt_freq_conv', pulse_params_dict['volt_freq_conv'],
+    if 'volt_freq_conv' not in data_dict:
+        hlp_mod.add_param('volt_freq_conv',
+                          pulse_params_dict['volt_freq_conv'], data_dict,
+                          **params)
+
+    hlp_mod.add_param(keys_out[0],
+                      [tvals, pulse.chan_wf(
+                          pulse_params_dict['flux_channel'], tvals),],
                       data_dict, **params)
 
-    volts_gen = pulse.chan_wf(pulse_params_dict['flux_channel'], tvals)
-    volt_freq_conv = pulse_params_dict['volt_freq_conv']
+def fd_load_qb_params(data_dict, params_dict, timestamp=None, **params):
+    mobjn = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['mobjn'], **params)
+    if timestamp is None:
+        timestamp = hlp_mod.get_param('timestamps', data_dict, **params)[0]
+    pulse_params_dict = {}
+    params_dict = {k: f'Instrument settings.{mobjn}.{v}'
+                   for k, v in params_dict.items()}
+    hlp_mod.get_params_from_hdf_file(pulse_params_dict, params_dict,
+                                     folder=a_tools.get_folder(timestamp),
+                                     **params)
+    for k in params_dict.keys():
+        hlp_mod.add_param(k, pulse_params_dict[k], data_dict,
+                          replace_value=True, **params)
 
-    return tvals, volts_gen,
+def fd_load_distortion_dict(data_dict, timestamp=None, **params):
+    mobjn = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['mobjn'], **params)
+    if timestamp is None:
+        timestamp = hlp_mod.get_param('timestamps', data_dict, **params)[0]
+    folder = a_tools.get_folder(timestamp)
+    params_dict = {}
+    hlp_mod.get_params_from_hdf_file(
+        params_dict,
+        {'ch': f'Instrument settings.{mobjn}.flux_pulse_channel'},
+        folder=a_tools.get_folder(timestamp), **params)
+    hlp_mod.get_params_from_hdf_file(
+        params_dict,
+        {'distortion': f"Instrument settings.Pulsar."
+                       f"{params_dict['ch']}_distortion",
+         'distortion_dict': f"Instrument settings.Pulsar."
+                            f"{params_dict['ch']}_distortion_dict",
+        },
+        folder=a_tools.get_folder(timestamp), **params)
+    print(params_dict)
+    if params_dict['distortion'] == 'off':
+        params_dict['distortion_dict'] = {}
+    elif isinstance(params_dict['distortion_dict'], str):
+        params_dict['distortion_dict'] = eval(params_dict['distortion_dict'])
+    hlp_mod.add_param('distortion_dict', params_dict['distortion_dict'],
+                      data_dict, replace_value=True, **params)
+
+def fd_volt_to_freq(data_dict, keys_in, keys_out, **params):
+    volt_freq_conv = hlp_mod.get_param('volt_freq_conv', data_dict, **params)
+    s = hlp_mod.get_param(keys_in[0], data_dict, **params)
+    hlp_mod.add_param(keys_out[0],
+                      [s[0], fit_mods.Qubit_dac_to_freq(
+                          s[1], **volt_freq_conv)],
+                      data_dict, **params)
+
+def fd_freq_to_volt(data_dict, keys_in, keys_out, **params):
+    volt_freq_conv = hlp_mod.get_param('volt_freq_conv', data_dict, **params)
+    s = hlp_mod.get_param(keys_in[0], data_dict, **params)
+    hlp_mod.add_param(
+        keys_out[0],
+        [s[0], np.mod(fit_mods.Qubit_freq_to_dac(s[1], **volt_freq_conv,
+                                                 branch='negative'),
+                      volt_freq_conv['V_per_phi0'])],
+        data_dict, **params)
+
+def fd_apply_predistortion(data_dict, keys_in, keys_out, **params):
+    def my_resample(tvals_gen_new, tvals_gen, freqs_meas):
+        return np.interp(tvals_gen_new, tvals_gen, freqs_meas)
+
+    if 'distortion_dict' not in data_dict:
+        fd_load_distortion_dict(data_dict)
+    distortion_dict = hlp_mod.get_param('distortion_dict', data_dict, **params)
+    dt = hlp_mod.get_param('dt', data_dict, **params)
+    for ki, ko in zip(keys_in, keys_out):
+        tvals, wf = hlp_mod.get_param(ki, data_dict, **params)
+
+        tvals_rs = np.arange(tvals[0], tvals[-1], dt)
+        wf_rs = my_resample(tvals_rs, tvals, wf)
+
+        fir_kernels = distortion_dict.get('FIR', None)
+        if fir_kernels is not None:
+            if hasattr(fir_kernels, '__iter__') and not \
+                    hasattr(fir_kernels[0], '__iter__'):  # 1 kernel
+                wf_rs = fpdist.filter_fir(fir_kernels, wf_rs)
+            else:
+                for kernel in fir_kernels:
+                    wf_rs = fpdist.filter_fir(kernel, wf_rs)
+
+        iir_filters = distortion_dict.get('IIR', None)
+        if iir_filters is not None:
+            wf_rs = fpdist.filter_iir(iir_filters[0], iir_filters[1], wf_rs)
+
+        wf = my_resample(tvals, tvals_rs, wf_rs)
+        hlp_mod.add_param(ko, [tvals, wf], data_dict, **params)
