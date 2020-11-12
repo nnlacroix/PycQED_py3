@@ -46,13 +46,7 @@ def process_pipeline(data_dict, processing_pipeline=None, append_pipeline=False,
                               data_dict, append_value=True)
 
     # Instantiate a ProcessingPipeline instance in case it is an ordinary list
-    processing_pipeline = ProcessingPipeline(from_dict_list=processing_pipeline)
-    # Resolve pipeline in case it wasn't resolved yet
-    movnm = hlp_mod.get_param('meas_obj_value_names_map', data_dict, **params)
-    if movnm is not None:
-        processing_pipeline(movnm)
-    else:
-        log.warning('Processing pipeline may not have been resolved.')
+    processing_pipeline = ProcessingPipeline.cast_init(processing_pipeline)
 
     for node_params in processing_pipeline:
         try:
