@@ -14,14 +14,13 @@ from pycqed.measurement import awg_sweep_functions as awg_swf
 from pycqed.measurement import awg_sweep_functions_multi_qubit as awg_swf2
 from pycqed.measurement import sweep_functions as swf
 from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
 from pycqed.measurement.pulse_sequences import single_qubit_tek_seq_elts as sq
 from pycqed.measurement.pulse_sequences import fluxing_sequences as fsqs
 from pycqed.analysis_v3 import pipeline_analysis as pla
 from pycqed.analysis import measurement_analysis as ma
 from pycqed.analysis_v2 import timedomain_analysis as tda
-from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.utilities.general import add_suffix_to_dict_keys
 from pycqed.utilities.general import temporary_value
 from pycqed.instrument_drivers.meta_instrument.qubit_objects.qubit_object \
@@ -30,7 +29,10 @@ from pycqed.measurement import optimization as opti
 from pycqed.measurement import mc_parameter_wrapper
 import pycqed.analysis_v2.spectroscopy_analysis as sa
 from pycqed.utilities import math
-import pycqed.analysis.fitting_models as fms
+import pycqed.analysis.fitting_models as fit_mods
+import os
+import \
+    pycqed.measurement.waveform_control.fluxpulse_predistortion as fl_predist
 
 try:
     import pycqed.simulations.readout_mode_simulations_for_CLEAR_pulse \
@@ -39,6 +41,16 @@ except ModuleNotFoundError:
     log.warning('"readout_mode_simulations_for_CLEAR_pulse" not imported.')
 
 class QuDev_transmon(Qubit):
+    DEFAULT_FLUX_DISTORTION = dict(
+        IIR_filter_list=[],
+        FIR_filter_list=[],
+        scale_IIR=1,
+        distortion='off',
+        charge_buildup_compensation=True,
+        compensation_pulse_delay=100e-9,
+        compensation_pulse_gaussian_filter_sigma=0,
+    )
+
     def __init__(self, name, **kw):
         super().__init__(name, **kw)
 
@@ -378,6 +390,13 @@ class QuDev_transmon(Qubit):
         self.add_parameter('dc_flux_parameter', initial_value=None,
                            label='QCoDeS parameter to sweep the dc flux',
                            parameter_class=ManualParameter)
+
+        # ac flux parameters
+        self.add_parameter('flux_distortion', parameter_class=ManualParameter,
+                           initial_value=deepcopy(
+                               self.DEFAULT_FLUX_DISTORTION),
+                           vals=vals.Dict())
+
 
         # Pulse preparation parameters
         DEFAULT_PREP_PARAMS = dict(preparation_type='wait',
@@ -1289,12 +1308,12 @@ class QuDev_transmon(Qubit):
             tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name])
 
     def measure_randomized_benchmarking(
-            self, cliffords, nr_seeds,
+            self, cliffords, nr_seeds, cl_seq=None,
             gate_decomp='HZ', interleaved_gate=None,
             n_cal_points_per_state=2, cal_states=(),
             classified_ro=False, thresholded=True, label=None,
             upload=True, analyze=True, prep_params=None,
-            exp_metadata=None, **kw):
+            exp_metadata=None, sampling_seeds=None, **kw):
         '''
         Performs a randomized benchmarking experiment on 1 qubit.
         '''
@@ -1318,14 +1337,16 @@ class QuDev_transmon(Qubit):
         cal_states = CalibrationPoints.guess_cal_states(cal_states)
         cp = CalibrationPoints.single_qubit(self.name, cal_states,
                                             n_per_state=n_cal_points_per_state)
-
+        if sampling_seeds is None:
+            sampling_seeds = np.random.randint(0, 1e8, nr_seeds)
         sequences, hard_sweep_points, soft_sweep_points = \
             sq.randomized_renchmarking_seqs(
                 qb_name=self.name, operation_dict=self.get_operation_dict(),
                 cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
-                gate_decomposition=gate_decomp,
+                gate_decomposition=gate_decomp, cl_sequence=cl_seq,
                 interleaved_gate=interleaved_gate, upload=False,
-                cal_points=cp, prep_params=prep_params)
+                cal_points=cp, prep_params=prep_params,
+                sampling_seeds=sampling_seeds)
 
         hard_sweep_func = awg_swf.SegmentHardSweep(
             sequence=sequences[0], upload=upload,
@@ -1365,6 +1386,9 @@ class QuDev_transmon(Qubit):
         exp_metadata.update({'preparation_params': prep_params,
                              'cal_points': repr(cp),
                              'sweep_points': sp,
+                             'interleaved_gate': interleaved_gate,
+                             'sampling_seeds': sampling_seeds,
+                             'gate_decomposition': gate_decomp,
                              'meas_obj_sweep_points_map':
                                  sp.get_meas_obj_sweep_points_map([self.name]),
                              'meas_obj_value_names_map':
@@ -1825,11 +1849,11 @@ class QuDev_transmon(Qubit):
 
             s1 = swf.Hard_Sweep()
             s1.name = 'Amplitude ratio hardware sweep'
-            s1.label = r'Amplitude ratio, $\alpha$'
+            s1.parameter_name = r'Amplitude ratio, $\alpha$'
             s1.unit = ''
             s2 = swf.Hard_Sweep()
             s2.name = 'Phase skew hardware sweep'
-            s2.label = r'Phase skew, $\phi$'
+            s2.parameter_name = r'Phase skew, $\phi$'
             s2.unit = 'deg'
             MC.set_sweep_functions([s1, s2])
             MC.set_sweep_points(meas_grid.T)
@@ -3363,6 +3387,14 @@ class QuDev_transmon(Qubit):
         else:
             return
 
+    def measure_flux_pulse_timing(self, delays, analyze, label=None, **kw):
+        if label is None:
+            label = 'Flux_pulse_timing_{}'.format(self.name)
+        self.measure_flux_pulse_scope([self.ge_freq()], delays,
+                                      label=label, analyze=False, **kw)
+        if analyze:
+            tda.FluxPulseTimingAnalysis(qb_names=[self.name])
+
     def measure_flux_pulse_scope(self, freqs, delays, cz_pulse_name=None,
                                  analyze=True, cal_points=True,
                                  upload=True, label=None,
@@ -3426,11 +3458,22 @@ class QuDev_transmon(Qubit):
             name='Drive frequency',
             parameter_name='Drive frequency', unit='Hz'))
         MC.set_sweep_points_2D(sweep_points_2D)
-        MC.set_detector_function(self.int_avg_det)
+        det_func = self.int_avg_det
+        MC.set_detector_function(det_func)
+        sweep_points = SweepPoints('delay', delays, unit='s',
+                                   label=r'delay, $\tau$', dimension=0)
+        sweep_points.add_sweep_parameter('freq', freqs, unit='Hz',
+                                         label=r'drive frequency, $f_d$',
+                                         dimension=1)
+        mospm = {self.name: ['delay', 'freq']}
         if exp_metadata is None:
             exp_metadata = {}
         exp_metadata.update({'sweep_points_dict': {self.name: delays},
                              'sweep_points_dict_2D': {self.name: freqs},
+                             'sweep_points': sweep_points,
+                             'meas_obj_sweep_points_map': mospm,
+                             'meas_obj_value_names_map':
+                                 {self.name: det_func.value_names},
                              'use_cal_points': cal_points,
                              'preparation_params': prep_params,
                              'cal_points': repr(cp),
@@ -3442,8 +3485,9 @@ class QuDev_transmon(Qubit):
 
         if analyze:
             try:
-                tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name],
-                                                   options_dict=dict(TwoD=True))
+                tda.FluxPulseScopeAnalysis(
+                    qb_names=[self.name],
+                    options_dict=dict(TwoD=True, global_PCA=True,))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)
 
@@ -3506,8 +3550,16 @@ class QuDev_transmon(Qubit):
         MC.set_detector_function(self.int_avg_det)
         if exp_metadata is None:
             exp_metadata = {}
-        exp_metadata.update({'sweep_points_dict': {self.name: amplitudes},
-                             'sweep_points_dict_2D': {self.name: freqs},
+
+        sp = SweepPoints()
+        sp.add_sweep_parameter(f'{self.name}_amplitude', amplitudes, 'V',
+                               'Flux pulse amplitude')
+        sp.add_sweep_dimension()
+        sp.add_sweep_parameter(f'{self.name}_freq', freqs, 'Hz',
+                               'Qubit frequency')
+        exp_metadata.update({'sweep_points': sp,
+                             'meas_obj_sweep_points_map':
+                                 sp.get_meas_obj_sweep_points_map([self.name]),
                              'use_cal_points': cal_points,
                              'preparation_params': prep_params,
                              'cal_points': repr(cp),
@@ -3570,7 +3622,7 @@ class QuDev_transmon(Qubit):
 
         fit_paras = deepcopy(self.fit_ge_freq_from_flux_pulse_amp())
         if freqs is not None:
-            amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
+            amplitudes = fit_mods.Qubit_freq_to_dac(freqs, **fit_paras)
 
         amplitudes = np.array(amplitudes)
 
@@ -3611,14 +3663,20 @@ class QuDev_transmon(Qubit):
         MC.set_detector_function(self.int_avg_det)
         if exp_metadata is None:
             exp_metadata = {}
-        exp_metadata.update({
-                            #  'sweep_points_dict': {self.name: amplitudes if\
-                            #                        freqs is None else freqs},
-                             'amplitudes': amplitudes,
+        # create SweepPoints
+        sp = SweepPoints(f'{self.name}_pulse_length', flux_lengths, 's',
+                         'Flux pulse length')
+        sp.add_sweep_dimension()
+        sp.add_sweep_parameter(f'{self.name}_amplitude', amplitudes, 'V',
+                               'Flux pulse amplitude')
+        mospm = sp.get_meas_obj_sweep_points_map(self.name)
+        if freqs is not None:
+            sp.add_sweep_parameter(f'{self.name}_qubit_freqs', freqs, 'Hz',
+                                   'Qubit frequency')
+            mospm[self.name] += [f'{self.name}_qubit_freqs']
+        exp_metadata.update({'sweep_points': sp,
+                             'meas_obj_sweep_points_map': mospm,
                              'preparation_params': prep_params,
-                             'frequencies': freqs,
-                             'flux_lengths': flux_lengths,
-                             'use_cal_points': cal_points,
                              'cal_points': repr(cp),
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
@@ -3628,7 +3686,7 @@ class QuDev_transmon(Qubit):
         if analyze:
             try:
                 tda.T1FrequencySweepAnalysis(qb_names=[self.name],
-                            options_dict=dict(TwoD=False, all_fits=all_fits))
+                            options_dict=dict(TwoD=True, all_fits=all_fits))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=False)
 
@@ -3658,7 +3716,7 @@ class QuDev_transmon(Qubit):
         '''
         fit_paras = deepcopy(self.fit_ge_freq_from_flux_pulse_amp())
         if freqs is not None:
-            amplitudes = fms.Qubit_freq_to_dac(freqs, **fit_paras)
+            amplitudes = fit_mods.Qubit_freq_to_dac(freqs, **fit_paras)
 
         amplitudes = np.array(amplitudes)
 
@@ -3763,6 +3821,68 @@ class QuDev_transmon(Qubit):
         MC.run_2D('Flux_scope_nzcz_alpha' + self.msmt_suffix)
 
         ma.MeasurementAnalysis(TwoD=True)
+
+    def set_distortion_in_pulsar(self, pulsar=None, datadir=None):
+        """
+        Configures the fluxline distortion in a pulsar object according to the
+        settings in the parameter flux_distortion of the qubit object.
+
+        :param pulse: the pulsar object. If None, self.find_instrument is
+            used to find an obejct called 'Pulsar'.
+        :param datadir: path to the pydata directory. If None,
+            self.find_instrument is used to find an obejct called 'MC' and
+            the datadir of MC is used.
+        """
+        if pulsar is None:
+            pulsar = self.find_instrument('Pulsar')
+        if datadir is None:
+            datadir = self.find_instrument('MC').datadir()
+        flux_distortion = deepcopy(self.DEFAULT_FLUX_DISTORTION)
+        flux_distortion.update(self.flux_distortion())
+
+        filterCoeffs = {}
+        for fclass in 'IIR', 'FIR':
+            filterCoeffs[fclass] = []
+            for f in flux_distortion[f'{fclass}_filter_list']:
+                if f['type'] == 'Gaussian':
+                    coeffs = fl_predist.gaussian_filter_kernel(
+                        f.get('sigma', 1e-9),
+                        f.get('nr_sigma', 40),
+                        f.get('dt', 1 / pulsar.clock(
+                            channel=self.flux_pulse_channel())))
+                elif f['type'] == 'csv':
+                    filename = os.path.join(datadir,
+                                            f['filename'].lstrip('\\'))
+                    if fclass == 'IIR':
+                        coeffs = fl_predist.import_iir(filename)
+                    else:
+                        coeffs = np.loadtxt(filename)
+                else:
+                    raise KeyError(f"Unknown filter type {f['type']}")
+                filterCoeffs[fclass].append(coeffs)
+
+        if len(filterCoeffs['FIR']) > 0:
+            filterCoeffs['FIR'] = [
+                fl_predist.combine_FIR_filters(filterCoeffs['FIR'])]
+        else:
+            del filterCoeffs['FIR']
+        if len(filterCoeffs['IIR']) > 1:
+            log.warning('For now, only one IIR filter can be used. Taking '
+                        'the last one.')
+        if len(filterCoeffs['IIR']) > 0:
+            filterCoeffs['IIR'] = filterCoeffs['IIR'][-1]
+            fl_predist.scale_and_negate_IIR(filterCoeffs['IIR'],
+                                 flux_distortion['scale_IIR'])
+        else:
+            del filterCoeffs['IIR']
+
+        pulsar.set(f'{self.flux_pulse_channel()}_distortion_dict',
+                   filterCoeffs)
+        for param in ['distortion', 'charge_buildup_compensation',
+                      'compensation_pulse_delay',
+                      'compensation_pulse_gaussian_filter_sigma']:
+            pulsar.set(f'{self.flux_pulse_channel()}_{param}',
+                       flux_distortion[param])
 
 
 def add_CZ_pulse(qbc, qbt):

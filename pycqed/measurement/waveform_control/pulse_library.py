@@ -6,6 +6,9 @@ import sys
 import numpy as np
 import scipy as sp
 from pycqed.measurement.waveform_control import pulse
+import logging
+
+log = logging.getLogger(__name__)
 
 pulse.pulse_libraries.add(sys.modules[__name__])
 
@@ -103,6 +106,8 @@ class SSB_DRAG_pulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
         hashlist += [channel == self.I_channel, self.amplitude, self.sigma]
         hashlist += [self.nr_sigma, self.motzoi, self.mod_frequency]
@@ -199,6 +204,8 @@ class SSB_DRAG_pulse_with_cancellation(SSB_DRAG_pulse):
     def hashables(self, tstart, channel):
         if channel in [self.I_channel, self.Q_channel]:
             return super().hashables(tstart, channel)
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         for (i, q), cpars in self.cancellation_params.items():
             if channel != i and channel != q:
                 continue
@@ -300,6 +307,8 @@ class GaussianFilteredPiecewiseConstPulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
         idx = self.channels.index(channel)
         chan_lens = self.lengths[idx]
@@ -360,19 +369,14 @@ class NZTransitionControlledPulse(GaussianFilteredPiecewiseConstPulse):
             tl = self.trans_length
             bs = self.buffer_length_start
             be = self.buffer_length_end
-            self.amplitudes.append([0, ma + ao, ta, -ta, -ma + ao, 0])
+            ca0 = ma + ao
+            ca1 = -ma + ao
+            cl0 = max(-(ml * ao) / ca0, 0) if ca0 else 0
+            cl1 = max(-(ml * ao) / ca1, 0) if ca1 else 0
 
-            if ta == 0:
-                self.lengths.append([bs + d, ml / 2, tl / 2,
-                                     tl / 2, ml / 2, be - d])
-            else:
-                if np.abs(tl * ta) < np.abs(ml * ao):
-                    raise ValueError(
-                        'NZTCPulse: Pick the pulse parameters such that '
-                        '`abs(trans_len * trans_amplitude) >= abs(pulse_length'
-                        ' * amplitude_offset)`.')
-                self.lengths.append([bs + d, ml / 2, (tl - ml * ao / ta) / 2,
-                                     (tl + ml * ao / ta) / 2, ml / 2, be - d])
+            self.amplitudes.append([0, ma + ao, ta, -ta, -ma + ao, 0])
+            self.lengths.append([bs + d - cl0, cl0 + ml / 2, tl / 2,
+                                 tl / 2, ml / 2 + cl1, be - d - cl1])
 
     def chan_wf(self, channel, t):
         self._update_lengths_amps_channels()
@@ -421,13 +425,14 @@ class BufferedSquarePulse(pulse.Pulse):
     def chan_wf(self, chan, tvals):
         if self.gaussian_filter_sigma == 0:
             wave = np.ones_like(tvals) * self.amplitude
-            wave *= (tvals >= tvals[0] + self.buffer_length_start)
+            wave *= (tvals >= self.algorithm_time() + self.buffer_length_start)
             wave *= (tvals <
-                     tvals[0] + self.buffer_length_start + self.pulse_length)
+                     self.algorithm_time() + self.buffer_length_start +
+                     self.pulse_length)
             return wave
         else:
-            tstart = tvals[0] + self.buffer_length_start
-            tend = tvals[0] + self.buffer_length_start + self.pulse_length
+            tstart = self.algorithm_time() + self.buffer_length_start
+            tend = tstart + self.pulse_length
             scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
@@ -437,6 +442,8 @@ class BufferedSquarePulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
         hashlist += [self.amplitude, self.pulse_length]
         hashlist += [self.buffer_length_start, self.buffer_length_end]
@@ -514,6 +521,8 @@ class BufferedCZPulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
 
         amp = self.amplitude
@@ -609,6 +618,8 @@ class NZBufferedCZPulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
 
         amp = self.amplitude
@@ -740,6 +751,8 @@ class BufferedNZFLIPPulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
 
         amp = self.amps[channel]
@@ -835,6 +848,8 @@ class BufferedFLIPPulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
 
         amp = self.amps[channel]
@@ -844,6 +859,7 @@ class BufferedFLIPPulse(pulse.Pulse):
 
         hashlist += [amp, pulse_length, buffer_start, buffer_end]
         hashlist += [self.gaussian_filter_sigma]
+
         return hashlist
 
 
@@ -915,6 +931,8 @@ class NZMartinisGellarPulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
         hashlist += [self.pulse_length, self.theta_f, self.qbc_freq]
         hashlist += [self.qbt_freq, self.anharmonicity, self.J, self.dv_dphi]
@@ -989,12 +1007,14 @@ class GaussFilteredCosIQPulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
         hashlist += [channel == self.I_channel, self.amplitude]
         hashlist += [self.mod_frequency, self.gaussian_filter_sigma]
         hashlist += [self.nr_sigma, self.pulse_length]
         phase = self.phase
-        phase += 360 * (not self.phase_lock) * self.mod_frequency \
+        phase += 360 * self.phase_lock * self.mod_frequency \
                  * self.algorithm_time()
         hashlist += [self.alpha, self.phi_skew, phase]
         return hashlist
@@ -1091,6 +1111,8 @@ class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
         hashlist += [channel == self.I_channel]
         hashlist += list(self.amplitude)
@@ -1164,6 +1186,8 @@ class SquarePulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
         hashlist += [self.amplitude, self.length]
         return hashlist
@@ -1200,6 +1224,8 @@ class CosPulse(pulse.Pulse):
     def hashables(self, tstart, channel):
         if channel not in self.channels:
             return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
         hashlist = [type(self), self.algorithm_time() - tstart]
         hashlist += [self.amplitude, self.length, self.frequency]
         hashlist += [(self.phase + self.frequency * tstart * 360) % 360.]

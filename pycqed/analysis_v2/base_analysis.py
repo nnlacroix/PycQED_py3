@@ -25,8 +25,9 @@ import h5py
 from pycqed.measurement.hdf5_data import write_dict_to_hdf5
 from pycqed.measurement.hdf5_data import read_dict_from_hdf5
 from pycqed.measurement.sweep_points import SweepPoints
-from pycqed.measurement.calibration_points import CalibrationPoints
+from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 import copy
+import traceback
 import logging
 log = logging.getLogger(__name__)
 log.addHandler(logging.StreamHandler())
@@ -70,7 +71,8 @@ class BaseDataAnalysis(object):
     def __init__(self, t_start: str = None, t_stop: str = None,
                  label: str = '', data_file_path: str = None,
                  close_figs: bool = True, options_dict: dict = None,
-                 extract_only: bool = False, do_fitting: bool = False):
+                 extract_only: bool = False, do_fitting: bool = False,
+                 raise_exceptions: bool = False):
         '''
         This is the __init__ of the abstract base class.
         It is intended to be called at the start of the init of the child
@@ -128,98 +130,116 @@ class BaseDataAnalysis(object):
                                 -'exact_label_match'
         :param extract_only: Should we also do the plots?
         :param do_fitting: Should the run_fitting method be executed?
+        :param raise_exceptions (bool): whether or not exceptions encountered
+            in __init__() and in run_analysis() should be raised or only logged.
         '''
 
-        # initialize an empty dict to store results of analysis
-        self.proc_data_dict = OrderedDict()
-        if options_dict is None:
-            self.options_dict = OrderedDict()
-        else:
-            self.options_dict = options_dict
+        try:
+            # set error-handling behavior
+            self.raise_exceptions = raise_exceptions
 
-        ################################################
-        # These options determine what data to extract #
-        ################################################
-        self.timestamps = None
-        if data_file_path is None:
-            if t_start is None:
-                if isinstance(label, list):
-                    self.timestamps = [a_tools.latest_data(
-                        contains=lab, return_timestamp=True)[0] for lab in label]
-                else:
-                    self.timestamps = [a_tools.latest_data(
-                        contains=label, return_timestamp=True)[0]]
-            elif t_stop is None:
-                if isinstance(t_start, list):
-                    self.timestamps = t_start
-                else:
-                    self.timestamps = [t_start]
+            # initialize an empty dict to store results of analysis
+            self.proc_data_dict = OrderedDict()
+            if options_dict is None:
+                self.options_dict = OrderedDict()
             else:
-                self.timestamps = a_tools.get_timestamps_in_range(
-                    t_start, timestamp_end=t_stop,
-                    label=label if label != '' else None)
+                self.options_dict = options_dict
 
-        if self.timestamps is None or len(self.timestamps) == 0:
-            raise ValueError('No data file found.')
+            ################################################
+            # These options determine what data to extract #
+            ################################################
+            self.timestamps = None
+            if data_file_path is None:
+                if t_start is None:
+                    if isinstance(label, list):
+                        self.timestamps = [a_tools.latest_data(
+                            contains=lab, return_timestamp=True)[0] for lab in label]
+                    else:
+                        self.timestamps = [a_tools.latest_data(
+                            contains=label, return_timestamp=True)[0]]
+                elif t_stop is None:
+                    if isinstance(t_start, list):
+                        self.timestamps = t_start
+                    else:
+                        self.timestamps = [t_start]
+                else:
+                    self.timestamps = a_tools.get_timestamps_in_range(
+                        t_start, timestamp_end=t_stop,
+                        label=label if label != '' else None)
 
+            if self.timestamps is None or len(self.timestamps) == 0:
+                raise ValueError('No data file found.')
 
-        ########################################
-        # These options relate to the plotting #
-        ########################################
-        self.plot_dicts = OrderedDict()
-        self.axs = OrderedDict()
-        self.figs = OrderedDict()
-        self.presentation_mode = self.options_dict.get(
-            'presentation_mode', False)
-        self.do_individual_traces = self.options_dict.get(
-            'do_individual_traces', False)
-        self.tight_fig = self.options_dict.get('tight_fig', True)
-        # used in self.plot_text, here for future compatibility
-        self.fancy_box_props = dict(boxstyle='round', pad=.4,
-                                    facecolor='white', alpha=0.5)
+            ########################################
+            # These options relate to the plotting #
+            ########################################
+            self.plot_dicts = OrderedDict()
+            self.axs = OrderedDict()
+            self.figs = OrderedDict()
+            self.presentation_mode = self.options_dict.get(
+                'presentation_mode', False)
+            self.do_individual_traces = self.options_dict.get(
+                'do_individual_traces', False)
+            self.tight_fig = self.options_dict.get('tight_fig', True)
+            # used in self.plot_text, here for future compatibility
+            self.fancy_box_props = dict(boxstyle='round', pad=.4,
+                                        facecolor='white', alpha=0.5)
 
-        self.options_dict['plot_init'] = self.options_dict.get('plot_init',
-                                                               False)
-        self.options_dict['save_figs'] = self.options_dict.get(
-            'save_figs', True)
-        self.options_dict['close_figs'] = self.options_dict.get(
-            'close_figs', close_figs)
+            self.options_dict['plot_init'] = self.options_dict.get('plot_init',
+                                                                   False)
+            self.options_dict['save_figs'] = self.options_dict.get(
+                'save_figs', True)
+            self.options_dict['close_figs'] = self.options_dict.get(
+                'close_figs', close_figs)
 
+            ####################################################
+            # These options relate to what analysis to perform #
+            ####################################################
+            self.extract_only = extract_only
+            self.do_fitting = do_fitting
 
-        ####################################################
-        # These options relate to what analysis to perform #
-        ####################################################
-        self.extract_only = extract_only
-        self.do_fitting = do_fitting
+            self.verbose = self.options_dict.get('verbose', False)
+            self.auto_keys = self.options_dict.get('auto_keys', None)
 
-        self.verbose = self.options_dict.get('verbose', False)
-        self.auto_keys = self.options_dict.get('auto_keys', None)
+            if type(self.auto_keys) is str:
+                self.auto_keys = [self.auto_keys]
 
-        if type(self.auto_keys) is str:
-            self.auto_keys = [self.auto_keys]
+        except Exception as e:
+            if self.raise_exceptions:
+                raise e
+            else:
+                log.error("Unhandled error during init of analysis!")
+                log.error(traceback.format_exc())
 
     def run_analysis(self):
         """
         This function is at the core of all analysis and defines the flow.
         This function is typically called after the __init__.
         """
-        self.extract_data()  # extract data specified in params dict
-        self.process_data()  # binning, filtering etc
-        if self.do_fitting:
-            self.prepare_fitting()  # set up fit_dicts
-            self.run_fitting()  # fitting to models
-            self.save_fit_results()
-            self.analyze_fit_results()  # analyzing the results of the fits
+        try:
+            self.extract_data()  # extract data specified in params dict
+            self.process_data()  # binning, filtering etc
+            if self.do_fitting:
+                self.prepare_fitting()  # set up fit_dicts
+                self.run_fitting()  # fitting to models
+                self.save_fit_results()
+                self.analyze_fit_results()  # analyzing the results of the fits
 
-        delegate_plotting = self.check_plotting_delegation()
-        if not delegate_plotting:
-            self.prepare_plots()  # specify default plots
-            if not self.extract_only:
-                self.plot(key_list='auto')  # make the plots
+            delegate_plotting = self.check_plotting_delegation()
+            if not delegate_plotting:
+                self.prepare_plots()  # specify default plots
+                if not self.extract_only:
+                    self.plot(key_list='auto')  # make the plots
 
-            if self.options_dict.get('save_figs', False):
-                self.save_figures(close_figs=self.options_dict.get(
-                    'close_figs', False))
+                if self.options_dict.get('save_figs', False):
+                    self.save_figures(close_figs=self.options_dict.get(
+                        'close_figs', False))
+        except Exception as e:
+            if self.raise_exceptions:
+                raise e
+            else:
+                log.error("Unhandled error during analysis!")
+                log.error(traceback.format_exc())
 
     def create_job(self, *args, **kwargs):
         """
@@ -246,14 +266,18 @@ class BaseDataAnalysis(object):
         # prepare import
         import_lines = f"from {self.__module__} import {class_name}\n"
 
+        # set default error handling of analysis to raise exceptions, such
+        # that they are caught by the Daemon reading the jobs
+        if "raise_exception" not in kwargs:
+            kwargs['raise_exceptions'] = True
         # if timestamp wasn't specified, specify it for the job
-        if not "t_start" in kwargs or kwargs["t_start"] is None:
+        if "t_start" not in kwargs or kwargs["t_start"] is None:
             kwargs["t_start"] = self.timestamps[0]
-        if (not "t_stop" in kwargs or kwargs["t_stop"] is None) and \
+        if ("t_stop" not in kwargs or kwargs["t_stop"] is None) and \
                 len(self.timestamps) > 1:
             kwargs['t_stop'] = self.timestamps[-1]
         kwargs_list = [f'{k}={v if not isinstance(v, str) else repr(v)}'
-                          for k, v in kwargs.items()]
+                       for k, v in kwargs.items()]
 
         job_lines = f"{class_name}({', '.join(args)}{sep}{', '.join(kwargs_list)})"
         self.job = f"{import_lines}{job_lines}"
@@ -294,7 +318,10 @@ class BaseDataAnalysis(object):
         # If it is an array of value decodes individual entries
         if type(s) == np.ndarray:
             s = [s.decode('utf-8') for s in s]
-        return s
+        try:
+            return eval(s)
+        except Exception:
+            return s
 
     def get_hdf_param_value(self, path_to_group, attribute, hdf_file_index=0):
         """
@@ -308,7 +335,7 @@ class BaseDataAnalysis(object):
         Returns:
 
         """
-        h5mode = self.options_dict.get('h5mode', 'r+')
+        h5mode = self.options_dict.get('h5mode', 'r')
         folder = a_tools.get_folder(self.timestamps[hdf_file_index])
         h5filepath = a_tools.measurement_filename(folder)
         data_file = h5py.File(h5filepath, h5mode)
@@ -327,22 +354,24 @@ class BaseDataAnalysis(object):
         if not hasattr(self, "metadata") or self.metadata is None:
             return self.options_dict.get(param_name, default_value)
         # multi timestamp with different metadata
-        elif isinstance(self.metadata, (list, tuple)) and len(self.metadata) != 0:
-            return self.options_dict.get(param_name,
+        elif isinstance(self.metadata, (list, tuple)) and \
+                len(self.metadata) != 0:
+            return self.options_dict.get(
+                param_name,
                 self.metadata[metadata_index].get(param_name, default_value))
         # base case
         else:
             return self.options_dict.get(param_name, self.metadata.get(
                 param_name, default_value))
 
-    def get_data_from_timestamp_list(self):
+    def get_data_from_timestamp_list(self, params_dict, numeric_params=()):
         raw_data_dict = []
         for timestamp in self.timestamps:
             raw_data_dict_ts = OrderedDict([(param, []) for param in
-                                           self.params_dict])
+                                            params_dict])
 
             folder = a_tools.get_folder(timestamp)
-            h5mode = self.options_dict.get('h5mode', 'r+')
+            h5mode = self.options_dict.get('h5mode', 'r')
             h5filepath = a_tools.measurement_filename(folder)
             data_file = h5py.File(h5filepath, h5mode)
             try:
@@ -357,7 +386,7 @@ class BaseDataAnalysis(object):
                     raw_data_dict_ts['measured_data'] = \
                         np.array(data_file['Experimental Data']['Data']).T
 
-                for save_par, file_par in self.params_dict.items():
+                for save_par, file_par in params_dict.items():
                     if len(file_par.split('.')) == 1:
                         par_name = file_par.split('.')[0]
                         for group_name in data_file.keys():
@@ -441,9 +470,13 @@ class BaseDataAnalysis(object):
             # run in 1D mode (so only 1 column of sweep points in hdf5 file)
             # CURRENTLY ONLY WORKS WITH SweepPoints CLASS INSTANCES
             hybrid_measurement = False
+            raw_data_dict['hard_sweep_points'] = np.unique(mc_points[0])
             if mc_points.shape[0] > 1:
                 hsp = np.unique(mc_points[0])
-                ssp = np.unique(mc_points[1:])
+                ssp, counts = np.unique(mc_points[1:], return_counts=True)
+                if counts[0] != len(hsp):
+                    # ssro data
+                    hsp = np.tile(hsp, counts[0] // len(hsp))
                 # if needed, decompress the data (assumes hsp and ssp are indices)
                 if compression_factor != 1:
                     hsp = hsp[:int(len(hsp) / compression_factor)]
@@ -461,7 +494,7 @@ class BaseDataAnalysis(object):
                     len_dim_1_sp = len(sp.get_sweep_params_property('values', 0))
                     if 'active' in prep_params.get('preparation_type', 'wait'):
                         reset_reps = prep_params.get('reset_reps', 1)
-                        len_dim_1_sp *= reset_reps+1
+                        len_dim_1_sp *= reset_reps + 1
                     elif "preselection" in prep_params.get('preparation_type',
                                                            'wait'):
                         len_dim_1_sp *= 2
@@ -471,8 +504,6 @@ class BaseDataAnalysis(object):
                     ssp = np.arange(len(dim_2_sp))
                     raw_data_dict['hard_sweep_points'] = hsp
                     raw_data_dict['soft_sweep_points'] = ssp
-            else:
-                raw_data_dict['hard_sweep_points'] = np.unique(mc_points[0])
 
             data = measured_data[-len(value_names):]
             if data.shape[0] != len(value_names):
@@ -490,7 +521,7 @@ class BaseDataAnalysis(object):
                         # segment, and reshape the remaining data based on the
                         # hard (1st dimension) and soft (1st dimension)
                         # sweep points
-                        data_no_cp = data[i][:len(data[i])-num_cal_segments]
+                        data_no_cp = data[i][:len(data[i]) - num_cal_segments]
                         measured_data = np.reshape(data_no_cp, (ssl, hsl)).T
                         if num_cal_segments > 0:
                             # add back ssl number of copies of the cal points
@@ -532,7 +563,8 @@ class BaseDataAnalysis(object):
              'exp_metadata':
                  'Experimental Data.Experimental Metadata'})
 
-        self.raw_data_dict = self.get_data_from_timestamp_list()
+        self.raw_data_dict = self.get_data_from_timestamp_list(
+            self.params_dict, self.numeric_params)
         if len(self.timestamps) == 1:
             # the if statement below is needed because if exp_metadata is not
             # found in the hdf file, then it is set to
@@ -543,12 +575,15 @@ class BaseDataAnalysis(object):
             if len(self.raw_data_dict['exp_metadata']) == 0:
                 self.raw_data_dict['exp_metadata'] = {}
             self.metadata = self.raw_data_dict['exp_metadata']
-            cp = CalibrationPoints.from_string(self.get_param_value(
-                'cal_points', default_value=repr(CalibrationPoints([], []))))
+            try:
+                cp = CalibrationPoints.from_string(self.get_param_value(
+                    'cal_points'))
+            except TypeError:
+                cp = CalibrationPoints([], [])
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
                 self.get_param_value('compression_factor', 1),
-                self.get_param_value('sweep_points'),
+                SweepPoints.cast_init(self.get_param_value('sweep_points')),
                 cp, self.get_param_value('preparation_params',
                                          default_value=dict()))
         else:
@@ -564,7 +599,6 @@ class BaseDataAnalysis(object):
                         rd_dict,
                         self.get_param_value('compression_factor', 1, i)))
             self.raw_data_dict = tuple(temp_dict_list)
-
 
     def process_data(self):
         """
@@ -695,7 +729,7 @@ class BaseDataAnalysis(object):
         # initialize everything to an empty dict if not overwritten
         self.fit_dicts = OrderedDict()
 
-    def run_fitting(self):
+    def run_fitting(self, keys_to_fit='all'):
         '''
         This function does the fitting and saving of the parameters
         based on the fit_dict options.
@@ -704,7 +738,11 @@ class BaseDataAnalysis(object):
         '''
         if self.fit_res is None:
             self.fit_res = {}
+        if keys_to_fit == 'all':
+            keys_to_fit = list(self.fit_dicts)
         for key, fit_dict in self.fit_dicts.items():
+            if key not in keys_to_fit:
+                continue
             guess_dict = fit_dict.get('guess_dict', None)
             guess_pars = fit_dict.get('guess_pars', None)
             guessfn_pars = fit_dict.get('guessfn_pars', {})
@@ -805,7 +843,7 @@ class BaseDataAnalysis(object):
             key: key of the data to save. All processed data is saved by 
                  default.
         """
-        #default: get all keys from proc_data_dict
+        # default: get all keys from proc_data_dict
         if key is None:
             try:
                 key = list(self.proc_data_dict.keys())
@@ -818,7 +856,7 @@ class BaseDataAnalysis(object):
             return
 
         # Check weather there is any data to save
-        if hasattr(self, 'proc_data_dict') and self.proc_data_dict is not None\
+        if hasattr(self, 'proc_data_dict') and self.proc_data_dict is not None \
                 and key in self.proc_data_dict:
             fn = self.options_dict.get('analysis_result_file', False)
             if fn == False:
@@ -970,7 +1008,7 @@ class BaseDataAnalysis(object):
                     else:
                         plotfn(pdict=pdict,
                                axs=self.axs[pdict['fig_id']].flatten()[
-                               pdict['ax_id']])
+                                   pdict['ax_id']])
                         self.axs[pdict['fig_id']].flatten()[
                             pdict['ax_id']].figure.subplots_adjust(
                             hspace=0.35)
@@ -1138,7 +1176,7 @@ class BaseDataAnalysis(object):
         if plot_barwidthx is None:
             plot_barwidthx = plot_xvals[1] - plot_xvals[0]
         if not hasattr(plot_barwidthx, '__iter__'):
-            plot_barwidthx = np.ones_like(zpos)*plot_barwidthx
+            plot_barwidthx = np.ones_like(zpos) * plot_barwidthx
         if plot_barwidthy is None:
             plot_barwidthy = plot_yvals[1] - plot_yvals[0]
         if not hasattr(plot_barwidthy, '__iter__'):
@@ -1166,7 +1204,7 @@ class BaseDataAnalysis(object):
                     plot_color = np.repeat(plot_color, n).reshape(-1, n).T
 
         zsort = plot_barkws.pop('zsort', 'max')
-        p_out = pfunc(xpos - plot_barwidthx/2, ypos - plot_barwidthy/2, zpos,
+        p_out = pfunc(xpos - plot_barwidthx / 2, ypos - plot_barwidthy / 2, zpos,
                       plot_barwidthx, plot_barwidthy, plot_barheight,
                       color=plot_color,
                       zsort=zsort, **plot_barkws)
@@ -1666,7 +1704,7 @@ class BaseDataAnalysis(object):
                 plot_cbarwidth = str_to_float(plot_cbarwidth)
                 plot_cbarpad = str_to_float(plot_cbarpad)
                 axs.cax, _ = mpl.colorbar.make_axes(
-                    axs, shrink=1-plot_cbarwidth-plot_cbarpad, pad=plot_cbarpad,
+                    axs, shrink=1 - plot_cbarwidth - plot_cbarpad, pad=plot_cbarpad,
                     orientation=orientation)
                 cmap = pdict.get('colormap')
         else:
@@ -1841,9 +1879,9 @@ class BaseDataAnalysis(object):
         axes_labelcolor = kwargs.get('axes_labelcolor', 'k')
 
         fig_size_dim = 10
-        golden_ratio = (1+np.sqrt(5))/2
+        golden_ratio = (1 + np.sqrt(5)) / 2
         fig_size = kwargs.get('fig_size',
-                              (fig_size_dim, fig_size_dim/golden_ratio))
+                              (fig_size_dim, fig_size_dim / golden_ratio))
         dpi = kwargs.get('dpi', 300)
 
         params = {'figure.figsize': fig_size,
@@ -1876,18 +1914,17 @@ class BaseDataAnalysis(object):
 
     def plot_vlines_auto(self, pdict, axs):
         xs = pdict.get('xdata')
-        for i,x in enumerate(xs):
+        for i, x in enumerate(xs):
             d = {}
             for k in pdict:
                 lk = k[:-1]
-                #if lk in signature(axs.axvline).parameters:
+                # if lk in signature(axs.axvline).parameters:
                 if k not in ['xdata', 'plotfn', 'ax_id', 'do_legend']:
                     try:
                         d[lk] = pdict[k][i]
                     except:
                         pass
             axs.axvline(x=x, **d)
-
 
 
 def plot_scatter_errorbar(self, ax_id, xdata, ydata, xerr=None, yerr=None, pdict=None):
@@ -1966,6 +2003,6 @@ def _merge_dict_rec(dict_a: dict, dict_b: dict):
 
 def str_to_float(s):
     if s[-1] == '%':
-        return float(s.strip('%'))/100
+        return float(s.strip('%')) / 100
     else:
         return float(s)

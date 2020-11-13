@@ -2,12 +2,14 @@
 Module containing a collection of detector functions used by the
 Measurement Control.
 """
+import traceback
 import numpy as np
 from copy import deepcopy
 import time
 from string import ascii_uppercase
 from pycqed.analysis import analysis_toolbox as a_tools
 from qcodes.instrument.parameter import _BaseParameter
+from qcodes.instrument.base import Instrument
 import logging
 log = logging.getLogger(__name__)
 
@@ -41,6 +43,92 @@ class Detector_Function(object):
 
     def finish(self, **kw):
         pass
+
+    def generate_metadata(self):
+        """
+        Creates a dict det_metadata with all the attributes of itself.
+        :return: {'Detector Metadata': det_metadata}
+        """
+        try:
+            # Go through all the attributes of itself, pass them to
+            # savable_attribute_value, and store them in det_metadata
+            det_metadata = {k: self.savable_attribute_value(v, self.name)
+                            for k, v in self.__dict__.items()}
+
+            # Change the 'detectors' entry from a list of dicts to a dict with
+            # keys uhfName_detectorName
+            detectors_dict = {}
+            for d in det_metadata.pop('detectors', []):
+                # isinstance(d, dict) only if self was a multi-detector function
+                if isinstance(d, dict):
+                    # d will never contain the key "detectors" because the
+                    # framework currently does not allow to pass an instance of
+                    # UHFQC_multi_detector in the "detectors" attribute of
+                    # UHFQC_Base since UHFQC_multi_detector does not have the
+                    # attribute "UHFQC" (Steph, 23.10.2020)
+                    if 'UHFs' in d:
+                        # d["UHFs"] will always contain one item because of how
+                        # savable_attribute_value was written.
+                        detectors_dict.update(
+                            {f'{d["UHFs"][0]} {d["name"]}': d})
+                    else:
+                        detectors_dict.update({f'{d["name"]}': d})
+            if len(detectors_dict):
+                det_metadata['detectors'] = detectors_dict
+
+            return {'Detector Metadata': det_metadata}
+        except Exception:
+            # Unhandled errors in metadata creation are not critical for the
+            # measurement, so we log them as warnings.
+            log.warning(traceback.format_exc())
+            return {}
+
+    @staticmethod
+    def savable_attribute_value(attr_val, det_name):
+        """
+        Helper function for converting the attribute of a Detector_Function
+        (or its children) to a format that will make the entry more meaningful
+        when saved to an hdf file.
+        In particular,  this function makes sure that if any of the det_func
+        attributes are class instances (like det_func.AWG), they are passed to
+        the metadata as class_instance.name instead of class_instance, in which
+        case it would be saves as a string "<Pulsar: Pulsar>".
+
+        This function also nicely resolves the detectors attribute of the
+        detector functions, which would otherwise also be saved as
+        ["<pycqed.measurement.detector_functions.UHFQC_classifier_detector
+         at 0x22bf280a400>",
+         "<pycqed.measurement.detector_functions.UHFQC_classifier_detector
+         at 0x22bf280a208>"].
+         It parses this list and replaces each instance with its __dict__
+         attribute.
+
+        :param attr_val: attribute value of a Detector_Function instance or
+            an instance of its children
+        :param det_name: name of a Detector_Function instance or an instance
+            of its children
+        :return: converted attribute value
+        """
+        if isinstance(attr_val, Detector_Function):
+            if hasattr(attr_val, 'detectors') and \
+                    det_name != attr_val.detectors[0].name:
+                return {k: Detector_Function.savable_attribute_value(
+                    v, attr_val.name)
+                    for k, v in attr_val.__dict__.items()}
+            else:
+                return attr_val.name
+        elif isinstance(attr_val, Instrument):
+            try:
+                return attr_val.name
+            except AttributeError:
+                return repr(attr_val)
+        elif callable(attr_val):
+            return repr(attr_val)
+        elif isinstance(attr_val, (list, tuple)):
+            return [Detector_Function.savable_attribute_value(av, det_name)
+                    for av in attr_val]
+        else:
+            return attr_val
 
 
 class Multi_Detector(Detector_Function):
@@ -1134,7 +1222,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         self.AWG = AWG
         self.integration_length = integration_length
         self.nr_shots = nr_shots
-        # to be used in MC.get_percdone()
+        # to be used in MC
         self.acq_data_len_scaling = self.nr_shots
 
         # 0/1/2 crosstalk supressed /digitized/raw
@@ -1163,7 +1251,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         # should run
         self.UHFQC.awgs_0_single(1)
 
-        self.nr_sweep_points = self.nr_shots*len(sweep_points)
+        self.nr_sweep_points = len(sweep_points)
         self.UHFQC.qas_0_integration_length(int(self.integration_length*(1.8e9)))
 
         self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
@@ -1298,6 +1386,9 @@ class UHFQC_classifier_detector(UHFQC_Base):
         self.prepare_function = prepare_function
         self.prepare_function_kwargs = prepare_function_kwargs
         self.get_values_function_kwargs = get_values_function_kwargs
+        if not self.get_values_function_kwargs.get('averaged', True):
+            # to be used in MC
+            self.acq_data_len_scaling = self.nr_shots
 
     def prepare(self, sweep_points):
         if self.AWG is not None:
@@ -1310,18 +1401,19 @@ class UHFQC_classifier_detector(UHFQC_Base):
             if self.prepare_function is not None:
                 self.prepare_function()
 
-        self.nr_sweep_points = len(sweep_points)
+        assert len(sweep_points) % self.acq_data_len_scaling == 0
+        self.nr_sweep_points = len(sweep_points) // self.acq_data_len_scaling
         # The averaging-count is used to specify how many times the AWG program
         # should run
         self.UHFQC.awgs_0_single(1)
         self.UHFQC.qas_0_integration_length(int(self.integration_length*(1.8e9)))
 
         self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
-        self.UHFQC.qudev_acquisition_initialize(channels=self.channels, 
-                                          samples=self.nr_shots*self.nr_sweep_points,
-                                          averages=1, #for single shot readout
-                                          loop_cnt=int(self.nr_shots),
-                                          mode='rl')
+        self.UHFQC.qudev_acquisition_initialize(
+            channels=self.channels,
+            samples=self.nr_shots * self.nr_sweep_points,
+            averages=1, #for single shot readout
+            loop_cnt=int(self.nr_shots), mode='rl')
 
     def get_values(self):
         if self.always_prepare:
