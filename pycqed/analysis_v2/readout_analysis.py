@@ -1683,12 +1683,10 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
             'axid': "ptable",
             'plotfn': self.plot_colorxy,
             'xvals': np.arange(len(self.observables))[obs_filter],
-            # 'yvals': np.array(len(self.observables)*[ylist]),
             'yvals': ylist,
             'zvals': plt_data.T,
             'xlabel': "Channels",
             'ylabel': "Segments",
-            # 'yrange': (0, 19),
             'zlabel': "Counts",
             'zrange': [0,1],
             'title': (self.timestamps[0] + ' \n' +
@@ -1809,6 +1807,7 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
             val_list = [self.proc_data_dict['probability_table'][idx_ro]
                         [observabele_idxs] for idx_ro in cal_point[0]]
             means[i] = np.mean(val_list, axis=0)
+            means[i] /= means[i].sum()
 
         # find the means for all the products of the operators and the average
         # covariation of the operators
