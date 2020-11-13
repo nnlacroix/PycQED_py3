@@ -3612,7 +3612,7 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
         # make matrix out of vector
         data_reshaped_no_cp = {qb: np.reshape(
             deepcopy(pdd['data_to_fit'][qb][
-                     :, :pdd['data_to_fit'][qb].shape[1]-nr_cp]).flatten(),
+                      :pdd['data_to_fit'][qb].shape[0]-nr_cp]).flatten(),
             (nr_amps, nr_lengths, nr_phases)) for qb in self.qb_names}
 
         pdd['data_reshaped_no_cp'] = data_reshaped_no_cp
@@ -3680,7 +3680,7 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
             for i in range(len(self.metadata['amplitudes'])):
                 try:
                     if self.fit_res[f'exp_fit_{qb}_{i}']\
-                                            .params['decay'].stderr < 1e-5:
+                                            .params['decay'].stderr < 1e-3:
                         pdd['mask'][qb].append(True)
                     else:
                         pdd['mask'][qb].append(False)
@@ -6345,7 +6345,7 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
         pulse = seg_mod.UnresolvedPulse(dd).pulse_obj
         pulse.algorithm_time(0)
 
-        tvals_gen = np.arange(0, pulse.length, 1 / 2.4e9)
+        tvals_gen = np.arange(0, pulse.length, 1 / 1.2e9) #FIXME the AWG rate is setup-dependent
         volts_gen = pulse.chan_wf(dd['flux_channel'], tvals_gen)
         volt_freq_conv = dd['volt_freq_conv']
 
