@@ -1727,12 +1727,10 @@ class MultiQubit_SingleShot_Analysis(ba.BaseDataAnalysis):
             'axid': "ptable",
             'plotfn': self.plot_colorxy,
             'xvals': np.arange(len(self.observables))[obs_filter],
-            # 'yvals': np.array(len(self.observables)*[ylist]),
             'yvals': ylist,
             'zvals': plt_data.T,
             'xlabel': "Channels",
             'ylabel': "Segments",
-            # 'yrange': (0, 19),
             'zlabel': "Counts",
             'zrange': [0,1],
             'title': (self.timestamps[0] + ' \n' +

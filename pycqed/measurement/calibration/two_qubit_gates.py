@@ -280,14 +280,20 @@ class MultiTaskingExperiment(QuantumExperiment):
             # for all sweep points in this dimension (both task-specific and
             # valid for all tasks)
             for k in csp.keys():
-                if k in params:
+                if k in params and '=' not in k:
                     # task-specific sweep point. Add prefixed version to
                     # global sweep points and to meas_obj_sweep_points_map
                     gsp[prefix + k] = csp[k]
                     self.add_to_meas_obj_sweep_points_map(mo, prefix + k)
                 else:
-                    # sweep point valid for all tasks. Add without prefix to
-                    # meas_obj_sweep_points_map
+                    # sweep point valid for all tasks.
+                    if k not in gsp:
+                        # Pulse modifier sweep point from a task. Copy it to
+                        # global sweep points, assuming that the expert user
+                        # has made sure that there are no conflicts of pulse
+                        # modifier sweep points across tasks.
+                        gsp[k] = csp[k]
+                    # Add without prefix to meas_obj_sweep_points_map
                     self.add_to_meas_obj_sweep_points_map(mo, k)
         return task
 
@@ -428,14 +434,15 @@ class MultiTaskingExperiment(QuantumExperiment):
                 # search inside each list element
                 for v in candidate:
                     append_qbs(found_qubits, v)
+            elif isinstance(candidate, dict):
+                for v in candidate.values():
+                    append_qbs(found_qubits, v)
             else:
                 return None
 
         # search in all tasks
-        for task in task_list:
-            # search in all parameters of the task
-            for v in task.values():
-                append_qbs(found_qubits, v)
+        append_qbs(found_qubits, task_list)
+        
         return found_qubits
 
     def create_meas_objs_list(self, task_list=None, **kw):
@@ -505,25 +512,27 @@ class MultiTaskingExperiment(QuantumExperiment):
         for k, sp_dict_list in self.kw_for_sweep_points.items():
             if isinstance(sp_dict_list, dict):
                 sp_dict_list = [sp_dict_list]
-            # This loop can create  multiple sweep points based on a single
+            # This loop can create multiple sweep points based on a single
             # keyword argument.
             for v in sp_dict_list:
                 # copy to allow popping the values_func, which should not be
                 # passed to SweepPoints.add_sweep_parameter
                 v = copy(v)
                 values_func = v.pop('values_func', None)
+
+                k_list = k.split(',')
                 # if the respective task parameter (or keyword argument) exists
-                if k in task and task[k] is not None:
+                if k_list[0] in task and task[k_list[0]] is not None:
                     if values_func is not None:
-                        values = values_func(task[k])
-                    elif isinstance(task[k], int):
+                        values = values_func(*[task[key] for key in k_list])
+                    elif isinstance(task[k_list[0]], int):
                         # A single int N as sweep value will be interpreted as
                         # a sweep over N indices.
-                        values = np.arange(task[k])
+                        values = np.arange(task[k_list[0]])
                     else:
-                        # Othervise it is assumed that list-like sweep
+                        # Otherwise it is assumed that list-like sweep
                         # values are provided.
-                        values = task[k]
+                        values = task[k_list[0]]
                     task['sweep_points'].add_sweep_parameter(
                         values=values, **v)
 
@@ -634,8 +643,6 @@ class CalibBuilder(MultiTaskingExperiment):
     @staticmethod
     def add_default_ramsey_sweep_points(sweep_points, tile=2,
                                         repeat=0, **kw):
-        if tile > 0 and repeat > 0:
-            raise ValueError('"repeat" and "tile" cannot both be > 0.')
         """
         Adds phase sweep points for Ramsey-type experiments to the provided
         sweep_points. Assumes that each phase is required twice (to measure a
@@ -644,6 +651,8 @@ class CalibBuilder(MultiTaskingExperiment):
 
         :param sweep_points: (SweepPoints object, list of dicts, or None) the
             existing sweep points
+        :param tile: (int) TODO, default: 2
+        :param repeat: (int) TODO, default: 0
         :param kw: keyword arguments
             nr_phases: how many phase sweep points should be added, default: 6.
                 If there already exist sweep points in dimension 0, this
@@ -651,6 +660,8 @@ class CalibBuilder(MultiTaskingExperiment):
                 the number of existing sweep points.
         :return: sweep_points with the added phase sweep points
         """
+        if tile > 0 and repeat > 0:
+            raise ValueError('"repeat" and "tile" cannot both be > 0.')
         # ensure that sweep_points is a SweepPoints object with at least two
         # dimensions
         sweep_points = SweepPoints(from_dict_list=sweep_points, min_length=2)
@@ -663,7 +674,7 @@ class CalibBuilder(MultiTaskingExperiment):
         # create the phase sweep points (with each phase twice)
         hard_sweep_dict = SweepPoints()
         if 'phase' not in sweep_points[0]:
-            phases = np.linspace(0, 2 * np.pi, nr_phases) * 180 / np.pi
+            phases = np.linspace(0, 360, nr_phases, endpoint=False)
             if tile > 0:
                 phases = np.tile(phases, tile)
             elif repeat > 0:
@@ -692,7 +703,7 @@ class CPhase(CalibBuilder):
         :param n_cal_points_per_state: see CalibBuilder.get_cal_points()
     ...
     """
-    kw_for_task_keys = ['ref_pi_half']
+    kw_for_task_keys = ['ref_pi_half', 'num_cz_gates']
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
@@ -779,7 +790,6 @@ class CPhase(CalibBuilder):
         ref_pi_half = kw.get('ref_pi_half', False)
 
         hard_sweep_dict, soft_sweep_dict = sweep_points
-        assert num_cz_gates % 2 != 0
 
         pb = self.prepend_pulses_block(prepend_pulse_dicts)
 

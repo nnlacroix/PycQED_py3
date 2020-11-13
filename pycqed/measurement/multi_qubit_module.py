@@ -1279,10 +1279,10 @@ def measure_two_qubit_randomized_benchmarking(
             qb1n=qb1n, qb2n=qb2n, operation_dict=operation_dict,
             cliffords=cliffords, nr_seeds=np.arange(nr_seeds),
             max_clifford_idx=24 ** 2 if character_rb else 11520,
-            cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}', net_clifford=net_clifford,
+            cz_pulse_name=cz_pulse_name + f' {qb1n} {qb2n}',
+            net_clifford=net_clifford, interleaved_gate=interleaved_gate,
             clifford_decomposition_name=clifford_decomposition_name,
-            interleaved_gate=interleaved_gate, upload=False,
-            cal_points=cp, prep_params=prep_params,
+            upload=False, cal_points=cp, prep_params=prep_params,
             cl_sequence=cl_seq, sampling_seeds=sampling_seeds)
 
     hard_sweep_func = awg_swf.SegmentHardSweep(
@@ -1999,7 +1999,7 @@ def measure_fluxline_crosstalk(
         analyze=True):
     """
     Applies a flux pulse on the target qubit with various amplitudes.
-    Measure the phase shift due to these pulses on the crosstalk qubit,s which
+    Measure the phase shift due to these pulses on the crosstalk qubits which
     are measured in a Ramsey setting and fluxed to a more sensitive frequency.
 
     Args:
