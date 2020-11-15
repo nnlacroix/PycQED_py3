@@ -244,7 +244,8 @@ Final pipeline:
 class ProcessingPipeline(list):
 
     def __init__(self, node_name=None, from_dict_list=None,
-                 global_keys_out_container='', **node_params):
+                 global_keys_out_container='', meaj_obj_names=None,
+                 **node_params):
         """
         Creates a processing pipeline for analysis_v3.
         :param node_name: name of the processing function
@@ -257,10 +258,14 @@ class ProcessingPipeline(list):
         """
         super().__init__()
         self.global_keys_out_container = global_keys_out_container
+        self.meaj_obj_names = meaj_obj_names
         if node_name is not None:
             if 'keys_out_container' not in node_params:
                 node_params['keys_out_container'] = \
                     self.global_keys_out_container
+            if self.meaj_obj_names is not None and \
+                    'meaj_obj_names' not in node_params:
+                node_params['meaj_obj_names'] = self.meaj_obj_names
             node_params['node_name'] = node_name
             self.append(node_params)
         elif from_dict_list is not None:
@@ -288,7 +293,7 @@ class ProcessingPipeline(list):
         self.clear()
         for i, node_params in enumerate(pipeline):
             if node_params.get('was_resolved', False):
-                # if node was already resolved, just add it
+                # if node was already resolved, just add it to the pipeline
                 self.append(node_params)
                 continue
 
@@ -296,7 +301,9 @@ class ProcessingPipeline(list):
                 if 'keys_in' not in node_params:
                     self.append(node_params)
                     continue
-                meas_obj_names_raw = node_params['meas_obj_names']
+
+                meas_obj_names_raw = node_params.get(
+                    'meas_obj_names', list(meas_obj_value_names_map))
                 if isinstance(meas_obj_names_raw, str):
                     meas_obj_names_raw = [meas_obj_names_raw]
                 joint_processing = node_params.pop('joint_processing', False)
@@ -362,6 +369,9 @@ class ProcessingPipeline(list):
         """
         if 'keys_out_container' not in node_params:
             node_params['keys_out_container'] = self.global_keys_out_container
+        if self.meaj_obj_names is not None and \
+                'meaj_obj_names' not in node_params:
+            node_params['meaj_obj_names'] = self.meaj_obj_names
         node_params['node_name'] = node_name
         self.append(node_params)
 
@@ -431,10 +441,12 @@ class ProcessingPipeline(list):
                 else:
                     raise ValueError('The first node in the pipeline cannot '
                                      'have "keys_in" = "previous".')
-        try:
-            keys_in.sort()
-        except AttributeError:
-            pass
+
+        if keys_in != keys_in_temp:
+            try:
+                keys_in.sort()
+            except AttributeError:
+                pass
 
         if len(keys_in) == 0 or keys_in is None:
             raise ValueError(f'No "keys_in" could be determined '
