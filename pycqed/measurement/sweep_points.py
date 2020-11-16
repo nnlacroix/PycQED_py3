@@ -44,31 +44,39 @@ class SweepPoints(list):
         sp.add_sweep_parameter(f'amps_{qb}', np.linspace(0, 1, 20),
         'V', 'Pulse amplitude, $A$')
     """
-    def __init__(self, param_name=None, values=None, unit='', label=None,
-                 dimension=-1, from_dict_list=None, min_length=0):
+    def __init__(self, param=None, values=None, unit='', label=None,
+                 dimension=-1, min_length=0):
         super().__init__()
-        if param_name is not None and values is not None:
-            self.add_sweep_parameter(param_name, values, unit, label,
-                                     dimension)
-        elif from_dict_list is not None:
-            for d in deepcopy(from_dict_list):
-                if len(d) == 0 or isinstance(list(d.values())[0], tuple):
-                    # assume that dicts have the same format as this class
-                    self.append(d)
-                else:
-                    # import from a list of sweep dicts in the old format
-                    self.append({k: (v['values'],
-                                     v.get('unit',''),
-                                     v.get('label', k))
-                                 for k, v in d.items()})
+        if isinstance(param, list):
+            self.add_dict_list(param)
+        elif isinstance(param, str):
+            try:
+                self.add_dict_list(eval(param))
+            except NameError:
+                if values is not None:
+                    self.add_sweep_parameter(param, values, unit, label,
+                                             dimension)
+
         while len(self) < min_length:
             self.add_sweep_dimension()
 
     def __getitem__(self, i):
         new_data = super().__getitem__(i)
         if type(i) == slice:
-            new_data = self.cast_init(new_data)
+            new_data = self.__class__(new_data)
         return new_data
+
+    def add_dict_list(self, dict_list):
+        for d in deepcopy(dict_list):
+            if len(d) == 0 or isinstance(list(d.values())[0], tuple):
+                # assume that dicts have the same format as this class
+                self.append(d)
+            else:
+                # import from a list of sweep dicts in the old format
+                self.append({k: (v['values'],
+                                 v.get('unit', ''),
+                                 v.get('label', k))
+                             for k, v in d.items()})
 
     def add_sweep_parameter(self, param_name, values, unit='', label=None,
                             dimension=-1):
@@ -309,20 +317,3 @@ class SweepPoints(list):
             if param_name in self[dim]:
                 return dim
         return None
-
-    @staticmethod
-    def cast_init(sweep_points):
-        """
-        Recreates a SweepPoints object from a string representation of
-            SweepPoints, or a list of dicts.
-        Avoids having "eval" statements throughout the codebase.
-        Args:
-            sweep_points: string representation of the SweepPoints or
-                a list of dicts
-
-        Returns: SweepPoints object
-        """
-        if isinstance(sweep_points, str):
-            return SweepPoints(from_dict_list=eval(sweep_points))
-        else:
-            return SweepPoints(from_dict_list=sweep_points)
