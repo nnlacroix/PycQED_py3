@@ -40,7 +40,7 @@ nodes.
 
 Instructions for use:
     Initialization
-        - from a list of dicts: ProcessingPipeline(from_dict_list=dict_list)
+        - from a list of dicts: ProcessingPipeline(dict_list)
         - without any input arguments: ProcessingPipeline()
         - or with input parameters:
          ProcessingPipeline(node_name, **node_params), where node_name is
@@ -243,14 +243,12 @@ Final pipeline:
 
 class ProcessingPipeline(list):
 
-    def __init__(self, node_name=None, from_dict_list=None,
-                 global_keys_out_container='', meaj_obj_names=None,
-                 **node_params):
+    def __init__(self, param=None, global_keys_out_container='',
+                 meaj_obj_names=None, **node_params):
         """
         Creates a processing pipeline for analysis_v3.
-        :param node_name: name of the processing function
-        :param from_dict_list: list of dicts to be instantiated as a
-            ProcessingPipeline
+        :param param: name of the processing function, repr of a
+            ProcessingPipeline instance, or list of dicts
         :param global_keys_out_container: str specifying a container for the
             keys_out that will be prepended to all the keys_out in all the nodes
         :param node_params: keyword arguments that will be passed to the
@@ -259,25 +257,25 @@ class ProcessingPipeline(list):
         super().__init__()
         self.global_keys_out_container = global_keys_out_container
         self.meaj_obj_names = meaj_obj_names
-        if node_name is not None:
-            if 'keys_out_container' not in node_params:
-                node_params['keys_out_container'] = \
-                    self.global_keys_out_container
-            if self.meaj_obj_names is not None and \
-                    'meaj_obj_names' not in node_params:
-                node_params['meaj_obj_names'] = self.meaj_obj_names
-            node_params['node_name'] = node_name
-            self.append(node_params)
-        elif from_dict_list is not None:
-            for d in from_dict_list:
-                if isinstance(d, dict):
-                    # assume that dicts have the same format as this class
-                    self.append(d)
-                else:
-                    raise ValueError('Entries in list must be dicts.')
+        if isinstance(param, list):
+            self.add_dict_list(param)
+        elif isinstance(param, str):
+            try:
+                self.add_dict_list(param)
+            except NameError:
+                self.add_node(param, **node_params)
+
+    def __getitem__(self, i):
+        new_data = super().__getitem__(i)
+        if type(i) == slice:
+            new_data = self.__class__(new_data)
+            new_data.global_keys_out_container = deepcopy(
+                self.global_keys_out_container)
+            new_data.meaj_obj_names = deepcopy(self.meaj_obj_names)
+        return new_data
 
     def __add__(self, other):
-        return ProcessingPipeline.cast_init(super().__add__(other))
+        return ProcessingPipeline(super().__add__(other))
 
     def __call__(self, meas_obj_value_names_map):
         """
@@ -359,6 +357,14 @@ class ProcessingPipeline(list):
                 self.clear()
                 [self.append(node) for node in fallback_pipeline]
                 raise e
+
+    def add_dict_list(self, dict_list):
+        for d in dict_list:
+            if isinstance(d, dict):
+                # assume that dicts have the same format as this class
+                self.append(d)
+            else:
+                raise ValueError('Entries in list must be dicts.')
 
     def add_node(self, node_name, **node_params):
         """
@@ -693,20 +699,3 @@ class ProcessingPipeline(list):
             G.draw(f'{save_folder}\{save_name}.{fmt}')
 
         return G
-
-    @staticmethod
-    def cast_init(processing_pipeline):
-        """
-        Recreates a ProcessingPipeline object from a string representation of
-        a ProcessingPipeline instance, or a list of dicts.
-        Avoids having "eval" statements throughout the codebase.
-        Args:
-            processing_pipeline: string representation of ProcessingPipeline
-                instance, or a list of dicts
-
-        Returns: ProcessingPipeline object
-        """
-        if isinstance(processing_pipeline, str):
-            return ProcessingPipeline(from_dict_list=eval(processing_pipeline))
-        else:
-            return ProcessingPipeline(from_dict_list=processing_pipeline)
