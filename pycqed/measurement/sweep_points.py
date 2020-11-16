@@ -46,6 +46,20 @@ class SweepPoints(list):
     """
     def __init__(self, param=None, values=None, unit='', label=None,
                  dimension=-1, min_length=0):
+        """
+        Create a SweepPoints instance.
+        :param param: list of dicts, repr of SweepPoints instance, or name of
+            a sweep parameter
+        :param values: list or array of numeric values of the sweep parameter
+            specified by param
+        :param unit: string specifying the unit of the sweep parameter
+            specified by param
+        :param label: str specifying the (latex style) label/name of the sweep
+            parameter specified by param
+        :param dimension: sweep dimension where sweep parameter param should be
+            added
+        :param min_length: minimum number of sweep dimensions to create
+        """
         super().__init__()
         if isinstance(param, list):
             self.add_dict_list(param)
@@ -61,12 +75,21 @@ class SweepPoints(list):
             self.add_sweep_dimension()
 
     def __getitem__(self, i):
+        """
+        Overloading of List.__getitem__ to ensure type SweepPoints is preserved.
+        :param i: element or slice
+        :return: element or new SweepPoints instance
+        """
         new_data = super().__getitem__(i)
         if type(i) == slice:
             new_data = self.__class__(new_data)
         return new_data
 
     def add_dict_list(self, dict_list):
+        """
+        Append the dicts in dict_list to self.
+        :param dict_list: list of dictionaries in the format of this class
+        """
         for d in deepcopy(dict_list):
             if len(d) == 0 or isinstance(list(d.values())[0], tuple):
                 # assume that dicts have the same format as this class
