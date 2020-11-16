@@ -2,12 +2,14 @@
 Module containing a collection of detector functions used by the
 Measurement Control.
 """
+import traceback
 import numpy as np
 from copy import deepcopy
 import time
 from string import ascii_uppercase
 from pycqed.analysis import analysis_toolbox as a_tools
 from qcodes.instrument.parameter import _BaseParameter
+from qcodes.instrument.base import Instrument
 import logging
 log = logging.getLogger(__name__)
 
@@ -41,6 +43,92 @@ class Detector_Function(object):
 
     def finish(self, **kw):
         pass
+
+    def generate_metadata(self):
+        """
+        Creates a dict det_metadata with all the attributes of itself.
+        :return: {'Detector Metadata': det_metadata}
+        """
+        try:
+            # Go through all the attributes of itself, pass them to
+            # savable_attribute_value, and store them in det_metadata
+            det_metadata = {k: self.savable_attribute_value(v, self.name)
+                            for k, v in self.__dict__.items()}
+
+            # Change the 'detectors' entry from a list of dicts to a dict with
+            # keys uhfName_detectorName
+            detectors_dict = {}
+            for d in det_metadata.pop('detectors', []):
+                # isinstance(d, dict) only if self was a multi-detector function
+                if isinstance(d, dict):
+                    # d will never contain the key "detectors" because the
+                    # framework currently does not allow to pass an instance of
+                    # UHFQC_multi_detector in the "detectors" attribute of
+                    # UHFQC_Base since UHFQC_multi_detector does not have the
+                    # attribute "UHFQC" (Steph, 23.10.2020)
+                    if 'UHFs' in d:
+                        # d["UHFs"] will always contain one item because of how
+                        # savable_attribute_value was written.
+                        detectors_dict.update(
+                            {f'{d["UHFs"][0]} {d["name"]}': d})
+                    else:
+                        detectors_dict.update({f'{d["name"]}': d})
+            if len(detectors_dict):
+                det_metadata['detectors'] = detectors_dict
+
+            return {'Detector Metadata': det_metadata}
+        except Exception:
+            # Unhandled errors in metadata creation are not critical for the
+            # measurement, so we log them as warnings.
+            log.warning(traceback.format_exc())
+            return {}
+
+    @staticmethod
+    def savable_attribute_value(attr_val, det_name):
+        """
+        Helper function for converting the attribute of a Detector_Function
+        (or its children) to a format that will make the entry more meaningful
+        when saved to an hdf file.
+        In particular,  this function makes sure that if any of the det_func
+        attributes are class instances (like det_func.AWG), they are passed to
+        the metadata as class_instance.name instead of class_instance, in which
+        case it would be saves as a string "<Pulsar: Pulsar>".
+
+        This function also nicely resolves the detectors attribute of the
+        detector functions, which would otherwise also be saved as
+        ["<pycqed.measurement.detector_functions.UHFQC_classifier_detector
+         at 0x22bf280a400>",
+         "<pycqed.measurement.detector_functions.UHFQC_classifier_detector
+         at 0x22bf280a208>"].
+         It parses this list and replaces each instance with its __dict__
+         attribute.
+
+        :param attr_val: attribute value of a Detector_Function instance or
+            an instance of its children
+        :param det_name: name of a Detector_Function instance or an instance
+            of its children
+        :return: converted attribute value
+        """
+        if isinstance(attr_val, Detector_Function):
+            if hasattr(attr_val, 'detectors') and \
+                    det_name != attr_val.detectors[0].name:
+                return {k: Detector_Function.savable_attribute_value(
+                    v, attr_val.name)
+                    for k, v in attr_val.__dict__.items()}
+            else:
+                return attr_val.name
+        elif isinstance(attr_val, Instrument):
+            try:
+                return attr_val.name
+            except AttributeError:
+                return repr(attr_val)
+        elif callable(attr_val):
+            return repr(attr_val)
+        elif isinstance(attr_val, (list, tuple)):
+            return [Detector_Function.savable_attribute_value(av, det_name)
+                    for av in attr_val]
+        else:
+            return attr_val
 
 
 class Multi_Detector(Detector_Function):
