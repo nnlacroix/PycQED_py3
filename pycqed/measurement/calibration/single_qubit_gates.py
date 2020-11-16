@@ -199,8 +199,10 @@ class T1FrequencySweep(CalibBuilder):
         """
 
         self.all_fits = kw.get('all_fits', True)
+        self.do_fitting = kw.get('do_fitting', True)
         self.analysis = tda.T1FrequencySweepAnalysis(
             qb_names=self.meas_obj_names,
+            do_fitting=self.do_fitting,
             options_dict=dict(TwoD=True, all_fits=self.all_fits,
                               global_PCA=not len(self.cal_points.states)))
 

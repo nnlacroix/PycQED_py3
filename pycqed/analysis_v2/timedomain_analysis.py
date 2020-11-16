@@ -3473,6 +3473,9 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
 
         pdd['data_reshaped_no_cp'] = data_reshaped_no_cp
 
+        pdd['mask'] = {qb: np.ones(nr_amps, dtype=np.bool)
+                           for qb in self.qb_names}
+
     def prepare_fitting(self):
         pdd = self.proc_data_dict
 
@@ -3490,7 +3493,6 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
 
         pdd['T1'] = {}
         pdd['T1_err'] = {}
-        pdd['mask'] = {}
 
         for qb in self.qb_names:
             pdd['T1'][qb] = np.array([
@@ -3501,15 +3503,12 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 self.fit_res[f'exp_fit_{qb}_amp_{i}'].params['decay'].stderr
                 for i in range(len(self.amps[qb]))])
 
-            pdd['mask'][qb] = []
             for i in range(len(self.amps[qb])):
                 try:
-                    if pdd['T1_err'][qb][i] < 10 * pdd['T1'][qb][i]:
-                        pdd['mask'][qb].append(True)
-                    else:
-                        pdd['mask'][qb].append(False)
+                    if pdd['T1_err'][qb][i] >= 10 * pdd['T1'][qb][i]:
+                        pdd['mask'][qb][i] = False
                 except TypeError:
-                    pdd['mask'][qb].append(False)
+                    pdd['mask'][qb][i] = False
 
     def prepare_plots(self):
         pdd = self.proc_data_dict
@@ -3524,20 +3523,22 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 xlabel = r'Flux pulse amplitude' if p == 0 else \
                     r'Derived qubit frequency'
 
-                # Plot T1 vs flux pulse amplitude
-                label = f'T1_fit_{qb}{suffix}'
-                self.plot_dicts[label] = {
-                    'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
-                    'plotfn': self.plot_line,
-                    'linestyle': '-',
-                    'xvals': param_values[qb][mask],
-                    'yvals': pdd['T1'][qb][mask],
-                    'yerr': pdd['T1_err'][qb][mask],
-                    'xlabel': xlabel,
-                    'xunit': 'V' if p == 0 else 'Hz',
-                    'ylabel': r'T1',
-                    'yunit': 's',
-                }
+                if self.do_fitting:
+                    # Plot T1 vs flux pulse amplitude
+                    label = f'T1_fit_{qb}{suffix}'
+                    self.plot_dicts[label] = {
+                        'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
+                        'plotfn': self.plot_line,
+                        'linestyle': '-',
+                        'xvals': param_values[qb][mask],
+                        'yvals': pdd['T1'][qb][mask],
+                        'yerr': pdd['T1_err'][qb][mask],
+                        'xlabel': xlabel,
+                        'xunit': 'V' if p == 0 else 'Hz',
+                        'ylabel': r'T1',
+                        'yunit': 's',
+                        'color': 'blue',
+                    }
 
                 # Plot rotated integrated average in dependece of flux pulse
                 # amplitude and length
@@ -3574,42 +3575,40 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 }
 
             # Plot all fits in single figure
-            if not self.options_dict.get('all_fits', False):
-                continue
-
-            colormap = self.options_dict.get('colormap', mpl.cm.plasma)
-            for i in range(len(self.amps[qb])):
-                color = colormap(i/(len(self.amps[qb])-1))
-                label = f'exp_fit_{qb}_amp_{i}'
-                fitid = param_values[qb][i]
-                self.plot_dicts[label] = {
-                    'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
-                    'fig_id': f'T1_fits_{qb}',
-                    'xlabel': r'Flux pulse length',
-                    'xunit': 's',
-                    'ylabel': r'Excited state population',
-                    'plotfn': self.plot_fit,
-                    'fit_res': self.fit_res[label],
-                    'plot_init': self.options_dict.get('plot_init', False),
-                    'color': color,
-                    'setlabel': f'freq={fitid:.4f}' if p == 1
-                                        else f'amp={fitid:.4f}',
-                    'do_legend': False,
-                    'legend_bbox_to_anchor': (1, 1),
-                    'legend_pos': 'upper left',
+            if self.options_dict.get('all_fits', False) and self.do_fitting:
+                colormap = self.options_dict.get('colormap', mpl.cm.plasma)
+                for i in range(len(self.amps[qb])):
+                    color = colormap(i/(len(self.amps[qb])-1))
+                    label = f'exp_fit_{qb}_amp_{i}'
+                    fitid = param_values[qb][i]
+                    self.plot_dicts[label] = {
+                        'title': rdd['measurementstring'] + '\n' + rdd['timestamp'],
+                        'fig_id': f'T1_fits_{qb}',
+                        'xlabel': r'Flux pulse length',
+                        'xunit': 's',
+                        'ylabel': r'Excited state population',
+                        'plotfn': self.plot_fit,
+                        'fit_res': self.fit_res[label],
+                        'plot_init': self.options_dict.get('plot_init', False),
+                        'color': color,
+                        'setlabel': f'freq={fitid:.4f}' if p == 1
+                                            else f'amp={fitid:.4f}',
+                        'do_legend': False,
+                        'legend_bbox_to_anchor': (1, 1),
+                        'legend_pos': 'upper left',
+                        }
+    
+                    label = f'freq_scatter_{qb}_{i}'
+                    self.plot_dicts[label] = {
+                        'fig_id': f'T1_fits_{qb}',
+                        'plotfn': self.plot_line,
+                        'xvals': self.lengths[qb],
+                        'linestyle': '',
+                        'yvals': pdd['data_reshaped_no_cp'][qb][i, :],
+                        'color': color,
+                        'setlabel': f'freq={fitid:.4f}' if p == 1
+                                            else f'amp={fitid:.4f}',
                     }
-
-                label = f'freq_scatter_{qb}_{i}'
-                self.plot_dicts[label] = {
-                    'fig_id': f'T1_fits_{qb}',
-                    'plotfn': self.plot_line,
-                    'xvals': self.lengths[qb],
-                    'linestyle': '',
-                    'yvals': pdd['data_reshaped_no_cp'][qb][i, :],
-                    'color': color,
-                    'setlabel': f'freq={fitid:.4f}' if p == 1
-                                        else f'amp={fitid:.4f}',
-                }
 
 
 class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
@@ -3633,6 +3632,9 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
             pdd['cal_point_data'] = {qb: deepcopy(
                 pdd['data_to_fit'][qb][
                 len(pdd['data_to_fit'][qb])-nr_cp:]) for qb in self.qb_names}
+
+        pdd['mask'] = {qb: np.ones(nr_amps, dtype=np.bool)
+                           for qb in self.qb_names}
 
     def prepare_fitting(self):
         pdd = self.proc_data_dict
@@ -3660,7 +3662,6 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
 
         pdd['T2'] = {}
         pdd['T2_err'] = {}
-        pdd['mask'] = {}
         pdd['phase_contrast'] = {}
         nr_lengths = len(self.metadata['flux_lengths'])
         nr_amps = len(self.metadata['amplitudes'])
@@ -3694,12 +3695,10 @@ class T2FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
             for i in range(len(self.metadata['amplitudes'])):
                 try:
                     if self.fit_res[f'exp_fit_{qb}_{i}']\
-                                            .params['decay'].stderr < 1e-5:
-                        pdd['mask'][qb].append(True)
-                    else:
-                        pdd['mask'][qb].append(False)
+                                            .params['decay'].stderr >= 1e-5:
+                        pdd['mask'][qb][i] = False
                 except TypeError:
-                    pdd['mask'][qb].append(False)
+                    pdd['mask'][qb][i] = False
 
     def prepare_plots(self):
         pdd = self.proc_data_dict
