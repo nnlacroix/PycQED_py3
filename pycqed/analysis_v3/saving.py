@@ -47,7 +47,7 @@ class Save:
                     savedir = hlp_mod.get_param(
                         'timestamps', data_dict, raise_error=True,
                         error_message='Either folders or timestamps must be '
-                                      'in data_dict is save_dir is not '
+                                      'in data_dict if save_dir is not '
                                       'specified.')
                     savedir = a_tools.get_folder(savedir[-1])
                 else:
@@ -60,7 +60,8 @@ class Save:
             self.filepath = self.savedir + '\\' + filename
             if save_processed_data:
                 self.save_data_dict()
-            if save_figures:
+            if save_figures and hlp_mod.get_param('figures', self.data_dict) \
+                    is not None:
                 self.save_figures(**save_figs_params)
 
             np.set_printoptions(**opt)

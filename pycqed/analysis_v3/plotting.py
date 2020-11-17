@@ -12,6 +12,7 @@ from copy import deepcopy
 from mpl_toolkits.mplot3d import Axes3D
 
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 from pycqed.analysis.analysis_toolbox import get_color_order as gco
 from pycqed.analysis.analysis_toolbox import get_color_list
@@ -20,11 +21,9 @@ from pycqed.analysis.tools.plotting import (
     SI_prefix_and_scale_factor)
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import datetime
-import sys
-this_module = sys.modules[__name__]
 
-from pycqed.analysis_v3 import pipeline_analysis as pla
-pla.search_modules.add(this_module)
+import sys
+pp_mod.search_modules.add(sys.modules[__name__])
 
 prx_single_column_width = 3.404
 prx_two_column_width = 7.057

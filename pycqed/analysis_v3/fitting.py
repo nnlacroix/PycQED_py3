@@ -2,15 +2,14 @@ import logging
 log = logging.getLogger(__name__)
 
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from pycqed.analysis import fitting_models as fit_mods
 from collections import OrderedDict
 import numpy as np
 import lmfit
-import sys
-this_mod = sys.modules[__name__]
 
-from pycqed.analysis_v3 import pipeline_analysis as pla
-pla.search_modules.add(this_mod)
+import sys
+pp_mod.search_modules.add(sys.modules[__name__])
 
 #####################################
 ### Functions related to Fitting ###

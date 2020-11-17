@@ -1,7 +1,6 @@
 import logging
 log = logging.getLogger(__name__)
 
-import sys
 import lmfit
 import numpy as np
 from scipy import optimize
@@ -11,12 +10,12 @@ from pycqed.analysis_v3 import fitting as fit_mod
 from pycqed.analysis_v3 import plotting as plot_mod
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import processing_pipeline as pp_mod
-from pycqed.analysis_v3 import pipeline_analysis as pla
 from pycqed.measurement import sweep_points as sp_mod
 from pycqed.measurement.calibration import calibration_points as cp_mod
 from copy import deepcopy
 
-pla.search_modules.add(sys.modules[__name__])
+import sys
+pp_mod.search_modules.add(sys.modules[__name__])
 
 # Create pipelines
 
@@ -102,7 +101,7 @@ def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
                                  keys_in='previous threshold_data',
                                  meas_obj_names=meas_obj_names)
     for label in ['rb']:
-        pp = pp_mod.ProcessingPipeline(global_keys_out_container=label)
+        pp = pp_mod.ProcessingPipeline(keys_out_container=label)
         pp.add_node('average_data',
                     shape=(n_sequences, n_segments),
                     averaging_axis=-1 if slow_cliffords else 0,
