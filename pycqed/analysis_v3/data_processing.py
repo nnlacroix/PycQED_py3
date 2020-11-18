@@ -6,11 +6,11 @@ import numpy as np
 from collections import OrderedDict
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 
 import sys
-from pycqed.analysis_v3 import pipeline_analysis as pla
-pla.search_modules.add(sys.modules[__name__])
+pp_mod.search_modules.add(sys.modules[__name__])
 
 
 def filter_data(data_dict, keys_in, keys_out=None, **params):

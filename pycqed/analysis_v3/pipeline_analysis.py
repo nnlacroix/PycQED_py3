@@ -46,7 +46,7 @@ def process_pipeline(data_dict, processing_pipeline=None, append_pipeline=False,
                               data_dict, append_value=True)
 
     # Instantiate a ProcessingPipeline instance in case it is an ordinary list
-    processing_pipeline = ProcessingPipeline.cast_init(processing_pipeline)
+    processing_pipeline = ProcessingPipeline(processing_pipeline)
 
     for node_params in processing_pipeline:
         try:

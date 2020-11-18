@@ -10,8 +10,7 @@ from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from copy import deepcopy
 
 import sys
-from pycqed.analysis_v3 import pipeline_analysis as pla
-pla.search_modules.add(sys.modules[__name__])
+pp_mod.search_modules.add(sys.modules[__name__])
 
 
 # Create pipelines

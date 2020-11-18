@@ -16,8 +16,7 @@ from pycqed.analysis_v3 import data_processing as dat_proc_mod
 from copy import deepcopy
 
 import sys
-from pycqed.analysis_v3 import pipeline_analysis as pla
-pla.search_modules.add(sys.modules[__name__])
+pp_mod.search_modules.add(sys.modules[__name__])
 
 
 def standard_qubit_pulses_to_rotations(pulse_list):
