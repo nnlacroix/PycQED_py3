@@ -8,7 +8,7 @@ from inspect import signature
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from collections import OrderedDict
-from copy import deepcopy
+from copy import copy, deepcopy
 from mpl_toolkits.mplot3d import Axes3D
 
 from pycqed.analysis_v3 import helper_functions as hlp_mod
@@ -1818,9 +1818,11 @@ def plot_fit(pdict, axs):
     Plots an lmfit fit result object using the plot_line function.
     """
     model = pdict['fit_res'].model
+    plot_data = pdict.get('plot_data', False)  # plot the data
+    plot_data_params = pdict.get('plot_data_params', {})
     plot_init = pdict.get('plot_init', False)  # plot the initial guess
+    plot_init_params = pdict.get('plot_init_params', {})
     pdict['marker'] = pdict.get('marker', '')  # different default
-    plot_linestyle_init = pdict.get('init_linestyle', '--')
     plot_numpoints = pdict.get('num_points', 1000)
 
     if len(model.independent_vars) == 1:
@@ -1838,12 +1840,36 @@ def plot_fit(pdict, axs):
         pdict['yvals'] = np.array([pdict['yvals']])
     if isinstance(pdict['yvals'], list) or isinstance(pdict['yvals'], tuple):
         pdict['xvals'] = len(pdict['yvals'])*[pdict['xvals']]
+    if 'zorder' not in pdict:
+        pdict['zorder'] = 0
     plot_line(pdict, axs)
+
+    if plot_data:
+        # The data
+        pdict_data = copy(pdict)
+        pdict_data.update(plot_data_params)
+        if 'linestyle' not in pdict_data:
+            pdict_data['linestyle'] = ''
+        if pdict_data['marker'] == '':
+            pdict_data['marker'] = 'o'
+        fit_color = pdict.get('color', '')
+        data_color = pdict_data.get('color', '')
+        pdict_data['color'] = data_color if data_color != fit_color else 'C0'
+        if pdict_data['zorder'] == 0:
+            pdict_data['zorder'] = 1
+        pdict_data['xvals'] = pdict['fit_res'].userkws[independent_var]
+        pdict_data['yvals'] = pdict['fit_res'].userargs[0]
+        pdict_data['setlabel'] += ' data'
+        plot_line(pdict_data, axs)
 
     if plot_init:
         # The initial guess
-        pdict_init = deepcopy(pdict)
-        pdict_init['linestyle'] = plot_linestyle_init
+        pdict_init = copy(pdict)
+        pdict_init.update(plot_init_params)
+        if 'linestyle' not in pdict_init:
+            pdict_init['linestyle'] = '--'
+        if pdict_init['zorder'] == 0:
+            pdict_init['zorder'] = 3
         pdict_init['yvals'] = model.eval(
             **pdict['fit_res'].init_values,
             **{independent_var: pdict['xvals']})
