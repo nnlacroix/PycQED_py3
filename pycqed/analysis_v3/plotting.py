@@ -23,7 +23,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import datetime
 
 import sys
-pp_mod.search_modules.add(sys.modules[__name__])
+this_module = sys.modules[__name__]
+pp_mod.search_modules.add(this_module )
 
 prx_single_column_width = 3.404
 prx_two_column_width = 7.057
