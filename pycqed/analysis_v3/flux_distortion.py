@@ -3,9 +3,9 @@ log = logging.getLogger(__name__)
 
 import numpy as np
 import scipy.optimize as optimize
-import sys
 from copy import deepcopy
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.measurement.waveform_control import segment as seg_mod
 from pycqed.analysis import fitting_models as fit_mods
@@ -13,8 +13,8 @@ from pycqed.analysis_v2 import timedomain_analysis as tda
 from pycqed.measurement.waveform_control import fluxpulse_predistortion as fpdist
 from pycqed.measurement import sweep_points as sp_mod
 
-from pycqed.analysis_v3 import pipeline_analysis as pla
-pla.search_modules.add(sys.modules[__name__])
+import sys
+pp_mod.search_modules.add(sys.modules[__name__])
 
 
 def fd_create_pulse(data_dict, keys_in, keys_out, **params):
