@@ -28,7 +28,7 @@ class Segment:
     trigger_pulse_amplitude = 0.5
     trigger_pulse_start_buffer = 25e-9
 
-    def __init__(self, name, pulse_pars_list=[]):
+    def __init__(self, name, pulse_pars_list=[], **kw):
         self.name = name
         self.pulsar = ps.Pulsar.get_instance()
         self.unresolved_pulses = []
@@ -46,9 +46,12 @@ class Segment:
                                       self.trigger_pars['buffer_length_start']
         self._pulse_names = set()
         self.acquisition_elements = set()
+        self.overlapping_elements = []
 
         for pulse_pars in pulse_pars_list:
             self.add(pulse_pars)
+
+        self.resolve_overlap_flag = kw.pop('resolve_overlap', False)
 
     def add(self, pulse_pars):
         """
@@ -133,6 +136,8 @@ class Segment:
         self.resolve_timing()
         self.resolve_Z_gates()
         self.add_flux_crosstalk_cancellation_channels()
+        if self.resolve_overlap_flag:
+            self.resolve_overlap()
         self.gen_trigger_el()
         self.add_charge_compensation()
 
@@ -678,10 +683,12 @@ class Segment:
         """
         return self.element_start_end[element][awg][0]
 
-    def _test_overlap(self):
+    def _test_overlap(self, track_and_ignore=False):
         """
         Tests for all AWGs if any of their elements overlap.
         """
+
+        self.gen_elements_on_awg()
 
         for awg in self.elements_on_awg:
             el_list = []
@@ -710,8 +717,61 @@ class Segment:
                 el_new_start = el_list[i + 1][0]
 
                 if el_prev_end > el_new_start:
-                    raise ValueError('{} and {} overlap on {}'.format(
-                        prev_el, el_list[i + 1][2], awg))
+                    if track_and_ignore:
+                        self.overlapping_elements.append({prev_el, el_list[i + 1][2]})
+                    else:
+                        raise ValueError('{} and {} overlap on {}'.format(
+                            prev_el, el_list[i + 1][2], awg))
+
+    def resolve_overlap(self):
+
+        self.gen_elements_on_awg()
+        self._test_overlap(track_and_ignore=True)
+        overlapping_elements = self.overlapping_elements
+
+
+        # cluster overlapping elements
+        joint_overlapping_elements = [overlapping_elements[0]]
+
+        new_overlap = True
+        for i in range(len(overlapping_elements) - 1):
+            for j in range(len(joint_overlapping_elements)):
+                if len(joint_overlapping_elements[j] & overlapping_elements[i + 1]) != 0:
+                    joint_overlapping_elements[j] = joint_overlapping_elements[j] | overlapping_elements[i + 1]
+                    new_overlap = False
+
+            if new_overlap:
+                joint_overlapping_elements.append(overlapping_elements[i + 1])
+            new_overlap = True
+
+        for i in range(len(joint_overlapping_elements)):
+            self._combine_elements(joint_overlapping_elements[i], 'overlapping_el_{}'.format(i))
+
+
+    def _combine_elements(self, elements, combined_el_name):
+        """
+        Routine to properly combine elements in the segment.
+        :param elements: list or set of elements in the segment
+        :return:
+        """
+
+        new_pulse_list = []
+
+        for el in elements:
+            new_pulse_list+= self.elements.pop(el)
+            #remove it from element_start_end
+            self.element_start_end.pop(el)
+
+        # add new element
+        self.elements[combined_el_name] = new_pulse_list
+        # update new elements_on_awg
+        self.gen_elements_on_awg()
+        # update element_start_end
+
+        #for awg in self.pulsar.awgs:
+        for awg in self.pulsar.awgs:
+            self.element_start_length(combined_el_name, awg)
+
 
     def _test_trigger_awg(self):
         """
@@ -766,6 +826,9 @@ class Segment:
             t_start = min(pulse.algorithm_time(), t_start)
             t_end = max(pulse.algorithm_time() + pulse.length, t_end)
 
+        if t_start==float('inf') or t_end == -float('inf'):
+            log.log(0, 'Asked to find start of element {element} on AWG {awg}, but element not on AWG.')
+            return
         # make sure that element start is a multiple of element
         # start granularity
         # we allow rounding up of the start time by half a sample, otherwise
