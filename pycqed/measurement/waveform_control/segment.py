@@ -729,6 +729,8 @@ class Segment:
         self._test_overlap(track_and_ignore=True)
         overlapping_elements = self.overlapping_elements
 
+        if len(overlapping_elements)==0:
+            return
 
         # cluster overlapping elements
         joint_overlapping_elements = [overlapping_elements[0]]
