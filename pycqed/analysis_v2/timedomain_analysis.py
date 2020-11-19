@@ -3748,7 +3748,7 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                 mask = pdd['mask'][qb]
                 xlabel = r'Flux pulse amplitude' if p == 0 else \
                     r'Derived qubit frequency'
-                
+
                 if self.do_fitting:
                     # Plot T1 vs flux pulse amplitude
                     label = f'T1_fit_{qb}{suffix}'
