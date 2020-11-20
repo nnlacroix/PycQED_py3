@@ -40,7 +40,7 @@ def default_figure_height(figure_width):
 
 
 def get_default_plot_params(set_params=True, figure_width='1col',
-                            figure_height=None, **params):
+                            figure_height=None, params=None, **kw):
     """
     Generates the rcParams that produce nice paper-style figures.
     Optionally updates the rcParams if set_pars == True.
@@ -69,7 +69,7 @@ def get_default_plot_params(set_params=True, figure_width='1col',
     if FIGURE_HEIGHT is None:
         FIGURE_HEIGHT = default_figure_height(FIGURE_WIDTH)
 
-    params = {
+    rc_params = {
         'font.size': 8,
         'lines.markersize': 2.0,
         'figure.titlesize': 'medium',
@@ -83,10 +83,13 @@ def get_default_plot_params(set_params=True, figure_width='1col',
         'ytick.labelsize': 'small',
         'image.interpolation': 'none',
     }
+    if params is None:
+        params = {}
+    rc_params.update(params)
 
     if set_params:
         plt.rcParams.update(plt.rcParamsDefault)
-        plt.rcParams.update(params)
+        plt.rcParams.update(rc_params)
     return plt.rcParams
 
 
