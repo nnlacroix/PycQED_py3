@@ -293,7 +293,7 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         Returns: None
 
     """
-    kw_for_task_keys = ['ro_pulse_delay']
+    kw_for_task_keys = ['ro_pulse_delay', 'fp_truncation', 'fp_truncation_buffer']
     kw_for_sweep_points = {
         'freqs': dict(param_name='freq', unit='Hz',
                       label=r'drive frequency, $f_d$',
@@ -313,7 +313,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             traceback.print_exc()
 
     def sweep_block(self, qb, sweep_points, flux_op_code=None,
-                    ro_pulse_delay=None, **kw):
+                    ro_pulse_delay=None,
+                    fp_truncation=None, fp_truncation_buffer=None, **kw):
         """
         Performs X180 pulse on top of a fluxpulse
         Timings of sequence
@@ -337,16 +338,52 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             flux_op_code = f'FP {qb}'
         if ro_pulse_delay is None:
             ro_pulse_delay = 100e-9
+        if fp_truncation is None:
+            fp_truncation = False
+        if fp_truncation_buffer is None:
+            fp_truncation_buffer = 5e-8
+
+        if ro_pulse_delay is 'auto' and fp_truncation is True:
+            raise Exception('fp_truncation does currently not work ' + \
+                'with the auto mode of ro_pulse_delay.')
+
         pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
                         'attr=element_name,op_code=X180': 'FPS_Pi_el'}
         b = self.block_from_ops(f'ge_flux {qb}',
-                                [f'X180 {qb}', flux_op_code],
+                                [f'X180 {qb}'] + [flux_op_code] * \
+                                    (2 if fp_truncation else 1),
                                 pulse_modifs=pulse_modifs)
+    
         fp = b.pulses[1]
         fp['ref_point'] = 'middle'
-        offs = fp.get('buffer_length_start', 0)
+        bl_start = fp.get('buffer_length_start', 0)
+        bl_end = fp.get('buffer_length_end', 0)
+
         fp['pulse_delay'] = ParametricValue(
-            'delay', func=lambda x, o=offs: -(x + o))
+            'delay', func=lambda x, o=bl_start: -(x + o))
+
+        if fp_truncation:
+            cp = b.pulses[2]
+            original_fp_length = fp['pulse_length']
+            sweep_diff = np.abs(original_fp_length - \
+                            np.max( sweep_points.get_sweep_params_property(
+                                'values', dimension=0, param_names='delay')))
+            length_function = lambda x, opl=original_fp_length, \
+                o=bl_start+fp_truncation_buffer: max(min((x + o), opl), 0) # TODO: check what happens if buffer_length_start and buffer_length_end are zero.
+
+            fp['pulse_length'] = ParametricValue(
+                'delay', func=length_function)
+            cp['pulse_length'] = ro_pulse_delay - 2 * bl_start - 2 * bl_end \
+                                    - fp_truncation_buffer - sweep_diff
+            if cp['pulse_length'] <= 0:
+                raise Exception('ro_pulse_delay is too short to fit the ' + \
+                    'compensation pulse. Please choose a longer ro_pulse_delay.')
+            cp['pulse_delay'] = sweep_diff + bl_start
+            comp_amp_func = (lambda x, a=fp['amplitude'], cpl=cp['pulse_length'], \
+                                fnc=length_function: - a * fnc(x) / cpl)
+            cp['amplitude'] = ParametricValue(
+                'delay', func=comp_amp_func
+            )
 
         if ro_pulse_delay == 'auto':
             delay = \
@@ -361,7 +398,6 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                                 'pulse_delay': ro_pulse_delay})
 
         self.data_to_fit.update({qb: 'pe'})
-
         return b
 
     def run_analysis(self, **kw):
