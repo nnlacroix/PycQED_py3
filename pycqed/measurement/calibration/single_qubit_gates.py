@@ -365,9 +365,10 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         if fp_truncation:
             cp = b.pulses[2]
             original_fp_length = fp['pulse_length']
-            sweep_diff = np.abs(original_fp_length - \
-                            np.max( sweep_points.get_sweep_params_property(
-                                'values', dimension=0, param_names='delay')))
+            max_fp_sweep_length = np.max(
+                sweep_points.get_sweep_params_property(
+                    'values', dimension=0, param_names='delay'))
+            sweep_diff = max(max_fp_sweep_length - original_fp_length, 0)
             length_function = lambda x, opl=original_fp_length, \
                 o=bl_start+fp_truncation_buffer: max(min((x + o), opl), 0) # TODO: check what happens if buffer_length_start and buffer_length_end are zero.
 
