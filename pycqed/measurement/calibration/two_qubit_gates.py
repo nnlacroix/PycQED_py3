@@ -546,20 +546,15 @@ class CalibBuilder(MultiTaskingExperiment):
     """
     def __init__(self, task_list, **kw):
         super().__init__(task_list=task_list, **kw)
-        self.init_update_callback(**kw)
+        self.set_update_callback(**kw)
 
-    def init_update_callback(self, update=False, **kw):
+    def set_update_callback(self, update=False, **kw):
         """
         Configures QuantumExperiement to run the function run_update()
         (or a user-specified callback function) in autorun after measurement
         and analysis, conditioned on the flag self.update. The flag is
         intialized to True if update=True was passed, and False otherwise.
 
-        This helper function is kept separate from the __init__() to allow
-        initializing the update callback without calling the super().__init__.
-        This is needed for the implementation of parent/child measurements in
-        DynamicPhase, where the parent is a CalibBuilder, but never calls
-        the init of CalibBuilder.
         """
         self.update = update
         self.callback = kw.get('callback', self.run_update)
@@ -1026,7 +1021,7 @@ class DynamicPhase(CalibBuilder):
                 self.dev = kw.get('dev', None)
                 # Configure the update callback for the parent. It will be
                 # called after all children have analyzed.
-                self.init_update_callback(**kw)
+                self.set_update_callback(**kw)
                 # pop to ensure that children do not update
                 kw.pop('update', None)
                 # spawn the child measurements
