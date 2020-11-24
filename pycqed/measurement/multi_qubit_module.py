@@ -676,13 +676,9 @@ def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
                 MC.run(name=name, exp_metadata=exp_metadata)
 
     if analyze:
-        # tps = a_tools.latest_data(n_matches=len(states),
-        #                           return_timestamp=True)[0]
-        #
         tps = [a_tools.latest_data(
             contains=f'timetrace_{s}{get_multi_qubit_msmt_suffix(qubits)}',
             n_matches=1, return_timestamp=True)[0][0] for s in states]
-        print(tps)
         if analysis_kwargs is None:
             analysis_kwargs = {}
         if 't_start' not in analysis_kwargs:
