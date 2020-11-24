@@ -554,6 +554,12 @@ class CalibBuilder(MultiTaskingExperiment):
         (or a user-specified callback function) in autorun after measurement
         and analysis, conditioned on the flag self.update. The flag is
         intialized to True if update=True was passed, and False otherwise.
+
+        This helper function is kept separate from the __init__() to allow
+        initializing the update callback without calling the super().__init__.
+        This is needed for the implementation of parent/child measurements in
+        DynamicPhase, where the parent is a CalibBuilder, but never calls
+        the init of CalibBuilder.
         """
         self.update = update
         self.callback = kw.get('callback', self.run_update)
