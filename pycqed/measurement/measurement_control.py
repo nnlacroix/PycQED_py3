@@ -651,7 +651,7 @@ class MeasurementControl(Instrument):
         sp = self.exp_metadata.get('sweep_points', None)
         if sp is not None:
             try:
-                sp = sp_mod.SweepPoints.cast_init(sp)
+                sp = sp_mod.SweepPoints(sp)
             except Exception:
                 sp = None
         # create a reverse lookup dictionary (value names measure object map)
