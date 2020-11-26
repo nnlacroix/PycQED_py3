@@ -79,9 +79,12 @@ class SweepPoints(list):
         :param i: element or slice
         :return: element or new SweepPoints instance
         """
-        new_data = super().__getitem__(i)
-        if type(i) == slice:
-            new_data = self.__class__(new_data)
+        if isinstance(i, str):
+            new_data = self.get_sweep_params_property('values', 'all', i)
+        else:
+            new_data = super().__getitem__(i)
+            if isinstance(i, slice):
+                new_data = self.__class__(new_data)
         return new_data
 
     def add_dict_list(self, dict_list):
