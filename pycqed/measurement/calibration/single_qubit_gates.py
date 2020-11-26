@@ -70,8 +70,7 @@ class T1FrequencySweep(CalibBuilder):
             self.analysis = None
             self.data_to_fit = {qb: 'pe' for qb in self.meas_obj_names}
             self.sweep_points = SweepPoints(
-                from_dict_list=[{}, {}] if self.sweep_points is None
-                else self.sweep_points)
+                [{}, {}] if self.sweep_points is None else self.sweep_points)
             self.add_amplitude_sweep_points()
 
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -107,7 +106,7 @@ class T1FrequencySweep(CalibBuilder):
         # TODO: check combination of sweep points in task and in sweep_points
         for task in task_list:
             sweep_points = task.get('sweep_points', [{}, {}])
-            sweep_points = SweepPoints(from_dict_list=sweep_points)
+            sweep_points = SweepPoints(sweep_points)
             if len(sweep_points) == 1:
                 sweep_points.add_sweep_dimension()
             if 'qubit_freqs' in sweep_points[1]:
