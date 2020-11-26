@@ -64,12 +64,11 @@ class SweepPoints(list):
         if isinstance(param, list):
             self.add_dict_list(param)
         elif isinstance(param, str):
-            try:
+            if values is not None:
+                self.add_sweep_parameter(param, values, unit, label,
+                                         dimension)
+            else:
                 self.add_dict_list(eval(param))
-            except NameError:
-                if values is not None:
-                    self.add_sweep_parameter(param, values, unit, label,
-                                             dimension)
 
         while len(self) < min_length:
             self.add_sweep_dimension()
@@ -88,7 +87,10 @@ class SweepPoints(list):
     def add_dict_list(self, dict_list):
         """
         Append the dicts in dict_list to self.
-        :param dict_list: list of dictionaries in the format of this class
+        :param dict_list: list of dictionaries in the format of this class, or
+            in the legacy format {param_name: {'values': ...,
+                                               'unit': ...,
+                                               'label': ...}}
         """
         for d in deepcopy(dict_list):
             if len(d) == 0 or isinstance(list(d.values())[0], tuple):
