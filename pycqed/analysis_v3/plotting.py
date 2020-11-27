@@ -1854,7 +1854,7 @@ def plot_fit(pdict, axs):
             pdict_data['marker'] = 'o'
         fit_color = pdict.get('color', '')
         data_color = pdict_data.get('color', '')
-        pdict_data['color'] = data_color if data_color != fit_color else 'C0'
+        pdict_data['color'] = data_color
         if pdict_data['zorder'] == 0:
             pdict_data['zorder'] = 1
         pdict_data['xvals'] = pdict['fit_res'].userkws[independent_var]
