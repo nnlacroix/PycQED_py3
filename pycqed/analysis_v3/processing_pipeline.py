@@ -6,6 +6,7 @@ import os
 from copy import deepcopy
 from pycqed.analysis_v3 import saving as save_mod
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+from numpy import array  # Needed for eval. Do not remove.
 
 search_modules = set()
 search_modules.add(hlp_mod)
@@ -652,6 +653,7 @@ class ProcessingPipeline(list):
         if data_dict is None:
             data_dict = {}
         self.data_dict.update(data_dict)
+        self.data_dict['processing_pipeline'] = repr(self)
 
         for node_params in self:
             try:
