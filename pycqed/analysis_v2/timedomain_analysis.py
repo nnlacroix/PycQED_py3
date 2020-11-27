@@ -6315,6 +6315,8 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
             self.proc_data_dict['analysis_params_dict'][f'freq_{qbn}'] = \
                 {'val':  qb_freqs, 'stderr': delta_freqs_errs}
 
+        self.save_processed_data(key='analysis_params_dict')
+
 
     def get_generated_and_measured_pulse(self, qbn=None):
         """
