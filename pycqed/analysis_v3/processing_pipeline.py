@@ -653,8 +653,8 @@ class ProcessingPipeline(list):
             data_dict = {}
         self.data_dict.update(data_dict)
 
-        for node_params in self:
-            try:
+        try:
+            for node_params in self:
                 node = None
                 for module in search_modules:
                     try:
@@ -665,11 +665,11 @@ class ProcessingPipeline(list):
                 if node is None:
                     raise KeyError(f'Node function "{node_params["node_name"]}"'
                                    f' not recognized')
-                node(self.data_dict, **node_params)
-            except Exception:
-                log.warning(
-                    f'Unhandled error during node {node_params["node_name"]}!')
-                log.warning(traceback.format_exc())
+                node(data_dict=self.data_dict, **node_params)
+        except Exception:
+            log.warning(
+                f'Unhandled error during node {node_params["node_name"]}!')
+            log.warning(traceback.format_exc())
 
     def save(self, data_dict=None, **params):
         """
