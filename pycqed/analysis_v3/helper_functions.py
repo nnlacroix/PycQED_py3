@@ -213,42 +213,39 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                           replace_value=False)
                 continue
 
-            if len(file_par.split('.')) == 1:
-                par_name = file_par.split('.')[0]
-                for group_name in data_file.keys():
-                    if par_name in list(data_file[group_name].attrs):
-                        add_param(all_keys[-1],
-                                  get_hdf_param_value(data_file[group_name],
-                                                      par_name),
-                                  epd, append_value=append_value,
-                                  update_value=update_value,
-                                  replace_value=replace_value)
+            group_name = '/'.join(file_par.split('.')[:-1])
+            par_name = file_par.split('.')[-1]
+            if group_name == '':
+                group = data_file
+                attrs = []
             else:
-                group_name = '/'.join(file_par.split('.')[:-1])
-                par_name = file_par.split('.')[-1]
-                if group_name in data_file:
-                    if par_name in list(data_file[group_name].attrs):
+                group = data_file[group_name]
+                attrs = list(group.attrs)
+
+            if group_name in data_file or group_name == '':
+                if par_name in attrs:
+                    add_param(all_keys[-1],
+                              get_hdf_param_value(group,
+                                                  par_name),
+                              epd, append_value=append_value,
+                              update_value=update_value,
+                              replace_value=replace_value)
+                elif par_name in list(group.keys()) or file_par == '':
+                    par = group[par_name] if par_name != '' else group
+                    if isinstance(par,
+                                  h5py._hl.dataset.Dataset):
                         add_param(all_keys[-1],
-                                  get_hdf_param_value(data_file[group_name],
-                                                      par_name),
+                                  np.array(par),
                                   epd, append_value=append_value,
                                   update_value=update_value,
                                   replace_value=replace_value)
-                    elif par_name in list(data_file[group_name].keys()):
-                        if isinstance(data_file[group_name][par_name],
-                                      h5py._hl.dataset.Dataset):
-                            add_param(all_keys[-1],
-                                      np.array(data_file[group_name][par_name]),
-                                      epd, append_value=append_value,
-                                      update_value=update_value,
-                                      replace_value=replace_value)
-                        else:
-                            add_param(all_keys[-1],
-                                      read_dict_from_hdf5(
-                                          {}, data_file[group_name][par_name]),
-                                      epd, append_value=append_value,
-                                      update_value=update_value,
-                                      replace_value=replace_value)
+                    else:
+                        add_param(all_keys[-1],
+                                  read_dict_from_hdf5(
+                                      {}, par),
+                                  epd, append_value=append_value,
+                                  update_value=update_value,
+                                  replace_value=replace_value)
 
             if all_keys[-1] not in epd:
                 log.warning(f'Parameter {file_par} was not found.')
