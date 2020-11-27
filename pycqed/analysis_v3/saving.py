@@ -5,6 +5,7 @@ import os
 import sys
 import h5py
 import lmfit
+import datetime
 import traceback
 import numpy as np
 import qutip as qtp
@@ -31,7 +32,7 @@ class Save:
     """
     def __init__(self, data_dict, savedir=None, save_processed_data=True,
                  save_figures=True, filename=None, extension='hdf5',
-                 filter_keys=None, **save_figs_params):
+                 filter_keys=None, add_timestamp=False, **save_figs_params):
 
         opt = np.get_printoptions()
         np.set_printoptions(threshold=sys.maxsize)
@@ -57,6 +58,9 @@ class Save:
             if filename is None:
                 filename = 'AnalysisResults'
             filename = self.savedir.split('\\')[-1] + f'_{filename}.{extension}'
+            if add_timestamp:
+                filename = '{:%Y%m%d_%H%M%S}--{}'.format(
+                    datetime.datetime.now(), filename)
             self.filepath = self.savedir + '\\' + filename
             if save_processed_data:
                 self.save_data_dict()
