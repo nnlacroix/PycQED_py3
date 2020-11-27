@@ -549,7 +549,7 @@ def combine_datafiles_split_by_seeds(data_dict, keys_in, keys_out,
             sp0.get_sweep_params_property('label', 0, sp_name))
     sweep_points += [sp0.get_sweep_dimension(1)]
     hlp_mod.add_param('exp_metadata.sweep_points', sweep_points,
-                      data_dict, replace_value=True)
+                      data_dict, add_param_method='replace')
 
 
 def submsmt_data_from_interleaved_msmt(data_dict, keys_in, msmt_name,
@@ -730,7 +730,7 @@ def prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
 
             hlp_mod.add_param(
                 keys, epsilon, data_dict,
-                replace_value=params.get('replace_value', False))
+                add_param_method=params.get('add_param_method', None))
             # Run fit again with scale_covar=False, and
             # weights = 1/epsilon if an entry in epsilon_sqrd is 0,
             # replace it with half the minimum value in the epsilon_sqrd
@@ -740,7 +740,8 @@ def prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
             fit_kwargs = {'scale_covar': False, 'weights': 1/epsilon}
         fit_dicts[key]['fit_kwargs'] = fit_kwargs
 
-    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict,
+                      add_param_method='update')
 
 
 def analyze_rb_fit_results(data_dict, keys_in, **params):
@@ -753,16 +754,16 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
         fit_res = fit_dicts['rb_fit' + keyi]['fit_res']
         hlp_mod.add_param(f'{keys_out_container}.EPC value',
                           fit_res.params['error_per_Clifford'].value,
-                          data_dict, replace_value=True)
+                          data_dict, add_param_method='replace')
         hlp_mod.add_param(f'{keys_out_container}.EPC stderr',
                           fit_res.params['fidelity_per_Clifford'].stderr,
-                          data_dict, replace_value=True)
+                          data_dict, add_param_method='replace')
         hlp_mod.add_param(f'{keys_out_container}.depolarization parameter value',
                           fit_res.params['p'].value,
-                          data_dict, replace_value=True)
+                          data_dict, add_param_method='replace')
         hlp_mod.add_param(f'{keys_out_container}.depolarization parameter stderr',
                           fit_res.params['p'].stderr,
-                          data_dict, replace_value=True)
+                          data_dict, add_param_method='replace')
         if 'pf' in keyi:
             A = fit_res.best_values['Amplitude']
             Aerr = fit_res.params['Amplitude'].stderr
@@ -773,19 +774,19 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
             hlp_mod.add_param(f'{keys_out_container}.IBM-style leakage value',
                               A*(1-p),
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.IBM-style leakage stderr',
                               np.sqrt((A*perr)**2 + (Aerr*(p-1))**2),
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.IBM-style seepage value',
                               (1-A)*(1-p),
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.IBM-style seepage stderr',
                               np.sqrt((Aerr*(p-1))**2 + ((A-1)*perr)**2),
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
 
             # Google-style leakage and seepage:
             # https://journals.aps.org/prl/pdf/10.1103/PhysRevLett.116.020501
@@ -793,19 +794,19 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
             hlp_mod.add_param(f'{keys_out_container}.Google-style leakage value',
                               fit_res.best_values['pu'],
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.Google-style leakage stderr',
                               fit_res.params['pu'].stderr,
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.Google-style seepage value',
                               fit_res.best_values['pd'],
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.Google-style seepage stderr',
                               fit_res.params['pd'].stderr,
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
 
     if hlp_mod.get_param('plot_T1_lim', data_dict, default_value=False,
                          **params):
@@ -819,10 +820,10 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
             hlp_mod.get_param('gate_decomp', data_dict,
                               default_value='HZ', **params))
         hlp_mod.add_param(f'{keys_out_container}.EPC coh_lim', 1-F_T1,
-                          data_dict, replace_value=True)
+                          data_dict, add_param_method='replace')
         hlp_mod.add_param(
             f'{keys_out_container}.depolarization parameter coh_lim', p_T1,
-            data_dict, replace_value=True)
+            data_dict, add_param_method='replace')
 
 
 def prepare_rb_plots(data_dict, keys_in, sweep_type, **params):
@@ -984,7 +985,8 @@ def prepare_rb_plots(data_dict, keys_in, sweep_type, **params):
             'legend_ncol': 2,
             'yrange': (-0.05, 0.675)
         })
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
 
 def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
@@ -1091,7 +1093,7 @@ def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
                 'text_string': textstr}
 
     hlp_mod.add_param('plot_dicts', plot_dicts, data_dict_irb,
-                      update_value=True)
+                      add_param_method='update')
     if do_plotting:
         getattr(plot_mod, 'plot')(data_dict_irb, keys_in=list(plot_dicts),
                                      **params)

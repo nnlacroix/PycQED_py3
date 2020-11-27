@@ -98,7 +98,7 @@ def get_std_deviation(data_dict, keys_in, keys_out=None, **params):
             np.reshape(data_to_proc_dict[keyi], shape)
         hlp_mod.add_param(
             keys_out[k], np.std(data_for_std, axis=averaging_axis), data_dict,
-            update_value=params.get('update_value', False), **params)
+            **params)
     return data_dict
 
 
@@ -206,9 +206,8 @@ def do_standard_preselection(data_dict, keys_in, keys_out=None,
             data_shots = th_shots[1::2]
             hlp_mod.add_param(
                 keys_out[k], data_shots[
-                    np.logical_not(np.ma.make_mask(presel_shots))] ,
-                data_dict, update_value=params.get('update_value', False),
-                **params)
+                    np.logical_not(np.ma.make_mask(presel_shots))],
+                data_dict, **params)
     else:
         all_shots = np.array(list(data_to_proc_dict.values()))
         presel_states = all_shots[:, ::2]
@@ -218,8 +217,7 @@ def do_standard_preselection(data_dict, keys_in, keys_out=None,
         for k, keyo in enumerate(keys_out):
             hlp_mod.add_param(
                 keyo, presel_data[k],
-                data_dict, update_value=params.get('update_value', False),
-                **params)
+                data_dict, **params)
 
 
 def do_preselection(data_dict, classified_data, keys_out, **params):
@@ -286,8 +284,7 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                 else:
                     mask[idx] = val
             preselected_data = data_to_proc_dict[keyi][mask]
-            hlp_mod.add_param(keys_out[i], preselected_data, data_dict,
-                              update_value=params.get('update_value', False))
+            hlp_mod.add_param(keys_out[i], preselected_data, data_dict)
     else:
         for i, keyo in enumerate(keys_out):
             # Check if the entry in classified_data is an array or a string
@@ -309,8 +306,7 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                     mask[idx] = False
                 else:
                     mask[idx] = val
-            hlp_mod.add_param(keyo, classif_data[mask], data_dict,
-                              update_value=params.get('update_value', False))
+            hlp_mod.add_param(keyo, classif_data[mask], data_dict)
     return data_dict
 
 
@@ -352,9 +348,7 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
         avg_data = np.mean(data_to_avg, axis=averaging_axis)
         if avg_data.ndim > 1:
             avg_data = avg_data.flatten()
-        hlp_mod.add_param(
-            keys_out[k], avg_data ,
-            data_dict, update_value=params.get('update_value', False), **params)
+        hlp_mod.add_param(keys_out[k], avg_data, data_dict, **params)
     return data_dict
 
 
@@ -391,7 +385,7 @@ def transform_data(data_dict, keys_in, keys_out, **params):
     for keyi, keyo in zip(data_to_proc_dict, keys_out):
         hlp_mod.add_param(
             keyo, transform_func(data_to_proc_dict[keyi], **tf_kwargs),
-            data_dict, update_value=params.get('update_value', False))
+            data_dict)
     return data_dict
 
 
@@ -421,9 +415,7 @@ def correct_readout(data_dict, keys_in, keys_out, state_prob_mtx, **params):
     uncorrected_data = np.stack(list(data_to_proc_dict.values()))
     corrected_data = (np.linalg.inv(state_prob_mtx).T @ uncorrected_data).T
     for i, keyo in enumerate(keys_out):
-        hlp_mod.add_param(
-            keyo, corrected_data[:, i],
-            data_dict, update_value=params.get('update_value', False))
+        hlp_mod.add_param(keyo, corrected_data[:, i], data_dict)
     return data_dict
 
 
@@ -486,8 +478,7 @@ def rotate_iq(data_dict, keys_in, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    hlp_mod.add_param(keys_out[0], rotated_data, data_dict,
-                      update_value=params.get('update_value', False))
+    hlp_mod.add_param(keys_out[0], rotated_data, data_dict)
     return data_dict
 
 
@@ -550,8 +541,7 @@ def rotate_1d_array(data_dict, keys_in, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    hlp_mod.add_param(keys_out[0], rotated_data, data_dict,
-                      update_value=params.get('update_value', False))
+    hlp_mod.add_param(keys_out[0], rotated_data, data_dict)
     return data_dict
 
 
@@ -626,8 +616,7 @@ def classify_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
                 dd[all_keys[i]] = OrderedDict()
             dd = dd[all_keys[i]]
         hlp_mod.add_param(all_keys[-1], np.zeros(
-            len(list(data_to_proc_dict.values())[0])), dd,
-            update_value=params.get('update_value', False))
+            len(list(data_to_proc_dict.values())[0])), dd)
 
         # get the decimal values corresponding to state from threshold_map.
         state_idxs = [k for k, v in threshold_map.items() if v == state]
@@ -692,8 +681,7 @@ def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
 
     for i, keyo, in enumerate(keys_out):
         hlp_mod.add_param(
-            keyo, thresh_dat[:, i].astype('int'), data_dict,
-            update_value=params.get('update_value', False))
+            keyo, thresh_dat[:, i].astype('int'), data_dict)
 
 
 def correlate_qubits(data_dict, keys_in, keys_out, **params):
@@ -724,8 +712,7 @@ def correlate_qubits(data_dict, keys_in, keys_out, **params):
     if not np.all(np.logical_or(all_data_arr == 0, all_data_arr == 1)):
         raise ValueError('Not all shots have been thresholded.')
     hlp_mod.add_param(
-        keys_out[0], np.sum(all_data_arr, axis=0) % 2, data_dict,
-        update_value=params.get('update_value', False))
+        keys_out[0], np.sum(all_data_arr, axis=0) % 2, data_dict)
 
 
 def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
@@ -1038,6 +1025,4 @@ def count_states(data_dict, keys_in, keys_out, states=None, n_meas_objs=None,
     state_counts = np.array([
         np.count_nonzero(np.all(shots.transpose() == state, axis=1))
         for state in states])
-    hlp_mod.add_param(
-        keys_out[0], state_counts,
-        data_dict, update_value=params.get('update_value', False), **params)
+    hlp_mod.add_param(keys_out[0], state_counts, data_dict, **params)

@@ -67,7 +67,8 @@ def analyze_rabi_fit_results(data_dict, keys_in, **params):
         rabi_amps_dict = extract_rabi_amplitudes(fit_res=fit_res,
                                                  sweep_points=physical_swpts)
         for k, v in rabi_amps_dict.items():
-            hlp_mod.add_param(f'{mobjn}.{k}', v, data_dict, replace_value=True)
+            hlp_mod.add_param(f'{mobjn}.{k}', v, data_dict,
+                              add_param_method='replace')
 
 
 def prepare_rabi_plots(data_dict, data_to_proc_dict, **params):
@@ -207,7 +208,7 @@ def prepare_rabi_plots(data_dict, data_to_proc_dict, **params):
                 'text_string': textstr}
 
     hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
-                      update_value=True)
+                      add_param_method='update')
 
 
 def get_rabi_textbox_properties(data_dict, textstr='',

@@ -128,7 +128,8 @@ def prepare_cos_fit_dict(data_dict, keys_in=None, **params):
             'guess_pars': guess_pars,
             'params_to_print': params_to_print, **plot_params}
 
-    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict,
+                      add_param_method='update')
 
 
 def prepare_joint_residzz_fit_dict(data_dict, keys_in=None, **params):
@@ -206,7 +207,8 @@ def prepare_joint_residzz_fit_dict(data_dict, keys_in=None, **params):
         'guess_pars': guess_pars,
         'params_to_print': params_to_print, **plot_params}
 
-    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict,
+                      add_param_method='update')
     if params.get('do_fitting', False):
         run_fitting(data_dict, keys_in=list(fit_dicts), **params)
 
@@ -268,7 +270,8 @@ def prepare_residzz_fit_dict(data_dict, keys_in=None, **params):
             'guess_pars': guess_pars,
             'params_to_print': params_to_print, **plot_params}
 
-    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict,
+                      add_param_method='update')
     if params.get('do_fitting', False):
         run_fitting(data_dict, keys_in=list(fit_dicts), **params)
 
@@ -337,7 +340,8 @@ def prepare_expdamposc_fit_dict(data_dict, keys_in=None, **params):
             'params_to_print': params_to_print,
             'plot_params': plot_params}
 
-    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_fitting', False):
         run_fitting(data_dict, keys_in=list(fit_dicts), **params)
@@ -392,7 +396,8 @@ def prepare_rbleakage_fit_dict(data_dict, keys_in=None, **params):
                 'guess_pars': guess_pars,
                 'params_to_print': params_to_print, **plot_params}
 
-    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict,
+                      add_param_method='update')
     if params.get('do_fitting', False):
         run_fitting(data_dict, keys_in=list(fit_dicts), **params)
 

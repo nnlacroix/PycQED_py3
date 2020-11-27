@@ -303,7 +303,8 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
         plot_dicts[plt_name].update(plot_params)
 
     # add plot_dicts to the data_dict
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_plotting', False):
         # do plotting
@@ -446,7 +447,8 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
         plot_dicts[plt_name].update(plot_params)
 
     # add plot_dicts to the data_dict
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_plotting', False):
         # do plotting
@@ -575,7 +577,8 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
         plot_dicts[plt_name].update(plot_params)
 
     # add plot_dicts to the data_dict
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_plotting', False):
         # do plotting
@@ -729,7 +732,8 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         plot_dicts[plt_name].update(plot_params)
 
     # add plot_dicts to the data_dict
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_plotting', False):
         # do plotting
@@ -866,7 +870,8 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         plot_dicts[plt_name].update(plot_params)
 
     # add plot_dicts to the data_dict
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_plotting', False):
         # do plotting
@@ -949,7 +954,8 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
                 'plotfn': 'plot_text',
                 'text_string': textstr}
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=list(plot_dicts), **params)
     return plot_dicts
@@ -1084,8 +1090,8 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
         plt.close(figs[fig_name])
 
     # add figures and axes to data_dict
-    hlp_mod.add_param('figures', figs, data_dict, append_value=True)
-    hlp_mod.add_param('axes', axs, data_dict, append_value=True)
+    hlp_mod.add_param('figures', figs, data_dict, add_param_method='append')
+    hlp_mod.add_param('axes', axs, data_dict, add_param_method='append')
 
 
 def plot_vlines_auto(pdict, axs):

@@ -73,7 +73,7 @@ def extract_data_hdf(data_dict=None, timestamps=None,
     if isinstance(timestamps, str):
         timestamps = [timestamps]
     hlp_mod.add_param('timestamps', timestamps, data_dict,
-                      replace_value=True)
+                      add_param_method='replace')
 
     data_dict['folders'] = []
 
@@ -92,8 +92,7 @@ def extract_data_hdf(data_dict=None, timestamps=None,
             data_dict,
             params_dict={'exp_metadata':
                              'Experimental Data.Experimental Metadata'},
-            folder=folder, append_value=True, update_value=False,
-            replace_value=False)
+            folder=folder, add_param_method='append')
 
     if len(timestamps) > 1:
         # If data_dict['exp_metadata'] is a list, then the following functions
@@ -113,8 +112,7 @@ def extract_data_hdf(data_dict=None, timestamps=None,
     params_dict.update(params_dict_temp)
     hlp_mod.get_params_from_hdf_file(
         data_dict, params_dict=params_dict, numeric_params=numeric_params,
-        folder=data_dict['folders'][-1], append_value=False, update_value=False,
-        replace_value=True)
+        folder=data_dict['folders'][-1], add_param_method='replace')
 
     # add entries in data_dict for each readout channel and its corresponding
     # data array.
@@ -254,7 +252,7 @@ def add_measured_data_dict(data_dict, **params):
                 else:
                     meas_data = data[i]
                 hlp_mod.add_param(data_key(ro_ch), [meas_data], data_dict,
-                                  append_value=True)
+                                  add_param_method='append')
 
         for ro_ch in value_names:
             data = hlp_mod.pop_param(data_key(ro_ch), data_dict)

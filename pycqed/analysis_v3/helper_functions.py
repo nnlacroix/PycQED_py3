@@ -155,8 +155,7 @@ def open_data_file_from_timestamp(timestamp=None, folder=None,
 
 
 def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
-                             append_value=False, update_value=False,
-                             replace_value=False, folder=None, **params):
+                             add_param_method=None, folder=None, **params):
     """
     Extracts the parameter provided in params_dict from an HDF file
     and saves them in data_dict.
@@ -182,9 +181,6 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
     if numeric_params is None:
         numeric_params = get_param('numeric_params', data_dict,
                                    default_value=[], **params)
-    if append_value is True and update_value is True:
-        raise ValueError('"append_value" and "update_value" '
-                         'cannot both be True.')
 
     # if folder is not specified, will take the last folder in the list from
     # data_dict['folders']
@@ -212,9 +208,7 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
             if file_par == 'measurementstring':
                 add_param(all_keys[-1],
                           [os.path.split(folder)[1][7:]],
-                          epd, append_value=True,
-                          update_value=False,
-                          replace_value=False)
+                          epd, add_param_method='append')
                 continue
 
             if len(file_par.split('.')) == 1:
@@ -224,9 +218,7 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                         add_param(all_keys[-1],
                                   get_hdf_param_value(data_file[group_name],
                                                       par_name),
-                                  epd, append_value=append_value,
-                                  update_value=update_value,
-                                  replace_value=replace_value)
+                                  epd, add_param_method=add_param_method)
             else:
                 group_name = '/'.join(file_par.split('.')[:-1])
                 par_name = file_par.split('.')[-1]
@@ -235,24 +227,18 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                         add_param(all_keys[-1],
                                   get_hdf_param_value(data_file[group_name],
                                                       par_name),
-                                  epd, append_value=append_value,
-                                  update_value=update_value,
-                                  replace_value=replace_value)
+                                  epd, add_param_method=add_param_method)
                     elif par_name in list(data_file[group_name].keys()):
                         if isinstance(data_file[group_name][par_name],
                                       h5py._hl.dataset.Dataset):
                             add_param(all_keys[-1],
                                       np.array(data_file[group_name][par_name]),
-                                      epd, append_value=append_value,
-                                      update_value=update_value,
-                                      replace_value=replace_value)
+                                      epd, add_param_method=add_param_method)
                         else:
                             add_param(all_keys[-1],
                                       read_dict_from_hdf5(
                                           {}, data_file[group_name][par_name]),
-                                      epd, append_value=append_value,
-                                      update_value=update_value,
-                                      replace_value=replace_value)
+                                      epd, add_param_method=add_param_method)
 
             if all_keys[-1] not in epd:
                 log.warning(f'Parameter {file_par} was not found.')
@@ -433,31 +419,29 @@ def pop_param(param, data_dict, default_value=None,
     return value
 
 
-def add_param(name, value, data_dict, update_value=False, append_value=False,
-              replace_value=False, **params):
+def add_param(name, value, data_dict, add_param_method=None, **params):
     """
     Adds a new key-value pair to the data_dict, with key = name.
     If update, it will try data_dict[name].update(value), else raises KeyError.
     :param name: key of the new parameter in the data_dict
     :param value: value of the new parameter
     :param data_dict: OrderedDict containing data to be processed
-    :param update_value: whether to try data_dict[name].update(value).
-        Both value and the already-existing entry in data_dict need to be dicts.
-    :param append_value: whether to try data_dict[name].extend(value). If either
-        value or already-existing entry in data_dict are not lists, they will be
-        converted to lists.
-    :param replace_value: whether to replaced the already-existing key in
-        data_dict
+    :param method: str specifying how to add the value if name already exists
+        in data_dict:
+            'skip': skip adding this parameter without raising an error
+            'replace': replace the old value corresponding to name with value
+            'update': whether to try data_dict[name].update(value).
+                Both value and the already-existing entry in data_dict have got
+                to be dicts.
+            'append': whether to try data_dict[name].extend(value). If either
+                value or already-existing entry in data_dict are not lists,
+                they will be converted to lists.
     :param params: keyword arguments
 
     Assumptions:
         - if update_value == True, both value and the already-existing entry in
             data_dict need to be dicts.
     """
-    if any([append_value, update_value]) and replace_value:
-        raise ValueError('"replace_value" cannot be True when either '
-                         '"append_value" or "update_value" is True.')
-
     dd = data_dict
     all_keys = name.split('.')
     if len(all_keys) > 1:
@@ -467,13 +451,15 @@ def add_param(name, value, data_dict, update_value=False, append_value=False,
             dd = dd[all_keys[i]]
 
     if all_keys[-1] in dd:
-        if update_value:
+        if add_param_method == 'skip':
+            return
+        elif add_param_method == 'update':
             if not isinstance(value, dict):
                 raise ValueError(f'The value corresponding to {all_keys[-1]} '
                                  f'is not a dict. Cannot update_value in '
                                  f'data_dict')
             dd[all_keys[-1]].update(value)
-        elif append_value:
+        elif add_param_method == 'append':
             v = dd[all_keys[-1]]
             if not isinstance(v, list):
                 dd[all_keys[-1]] = [v]
@@ -483,7 +469,7 @@ def add_param(name, value, data_dict, update_value=False, append_value=False,
                 dd[all_keys[-1]].extend([value])
             else:
                 dd[all_keys[-1]].extend(value)
-        elif replace_value:
+        elif add_param_method == 'replace':
             dd[all_keys[-1]] = value
         else:
             raise KeyError(f'{all_keys[-1]} already exists in data_dict and it'
@@ -1006,7 +992,8 @@ def read_from_hdf(data_dict, hdf_group):
                 data_list = tuple(data_list)
             if path[-1] == 'sweep_points':
                 data_list = sp_mod.SweepPoints(data_list)
-            add_param('.'.join(path), data_list, data_dict, replace_value=True)
+            add_param('.'.join(path), data_list, data_dict,
+                      add_param_method='replace')
         else:
             raise NotImplementedError('cannot read "list_type":"{}"'.format(
                 hdf_group.attrs['list_type']))

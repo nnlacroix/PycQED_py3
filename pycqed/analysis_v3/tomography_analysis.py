@@ -176,8 +176,8 @@ def state_tomography_analysis(data_dict, keys_in,
                 data_dict, props_to_extract=['mobjn'],
                 enforce_one_meas_obj=False, **params)
             hlp_mod.add_param('cov_matrix_meas_obs',
-                              np.diag(np.ones(len(meas_obj_names)**2)), data_dict,
-                              **params)
+                              np.diag(np.ones(len(meas_obj_names)**2)),
+                              data_dict, **params)
         else:
             if hlp_mod.get_param('cov_matrix_meas_obs', data_dict) is None:
                 hlp_mod.add_param('cov_matrix_meas_obs', measurement_ops,
@@ -532,7 +532,8 @@ def prepare_prob_table_plot(data_dict, exclude_preselection=False, **params):
         'aspect': 'equal'
     }
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
 
 def prepare_density_matrix_plot(data_dict, estimation_type='least_squares',
@@ -680,7 +681,8 @@ def prepare_density_matrix_plot(data_dict, estimation_type='least_squares',
         'set_edgecolor': True
     }
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
 
 def prepare_pauli_basis_plot(data_dict, estimation_type='least_squares',
@@ -800,7 +802,8 @@ def prepare_pauli_basis_plot(data_dict, estimation_type='least_squares',
         'do_legend': True
     }
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
 
 def process_tomography_analysis(data_dict, gate_name='CZ', Uideal=None,
@@ -1091,7 +1094,7 @@ def bootstrapping_state_tomography(data_dict, keys_in, store_rhos=False,
         sample_i = bootstrapping(raw_data, n_readouts, n_shots, preselection)
         for i, keyi in enumerate(data_to_proc_dict):
             hlp_mod.add_param(keyi, sample_i[:, i], data_dict_temp,
-                              replace_value=True)
+                              add_param_method='replace')
 
         state_tomography_analysis(data_dict_temp, keys_in=keys_in,
                                   do_plotting=False, prepare_plotting=False,
