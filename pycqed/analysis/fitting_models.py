@@ -98,21 +98,21 @@ def TwinLorentzFunc(f, A_gf_over_2, A, f0_gf_over_2, f0,
 def Qubit_dac_to_freq(dac_voltage, f_max,
                       dac_sweet_spot, V_per_phi0=None,
                       dac_flux_coefficient=None,
-                      asymmetry=0.5):
+                      asymmetry=0.5,
+                      E_c=0):
     '''
     The cosine Arc model for uncalibrated flux for asymmetric qubit.
 
     dac_voltage (V)
     f_max (Hz): sweet-spot frequency of the qubit
     E_c (Hz): charging energy of the qubit
+        Using E_c as fit parameter is numerically not stable.
+        Changing E_c does only slightly change the function, so it is set to
+        a user-provided constant or by feault to zero.
     V_per_phi0 (V): volt per phi0 (convert voltage to flux)
     dac_sweet_spot (V): voltage at which the sweet-spot is found
     asym (dimensionless asymmetry param) = abs((EJ1-EJ2)/(EJ1+EJ2)),
     '''
-
-    # using E_c as fit parameter is numerically not stable (changing E_c does only
-    # slightly change the function. Set E_c to zero
-    E_c = 0
 
     if V_per_phi0 is None and dac_flux_coefficient is None:
         raise ValueError('Please specify "V_per_phi0".')
@@ -167,6 +167,7 @@ def Qubit_dac_to_detun(dac_voltage, f_max, E_c, dac_sweet_spot, V_per_phi0,
 def Qubit_freq_to_dac(frequency, f_max,
                       dac_sweet_spot, V_per_phi0=None,
                       dac_flux_coefficient=None, asymmetry=0,
+                      E_c=0,
                       branch='smallest'):
     '''
     The cosine Arc model for uncalibrated flux for asymmetric qubit.
@@ -175,6 +176,9 @@ def Qubit_freq_to_dac(frequency, f_max,
     frequency (Hz)
     f_max (Hz): sweet-spot frequency of the qubit
     E_c (Hz): charging energy of the qubit
+        Using E_c as fit parameter is numerically not stable.
+        Changing E_c does only slightly change the function, so it is set to
+        a user-provided constant or by feault to zero.
     V_per_phi0 (V): volt per phi0 (convert voltage to flux)
     asym (dimensionless asymmetry param) = abs((EJ1-EJ2)/(EJ1+EJ2))
     dac_sweet_spot (V): voltage at which the sweet-spot is found
@@ -182,10 +186,6 @@ def Qubit_freq_to_dac(frequency, f_max,
     '''
     if V_per_phi0 is None and dac_flux_coefficient is None:
         raise ValueError('Please specify "V_per_phi0".')
-
-    # using E_c as fit parameter is numerically not stable (changing E_c does only
-    # slightly change the function. Set E_c to zero
-    E_c = 0
 
     # asymm_term = (asymmetry**2 + (1-asymmetry**2))
     # dac_term = np.arccos(((frequency+E_c)/((f_max+E_c) * asymm_term))**2)
