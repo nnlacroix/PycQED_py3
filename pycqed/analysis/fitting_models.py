@@ -971,7 +971,7 @@ def idle_err_rate_guess(model, data, N):
     return params
 
 
-def fft_freq_phase_guess(data, t):
+def fft_freq_phase_guess(data, t, freq_guess=None):
     '''
     Guess for a cosine fit using FFT, only works for evenly spaced points
     '''
@@ -980,11 +980,12 @@ def fft_freq_phase_guess(data, t):
     # negative frequecy components, and we want a positive frequency.
     w = np.fft.fft(data)[:len(data) // 2]
     f = np.fft.fftfreq(len(data), t[1] - t[0])[:len(w)]
-    w[0] = 0  # Removes DC component from fourier transform
+    if freq_guess is None:
+        w[0] = 0  # Removes DC component from fourier transform
 
-    # Use absolute value of complex valued spectrum
-    abs_w = np.abs(w)
-    freq_guess = abs(f[abs_w == max(abs_w)][0])
+        # Use absolute value of complex valued spectrum
+        abs_w = np.abs(w)
+        freq_guess = abs(f[abs_w == max(abs_w)][0])
     ph_guess = 2 * np.pi - (2 * np.pi * t[data == max(data)] * freq_guess)[0]
     # the condition data == max(data) can have several solutions
     #               (for example when discretization is visible)
@@ -1003,7 +1004,7 @@ def Cos_guess(model, data, t, **kwargs):
     amp_guess = abs(max(data) - min(data)) / 2  # amp is positive by convention
     offs_guess = np.mean(data)
 
-    freq_guess, ph_guess = fft_freq_phase_guess(data, t)
+    freq_guess, ph_guess = fft_freq_phase_guess(data, t, **kwargs)
 
     model.set_param_hint('period', expr='1/frequency')
     params = model.make_params(amplitude=amp_guess,
