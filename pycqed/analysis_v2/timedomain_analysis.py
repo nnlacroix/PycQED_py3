@@ -944,7 +944,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             plot_name_suffix = ''
                             plot_cal_points = (
                                 not self.options_dict.get('TwoD', False))
-                            data_axis_label = 'Rotated signal (arb.)' if \
+                            data_axis_label = \
+                                'Strongest principal component (arb.)' if \
                                 'pca' in self.rotation_type.lower() else \
                                 '{} state population'.format(
                                 self.get_latex_prob_label(data_key))
@@ -964,7 +965,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             not self.options_dict.get('TwoD', False)))
 
         if self.get_param_value('plot_raw_data', default_value=True):
-            # self.rotate == True:
             self.prepare_raw_data_plots(plot_filtered=False)
             if 'preparation_params' in self.metadata:
                 if 'active' in self.metadata['preparation_params'].get(
@@ -1066,7 +1066,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             data_axis_label='', do_legend_data=True, do_legend_cal_states=True):
         title_suffix = qb_name + title_suffix
         if data_axis_label == '':
-            data_axis_label = 'Rotated signal (arb.)' if \
+            data_axis_label = 'Strongest principal component (arb.)' if \
                 'pca' in self.rotation_type.lower() else \
                 '{} state population'.format(self.get_latex_prob_label(
                     self.data_to_fit[qb_name]))
@@ -7509,7 +7509,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
     def prepare_fitting_slice(self, freqs, qbn, mu_guess,
                               slice_idx=None, data_slice=None):
         if slice_idx is None:
-            raise ValueError('"since_idx" cannot be None. It is used '
+            raise ValueError('"slice_idx" cannot be None. It is used '
                              'for unique names in the fit_dicts.')
         if data_slice is None:
             data_slice = self.proc_data_dict['proc_data_to_fit'][qbn][
