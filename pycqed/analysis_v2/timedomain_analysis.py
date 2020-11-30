@@ -4594,6 +4594,7 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
             guess_pars['offset'].vary = True
             guess_pars['frequency'].vary = True
             guess_pars['phase'].vary = True
+            self.set_user_guess_pars(guess_pars)
 
             key = 'cos_fit_' + qbn
             self.fit_dicts[key] = {
@@ -4868,6 +4869,7 @@ class T1Analysis(MultiQubit_TimeDomain_Analysis):
             else:
                 guess_pars['offset'].value = 0
                 guess_pars['offset'].vary = False
+            self.set_user_guess_pars(guess_pars)
             key = 'exp_decay_' + qbn
             self.fit_dicts[key] = {
                 'fit_fn': exp_decay_mod.func,
@@ -4969,6 +4971,7 @@ class RamseyAnalysis(MultiQubit_TimeDomain_Analysis):
                         'f' in self.data_to_fit[qbn]
                 # guess_pars['exponential_offset'].value = 0.5
                 guess_pars['exponential_offset'].vary = True
+                self.set_user_guess_pars(guess_pars)
                 self.fit_dicts[key] = {
                     'fit_fn': exp_damped_decay_mod .func,
                     'fit_xvals': {'t': sweep_points},
@@ -5189,7 +5192,7 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                     intercept = data[-1] - slope * sweep_points[-1]
                     guess_pars = model.make_params(slope=slope,
                                                    intercept=intercept)
-
+                self.set_user_guess_pars(guess_pars)
                 key = 'fit' + msmt_label + '_' + qbn
                 self.fit_dicts[key] = {
                     'fit_fn': model.func,
@@ -7531,6 +7534,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                                      value=offset_guess,
                                      vary=True)
         guess_pars = GaussianModel.make_params()
+        self.set_user_guess_pars(guess_pars)
 
         key = f'gauss_fit_{qbn}_slice{slice_idx}'
         self.fit_dicts[key] = {
