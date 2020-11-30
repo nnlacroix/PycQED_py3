@@ -72,7 +72,6 @@ def get_default_plot_params(set_params=True, figure_width='1col',
     params = {
         'font.size': 8,
         'lines.markersize': 2.0,
-        'figure.facecolor': '0.9',
         'figure.titlesize': 'medium',
         'axes.titlesize': 'medium',
         'figure.dpi': 300,

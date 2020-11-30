@@ -64,6 +64,12 @@ class SweepPoints(list):
         while len(self) < min_length:
             self.add_sweep_dimension()
 
+    def __getitem__(self, i):
+        new_data = super().__getitem__(i)
+        if type(i) == slice:
+            new_data = self.cast_init(new_data)
+        return new_data
+
     def add_sweep_parameter(self, param_name, values, unit='', label=None,
                             dimension=-1):
         """
