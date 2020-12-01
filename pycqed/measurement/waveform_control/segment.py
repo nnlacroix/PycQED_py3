@@ -51,7 +51,7 @@ class Segment:
         for pulse_pars in pulse_pars_list:
             self.add(pulse_pars)
 
-        self.resolve_overlap_flag = kw.pop('resolve_overlap', False)
+        self.resolve_overlapping_elements = kw.pop('resolve_overlapping_elements', False)
 
     def add(self, pulse_pars):
         """
@@ -136,7 +136,7 @@ class Segment:
         self.resolve_timing()
         self.resolve_Z_gates()
         self.add_flux_crosstalk_cancellation_channels()
-        if self.resolve_overlap_flag:
+        if self.resolve_overlapping_elements:
             self.resolve_overlap()
         self.gen_trigger_el()
         self.add_charge_compensation()
