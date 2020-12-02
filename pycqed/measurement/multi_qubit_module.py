@@ -677,13 +677,9 @@ def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
                 MC.run(name=name, exp_metadata=exp_metadata)
 
     if analyze:
-        # tps = a_tools.latest_data(n_matches=len(states),
-        #                           return_timestamp=True)[0]
-        #
         tps = [a_tools.latest_data(
             contains=f'timetrace_{s}{get_multi_qubit_msmt_suffix(qubits)}',
             n_matches=1, return_timestamp=True)[0][0] for s in states]
-        print(tps)
         if analysis_kwargs is None:
             analysis_kwargs = {}
         if 't_start' not in analysis_kwargs:
@@ -2002,7 +1998,7 @@ def measure_fluxline_crosstalk(
         analyze=True):
     """
     Applies a flux pulse on the target qubit with various amplitudes.
-    Measure the phase shift due to these pulses on the crosstalk qubit,s which
+    Measure the phase shift due to these pulses on the crosstalk qubits which
     are measured in a Ramsey setting and fluxed to a more sensitive frequency.
 
     Args:
@@ -2642,8 +2638,7 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
     MC.set_sweep_points_2D(soft_sweep_points)
     det_func = qbr.int_avg_classif_det if classified else qbr.int_avg_det
     MC.set_detector_function(det_func)
-    sweep_points = SweepPoints(from_dict_list=[hard_sweep_params,
-                                               soft_sweep_params])
+    sweep_points = SweepPoints([hard_sweep_params, soft_sweep_params])
     exp_metadata.update({
         'preparation_params': prep_params,
         'cal_points': repr(cp),
