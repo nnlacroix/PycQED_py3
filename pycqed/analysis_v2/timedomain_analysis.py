@@ -7505,11 +7505,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     self.proc_data_dict['proc_sweep_points_dict'][qbn][
                         'msmt_sweep_points'] = delays_reshaped
                     self.proc_data_dict['proc_sweep_points_dict'][qbn][
-                        'sweep_points'] = np.concatenate([
-                        self.proc_data_dict['proc_sweep_points_dict'][qbn][
-                            'msmt_sweep_points'], self.proc_data_dict[
-                            'sweep_points_dict'][qbn][
-                            'cal_points_sweep_points']])
+                        'sweep_points'] = self.cp.extend_sweep_points(
+                        delays_reshaped, qbn)
 
         self.sign_of_peaks = self.get_param_value('sign_of_peaks',
                                                   default_value=None)
