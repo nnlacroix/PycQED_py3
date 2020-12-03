@@ -7437,6 +7437,9 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
         ranges that should be excluded from  the fit (these will not be
         fitted!). Plots will still show the full data.
         Ex: {'qb1': [ [-10e-9, 5e-9, 5.42e9, 5.5e9], [...] ]}
+    - fit_first_cal_state: dict with keys qubit names and values booleans
+        specifying whether to fit the delay points corresponding to the first
+        cal state (usually g) for that qubit
     - sigma_guess: dict with keys qubit names and values floats specifying the
         fit guess value for the Gaussian sigma
     - sign_of_peaks: dict with keys qubit names and values floats specifying the
@@ -7573,6 +7576,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             'delay_ranges_to_fit', default_value={})
         self.freq_ranges_to_fit = self.get_param_value(
             'freq_ranges_to_fit', default_value={})
+        fit_first_cal_state = self.get_param_value(
+            'fit_first_cal_state', default_value={})
 
         self.fit_dicts = OrderedDict()
         self.delays_for_fit = OrderedDict()
@@ -7583,11 +7588,19 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             delays = self.proc_data_dict['proc_sweep_points_dict'][qbn][
                 'sweep_points']
             self.delays_for_fit[qbn] = np.array([])
-            self.freqs_for_fit[qbn] = len(delays) * ['']
+            self.freqs_for_fit[qbn] = []
             dr_fit = self.delay_ranges_to_fit.get(qbn, [(min(delays),
                                                         max(delays))])
             fr_fit = self.freq_ranges_to_fit.get(qbn, [])
+            if not fit_first_cal_state.get(qbn, True):
+                first_cal_state = list(self.cal_states_dict_for_rotation[qbn])[0]
+                first_cal_state_idxs = self.cal_states_dict[first_cal_state]
+                if first_cal_state_idxs is None:
+                    first_cal_state_idxs = []
             for i, delay in enumerate(delays):
+                if not fit_first_cal_state.get(qbn, True) and \
+                        i-len(delays) in first_cal_state_idxs:
+                    continue
                 if any([t[0] <= delay <= t[1] for t in dr_fit]):
                     data_slice = data[:, i]
                     freqs = self.proc_data_dict['proc_sweep_points_2D_dict'][
@@ -7610,7 +7623,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                                 freqs = freqs[reduction_arr]
                                 data_slice = data_slice[reduction_arr]
 
-                    self.freqs_for_fit[qbn][i] = freqs
+                    self.freqs_for_fit[qbn].append(freqs)
                     self.delays_for_fit[qbn] = np.append(
                         self.delays_for_fit[qbn], delay)
                     mu_guess = freqs[np.argmax(
