@@ -973,7 +973,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             plot_name_suffix = ''
                             plot_cal_points = (
                                 not self.options_dict.get('TwoD', False))
-                            data_axis_label = 'Rotated signal (arb.)' if \
+                            data_axis_label = \
+                                'Strongest principal component (arb.)' if \
                                 'pca' in self.rotation_type.lower() else \
                                 '{} state population'.format(
                                 self.get_latex_prob_label(data_key))
@@ -993,7 +994,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             not self.options_dict.get('TwoD', False)))
 
         if self.get_param_value('plot_raw_data', default_value=True):
-            # self.rotate == True:
             self.prepare_raw_data_plots(plot_filtered=False)
             if 'preparation_params' in self.metadata:
                 if 'active' in self.metadata['preparation_params'].get(
@@ -1095,7 +1095,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             data_axis_label='', do_legend_data=True, do_legend_cal_states=True):
         title_suffix = qb_name + title_suffix
         if data_axis_label == '':
-            data_axis_label = 'Rotated signal (arb.)' if \
+            data_axis_label = 'Strongest principal component (arb.)' if \
                 'pca' in self.rotation_type.lower() else \
                 '{} state population'.format(self.get_latex_prob_label(
                     self.data_to_fit[qb_name]))
@@ -4623,6 +4623,7 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
             guess_pars['offset'].vary = True
             guess_pars['frequency'].vary = True
             guess_pars['phase'].vary = True
+            self.set_user_guess_pars(guess_pars)
 
             key = 'cos_fit_' + qbn
             self.fit_dicts[key] = {
@@ -4897,6 +4898,7 @@ class T1Analysis(MultiQubit_TimeDomain_Analysis):
             else:
                 guess_pars['offset'].value = 0
                 guess_pars['offset'].vary = False
+            self.set_user_guess_pars(guess_pars)
             key = 'exp_decay_' + qbn
             self.fit_dicts[key] = {
                 'fit_fn': exp_decay_mod.func,
@@ -4998,6 +5000,7 @@ class RamseyAnalysis(MultiQubit_TimeDomain_Analysis):
                         'f' in self.data_to_fit[qbn]
                 # guess_pars['exponential_offset'].value = 0.5
                 guess_pars['exponential_offset'].vary = True
+                self.set_user_guess_pars(guess_pars)
                 self.fit_dicts[key] = {
                     'fit_fn': exp_damped_decay_mod .func,
                     'fit_xvals': {'t': sweep_points},
@@ -5218,7 +5221,7 @@ class QScaleAnalysis(MultiQubit_TimeDomain_Analysis):
                     intercept = data[-1] - slope * sweep_points[-1]
                     guess_pars = model.make_params(slope=slope,
                                                    intercept=intercept)
-
+                self.set_user_guess_pars(guess_pars)
                 key = 'fit' + msmt_label + '_' + qbn
                 self.fit_dicts[key] = {
                     'fit_fn': model.func,
@@ -7538,7 +7541,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
     def prepare_fitting_slice(self, freqs, qbn, mu_guess,
                               slice_idx=None, data_slice=None):
         if slice_idx is None:
-            raise ValueError('"since_idx" cannot be None. It is used '
+            raise ValueError('"slice_idx" cannot be None. It is used '
                              'for unique names in the fit_dicts.')
         if data_slice is None:
             data_slice = self.proc_data_dict['proc_data_to_fit'][qbn][
@@ -7560,6 +7563,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                                      value=offset_guess,
                                      vary=True)
         guess_pars = GaussianModel.make_params()
+        self.set_user_guess_pars(guess_pars)
 
         key = f'gauss_fit_{qbn}_slice{slice_idx}'
         self.fit_dicts[key] = {

@@ -364,14 +364,24 @@ class FluxPulseScope(ParallelLOSweepExperiment):
 
         return b
 
-    def run_analysis(self, **kw):
+    def run_analysis(self, analysis_kwargs=None, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.
+        :param analysis_kwargs: (dict) keyword arguments for analysis
         :param kw:
         """
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+
+        options_dict = {'rotation_type': 'fixed_cal_points' if
+                            len(self.cal_points.states) > 0 else 'global_PCA',
+                        'TwoD': True}
+        if 'options_dict' not in analysis_kwargs:
+            analysis_kwargs['options_dict'] = {}
+        analysis_kwargs['options_dict'].update(options_dict)
+
         self.analysis = tda.FluxPulseScopeAnalysis(
-            qb_names=self.meas_obj_names,
-            options_dict=dict(TwoD=True, rotation_type='global_PCA'))
+            qb_names=self.meas_obj_names, **analysis_kwargs)
 
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
