@@ -543,15 +543,15 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 raise NotImplementedError('Calibration states rotation is '
                                           'currently only implemented for 0, '
                                           '2, or 3 cal states per qubit.')
-
+            data_mostly_g = self.get_param_value('data_mostly_g',
+                                                 default_value=False)
             if self.get_param_value('TwoD', default_value=False):
                 if self.rotation_type == 'global_PCA':
                     self.proc_data_dict['projected_data_dict'].update(
                         self.global_pca_TwoD(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.data_to_fit,
-                            data_mostly_g=self.get_param_value(
-                                'data_mostly_g', default_value=None)))
+                            data_mostly_g=data_mostly_g))
                 elif len(cal_states_dict) == 3:
                     self.proc_data_dict['projected_data_dict'].update(
                         self.rotate_data_3_cal_states_TwoD(
@@ -573,8 +573,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         self.rotate_data_TwoD(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.cal_states_dict_for_rotation,
-                            self.data_to_fit,
-                            self.rotation_type=='column_PCA'))
+                            self.data_to_fit, data_mostly_g=data_mostly_g,
+                            column_PCA=self.rotation_type == 'column_PCA'))
             else:
                 if len(cal_states_dict) == 3:
                     self.proc_data_dict['projected_data_dict'].update(
@@ -587,7 +587,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         self.rotate_data(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.cal_states_dict_for_rotation,
-                            self.data_to_fit))
+                            self.data_to_fit, data_mostly_g=data_mostly_g))
 
     @staticmethod
     def rotate_data_3_cal_states(qb_name, meas_results_per_qb, channel_map,
@@ -614,7 +614,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     @staticmethod
     def rotate_data(qb_name, meas_results_per_qb, channel_map,
-                    cal_states_dict, data_to_fit):
+                    cal_states_dict, data_to_fit, data_mostly_g=False):
         # ONLY WORKS FOR 2 CAL STATES
         meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict = OrderedDict()
@@ -629,8 +629,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             # one RO channel per qubit
             if cal_zero_points is None and cal_one_points is None:
                 data = meas_res_dict[list(meas_res_dict)[0]]
-                rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
-                    (data - np.min(data))/(np.max(data) - np.min(data))
+                data = (data - np.min(data))/(np.max(data) - np.min(data))
+                if data_mostly_g:
+                    data = a_tools.set_majority_sign(data)
+                rotated_data_dict[qb_name][data_to_fit[qb_name]] = data
             else:
                 rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
                     a_tools.rotate_and_normalize_data_1ch(
@@ -639,11 +641,13 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         cal_one_points=cal_one_points)
         elif list(meas_res_dict) == channel_map[qb_name]:
             # two RO channels per qubit
-            rotated_data_dict[qb_name][data_to_fit[qb_name]], _, _ = \
-                a_tools.rotate_and_normalize_data_IQ(
-                    data=np.array([v for v in meas_res_dict.values()]),
-                    cal_zero_points=cal_zero_points,
-                    cal_one_points=cal_one_points)
+            data, _, _ = a_tools.rotate_and_normalize_data_IQ(
+                data=np.array([v for v in meas_res_dict.values()]),
+                cal_zero_points=cal_zero_points,
+                cal_one_points=cal_one_points)
+            if cal_zero_points is None and data_mostly_g:
+                data = a_tools.set_majority_sign(data)
+            rotated_data_dict[qb_name][data_to_fit[qb_name]] = data
         else:
             # multiple readouts per qubit per channel
             if isinstance(channel_map[qb_name], str):
@@ -655,11 +659,18 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             for i, ro_suf in enumerate(ro_suffixes):
                 if len(ro_suffixes) == len(meas_res_dict):
                     # one RO ch per qubit
-                    rotated_data_dict[qb_name][ro_suf] = \
-                        a_tools.rotate_and_normalize_data_1ch(
-                            data=meas_res_dict[list(meas_res_dict)[i]],
-                            cal_zero_points=cal_zero_points,
-                            cal_one_points=cal_one_points)
+                    if cal_zero_points is None and cal_one_points is None:
+                        data = meas_res_dict[list(meas_res_dict)[i]]
+                        data = (data - np.min(data))/(np.max(data) - np.min(data))
+                        if data_mostly_g:
+                            data = a_tools.set_majority_sign(data)
+                        rotated_data_dict[qb_name][ro_suf] = data
+                    else:
+                        rotated_data_dict[qb_name][ro_suf] = \
+                            a_tools.rotate_and_normalize_data_1ch(
+                                data=meas_res_dict[list(meas_res_dict)[i]],
+                                cal_zero_points=cal_zero_points,
+                                cal_one_points=cal_one_points)
                 else:
                     # two RO ch per qubit
                     keys = [k for k in meas_res_dict if ro_suf in k]
@@ -667,12 +678,13 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                     if k[len(qb_ro_ch0)+1::] == ro_suf]
                     data_array = np.array([meas_res_dict[k]
                                            for k in correct_keys])
-                    rotated_data_dict[qb_name][ro_suf], \
-                    _, _ = \
-                        a_tools.rotate_and_normalize_data_IQ(
+                    data, _, _ = a_tools.rotate_and_normalize_data_IQ(
                             data=data_array,
                             cal_zero_points=cal_zero_points,
                             cal_one_points=cal_one_points)
+                    if cal_zero_points is None and data_mostly_g:
+                        data = a_tools.set_majority_sign(data)
+                    rotated_data_dict[qb_name][ro_suf] = data
         return rotated_data_dict
 
     @staticmethod
@@ -716,7 +728,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     @staticmethod
     def global_pca_TwoD(qb_name, meas_results_per_qb, channel_map,
-                        data_to_fit, data_mostly_g=None):
+                        data_to_fit, data_mostly_g=False):
         meas_res_dict = meas_results_per_qb[qb_name]
         if list(meas_res_dict) != channel_map[qb_name]:
             raise NotImplementedError('Global PCA is only implemented '
@@ -730,16 +742,17 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             [v.T.flatten() for v in meas_res_dict.values()])
         rot_flat_data, _, _ = \
             a_tools.rotate_and_normalize_data_IQ(
-                data=data_array,
-                data_mostly_g=data_mostly_g)
-        rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
-            np.reshape(rot_flat_data, raw_data_arr.T.shape)
-
+                data=data_array)
+        data = np.reshape(rot_flat_data, raw_data_arr.T.shape)
+        if data_mostly_g:
+            data = a_tools.set_majority_sign(data)
+        rotated_data_dict[qb_name][data_to_fit[qb_name]] = data
         return rotated_data_dict
 
     @staticmethod
     def rotate_data_TwoD(qb_name, meas_results_per_qb, channel_map,
-                         cal_states_dict, data_to_fit, do_column_PCA=False):
+                         cal_states_dict, data_to_fit,
+                         column_PCA=False, data_mostly_g=False):
         meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict = OrderedDict()
         if len(cal_states_dict[qb_name]) == 0:
@@ -754,27 +767,32 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
             rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
                 deepcopy(raw_data_arr.transpose())
-            if do_column_PCA:
+            if column_PCA:
                 for row in range(raw_data_arr.shape[0]):
                     data = a_tools.rotate_and_normalize_data_1ch(
                         data=raw_data_arr[row, :],
                         cal_zero_points=cal_zero_points,
                         cal_one_points=cal_one_points)
+                    if data_mostly_g:
+                        data = a_tools.set_majority_sign(data)
                     rotated_data_dict[qb_name][data_to_fit[qb_name]][
-                        :, row] = a_tools.set_background_sign(data)
+                        :, row] = data
             else:
                 for col in range(raw_data_arr.shape[1]):
-                    rotated_data_dict[qb_name][data_to_fit[qb_name]][col] = \
-                        a_tools.rotate_and_normalize_data_1ch(
-                            data=raw_data_arr[:, col],
-                            cal_zero_points=cal_zero_points,
-                            cal_one_points=cal_one_points)
+                    data = a_tools.rotate_and_normalize_data_1ch(
+                        data=raw_data_arr[:, col],
+                        cal_zero_points=cal_zero_points,
+                        cal_one_points=cal_one_points)
+                    if cal_zero_points is None and data_mostly_g:
+                        data = a_tools.set_majority_sign(data)
+                    rotated_data_dict[qb_name][data_to_fit[qb_name]][col] = data
+
         elif list(meas_res_dict) == channel_map[qb_name]:
             # two RO channels per qubit
             raw_data_arr = meas_res_dict[list(meas_res_dict)[0]]
             rotated_data_dict[qb_name][data_to_fit[qb_name]] = \
                 deepcopy(raw_data_arr.transpose())
-            if do_column_PCA:
+            if column_PCA:
                 for row in range(raw_data_arr.shape[0]):
                     data_array = np.array(
                         [v[row, :] for v in meas_res_dict.values()])
@@ -783,18 +801,23 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             data=data_array,
                             cal_zero_points=cal_zero_points,
                             cal_one_points=cal_one_points)
+                    if data_mostly_g:
+                        data = a_tools.set_majority_sign(data)
                     rotated_data_dict[qb_name][data_to_fit[qb_name]][
-                        :, row] = a_tools.set_background_sign(data)
+                        :, row] = data
             else:
                 for col in range(raw_data_arr.shape[1]):
                     data_array = np.array(
                         [v[:, col] for v in meas_res_dict.values()])
+                    data, _, _ = a_tools.rotate_and_normalize_data_IQ(
+                        data=data_array,
+                        cal_zero_points=cal_zero_points,
+                        cal_one_points=cal_one_points)
+                    if cal_zero_points is None and data_mostly_g:
+                        data = a_tools.set_majority_sign(data)
                     rotated_data_dict[qb_name][
-                            data_to_fit[qb_name]][col], _, _ = \
-                        a_tools.rotate_and_normalize_data_IQ(
-                            data=data_array,
-                            cal_zero_points=cal_zero_points,
-                            cal_one_points=cal_one_points)
+                        data_to_fit[qb_name]][col] = data
+
         else:
             # multiple readouts per qubit per channel
             if isinstance(channel_map[qb_name], str):
@@ -812,12 +835,13 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     rotated_data_dict[qb_name][ro_suf] = \
                         deepcopy(raw_data_arr.transpose())
                     for col in range(raw_data_arr.shape[1]):
-                        rotated_data_dict[qb_name][
-                            ro_suf][col] = \
-                            a_tools.rotate_and_normalize_data_1ch(
+                        data = a_tools.rotate_and_normalize_data_1ch(
                                 data=raw_data_arr[:, col],
                                 cal_zero_points=cal_zero_points,
                                 cal_one_points=cal_one_points)
+                        if cal_zero_points is None and data_mostly_g:
+                            data = a_tools.set_majority_sign(data)
+                        rotated_data_dict[qb_name][ro_suf][col] = data
                 else:
                     # two RO ch per qubit
                     raw_data_arr = meas_res_dict[list(meas_res_dict)[i]]
@@ -827,11 +851,13 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         data_array = np.array(
                             [v[:, col] for k, v in meas_res_dict.items()
                              if ro_suf in k])
-                        rotated_data_dict[qb_name][ro_suf][col], _, _ = \
-                            a_tools.rotate_and_normalize_data_IQ(
+                        data, _, _ = a_tools.rotate_and_normalize_data_IQ(
                                 data=data_array,
                                 cal_zero_points=cal_zero_points,
                                 cal_one_points=cal_one_points)
+                        if cal_zero_points is None and data_mostly_g:
+                            data = a_tools.set_majority_sign(data)
+                        rotated_data_dict[qb_name][ro_suf][col] = data
         return rotated_data_dict
 
     @staticmethod

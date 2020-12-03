@@ -1302,19 +1302,6 @@ def rotate_and_normalize_data_no_cal_points(data, **kw):
     # max_min_difference = max(normalized_data -  min(normalized_data))
     # normalized_data = (normalized_data-min(normalized_data))/max_min_difference
 
-    # data always rotated such that majority of data points is smaller than the mid point
-    # between min and max (if data_mostly_g).
-    mean = np.mean(normalized_data)
-    middle = (np.max(normalized_data) + np.min(normalized_data)) / 2
-
-    if kw.get('data_mostly_g', None) is None:
-        return normalized_data
-
-    if kw.get('data_mostly_g'):
-        normalized_data *= np.sign(middle - mean)
-    else:
-        normalized_data *= -np.sign(middle - mean)
-
     return normalized_data
 
 
@@ -1348,10 +1335,13 @@ def rotate_and_normalize_data_1ch(data, cal_zero_points=np.arange(-4, -2, 1),
 
     return normalized_data
 
-def set_background_sign(data, background_sign=-1):
-    # print(np.median(data), np.mean(data))
-    return data * (np.sign(background_sign) *
+
+def set_majority_sign(data, majority_sign=-1):
+    # Data array rotated such that majority of data points is smaller than the
+    # median of the data.
+    return data * (np.sign(majority_sign) *
                    np.sign(np.median(data) - np.mean(data)))
+
 
 def predict_gm_proba_from_cal_points(X, cal_points):
     """
