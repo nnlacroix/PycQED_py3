@@ -6777,6 +6777,7 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
 
     def analyze_fit_results(self):
         super().analyze_fit_results()
+        self.proc_data_dict['tvals'] = OrderedDict()
 
         global_delta_tau = self.get_param_value('estimation_window')
         task_list = self.get_param_value('task_list')
@@ -6817,7 +6818,12 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
             self.proc_data_dict['analysis_params_dict'][f'freq_{qbn}'] = \
                 {'val':  qb_freqs, 'stderr': delta_freqs_errs}
 
+            self.proc_data_dict['tvals'][f'{qbn}'] = \
+                self.proc_data_dict['sweep_points_2D_dict'][qbn][
+                    f'{qbn}_truncation_length']
+
         self.save_processed_data(key='analysis_params_dict')
+        self.save_processed_data(key='tvals')
 
 
     def get_generated_and_measured_pulse(self, qbn=None):
