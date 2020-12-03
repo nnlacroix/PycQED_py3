@@ -918,7 +918,8 @@ class SingleQubitGateCalib(CalibBuilder):
             states = ''.join(set([s for s in ''.join(transition_names)]))
             self.experiment_name += f'_{states}'
 
-            if 'qscale' in self.experiment_name.lower():
+            if 'qscale' in self.experiment_name.lower() or \
+                    'inphase_amp_calib' in self.experiment_name.lower():
                 if len(self.sweep_points[1]) == 0:
                     # Internally, 1D and 2D sweeps are handled as 2D sweeps.
                     # With this dummy soft sweep, exactly one sequence will be
@@ -1233,3 +1234,65 @@ class QScale(SingleQubitGateCalib):
                 qscale = self.analysis.proc_data_dict['analysis_params_dict'][
                     qubit.name]['qscale']
                 qubit.set(f'{task["transition_name_input"]}_motzoi', qscale)
+
+
+class InPhaseAmpCalib(SingleQubitGateCalib):
+
+    kw_for_sweep_points = {
+        'n_pulses': dict(param_name='n_pulses', unit='',
+                         label='Nr. $\\pi$-pulses, $N$', dimension=0,
+                         values_func=lambda nr_p: np.arange(nr_p + 1))
+    }
+
+    def __init__(self, task_list=None, sweep_points=None, qubits=None,
+                 n_pulses=None, **kw):
+        try:
+            self.experiment_name = f'Inphase_amp_calib_{n_pulses}'
+            super().__init__(task_list, qubits=qubits,
+                             sweep_points=sweep_points,
+                             n_pulses=n_pulses, **kw)
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def sweep_block(self, sp1d_idx, sp2d_idx, sweep_points, **kw):
+        parallel_block_list = []
+        for i, task in enumerate(self.preprocessed_task_list):
+            transition_name = task['transition_name']
+            sweep_points = task['sweep_points']
+            qb = task['qb']
+
+            prepend_block = super().sweep_block(qb, sweep_points,
+                                                transition_name)
+
+            n_pulses = sweep_points.get_sweep_params_property(
+                'values', 0, 'n_pulses')[sp1d_idx]
+            inphase_calib_block = self.block_from_ops(
+                f'pulses_{qb}', [f'X90{transition_name} {qb}'] +
+                                n_pulses*[f'X180{transition_name} {qb}'])
+
+            parallel_block_list += [self.sequential_blocks(
+                f'inphase_calib_{qb}', [prepend_block, inphase_calib_block])]
+
+        return self.simultaneous_blocks(f'inphase_calib_{sp2d_idx}_{sp1d_idx}',
+                                        parallel_block_list, block_align='end')
+
+    def run_analysis(self, analysis_kwargs=None, **kw):
+        """
+        Runs analysis and stores analysis instances in self.analysis.
+        :param analysis_kwargs: (dict) keyword arguments for analysis
+        :param kw: currently ignored
+        """
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+
+        self.analysis = tda.InPhaseAmpCalibAnalysis(
+            qb_names=self.meas_obj_names, t_start=self.timestamp,
+            **analysis_kwargs)
+
+        if self.update:
+            for task in self.preprocessed_task_list:
+                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']]
+                qubit.set(f'{task["transition_name_input"]}_amp180',
+                          self.analysis.proc_data_dict['analysis_params_dict'][
+                              qubit.name]['corrected_amp'])
