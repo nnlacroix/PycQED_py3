@@ -8,6 +8,9 @@
 import numpy as np
 import math
 import logging
+
+from pycqed.utilities.timer import Timer
+
 log = logging.getLogger(__name__)
 from copy import deepcopy
 import pycqed.measurement.waveform_control.pulse as bpl
@@ -46,6 +49,7 @@ class Segment:
                                       self.trigger_pars['buffer_length_start']
         self._pulse_names = set()
         self.acquisition_elements = set()
+        self.timer = Timer(self.name)
 
         for pulse_pars in pulse_pars_list:
             self.add(pulse_pars)
@@ -119,6 +123,7 @@ class Segment:
         for p in pulses:
             self.add(p)
 
+    @Timer()
     def resolve_segment(self):
         """
         Top layer method of Segment class. After having addded all pulses,
@@ -155,7 +160,7 @@ class Segment:
                 self.resolved_pulses.append(p0)
 
                 p1 = deepcopy(p)
-                p1.pulse_obj.element_name = f'default_{self.name}'
+                p1.pulse_obj.element_name = f'default_ese_{self.name}'
                 p1.pulse_obj.channel_mask = ch_mask
                 p1.ref_pulse = p.pulse_obj.name
                 p1.ref_point = 0
@@ -1363,6 +1368,9 @@ class Segment:
 
         # rename segment name
         self.name = new_name
+
+        # rename timer
+        self.timer.name = new_name
 
     def __deepcopy__(self, memo):
         cls = self.__class__
