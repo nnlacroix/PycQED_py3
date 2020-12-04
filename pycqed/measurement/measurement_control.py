@@ -1,5 +1,8 @@
 import types
 import logging
+
+from pycqed.utilities.timer import Timer
+
 log = logging.getLogger(__name__)
 import time
 from copy import deepcopy
@@ -128,6 +131,7 @@ class MeasurementControl(Instrument):
         self._persist_xlabs = None
         self._persist_ylabs = None
         self._analysis_display = None
+        self.timer = Timer()
 
         self.exp_metadata = {}
         self._plotmon_axes_info = None
@@ -156,7 +160,7 @@ class MeasurementControl(Instrument):
         if sweep_points is not None:
             self.set_sweep_points(np.tile(sweep_points,
                                           self.acq_data_len_scaling))
-
+    @Timer()
     def run(self, name: str=None, exp_metadata: dict=None,
             mode: str='1D', disable_snapshot_metadata: bool=False, **kw):
         '''
@@ -183,6 +187,8 @@ class MeasurementControl(Instrument):
                     accidentally leaving it off.
 
         '''
+
+        self.timer = Timer("MeasurementControl")
         # Setting to zero at the start of every run, used in soft avg
         self.soft_iteration = 0
         self.set_measurement_name(name)
@@ -255,17 +261,28 @@ class MeasurementControl(Instrument):
             result = self.dset[()]
             self.get_measurement_endtime()
             self.save_MC_metadata(self.data_object)  # timing labels etc
+            # FIXME: Nathan 2020.12.03.
+            #  save_timer could alternatively be placed in quantum Experiment,
+            #  which could make more sense semantically and would allow to get "run.end"
+            #  in the MC timer (i.e. the end of this function).
+            #  Qexp  needs to save its own timer anyway, but by having it here for now
+            #  we're sure that experiment that are not based on Qexp still have some timers
+            #  saved.
+            self.save_timers(self.data_object)
             return_dict = self.create_experiment_result_dict()
 
         self.finish(result)
         return return_dict
 
+    @Timer()
     def measure(self):
         if self.live_plot_enabled():
             self.initialize_plot_monitor()
 
+        self.timer.checkpoint("MeasurementControl.measure.prepare.start")
         for sweep_function in self.sweep_functions:
             sweep_function.prepare()
+        self.timer.checkpoint("MeasurementControl.measure.prepare.end")
 
         if (self.sweep_functions[0].sweep_control == 'soft' and
                 self.detector_function.detector_control == 'soft'):
@@ -363,6 +380,7 @@ class MeasurementControl(Instrument):
         self.update_plotmon_adaptive(force_update=True)
         return
 
+    @Timer()
     def measure_hard(self):
         new_data = np.array(self.detector_function.get_values()).T
 
@@ -1636,6 +1654,18 @@ class MeasurementControl(Instrument):
             metadata_group = data_group.create_group('Experimental Metadata')
 
         h5d.write_dict_to_hdf5(metadata, entry_point=metadata_group)
+
+    def save_timers(self, data_object, detector=True, MC=True):
+        timer_group = data_object.get(Timer.HDF_GRP_NAME)
+        if timer_group is None:
+            timer_group = data_object.create_group(Timer.HDF_GRP_NAME)
+        objects = (self.detector_function, self)
+        for obj, cond in zip(objects, (detector, MC)):
+            try:
+                obj.timer.save(timer_group)
+            except Exception:
+                log.error(f"Could not save timer for object: {obj}.")
+                traceback.print_exc()
 
     def get_percdone(self):
         percdone = self.total_nr_acquired_values / (
