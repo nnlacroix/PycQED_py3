@@ -136,6 +136,26 @@ def get_data_from_hdf_file(timestamp=None, data_file=None,
     return dataset
 
 
+def open_hdf_file(timestamp=None, folder=None, filepath=None, mode='r', file_id=None):
+    """
+    Opens the hdf5 file with flexible input parameters. If no parameter is given,
+    opens the  hdf5 of the last measurement in reading mode.
+    Args:
+        timestamp (str): timestamp of which the hdf5 file must be edited.
+        folder (str): folder in which to find hdf5 file. Overwrites timestamp
+        filepath (str): path to hdf5 file. Overwrites timestamp and folder
+        mode (str): mode to open the file ('r' for read), ('r+' for read/write)
+        file_id (str): file id
+
+    Returns:
+
+    """
+    if filepath is None:
+        if folder is None:
+            folder = a_tools.get_folder(timestamp)
+        filepath = a_tools.measurement_filename(folder, file_id=file_id)
+    return h5py.File(filepath, mode)
+
 def open_data_file_from_timestamp(timestamp, mode='r', file_id=None):
     """
     Return the opened HDF5 file specified by timestamp.
