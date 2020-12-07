@@ -13,6 +13,8 @@ from pycqed.analysis import measurement_analysis as ma
 from pycqed.utilities.general import temporary_value
 import logging
 
+from pycqed.utilities.timer import Timer
+
 log = logging.getLogger(__name__)
 
 
@@ -191,6 +193,7 @@ class T1FrequencySweep(CalibBuilder):
         return self.sequential_blocks(f't1 flux pulse {qubit_name}',
                                       [pb, pp, fp])
 
+    @Timer()
     def run_analysis(self, **kw):
         """
         Runs analysis and stores analysis instance in self.analysis.
@@ -401,6 +404,7 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         self.data_to_fit.update({qb: 'pe'})
         return b
 
+    @Timer()
     def run_analysis(self, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.
@@ -776,6 +780,7 @@ class Cryoscope(CalibBuilder):
                                    unit, label, dimension=1)
         self.sweep_points.update(sp)
 
+    @Timer()
     def run_analysis(self, analysis_kwargs=None, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.
@@ -858,6 +863,7 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
 
         return b
 
+    @Timer()
     def run_analysis(self, analysis_kwargs=None, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.
