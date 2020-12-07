@@ -160,7 +160,7 @@ class Pulse:
             # if channel is a crosstalk cancellation channel, then the area
             # of all flux pulses applied on this channel are
             # retrieved and added together
-            wfs = [] # list of waveforms, area computed in return statement
+            wfs = []  # list of waveforms, area computed in return statement
             idx_c = self.crosstalk_cancellation_channels.index(channel)
             if not getattr(self, 'pulse_off', False):
                 for c2 in self.channels:
@@ -168,7 +168,7 @@ class Pulse:
                         continue
                     idx_c2 = self.crosstalk_cancellation_channels.index(c2)
                     factor = self.crosstalk_cancellation_mtx[idx_c, idx_c2]
-                    wfs.append(factor * self.chan_wf( c2, tvals))
+                    wfs.append(factor * self.waveforms({c2: tvals})[c2])
         elif channel in self.channels:
             wfs = self.waveforms({channel: tvals})[channel]
         else:
