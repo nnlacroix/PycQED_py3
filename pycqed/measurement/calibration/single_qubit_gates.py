@@ -440,6 +440,8 @@ class Cryoscope(CalibBuilder):
     :param awg_sample_length: (float) the length of one sample on the flux
         AWG used by the measurement objects in this experiment. Can also be
         specified separately in each task.
+    :param sequential: (bool) whether to apply the cryoscope pulses sequentially
+        (True) or simultaneously on n-qubits
     :param kw: keyword arguments: passed down to parent class(es)
 
     The sweep_points for this measurements must contain
@@ -506,7 +508,8 @@ class Cryoscope(CalibBuilder):
     """
 
     def __init__(self, task_list, sweep_points=None, estimation_window=None,
-                 separation_buffer=50e-9, awg_sample_length=None, **kw):
+                 separation_buffer=50e-9, awg_sample_length=None,
+                 sequential=False, **kw):
         try:
             self.experiment_name = 'Cryoscope'
             for task in task_list:
@@ -532,6 +535,7 @@ class Cryoscope(CalibBuilder):
                                  'the class input parameter estimation_window.')
 
             super().__init__(task_list, sweep_points=sweep_points, **kw)
+            self.sequential = sequential
             self.add_default_soft_sweep_points(**kw)
             self.add_default_hard_sweep_points(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -754,9 +758,13 @@ class Cryoscope(CalibBuilder):
             parallel_block_list += [cryo_blk]
             self.data_to_fit.update({qb: 'pe'})
 
-        return self.simultaneous_blocks(
-            f'sim_rb_{sp2d_idx}_{sp1d_idx}', parallel_block_list,
-            block_align='end')
+        if self.sequential:
+            return self.sequential_blocks(
+                f'sim_rb_{sp2d_idx}_{sp1d_idx}', parallel_block_list)
+        else:
+            return self.simultaneous_blocks(
+                f'sim_rb_{sp2d_idx}_{sp1d_idx}', parallel_block_list,
+                block_align='end')
 
     def update_sweep_points(self, **kw):
         """
