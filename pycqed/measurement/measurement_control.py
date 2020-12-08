@@ -306,7 +306,12 @@ class MeasurementControl(Instrument):
                     for i, sweep_function in enumerate(self.sweep_functions):
                         swf_sweep_points = sweep_points[:, i]
                         val = swf_sweep_points[start_idx]
+                        # prepare in 2D sweeps is done in set_parameters (though not always
+                        # for first upload). Therefore, a common checkpoint is used
+                        # in the timer to collect upload times in a single place
+                        self.timer.checkpoint("MeasurementControl.measure.prepare.start")
                         sweep_function.set_parameter(val)
+                        self.timer.checkpoint("MeasurementControl.measure.prepare.end")
                     self.detector_function.prepare(
                         sweep_points=sweep_points[
                             start_idx:start_idx+self.xlen, 0])
