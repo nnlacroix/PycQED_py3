@@ -3998,7 +3998,7 @@ class QuDev_transmon(Qubit):
         Configures the fluxline distortion in a pulsar object according to the
         settings in the parameter flux_distortion of the qubit object.
 
-        :param pulse: the pulsar object. If None, self.find_instrument is
+        :param pulsar: the pulsar object. If None, self.find_instrument is
             used to find an obejct called 'Pulsar'.
         :param datadir: path to the pydata directory. If None,
             self.find_instrument is used to find an obejct called 'MC' and
@@ -4011,41 +4011,9 @@ class QuDev_transmon(Qubit):
         flux_distortion = deepcopy(self.DEFAULT_FLUX_DISTORTION)
         flux_distortion.update(self.flux_distortion())
 
-        filterCoeffs = {}
-        for fclass in 'IIR', 'FIR':
-            filterCoeffs[fclass] = []
-            for f in flux_distortion[f'{fclass}_filter_list']:
-                if f['type'] == 'Gaussian':
-                    coeffs = fl_predist.gaussian_filter_kernel(
-                        f.get('sigma', 1e-9),
-                        f.get('nr_sigma', 40),
-                        f.get('dt', 1 / pulsar.clock(
-                            channel=self.flux_pulse_channel())))
-                elif f['type'] == 'csv':
-                    filename = os.path.join(datadir,
-                                            f['filename'].lstrip('\\'))
-                    if fclass == 'IIR':
-                        coeffs = fl_predist.import_iir(filename)
-                    else:
-                        coeffs = np.loadtxt(filename)
-                else:
-                    raise KeyError(f"Unknown filter type {f['type']}")
-                filterCoeffs[fclass].append(coeffs)
-
-        if len(filterCoeffs['FIR']) > 0:
-            filterCoeffs['FIR'] = [
-                fl_predist.combine_FIR_filters(filterCoeffs['FIR'])]
-        else:
-            del filterCoeffs['FIR']
-        if len(filterCoeffs['IIR']) > 1:
-            log.warning('For now, only one IIR filter can be used. Taking '
-                        'the last one.')
-        if len(filterCoeffs['IIR']) > 0:
-            filterCoeffs['IIR'] = filterCoeffs['IIR'][-1]
-            fl_predist.scale_and_negate_IIR(filterCoeffs['IIR'],
-                                 flux_distortion['scale_IIR'])
-        else:
-            del filterCoeffs['IIR']
+        filterCoeffs = fl_predist.process_filter_coeffs_dict(
+            flux_distortion, datadir=datadir,
+            default_dt=1 / pulsar.clock(channel=self.flux_pulse_channel()))
 
         pulsar.set(f'{self.flux_pulse_channel()}_distortion_dict',
                    filterCoeffs)
