@@ -25,6 +25,10 @@ class Segment:
     Consists of a list of UnresolvedPulses, each of which contains information 
     about in which element the pulse is played and when it is played 
     (reference point + delay) as well as an instance of class Pulse.
+
+    Property distortion_dicts: a key of the form {AWG}_{channel} specifies
+        that the respective val should be used as distortion dict instead of
+        self.pulsar.{AWG}_{channel}_distortion_dict.
     """
 
     trigger_pulse_length = 20e-9
@@ -40,6 +44,7 @@ class Segment:
         self.elements = odict()
         self.element_start_end = {}
         self.elements_on_awg = {}
+        self.distortion_dicts = {}
         self.trigger_pars = {
             'pulse_length': self.trigger_pulse_length,
             'amplitude': self.trigger_pulse_amplitude,
@@ -935,9 +940,18 @@ class Segment:
 
                         wf = wfs[codeword][c]
 
-                        distortion_dictionary = self.pulsar.get(
-                            '{}_distortion_dict'.format(c))
-                        fir_kernels = distortion_dictionary.get('FIR', None)
+                        distortion_dict = self.distortion_dicts.get(c, None)
+                        if distortion_dict is None:
+                            distortion_dict = self.pulsar.get(
+                                '{}_distortion_dict'.format(c))
+                        else:
+                            distortion_dict = \
+                                flux_dist.process_filter_coeffs_dict(
+                                    distortion_dict,
+                                    default_dt=1 / self.pulsar.clock(
+                                        channel=c))
+
+                        fir_kernels = distortion_dict.get('FIR', None)
                         if fir_kernels is not None:
                             if hasattr(fir_kernels, '__iter__') and not \
                             hasattr(fir_kernels[0], '__iter__'): # 1 kernel
@@ -945,7 +959,7 @@ class Segment:
                             else:
                                 for kernel in fir_kernels:
                                     wf = flux_dist.filter_fir(kernel, wf)
-                        iir_filters = distortion_dictionary.get('IIR', None)
+                        iir_filters = distortion_dict.get('IIR', None)
                         if iir_filters is not None:
                             wf = flux_dist.filter_iir(iir_filters[0],
                                                       iir_filters[1], wf)
