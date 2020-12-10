@@ -240,6 +240,15 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                                   epd, add_param_method=add_param_method)
 
             if all_keys[-1] not in epd:
+                # search through the attributes of all groups
+                for group_name in data_file.keys():
+                    if par_name in list(data_file[group_name].attrs):
+                        add_param(all_keys[-1],
+                                  get_hdf_param_value(data_file[group_name],
+                                                      par_name),
+                                  epd, add_param_method=add_param_method)
+
+            if all_keys[-1] not in epd:
                 log.warning(f'Parameter {file_par} was not found.')
                 epd[all_keys[-1]] = 0
         data_file.close()
