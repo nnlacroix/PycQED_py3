@@ -537,20 +537,21 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         self.get_cal_data_points()
         self.proc_data_dict['projected_data_dict'] = OrderedDict(
             {qbn: '' for qbn in self.qb_names})
-        data_mostly_g = self.get_param_value('data_mostly_g', default_value={})
         for qbn in self.qb_names:
             cal_states_dict = self.cal_states_dict_for_rotation[qbn]
             if len(cal_states_dict) not in [0, 2, 3]:
                 raise NotImplementedError('Calibration states rotation is '
                                           'currently only implemented for 0, '
                                           '2, or 3 cal states per qubit.')
+            data_mostly_g = self.get_param_value('data_mostly_g',
+                                                 default_value=False)
             if self.get_param_value('TwoD', default_value=False):
                 if self.rotation_type == 'global_PCA':
                     self.proc_data_dict['projected_data_dict'].update(
                         self.global_pca_TwoD(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.data_to_fit,
-                            data_mostly_g=data_mostly_g.get(qbn, False)))
+                            data_mostly_g=data_mostly_g))
                 elif len(cal_states_dict) == 3:
                     self.proc_data_dict['projected_data_dict'].update(
                         self.rotate_data_3_cal_states_TwoD(
@@ -572,8 +573,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         self.rotate_data_TwoD(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.cal_states_dict_for_rotation,
-                            self.data_to_fit,
-                            data_mostly_g=data_mostly_g.get(qbn, False),
+                            self.data_to_fit, data_mostly_g=data_mostly_g,
                             column_PCA=self.rotation_type == 'column_PCA'))
             else:
                 if len(cal_states_dict) == 3:
@@ -587,8 +587,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         self.rotate_data(
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.cal_states_dict_for_rotation,
-                            self.data_to_fit,
-                            data_mostly_g=data_mostly_g.get(qbn, False)))
+                            self.data_to_fit, data_mostly_g=data_mostly_g))
 
     @staticmethod
     def rotate_data_3_cal_states(qb_name, meas_results_per_qb, channel_map,
