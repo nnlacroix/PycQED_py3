@@ -7743,8 +7743,10 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     'title': (self.raw_data_dict['timestamp'] + ' ' +
                               self.raw_data_dict['measurementstring'] + ' ' +
                               qbn),
-                    'clabel': '{} state population'.format(
-                        self.get_latex_prob_label(self.data_to_fit[qbn]))}
+                    'clabel': 'Strongest principal component (arb.)' if \
+                        'pca' in self.rotation_type.lower() else \
+                        '{} state population'.format(
+                            self.get_latex_prob_label(self.data_to_fit[qbn]))}
 
                 self.plot_dicts[f'{base_plot_name}_fit'] = {
                     'fig_id': base_plot_name,
