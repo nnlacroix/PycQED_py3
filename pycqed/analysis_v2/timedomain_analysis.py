@@ -7497,7 +7497,9 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             for qbn, freq_range_list in freq_ranges_remove.items():
                 if freq_range_list is None:
                     continue
-                param_name = self.mospm[qbn][1]
+                # find name of 1st sweep point in sweep dimension 1
+                param_name = [p for p in self.mospm[qbn]
+                              if self.sp.find_parameter(p)][0]
                 for freq_range in freq_range_list:
                     freqs = self.proc_data_dict['proc_sweep_points_2D_dict'][
                         qbn][param_name]
@@ -7609,7 +7611,9 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
         self.delays_for_fit = OrderedDict()
         self.freqs_for_fit = OrderedDict()
         for qbn in self.qb_names:
-            param_name = self.mospm[qbn][1]
+            # find name of 1st sweep point in sweep dimension 1
+            param_name = [p for p in self.mospm[qbn]
+                          if self.sp.find_parameter(p)][0]
             data = self.proc_data_dict['proc_data_to_fit'][qbn]
             delays = self.proc_data_dict['proc_sweep_points_dict'][qbn][
                 'sweep_points']
@@ -7723,7 +7727,9 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             for qbn in self.qb_names:
                 base_plot_name = 'FluxPulseScope_' + qbn
                 xlabel, xunit = self.get_xaxis_label_unit(qbn)
-                param_name = self.mospm[qbn][1]
+                # find name of 1st sweep point in sweep dimension 1
+                param_name = [p for p in self.mospm[qbn]
+                              if self.sp.find_parameter(p)][0]
                 ylabel = self.sp.get_sweep_params_property(
                     'label', dimension=1, param_names=param_name)
                 yunit = self.sp.get_sweep_params_property(
