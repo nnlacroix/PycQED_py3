@@ -3355,6 +3355,17 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
 
         super().__init__(qb_names, *args, **kwargs)
 
+    def extract_data(self):
+        super().extract_data()
+        # Set some default values specific to FluxPulseScopeAnalysis if the
+        # respective options have not been set by the user or in the metadata.
+        # (We do not do this in the init since we have to wait until
+        # metadata has been extracted.)
+        if self.get_param_value('rotation_type', default_value=None) is None:
+            self.options_dict['rotation_type'] = 'global_PCA'
+        if self.get_param_value('data_mostly_g', default_value=None) is None:
+            self.options_dict['data_mostly_g'] = True
+
     def process_data(self):
         super().process_data()
 
