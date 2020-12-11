@@ -133,7 +133,6 @@ def convert_expmod_to_IIR(expmod, dt, inverse_IIR=True):
         b = [i[1] for i in iir]
     else:
         A, B, tau = expmod
-        print(A, B, tau )
         if 1 / tau < 1e-14:
             a, b = np.array([1, -1]), np.array([A + B, -(A + B)])
         else:
@@ -224,7 +223,6 @@ def process_filter_coeffs_dict(flux_distortion, datadir=None, default_dt=None):
             # append if needed
             filterCoeffs[fclass] = [[[a], [b]] for a, b in zip(
                 filterCoeffs['IIR'][0], filterCoeffs['IIR'][1])]
-            print(filterCoeffs[fclass])
         for f in flux_distortion.get(f'{fclass}_filter_list', []):
             if f['type'] == 'Gaussian' and fclass == 'FIR':
                 coeffs = gaussian_filter_kernel(f.get('sigma', 1e-9),
@@ -261,8 +259,6 @@ def process_filter_coeffs_dict(flux_distortion, datadir=None, default_dt=None):
     else:
         del filterCoeffs['FIR']
     if len(filterCoeffs['IIR']) > 0:
-        print(filterCoeffs['IIR'])
-        print([i[0] for i in filterCoeffs['IIR']])
         filterCoeffs['IIR'] = [
             np.concatenate([i[0] for i in filterCoeffs['IIR']]),
             np.concatenate([i[1] for i in filterCoeffs['IIR']])]
