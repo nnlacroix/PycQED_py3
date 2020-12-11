@@ -574,9 +574,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             qbn, self.proc_data_dict['meas_results_per_qb'],
                             self.channel_map, self.cal_states_dict_for_rotation,
                             self.data_to_fit,
-                            self.rotation_type=='column_PCA',
-                            data_mostly_g=self.get_param_value(
-                                'data_mostly_g', default_value=None)))
+                            self.rotation_type=='column_PCA'))
             else:
                 if len(cal_states_dict) == 3:
                     self.proc_data_dict['projected_data_dict'].update(
@@ -741,8 +739,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     @staticmethod
     def rotate_data_TwoD(qb_name, meas_results_per_qb, channel_map,
-                         cal_states_dict, data_to_fit, do_column_PCA=False,
-                         data_mostly_g=None):
+                         cal_states_dict, data_to_fit, do_column_PCA=False):
         meas_res_dict = meas_results_per_qb[qb_name]
         rotated_data_dict = OrderedDict()
         if len(cal_states_dict[qb_name]) == 0:
@@ -785,8 +782,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         a_tools.rotate_and_normalize_data_IQ(
                             data=data_array,
                             cal_zero_points=cal_zero_points,
-                            cal_one_points=cal_one_points,
-                            data_mostly_g=data_mostly_g)
+                            cal_one_points=cal_one_points)
             else:
                 for col in range(raw_data_arr.shape[1]):
                     data_array = np.array(
@@ -796,8 +792,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         a_tools.rotate_and_normalize_data_IQ(
                             data=data_array,
                             cal_zero_points=cal_zero_points,
-                            cal_one_points=cal_one_points,
-                            data_mostly_g=data_mostly_g)
+                            cal_one_points=cal_one_points)
         else:
             # multiple readouts per qubit per channel
             if isinstance(channel_map[qb_name], str):
