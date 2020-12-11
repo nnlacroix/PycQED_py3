@@ -3225,7 +3225,7 @@ def measure_J_coupling(dev, qbm, qbs, freqs, cz_pulse_name,
                          'data_to_fit': {qbm.name: 'pe'},
                          "sweep_name": "Amplitude",
                          "sweep_unit": "V",
-                         "global_PCA": True})
+                         "rotation_type": 'global_PCA'})
     MC.run_2D(label, exp_metadata=exp_metadata)
 
     if analyze:
