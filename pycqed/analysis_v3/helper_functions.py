@@ -434,8 +434,8 @@ def add_param(name, value, data_dict, add_param_method=None, **params):
     :param name: key of the new parameter in the data_dict
     :param value: value of the new parameter
     :param data_dict: OrderedDict containing data to be processed
-    :param method: str specifying how to add the value if name already exists
-        in data_dict:
+    :param add_param_method: str specifying how to add the value if name
+        already exists in data_dict:
             'skip': skip adding this parameter without raising an error
             'replace': replace the old value corresponding to name with value
             'update': whether to try data_dict[name].update(value).
