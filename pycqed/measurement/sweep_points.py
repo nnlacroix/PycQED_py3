@@ -212,12 +212,14 @@ class SweepPoints(list):
         else:
             return sweep_param_values[0]
 
-    def get_sweep_params_property(self, property, dimension, param_names=None):
+    def get_sweep_params_property(self, property, dimension='all',
+                                  param_names=None):
         """
         Get a property of the sweep parameters param_names in self.
         :param property: str with the name of a sweep param property. Can be
             "values", "unit", "label."
         :param dimension: 'all' or int specifying a sweep dimension
+            (default 'all')
         :param param_names: None, or string or list of strings corresponding to
             keys in the sweep dimension specified by dimension.
             Can also be 'all'
