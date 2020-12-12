@@ -7721,6 +7721,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             self.proc_data_dict['analysis_params_dict'][
                 f'fitted_freqs_{qbn}'] = {'val': fitted_freqs,
                                           'stderr': fitted_freqs_errs}
+            self.proc_data_dict['analysis_params_dict'][f'delays_{qbn}'] = \
+                self.delays_for_fit[qbn]
 
         self.save_processed_data(key='analysis_params_dict')
 
