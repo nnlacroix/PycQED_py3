@@ -541,6 +541,76 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 spd[qbn]['cal_points_sweep_points'] = spd[qbn][
                     'sweep_points'][-len(spd[qbn]['cal_points_sweep_points']):]
 
+        def unique(l):
+            try:
+                return np.unique(l, return_inverse=True)
+            except Exception:
+                h = [repr(a) for a in l]
+                _, i, j = np.unique(h, return_index=True, return_inverse=True)
+                return l[i], j
+
+        split_params = self.get_param_value('split_params', [])
+        if len(split_params):
+            pdd = self.proc_data_dict
+            pdd['split_data_dict'] = {}
+
+            for qbn in self.qb_names:
+                pdd['split_data_dict'][qbn] = {}
+
+                for p in split_params:
+                    dim = self.sp.find_parameter(p)
+                    sv = self.sp.get_sweep_params_property(
+                        'values', param_names=p, dimension=dim)
+                    usp, ind = unique(sv)
+                    if len(usp) <= 1:
+                        continue
+
+                    svs = [self.sp.subset(ind == i, dim) for i in
+                              range(len(usp))]
+                    [s.remove_sweep_parameter(p) for s in svs]
+
+                    sdd = {}
+                    pdd['split_data_dict'][qbn][p] = sdd
+                    for i in range(len(usp)):
+                        subset = (np.concatenate(
+                            [ind == i,
+                             [True] * len(pdd['sweep_points_dict'][qbn][
+                                              'cal_points_sweep_points'])]))
+                        sdd[i] = {}
+                        sdd[i]['value'] = usp[i]
+                        sdd[i]['sweep_points'] = svs[i]
+
+                        d = pdd['sweep_points_dict'][qbn]
+                        if dim == 0:
+                            sdd[i]['sweep_points_dict'] = {
+                                'sweep_points': d['sweep_points'][subset],
+                                'msmt_sweep_points':
+                                    d['msmt_sweep_points'][ind == i],
+                                'cal_points_sweep_points':
+                                    d['cal_points_sweep_points'],
+                            }
+                            sdd[i]['sweep_points_2D_dict'] = pdd[
+                                'sweep_points_2D_dict'][qbn]
+                        else:
+                            sdd[i]['sweep_points_dict'] = \
+                                pdd['sweep_points_dict'][qbn]
+                            sdd[i]['sweep_points_2D_dict'] = {
+                                k: v[ind == i] for k, v in pdd[
+                                'sweep_points_2D_dict'][qbn].items()}
+                        for d in ['projected_data_dict', 'data_to_fit']:
+                            if isinstance(pdd[d][qbn], dict):
+                                if dim == 0:
+                                    sdd[i][d] = {k: v[:, subset] for
+                                                 k, v in pdd[d][qbn].items()}
+                                else:
+                                    sdd[i][d] = {k: v[ind == i, :] for
+                                                 k, v in pdd[d][qbn].items()}
+                            else:
+                                if dim == 0:
+                                    sdd[i][d] = pdd[d][qbn][:, subset]
+                                else:
+                                    sdd[i][d] = pdd[d][qbn][ind == i, :]
+
     def get_cal_data_points(self):
         self.num_cal_points = np.array(list(
             self.cal_states_dict.values())).flatten().size
