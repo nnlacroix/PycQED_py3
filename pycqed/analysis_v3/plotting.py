@@ -8,10 +8,11 @@ from inspect import signature
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from collections import OrderedDict
-from copy import deepcopy
+from copy import copy, deepcopy
 from mpl_toolkits.mplot3d import Axes3D
 
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 from pycqed.analysis.analysis_toolbox import get_color_order as gco
 from pycqed.analysis.analysis_toolbox import get_color_list
@@ -20,11 +21,10 @@ from pycqed.analysis.tools.plotting import (
     SI_prefix_and_scale_factor)
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import datetime
+
 import sys
 this_module = sys.modules[__name__]
-
-from pycqed.analysis_v3 import pipeline_analysis as pla
-pla.search_modules.add(this_module)
+pp_mod.search_modules.add(this_module )
 
 prx_single_column_width = 3.404
 prx_two_column_width = 7.057
@@ -40,7 +40,7 @@ def default_figure_height(figure_width):
 
 
 def get_default_plot_params(set_params=True, figure_width='1col',
-                            figure_height=None, **params):
+                            figure_height=None, params=None, **kw):
     """
     Generates the rcParams that produce nice paper-style figures.
     Optionally updates the rcParams if set_pars == True.
@@ -69,7 +69,7 @@ def get_default_plot_params(set_params=True, figure_width='1col',
     if FIGURE_HEIGHT is None:
         FIGURE_HEIGHT = default_figure_height(FIGURE_WIDTH)
 
-    params = {
+    rc_params = {
         'font.size': 8,
         'lines.markersize': 2.0,
         'figure.titlesize': 'medium',
@@ -83,10 +83,13 @@ def get_default_plot_params(set_params=True, figure_width='1col',
         'ytick.labelsize': 'small',
         'image.interpolation': 'none',
     }
+    if params is None:
+        params = {}
+    rc_params.update(params)
 
     if set_params:
         plt.rcParams.update(plt.rcParamsDefault)
-        plt.rcParams.update(params)
+        plt.rcParams.update(rc_params)
     return plt.rcParams
 
 
@@ -300,7 +303,8 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
         plot_dicts[plt_name].update(plot_params)
 
     # add plot_dicts to the data_dict
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_plotting', False):
         # do plotting
@@ -443,7 +447,8 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
         plot_dicts[plt_name].update(plot_params)
 
     # add plot_dicts to the data_dict
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_plotting', False):
         # do plotting
@@ -572,7 +577,8 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
         plot_dicts[plt_name].update(plot_params)
 
     # add plot_dicts to the data_dict
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_plotting', False):
         # do plotting
@@ -726,7 +732,8 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         plot_dicts[plt_name].update(plot_params)
 
     # add plot_dicts to the data_dict
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_plotting', False):
         # do plotting
@@ -863,7 +870,8 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         plot_dicts[plt_name].update(plot_params)
 
     # add plot_dicts to the data_dict
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
     if params.get('do_plotting', False):
         # do plotting
@@ -946,7 +954,8 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
                 'plotfn': 'plot_text',
                 'text_string': textstr}
 
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
     if params.get('do_plotting', False):
         plot(data_dict, keys_in=list(plot_dicts), **params)
     return plot_dicts
@@ -1081,8 +1090,8 @@ def plot(data_dict, keys_in='all', axs_dict=None, **params):
         plt.close(figs[fig_name])
 
     # add figures and axes to data_dict
-    hlp_mod.add_param('figures', figs, data_dict, append_value=True)
-    hlp_mod.add_param('axes', axs, data_dict, append_value=True)
+    hlp_mod.add_param('figures', figs, data_dict, add_param_method='append')
+    hlp_mod.add_param('axes', axs, data_dict, add_param_method='append')
 
 
 def plot_vlines_auto(pdict, axs):
@@ -1395,7 +1404,7 @@ def plot_line(pdict, axs, tight_fig=True):
         # plot_*vals is the list of *vals arrays
         pfunc = getattr(axs, pdict.get('func', 'plot'))
         for i, (xvals, yvals) in enumerate(zip(plot_xvals, plot_yvals)):
-            plot_out = p_out.append(pfunc(xvals, yvals,
+            p_out.append(pfunc(xvals, yvals,
                                linestyle=plot_linestyle,
                                marker=plot_marker,
                                color=plot_linekws.pop(
@@ -1407,7 +1416,7 @@ def plot_line(pdict, axs, tight_fig=True):
 
     else:
         pfunc = getattr(axs, pdict.get('func', 'plot'))
-        plot_out = p_out = pfunc(plot_xvals, plot_yvals, zorder=zorder,
+        p_out = pfunc(plot_xvals, plot_yvals, zorder=zorder,
                                  linestyle=plot_linestyle, marker=plot_marker,
                                  label='%s%s' % (dataset_desc, dataset_label),
                                  **plot_linekws)
@@ -1415,8 +1424,8 @@ def plot_line(pdict, axs, tight_fig=True):
 
     if plot_errorbars:
         # loop through bars and caps and set the alpha value
-        [bar.set_alpha(alpha_errorbars) for bar in plot_out[2]]
-        [cap.set_alpha(alpha_errorbars) for cap in plot_out[1]]
+        [bar.set_alpha(alpha_errorbars) for bar in p_out[2]]
+        [cap.set_alpha(alpha_errorbars) for cap in p_out[1]]
 
     if plot_xrange is None:
         pass  # Do not set xlim if xrange is None as the axs gets reused
@@ -1818,9 +1827,11 @@ def plot_fit(pdict, axs):
     Plots an lmfit fit result object using the plot_line function.
     """
     model = pdict['fit_res'].model
+    plot_data = pdict.get('plot_data', False)  # plot the data
+    plot_data_params = pdict.get('plot_data_params', {})
     plot_init = pdict.get('plot_init', False)  # plot the initial guess
+    plot_init_params = pdict.get('plot_init_params', {})
     pdict['marker'] = pdict.get('marker', '')  # different default
-    plot_linestyle_init = pdict.get('init_linestyle', '--')
     plot_numpoints = pdict.get('num_points', 1000)
 
     if len(model.independent_vars) == 1:
@@ -1838,12 +1849,36 @@ def plot_fit(pdict, axs):
         pdict['yvals'] = np.array([pdict['yvals']])
     if isinstance(pdict['yvals'], list) or isinstance(pdict['yvals'], tuple):
         pdict['xvals'] = len(pdict['yvals'])*[pdict['xvals']]
+    if 'zorder' not in pdict:
+        pdict['zorder'] = 0
     plot_line(pdict, axs)
+
+    if plot_data:
+        # The data
+        pdict_data = copy(pdict)
+        pdict_data.update(plot_data_params)
+        if 'linestyle' not in pdict_data:
+            pdict_data['linestyle'] = ''
+        if pdict_data['marker'] == '':
+            pdict_data['marker'] = 'o'
+        fit_color = pdict.get('color', '')
+        data_color = pdict_data.get('color', '')
+        pdict_data['color'] = data_color if data_color != fit_color else 'C0'
+        if pdict_data['zorder'] == 0:
+            pdict_data['zorder'] = 1
+        pdict_data['xvals'] = pdict['fit_res'].userkws[independent_var]
+        pdict_data['yvals'] = pdict['fit_res'].userargs[0]
+        pdict_data['setlabel'] += ' data'
+        plot_line(pdict_data, axs)
 
     if plot_init:
         # The initial guess
-        pdict_init = deepcopy(pdict)
-        pdict_init['linestyle'] = plot_linestyle_init
+        pdict_init = copy(pdict)
+        pdict_init.update(plot_init_params)
+        if 'linestyle' not in pdict_init:
+            pdict_init['linestyle'] = '--'
+        if pdict_init['zorder'] == 0:
+            pdict_init['zorder'] = 3
         pdict_init['yvals'] = model.eval(
             **pdict['fit_res'].init_values,
             **{independent_var: pdict['xvals']})
