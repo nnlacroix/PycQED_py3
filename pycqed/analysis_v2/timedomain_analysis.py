@@ -6344,6 +6344,27 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
         freq_errs_meas = self.proc_data_dict['analysis_params_dict'][
             f'freq_{qbn}']['stderr']
 
+        tvals_gen, volts_gen, volt_freq_conv = self.get_generated_pulse(qbn)
+
+        return tvals_gen, volts_gen, tvals_meas, freqs_meas, freq_errs_meas, \
+               volt_freq_conv
+
+    def get_generated_pulse(self, qbn=None, tvals_gen=None, pulse_params=None):
+        """
+        Args:
+            qbn: specifies for which qubit to calculate the quantities for.
+                Defaults to the first qubit in qb_names.
+
+        Returns: A tuple (tvals_gen, volts_gen, tvals_meas, freqs_meas,
+                freq_errs_meas, volt_freq_conv)
+            tvals_gen: time values for the generated fluxpulse
+            volts_gen: voltages of the generated fluxpulse
+            volt_freq_conv: dictionary of fit params for frequency-voltage
+                conversion
+        """
+        if qbn is None:
+            qbn = self.qb_names[0]
+
         # Flux pulse parameters
         # Needs to be changed when support for other pulses is added.
         op_dict = {
@@ -6381,17 +6402,19 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
         }
 
         dd = self.get_data_from_timestamp_list(params_dict)
+        if pulse_params is not None:
+            dd.update(pulse_params)
         dd['element_name'] = 'element'
 
         pulse = seg_mod.UnresolvedPulse(dd).pulse_obj
         pulse.algorithm_time(0)
 
-        tvals_gen = np.arange(0, pulse.length, 1 / 2.4e9)
+        if tvals_gen is None:
+            tvals_gen = np.arange(0, pulse.length, 1 / 2.4e9)
         volts_gen = pulse.chan_wf(dd['flux_channel'], tvals_gen)
         volt_freq_conv = dd['volt_freq_conv']
 
-        return tvals_gen, volts_gen, tvals_meas, freqs_meas, freq_errs_meas, \
-               volt_freq_conv
+        return tvals_gen, volts_gen, volt_freq_conv
 
 
 class CZDynamicPhaseAnalysis(MultiQubit_TimeDomain_Analysis):
