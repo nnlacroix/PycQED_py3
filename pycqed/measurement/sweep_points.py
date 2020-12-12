@@ -362,3 +362,16 @@ class SweepPoints(list):
         for k, v in sp[dimension].items():
             sp[dimension][k] = (np.array(v[0])[i], v[1], v[2])
         return sp
+
+    def remove_sweep_parameter(self, param_name):
+        """
+        Removes a the sweep parameter with a given name from the SweepPoints
+        object. If the parameter is not found, a warning is issued.
+        :param param_name: (str) name of the sweep parameter to remove
+        """
+        dim = self.find_parameter(param_name)
+        if dim is None:
+            log.warning(f"remove_sweep_parameter: Sweep parameter "
+                        f"{param_name} not found.")
+        else:
+            del self[dim][param_name]
