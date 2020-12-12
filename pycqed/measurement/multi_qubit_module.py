@@ -2638,8 +2638,7 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
     MC.set_sweep_points_2D(soft_sweep_points)
     det_func = qbr.int_avg_classif_det if classified else qbr.int_avg_det
     MC.set_detector_function(det_func)
-    sweep_points = SweepPoints(from_dict_list=[hard_sweep_params,
-                                               soft_sweep_params])
+    sweep_points = SweepPoints([hard_sweep_params, soft_sweep_params])
     exp_metadata.update({
         'preparation_params': prep_params,
         'cal_points': repr(cp),
