@@ -355,11 +355,17 @@ def get_param(param, data_dict, default_value=None,
                 if all_keys[i] in md:
                     md = md[all_keys[i]]
                 p = p if isinstance(p, dict) else OrderedDict()
-                dd = dd if isinstance(dd, dict) else OrderedDict()
+                if isinstance(dd, list) or isinstance(dd, np.ndarray):
+                    all_keys[i + 1] = int(all_keys[i + 1])
+                else:
+                    dd = dd if isinstance(dd, dict) else OrderedDict()
                 md = md if isinstance(md, dict) else OrderedDict()
-        value = p.get(all_keys[-1],
-                      dd.get(all_keys[-1],
-                             md.get(all_keys[-1], default_value)))
+        if isinstance(dd, list) or isinstance(dd, np.ndarray):
+            value = dd[all_keys[-1]]
+        else:
+            value = p.get(all_keys[-1],
+                          dd.get(all_keys[-1],
+                                 md.get(all_keys[-1], default_value)))
 
     if raise_error and value is None:
         if error_message is None:
@@ -454,11 +460,15 @@ def add_param(name, value, data_dict, add_param_method=None, **params):
     all_keys = name.split('.')
     if len(all_keys) > 1:
         for i in range(len(all_keys)-1):
-            if all_keys[i] not in dd:
+            if isinstance(dd, list):
+                all_keys[i] = int(all_keys[i])
+            if not isinstance(dd, list) and all_keys[i] not in dd:
                 dd[all_keys[i]] = OrderedDict()
             dd = dd[all_keys[i]]
 
-    if all_keys[-1] in dd:
+    if isinstance(dd, list) or isinstance(dd, np.ndarray):
+        all_keys[-1] = int(all_keys[-1])
+    if isinstance(dd, list) or all_keys[-1] in dd:
         if add_param_method == 'skip':
             return
         elif add_param_method == 'update':
@@ -466,7 +476,11 @@ def add_param(name, value, data_dict, add_param_method=None, **params):
                 raise ValueError(f'The value corresponding to {all_keys[-1]} '
                                  f'is not a dict. Cannot update_value in '
                                  f'data_dict')
-            dd[all_keys[-1]].update(value)
+            if isinstance(dd[all_keys[-1]], list):
+                for k, v in value.items():
+                    dd[all_keys[-1]][int(k)] = v
+            else:
+                dd[all_keys[-1]].update(value)
         elif add_param_method == 'append':
             v = dd[all_keys[-1]]
             if not isinstance(v, list):
