@@ -2,6 +2,7 @@ import logging
 log = logging.getLogger(__name__)
 from collections import OrderedDict
 from copy import deepcopy
+import numpy as np
 from numpy import array  # Needed for eval. Do not remove.
 
 class SweepPoints(list):
@@ -347,3 +348,17 @@ class SweepPoints(list):
             if param_name in self[dim]:
                 return dim
         return None
+
+    def subset(self, i, dimension=0):
+        """
+        Returns a new SweepPoints object with one of the dimensions reduced
+        to a subset of the sweep values. The other dimensions are unchanged.
+        :param i: (list) indices of the sweep values that should be
+            contained in the subset.
+        :param dimension: (int, default 0) index of the dimension that
+            should be reduced
+        """
+        sp = SweepPoints(self)
+        for k, v in sp[dimension].items():
+            sp[dimension][k] = (np.array(v[0])[i], v[1], v[2])
+        return sp
