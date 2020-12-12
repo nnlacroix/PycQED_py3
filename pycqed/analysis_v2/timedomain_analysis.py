@@ -526,6 +526,21 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if self.options_dict.get('TwoD', False):
             self.create_sweep_points_2D_dict()
 
+        main_sp = self.get_param_value('main_sp', None)
+        if main_sp is not None:
+            spd = self.proc_data_dict['sweep_points_dict']
+            for qbn, p in main_sp.items():
+                dim = self.sp.find_parameter(p)
+                if dim == 1:
+                    log.warning(f"main_sp is only implemented for sweep "
+                                f"dimension 0, but {p} is in dimension 1.")
+                spd[qbn]['msmt_sweep_points'] = \
+                    self.sp.get_sweep_params_property('values', param_names=p)
+                spd[qbn]['sweep_points'] = self.cp.extend_sweep_points(
+                    spd[qbn]['msmt_sweep_points'], qbn)
+                spd[qbn]['cal_points_sweep_points'] = spd[qbn][
+                    'sweep_points'][-len(spd[qbn]['cal_points_sweep_points']):]
+
     def get_cal_data_points(self):
         self.num_cal_points = np.array(list(
             self.cal_states_dict.values())).flatten().size
@@ -937,8 +952,13 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         sweep_name = self.get_param_value('sweep_name')
         sweep_unit = self.get_param_value('sweep_unit')
         if self.sp is not None:
+            main_sp = self.get_param_value('main_sp', None)
+            if main_sp is not None and qb_name in main_sp:
+                param_names = [main_sp[qb_name]]
+            else:
+                param_names = self.mospm[qb_name]
             _, xunit, xlabel = self.sp.get_sweep_params_description(
-                param_names=self.mospm[qb_name], dimension=0)[0]
+                param_names=param_names, dimension=0)[0]
         elif hard_sweep_params is not None:
             xlabel = list(hard_sweep_params)[0]
             xunit = list(hard_sweep_params.values())[0][
