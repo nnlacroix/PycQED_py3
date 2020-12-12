@@ -3396,6 +3396,8 @@ class FluxAmplitudeSweepAnalysis(MultiQubit_TimeDomain_Analysis):
         # metadata has been extracted.)
         if self.get_param_value('rotation_type', default_value=None) is None:
             self.options_dict['rotation_type'] = 'global_PCA'
+        if self.get_param_value('TwoD', default_value=None) is None:
+            self.options_dict['TwoD'] = True
 
     def process_data(self):
         super().process_data()
