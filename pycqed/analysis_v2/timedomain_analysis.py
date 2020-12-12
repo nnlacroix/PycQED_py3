@@ -226,6 +226,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if self.params_dict is None:
             self.params_dict = {}
         self.numeric_params = numeric_params
+        self.measurement_strings = {qbn: qbn for qbn in qb_names}
         if self.numeric_params is None:
             self.numeric_params = []
 
@@ -245,6 +246,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             self.qb_names = self.get_param_value('ro_qubits')
             if self.qb_names is None:
                 raise ValueError('Provide the "qb_names."')
+        self.measurement_strings = {
+            qbn: self.raw_data_dict['measurementstring'] + f' {qbn}' for qbn in
+            self.qb_names}
 
         self.data_filter = self.get_param_value('data_filter')
         self.prep_params = self.get_param_value('preparation_params',
@@ -610,6 +614,33 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                     sdd[i][d] = pdd[d][qbn][:, subset]
                                 else:
                                     sdd[i][d] = pdd[d][qbn][ind == i, :]
+
+            select_split = self.get_param_value('select_split', None)
+            if select_split is None:
+                select_split = {}
+            if select_split is not None:
+                for qbn, select in select_split.items():
+                    p, v = select
+                    if p not in pdd['split_data_dict'][qbn]:
+                        log.warning(f"Split parameter {p} for {qbn} not "
+                                    f"found. Ignoring this selection.")
+                    try:
+                        ind = [a['value'] for a in pdd['split_data_dict'][
+                            qbn][p].values()].index(v)
+                    except ValueError:
+                        ind = v
+                        try:
+                            pdd['split_data_dict'][qbn][p][ind]
+                        except ValueError:
+                            log.warning(f"Value {v} for split parameter {p} "
+                                        f"of {qbn} not found. Ignoring this "
+                                        f"selection.")
+                            continue
+                    for d in ['projected_data_dict', 'data_to_fit',
+                              'sweep_points_dict', 'sweep_points_2D_dict']:
+                        pdd[d][qbn] = pdd['split_data_dict'][qbn][p][ind][d]
+                    self.measurement_strings[qbn] += f' ({p}: {v})'
+                    self.measurement_strings[qbn] += f' ({p}: {v})'
 
     def get_cal_data_points(self):
         self.num_cal_points = np.array(list(
