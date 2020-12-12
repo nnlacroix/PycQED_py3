@@ -8250,8 +8250,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     'ylabel': ylabel,
                     'yunit': yunit,
                     'title': (self.raw_data_dict['timestamp'] + ' ' +
-                              self.raw_data_dict['measurementstring'] + ' ' +
-                              qbn),
+                              self.measurement_strings[qbn]),
                     'clabel': 'Strongest principal component (arb.)' if \
                         'pca' in self.rotation_type.lower() else \
                         '{} state population'.format(
