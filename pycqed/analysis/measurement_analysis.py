@@ -6610,13 +6610,13 @@ class FluxPulse_Scope_Analysis(MeasurementAnalysis):
                 that the qubit is fluxed upwards (from lower sweet spot or a
                 position close to lower sweet spot). Default False.
             freq_ranges_exclude: (list) frequency ranges to exclude as list of
-                tupes [(f1, f2), ...]. Will be excluded from both fitting
+                tuples [(f1, f2), ...]. Will be excluded from both fitting
                 and plotting.
             delay_ranges_exclude: (list) delay ranges to exclude as list of
-                tupes [(t1, t2), ...]. Will be excluded from both fitting
+                tuples [(t1, t2), ...]. Will be excluded from both fitting
                 and plotting.
             rectangles_exclude: (list) rectangles to exclude as list of
-                tupes [(t1, t2, f1, f2), ...]. Will be excluded from fitting,
+                tuples [(t1, t2, f1, f2), ...]. Will be excluded from fitting,
                 but not from plotting.
             **kw (dict): keywords passed to the init of the base class
         '''
