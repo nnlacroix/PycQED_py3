@@ -7670,7 +7670,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
         for qbn in self.qb_names:
             delays = self.proc_data_dict['proc_sweep_points_dict'][qbn][
                 'sweep_points']
-            fit_keys = [k for k in self.fit_dicts if qbn in k]
+            fit_keys = [k for k in self.fit_dicts if qbn in k.split('_')]
             fitted_freqs = np.zeros(len(fit_keys))
             fitted_freqs_errs = np.zeros(len(fit_keys))
             deep = False
