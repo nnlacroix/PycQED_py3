@@ -943,7 +943,7 @@ class CPhase(CalibBuilder):
 
 
 class DynamicPhase(CalibBuilder):
-    kw_for_task_keys = ['init_for_swap']
+    kw_for_task_keys = ['num_cz_gates', 'init_for_swap']
 
     def __init__(self, task_list, sweep_points=None, **kw):
         """
@@ -1098,7 +1098,7 @@ class DynamicPhase(CalibBuilder):
 
     def dynamic_phase_block(self, sweep_points, op_code, qubits_to_measure,
                             qubits_to_drive=None, prepend_pulse_dicts=None,
-                            init_for_swap=False, **kw):
+                            num_cz_gates=1, init_for_swap=False, **kw):
         """
         This function creates the blocks for a single DynamicPhase measurement
         task.
@@ -1111,6 +1111,7 @@ class DynamicPhase(CalibBuilder):
             qubits_to_measure will be used)
         :param prepend_pulse_dicts: (dict) prepended pulses, see
             prepend_pulses_block
+        :param num_cz_gates: number of sequential CZ gates, default: 1
         :param init_for_swap: (bool) When the flux pulse is off, initialize the
             qubits that are not part of qubits_to_drive (experimental feature
             for swap gate characterization)
@@ -1159,8 +1160,9 @@ class DynamicPhase(CalibBuilder):
             proc_op_code = self.get_cz_operation_name(op_code=op_code, **kw)
         else:  # not a 2-qubit gate
             proc_op_code = op_code
-        fp = self.block_from_ops('flux', proc_op_code)
-        fp.pulses[0]['pulse_off'] = ParametricValue('flux_pulse_off')
+        fp = self.block_from_ops('flux', [proc_op_code] * num_cz_gates)
+        for p in fp.pulses:
+            p['pulse_off'] = ParametricValue('flux_pulse_off')
         # FIXME: currently, this assumes that only flux pulse parameters are
         #  swept in the soft sweep. In fact, channels_to_upload should be
         #  determined based on the sweep_points
@@ -1171,7 +1173,8 @@ class DynamicPhase(CalibBuilder):
 
         for k in soft_sweep_dict:
             if '=' not in k:  # pulse modifier in the sweep dict
-                fp.pulses[0][k] = ParametricValue(k)
+                for p in fp.pulses:
+                    p[k] = ParametricValue(k)
 
         pulse_modifs = {
             'all': {'element_name': 'pi_half_end', 'ref_pulse': 'start'}}
