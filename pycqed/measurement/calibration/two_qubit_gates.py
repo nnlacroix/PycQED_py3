@@ -246,8 +246,8 @@ class MultiTaskingExperiment(QuantumExperiment):
 
         # Copy kwargs listed in kw_for_task_keys to the task.
         for param in self.kw_for_task_keys:
-            if param not in task:
-                task[param] = kw.get(param, None)
+            if param not in task and param in kw:
+                task[param] = kw.get(param)
 
         # Start with sweep points valid for all tasks
         current_sweep_points = SweepPoints(sweep_points)
