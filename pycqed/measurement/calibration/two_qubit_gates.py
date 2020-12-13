@@ -1018,6 +1018,7 @@ class DynamicPhase(CalibBuilder):
                 # We call the init of super() only for the spawned child
                 # measurements. We need special treatment of some properties
                 # in the following lines.
+                self.MC = None
                 # extract device object, which will be needed for update
                 self.dev = kw.get('dev', None)
                 # Configure the update callback for the parent. It will be
