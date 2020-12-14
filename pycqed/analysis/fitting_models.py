@@ -174,6 +174,46 @@ def Qubit_dac_to_freq_precise(dac_voltage, Ej_max, E_c, asymmetry,
     qubit_freq = np.array(freqs)
     return qubit_freq
 
+def Qubit_dac_to_freq_res(dac_voltage, Ej_max, E_c, asymmetry, coupling, fr,
+                              dac_sweet_spot=0.0, V_per_phi0=None,
+                              dac_flux_coefficient=None,
+                              phi_park=None
+                              ):
+    '''
+    The cosine Arc model for uncalibrated flux for asymmetric qubit.
+    dac_voltage (V)
+    Ejmax (Hz): Maximum Ej of qubit
+    Ec (Hz): charging energy of the qubit
+    d =  abs((EJ1-EJ2)/(EJ1+EJ2)))
+    dac_sweet_spot (V): voltage at which the sweet-spot is found
+    V_per_phi0 (V): volt per phi0 (convert voltage to flux
+    '''
+    if np.ndim(dac_voltage) == 0:
+        dac_voltage = np.array([dac_voltage])
+    if V_per_phi0 is None and dac_flux_coefficient is None:
+        raise ValueError('Please specify "V_per_phi0".')
+    if dac_flux_coefficient is not None:
+        log.warning('"dac_flux_coefficient" deprecated. Please use the '
+                    'physically meaningful "V_per_phi0" instead.')
+        V_per_phi0 = np.pi / dac_flux_coefficient
+
+    if phi_park is not None:
+        dac_sweet_spot = phi_park * V_per_phi0
+
+    phi = np.pi / V_per_phi0 * (dac_voltage - dac_sweet_spot)
+    Ej = 2 * np.pi * Ej_max * np.cos(phi) * np.sqrt(1 + asymmetry ** 2 * np.tan(phi) ** 2)
+    E_c = 2 * np.pi * E_c
+    freqs = []
+    for ej in Ej:
+        freqs.append((transmon.transmon_resonator_levels(E_c,
+                                                         ej,
+                                                         fr,
+                                                         coupling,
+                                                         states=[(1, 0), (2, 0)]
+                                                         ) / (2 * np.pi))[0])
+    qubit_freq = np.array(freqs)
+    return qubit_freq
+
 def Resonator_dac_to_freq(dac_voltage, f_max_qubit, f_0_res,
                           E_c, dac_sweet_spot,
                           coupling, V_per_phi0=None,
