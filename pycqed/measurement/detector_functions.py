@@ -1065,6 +1065,7 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
     def acquire_data_point(self):
         return self.get_values()
 
+
     def prepare(self, sweep_points=None):
         if self.AWG is not None:
             self.AWG.stop()
