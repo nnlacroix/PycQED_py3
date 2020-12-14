@@ -225,7 +225,7 @@ def resonator_hamiltonian(frb: float, dim_resonator: int = 10):
 
 def transmon_resonator_levels(ec: float, ej: float, frb: float, gb: float,
                               ng: float = 0., dim_charge: int = 31,
-                              dim_resonator: int = 10,
+                              dim_resonator: int = 3,
                               states: List[Tuple[int, int]] =
                               ((1, 0), (2, 0), (0, 1), (1, 1))):
     """Calculate eigenfrequencies of the coupled transmon-resonator Hamiltonian.
@@ -254,15 +254,23 @@ def transmon_resonator_levels(ec: float, ej: float, frb: float, gb: float,
     ham_int = gb * np.kron(n_mon, a_res + a_res.T)
     ham = np.kron(ham_mon, id_res) + np.kron(id_mon, ham_res) + ham_int
 
-    levels_full, states_full = np.linalg.eigh(ham)
-    levels_transmon, states_transmon = np.linalg.eigh(ham_mon)
+    levels_full, states_full = np.linalg.eig(ham)
+    levels_transmon, states_transmon = np.linalg.eig(ham_mon)
     states_transmon = states_transmon[:, np.argsort(levels_transmon)]
+
     return_idxs = []
     for kt, kr in states:
         bare_state = np.kron(states_transmon[:, kt],
                              np.arange(dim_resonator) == kr)
         return_idxs.append(np.argmax(np.abs(states_full.T @ bare_state)))
-    return levels_full[return_idxs] - levels_full.min()
+
+    bare_state = np.kron(states_transmon[:, 0],
+                         np.arange(dim_resonator) == 0)
+    gs_id = np.argmax(np.abs(states_full.T @ bare_state))
+
+    es = levels_full[return_idxs] - levels_full[gs_id]
+
+    return es
 
 
 def transmon_resonator_fge_anh_frg_chi(ec: float, ej: float, frb: float,
