@@ -192,7 +192,7 @@ class QuDev_transmon(Qubit):
         self.add_parameter('acq_weights_type', initial_value='SSB',
                            vals=vals.Enum('SSB', 'DSB', 'optimal',
                                           'square_rot', 'manual',
-                                          'optimal_qutrit'),
+                                          'optimal_qutrit', 'SSB_SHF'),
                            docstring=(
                                'Determines what type of integration weights to '
                                'use: \n\tSSB: Single sideband demodulation\n\t'
@@ -404,7 +404,7 @@ class QuDev_transmon(Qubit):
 
     def update_detector_functions(self):
         if self.acq_Q_channel() is None or \
-           self.acq_weights_type() not in ['SSB', 'DSB', 'optimal_qutrit']:
+           self.acq_weights_type() not in ['SSB', 'SSB_SHF', 'DSB', 'optimal_qutrit']:
             channels = [self.acq_I_channel()]
         else:
             channels = [self.acq_I_channel(), self.acq_Q_channel()]
@@ -463,13 +463,14 @@ class QuDev_transmon(Qubit):
             integration_length=self.acq_length(),
             result_logging_mode='raw', real_imag=False, single_int_avg=True)
 
-    def prepare(self, drive='timedomain'):
+    def prepare(self, drive='timedomain', shf=None):
         ro_lo = self.instr_ro_lo
         ge_lo = self.instr_ge_lo
 
         # set awg channel dc offsets
-        offset_list = [('ro_I_channel', 'ro_I_offset'),
-                       ('ro_Q_channel', 'ro_Q_offset')]
+        # offset_list = [('ro_I_channel', 'ro_I_offset'),  # deactivated for SHF
+        #                ('ro_Q_channel', 'ro_Q_offset')]
+        offset_list = []
         if drive == 'timedomain':
             if self.ge_lo_leakage_cal()['mode'] == 'fixed':
                 offset_list += [('ge_I_channel', 'ge_I_offset'),
@@ -495,22 +496,22 @@ class QuDev_transmon(Qubit):
                 self.get(channel_par) + '_offset', self.get(offset_par))
 
         # configure readout local oscillators
-        if ro_lo() is not None:
-            ro_lo.get_instr().pulsemod_state('Off')
-            ro_lo.get_instr().power(self.ro_lo_power())
-            # in case of multichromatic readout, take first ro freq, else just
-            # wrap the frequency in a list and take the first
-            if np.ndim(self.ro_freq()) == 0:
-                ro_freq = [self.ro_freq()]
-            else:
-                ro_freq = self.ro_freq()
-            if np.ndim(self.ro_mod_freq()) == 0:
-                ro_mod_freq = [self.ro_mod_freq()]
-            else:
-                ro_mod_freq = self.ro_mod_freq()
-            ro_lo.get_instr().frequency(ro_freq[0] - ro_mod_freq[0])
-
-            ro_lo.get_instr().on()
+        # if ro_lo() is not None:
+        #     ro_lo.get_instr().pulsemod_state('Off')
+        #     ro_lo.get_instr().power(self.ro_lo_power())
+        #     # in case of multichromatic readout, take first ro freq, else just
+        #     # wrap the frequency in a list and take the first
+        #     if np.ndim(self.ro_freq()) == 0:
+        #         ro_freq = [self.ro_freq()]
+        #     else:
+        #         ro_freq = self.ro_freq()
+        #     if np.ndim(self.ro_mod_freq()) == 0:
+        #         ro_mod_freq = [self.ro_mod_freq()]
+        #     else:
+        #         ro_mod_freq = self.ro_mod_freq()
+        #     ro_lo.get_instr().frequency(ro_freq[0] - ro_mod_freq[0])
+        #
+        #     ro_lo.get_instr().on()
 
         # configure qubit drive local oscillator
         if ge_lo() is not None:
@@ -539,9 +540,9 @@ class QuDev_transmon(Qubit):
 
         # other preparations
         self.update_detector_functions()
-        self.set_readout_weights()
+        self.set_readout_weights(shf=shf)
 
-    def set_readout_weights(self, weights_type=None, f_mod=None):
+    def set_readout_weights(self, weights_type=None, f_mod=None, shf=None):
         if weights_type is None:
             weights_type = self.acq_weights_type()
         if f_mod is None:
@@ -561,6 +562,19 @@ class QuDev_transmon(Qubit):
                 self.acq_I_channel()), self.acq_weights_Q().copy())
             self.instr_uhf.get_instr().set('qas_0_rotations_{}'.format(
                 self.acq_I_channel()), 1.0-1.0j)
+        elif weights_type == 'SSB_SHF':
+            tbase = np.arange(0, 4097 / 2.0e9, 1 / 2.0e9)
+            theta = self.acq_IQ_angle()
+            cosI = np.array(np.cos(2 * np.pi * f_mod * tbase + theta))
+            sinI = np.array(np.sin(2 * np.pi * f_mod * tbase + theta))
+            c1 = self.acq_I_channel()
+            c2 = self.acq_Q_channel()
+            print('Set SHFQA Integration Weights / I:', c1, 'Q:', c2)
+            shf[0].setVector(f"/{shf[1]}/QAS/0/INTEGRATION/SIGINS/0/WEIGHTS/{c1}/REAL", cosI.astype("float"))
+            shf[0].setVector(f"/{shf[1]}/QAS/0/INTEGRATION/SIGINS/0/WEIGHTS/{c2}/REAL", sinI.astype("float"))
+            shf[0].setVector(f"/{shf[1]}/QAS/0/INTEGRATION/SIGINS/0/WEIGHTS/{c1}/IMAG", sinI.astype("float"))
+            shf[0].setVector(f"/{shf[1]}/QAS/0/INTEGRATION/SIGINS/0/WEIGHTS/{c2}/IMAG", cosI.astype("float"))
+
         elif weights_type == 'optimal_qutrit':
             for w_f in [self.acq_weights_I, self.acq_weights_Q,
                         self.acq_weights_I2, self.acq_weights_Q2]:
@@ -688,6 +702,13 @@ class QuDev_transmon(Qubit):
             self.instr_ro_lo.get_instr().frequency(),
             name='Readout frequency',
             parameter_name='Readout frequency')
+    def shf_swf_ro_mod_freq(self, shf, shf_lo_freq):
+        return swf.SHF_Sweep(
+            shf, shf_lo_freq, self,
+            name='Readout frequency',
+            parameter_name = 'Readout frequency',
+            unit = 'Hz')
+
     def measure_resonator_spectroscopy(self, freqs, sweep_points_2D=None,
                                        sweep_function_2D=None,
                                        trigger_separation=3e-6,

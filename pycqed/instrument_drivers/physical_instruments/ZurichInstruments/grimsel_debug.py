@@ -52,6 +52,23 @@ DEBUG_REG_REG_TRIG_CTRL_START             = 0x26
 DEBUG_REG_REG_TRIG_CTRL_SRC_SEL           = 0x27
 DEBUG_REG_REG_SEQENCER_LENGTH             = 0x28
 
+XRFDC_MIXER_MODE_OFF                      = 0x0
+XRFDC_MIXER_MODE_C2C                      = 0x1
+XRFDC_MIXER_MODE_C2R                      = 0x2
+XRFDC_MIXER_MODE_R2C                      = 0x3
+XRFDC_MIXER_MODE_R2R                      = 0x4
+
+XRFDC_MIXER_TYPE_COARSE                   = 0x1
+XRFDC_MIXER_TYPE_FINE                     = 0x2
+XRFDC_MIXER_TYPE_OFF                      = 0x0
+XRFDC_MIXER_TYPE_DISABLED                 = 0x3
+
+XRFDC_COARSE_MIX_OFF                      = 0x0
+XRFDC_COARSE_MIX_SAMPLE_FREQ_BY_TWO       = 0x2
+XRFDC_COARSE_MIX_SAMPLE_FREQ_BY_FOUR      = 0x4
+XRFDC_COARSE_MIX_MIN_SAMPLE_FREQ_BY_FOUR  = 0x8
+XRFDC_COARSE_MIX_BYPASS                   = 0x10
+
 # DAC decoder modes
 GML_HH_RFDC_DAC_DECODER_MODE_MAX_SNR        = 0x0
 GML_HH_RFDC_DAC_DECODER_MODE_MAX_LINEARITY  = 0x1
@@ -728,6 +745,10 @@ def dac_source_select(channel_idx, selection : DAC_source):
 def dac_mixer_enable():
     # the following enables the fine mixer mode (coarse is not supported at the moment)
     _daq.setInt(f"/{_device_name}/RAW/DEBUG/{DEBUG_REG_REG_DAC_MIXER_TEST_ID}/VALUE", 2)
+
+def dac_mixer_enable_index(index):
+    # the following enables the fine mixer mode (coarse is not supported at the moment)
+    _daq.setInt(f"/{_device_name}/RAW/RFDAC/{index}/MIXER/TYPE", XRFDC_MIXER_TYPE_FINE)
 
 # disables the RFdc mixer for all DACs
 def dac_mixer_disable():

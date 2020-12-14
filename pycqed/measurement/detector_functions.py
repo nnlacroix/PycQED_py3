@@ -419,12 +419,21 @@ class UHFQC_Base(Hard_Detector):
         self.UHF_map = {UHF.name: i
                    for UHF, i in zip(self.UHFs, range(len(self.detectors)))}
 
-    def poll_data(self):
+    def poll_data(self, SHFQA=None, n_shots=2**8, n_avg=None):
         if self.AWG is not None:
             self.AWG.stop()
 
         for UHF in self.UHFs:
             UHF.set('qas_0_result_enable', 1)
+
+        if SHFQA is not None:
+            SHFQA[0].setInt(f"/{SHFQA[1]}/QAS/0/RESULT/SOURCE", 1)  # source = 1: readout
+            SHFQA[0].setInt(f"/{SHFQA[1]}/QAS/0/INTEGRATION/LENGTH", 4096)
+            SHFQA[0].setInt(f"/{SHFQA[1]}/QAS/0/INTEGRATION/COMPLEXMODE", 1)
+            SHFQA[0].setInt(f"/{SHFQA[1]}/qas/0/result/length", n_shots)
+            SHFQA[0].setInt(f"/{SHFQA[1]}/qas/0/result/enable", 1)
+            shf_acq_paths = [f"/{SHFQA[1]}/qas/0/result/sigins/0/data/0/wave", \
+                             f"/{SHFQA[1]}/qas/0/result/sigins/0/data/1/wave"]
 
         if self.AWG is not None:
             self.AWG.start()
@@ -445,22 +454,77 @@ class UHFQC_Base(Hard_Detector):
             for UHF in self.UHFs:
                 if not all(gotem[UHF.name]):
                     time.sleep(0.01)
-                    dataset[UHF.name] = UHF.poll(0.01)
-            for UHFname in dataset.keys():
-                for n, p in enumerate(acq_paths[UHFname]):
-                    if p in dataset[UHFname]:
-                        for v in dataset[UHFname][p]:
-                            data[UHFname][n] = np.concatenate(
-                                (data[UHFname][n], v['vector']))
+                    if SHFQA is not None:
+                        print('Subscribe to SHFQA / Channel 0')
+                        for i in range(n_shots):
+                            readback_value = SHFQA[0].getInt(f"/{SHFQA[1]}/QAS/0/RESULT/ACQUIRED")
+                            if readback_value == n_shots:
+                                print('got it')
+                                break
+                            time.sleep(0.04)
+                        for i in range(n_shots):
+                            readback_value = SHFQA[0].getInt(f"/{SHFQA[1]}/QAS/0/RESULT/ENABLE")
+                            if readback_value == 0:
+                                print('yess')
+                                break
+                            time.sleep(0.04)
+                        SHFQA[0].subscribe(f'/{SHFQA[1]}/qas/0/result/sigins/*')
+                        SHFQA[0].getAsEvent(f'/{SHFQA[1]}/qas/0/result/sigins/{0}/data/{0}/wave')
+                        SHFQA[0].getAsEvent(f'/{SHFQA[1]}/qas/0/result/sigins/{0}/data/{1}/wave')
+                        vector = SHFQA[0].poll(2, 30, flat=True)
+                        SHFQA[0].setInt(f"/{SHFQA[1]}/qas/0/result/reset", 1)
+                        for i in range(n_shots):
+                            readback_value = SHFQA[0].getInt(f"/{SHFQA[1]}/QAS/0/RESULT/RESET")
+                            if readback_value == 0:
+                                break
+                            time.sleep(0.04)
+                        dataset[UHF.name] = vector
+                    else:
+                        dataset[UHF.name] = UHF.poll(0.01)
 
-                            if len(data[UHFname][n]) >= self.detectors[
-                                self.UHF_map[UHFname]].nr_sweep_points:
-                                gotem[UHFname][n] = True
+            if SHFQA is not None:
+                for UHFname in dataset.keys():
+                    for n, p in enumerate(shf_acq_paths):
+                        if p in dataset[UHFname]:
+                            for v in dataset[UHFname][p]:
+                                # data[UHFname][n] = np.concatenate(
+                                #     (data[UHFname][n], v['vector']))
+                                data[UHFname][n] =  v['vector']
+                                if len(data[UHFname][n]) >= n_shots:
+                                    gotem[UHFname][n] = True
+                    # hack for complex multiplication
+                    data_real = np.real(data[UHFname][0])
+                    data_imag = np.imag(data[UHFname][0])
+                    data[UHFname][0] = data_real
+                    data[UHFname][1] = data_imag
+
+                    # software average this stuff
+                    if n_avg is not None:
+                        if n_avg == n_shots: # spectroscopy
+                            data[UHFname][0] = np.average(data[UHFname][0])
+                            data[UHFname][1] = np.average(data[UHFname][1])
+                        else: # timedomain
+                            data[UHFname][0] = np.average(data[UHFname][0].reshape(int(n_shots/n_avg), n_avg), axis=0)
+                            data[UHFname][1] = np.average(data[UHFname][1].reshape(int(n_shots/n_avg), n_avg), axis=0)
+
+            else:
+                for UHFname in dataset.keys():
+                    for n, p in enumerate(acq_paths[UHFname]):
+                        if p in dataset[UHFname]:
+                            for v in dataset[UHFname][p]:
+                                data[UHFname][n] = np.concatenate(
+                                    (data[UHFname][n], v['vector']))
+                                if len(data[UHFname][n]) >= self.detectors[
+                                    self.UHF_map[UHFname]].nr_sweep_points:
+                                    gotem[UHFname][n] = True
             accumulated_time += 0.01 * len(self.UHFs)
 
         if not all(np.concatenate(list(gotem.values()))):
             for UHF in self.UHFs:
-                UHF.acquisition_finalize()
+                if SHFQA is not None:
+                    SHFQA[0].unsubscribe(f'/{SHFQA[1]}/qas/0/result/sigins/*')
+                else:
+                    UHF.acquisition_finalize()
                 for n, c in enumerate(UHF._acquisition_nodes):
                     if n in data[UHF.name]:
                         n_swp = len(data[UHF.name][n])
@@ -471,9 +535,9 @@ class UHFQC_Base(Hard_Detector):
                 raise TimeoutError("Error: Didn't get all results!")
 
         data_raw = {UHF.name: np.array([data[UHF.name][key]
-                    for key in sorted(data[UHF.name].keys())]) for UHF in
-                    self.UHFs}
-
+                for key in sorted(data[UHF.name].keys())]) for UHF in
+                self.UHFs}
+        print(data_raw)
         return data_raw
 
     def finish(self):
@@ -789,10 +853,10 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
             self.value_names[1] = 'Phase'
             self.value_units[1] = 'deg'
 
-    def get_values(self):
+    def get_values(self, SHFQA=None, n_shots=2**8, n_avg=None):
         if self.always_prepare:
             self.prepare()
-        data_raw = self.poll_data()
+        data_raw = self.poll_data(SHFQA, n_shots, n_avg)
         data_processed = self.process_data(data_raw[self.UHFQC.name])
 
         # if self.AWG is not None:
@@ -841,8 +905,8 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
         data[1] = np.angle(S21)/(2*np.pi)*360
         return data
 
-    def acquire_data_point(self):
-        return self.get_values()
+    def acquire_data_point(self, SHFQA=None, n_shots=2 ** 8, n_avg=None):
+        return self.get_values(SHFQA, n_shots, n_avg)
 
     def prepare(self, sweep_points=None):
         if self.AWG is not None:
@@ -1173,7 +1237,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
                                           loop_cnt=int(self.nr_shots),
                                           mode='rl')
 
-    def get_values(self):
+    def get_values(self, SHFQA=None, n_shots=2**8, n_avg=None):
         if self.always_prepare:
             self.prepare()
         # if self.AWG is not None:
@@ -1189,7 +1253,7 @@ class UHFQC_integration_logging_det(UHFQC_Base):
         #
         # data_raw = self.UHFQC.acquisition_poll(
         #     samples=self.nr_shots, arm=False, acquisition_time=0.01)
-        data_raw = self.poll_data()
+        data_raw = self.poll_data(SHFQA, n_shots, n_avg)
         data_processed = self.process_data(data_raw[self.UHFQC.name])
         return data_processed
 

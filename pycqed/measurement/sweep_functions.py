@@ -3,6 +3,7 @@ import time
 import numpy as np
 from pycqed.measurement import mc_parameter_wrapper
 import qcodes
+from pycqed.measurement.waveform_control.pulse_library import GaussFilteredCosIQPulse
 
 
 class Sweep_function(object):
@@ -222,6 +223,68 @@ class two_par_joint_sweep(Soft_Sweep):
     def set_parameter(self, val):
         self.par_A.set(val)
         self.par_B.set(val * self.par_ratio)
+
+
+class SHF_Sweep(Soft_Sweep):
+
+    def __init__(self,
+                 shf, shf_lo_freq, qb,
+                 name=None,
+                 parameter_name=None,
+                 unit=None):
+        super().__init__()
+        self.shf = shf
+        self.shf_lo_freq = shf_lo_freq
+        self.qb = qb
+        self.name = name
+        self.parameter_name = parameter_name
+        self.unit = unit
+
+    def prepare(self, *args, **kwargs):
+        print('SHFQA Sweep Preperation')
+
+    def finish(self, *args, **kwargs):
+        print('SHFQA Sweep Finish')
+
+    def set_parameter(self, val):
+
+        # calculate mod freq
+        f_mod = val - self.shf_lo_freq
+
+        # uplaod weights
+        tbase = np.arange(0, 4097 / 2.0e9, 1 / 2.0e9)
+        theta = self.qb.acq_IQ_angle()
+        cosI = np.array(np.cos(2 * np.pi * f_mod * tbase + theta))
+        sinI = np.array(np.sin(2 * np.pi * f_mod * tbase + theta))
+        c1 = self.qb.acq_I_channel()
+        c2 = self.qb.acq_Q_channel()
+        self.shf[0].setVector(f"/{self.shf[1]}/QAS/0/INTEGRATION/SIGINS/0/WEIGHTS/{c1}/REAL", cosI.astype("float"))
+        self.shf[0].setVector(f"/{self.shf[1]}/QAS/0/INTEGRATION/SIGINS/0/WEIGHTS/{c2}/REAL", sinI.astype("float"))
+        self.shf[0].setVector(f"/{self.shf[1]}/QAS/0/INTEGRATION/SIGINS/0/WEIGHTS/{c1}/IMAG", sinI.astype("float"))
+        self.shf[0].setVector(f"/{self.shf[1]}/QAS/0/INTEGRATION/SIGINS/0/WEIGHTS/{c2}/IMAG", cosI.astype("float"))
+
+        # upload waveform
+        tvals = np.arange(0, 8192 / 2.0e9, 1 / 2.0e9)
+        ro_pulse = GaussFilteredCosIQPulse(I_channel=0, Q_channel=1, element_name='ro_pulse')
+        ro_pulse.amplitude = self.qb.get_ro_pars()['amplitude']
+        ro_pulse.pulse_length = self.qb.get_ro_pars()['pulse_length']
+        ro_pulse.mod_frequency = f_mod
+        ro_pulse.gaussian_filter_sigma = self.qb.get_ro_pars()['gaussian_filter_sigma']
+        ro_pulse.nr_sigma = self.qb.get_ro_pars()['nr_sigma']
+        ro_pulse.phase_lock = self.qb.get_ro_pars()['phase_lock']
+        I_wave = ro_pulse.chan_wf(0, tvals)
+        Q_wave = ro_pulse.chan_wf(1, tvals)
+        wave_IQ = np.zeros(2 * 8192)
+        wave_null = np.zeros(2 * 8192)
+
+        A_wave = 129760
+        wave_IQ[::2] = I_wave * A_wave
+        wave_IQ[1::2] = -Q_wave * A_wave
+
+        self.shf[0].setVector(f'/{self.shf[1]}/RAW/AWGS/0/WAVEFORM/WAVES/{0}', wave_IQ.astype("uint32"))
+
+        for idx in range(1, 10):
+            self.shf[0].setVector(f'/{self.shf[1]}/RAW/AWGS/0/WAVEFORM/WAVES/{idx}', wave_null.astype("uint32"))
 
 
 class Offset_Sweep(Soft_Sweep):

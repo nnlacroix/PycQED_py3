@@ -1160,7 +1160,7 @@ class ZI_base_instrument(Instrument):
         self.daq.sync()
 
     def start(self):
-        self.check_errors()
+        # self.check_errors()
 
         # FIXME
         # Loop through each AWG and check whether to reconfigure it
@@ -1202,7 +1202,7 @@ class ZI_base_instrument(Instrument):
         else:
             self.set('execution_enable', 0)
 
-        self.check_errors()
+        # self.check_errors()
 
     def close(self) -> None:
         try:

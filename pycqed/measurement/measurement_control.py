@@ -144,8 +144,8 @@ class MeasurementControl(Instrument):
             self.set_sweep_points(np.tile(sweep_points,
                                           self.acq_data_len_scaling))
 
-    def run(self, name: str=None, exp_metadata: dict=None,
-            mode: str='1D', disable_snapshot_metadata: bool=False, **kw):
+    def run(self, name: str=None, exp_metadata: dict=None, SHFQA=None, n_shots=2**8, n_avg=None,
+            mode: str='1D', disable_snapshot_metadata: bool=False, spec=False, **kw):
         '''
         Core of the Measurement control.
 
@@ -184,6 +184,8 @@ class MeasurementControl(Instrument):
 
         # used in get_percdone to scale the length of acquired data
         self.acq_data_len_scaling = self.detector_function.acq_data_len_scaling
+        if spec is True:
+            self.acq_data_len_scaling = 1
 
         # update sweep_points based on self.acq_data_len_scaling
         self.update_sweep_points()
@@ -214,7 +216,7 @@ class MeasurementControl(Instrument):
                     except:
                         self.xlen = 1
                 if self.mode == '1D':
-                    self.measure()
+                    self.measure(SHFQA, n_shots, n_avg)
                 elif self.mode == '2D':
                     self.measure_2D()
                 elif self.mode == 'adaptive':
@@ -241,7 +243,7 @@ class MeasurementControl(Instrument):
         self.finish(result)
         return return_dict
 
-    def measure(self):
+    def measure(self, SHFQA=None, n_shots=2**8, n_avg=None):
         if self.live_plot_enabled():
             self.initialize_plot_monitor()
 
@@ -252,7 +254,7 @@ class MeasurementControl(Instrument):
                 self.detector_function.detector_control == 'soft'):
             self.detector_function.prepare()
             self.get_measurement_preparetime()
-            self.measure_soft_static()
+            self.measure_soft_static(SHFQA, n_shots, n_avg)
 
         elif self.detector_function.detector_control == 'hard':
             self.get_measurement_preparetime()
@@ -265,7 +267,7 @@ class MeasurementControl(Instrument):
                         sweep_points[start_idx])
                     self.detector_function.prepare(
                         sweep_points=self.get_sweep_points())
-                    self.measure_hard()
+                    self.measure_hard(SHFQA, n_shots, n_avg)
                 else:  # If mode is 2D
                     for i, sweep_function in enumerate(self.sweep_functions):
                         swf_sweep_points = sweep_points[:, i]
@@ -294,11 +296,11 @@ class MeasurementControl(Instrument):
 
         return
 
-    def measure_soft_static(self):
+    def measure_soft_static(self, SHFQA=None, n_shots=2**8, n_avg=None):
         for j in range(self.soft_avg()):
             self.soft_iteration = j
             for i, sweep_point in enumerate(self.sweep_points):
-                self.measurement_function(sweep_point)
+                self.measurement_function(sweep_point, SHFQA, n_shots, n_avg)
 
     def measure_soft_adaptive(self, method=None):
         '''
@@ -342,8 +344,8 @@ class MeasurementControl(Instrument):
         self.update_plotmon_adaptive(force_update=True)
         return
 
-    def measure_hard(self):
-        new_data = np.array(self.detector_function.get_values()).T
+    def measure_hard(self, SHFQA=None, n_shots=2**8, n_avg=None):
+        new_data = np.array(self.detector_function.get_values(SHFQA, n_shots, n_avg)).T
 
         ###########################
         # Shape determining block #
@@ -404,7 +406,7 @@ class MeasurementControl(Instrument):
         self.print_progress(stop_idx)
         return new_data
 
-    def measurement_function(self, x):
+    def measurement_function(self, x, SHFQA=None, n_shots=2**8, n_avg=None):
         '''
         Core measurement function used for soft sweeps
         '''
@@ -458,7 +460,7 @@ class MeasurementControl(Instrument):
         datasetshape = self.dset.shape
         # self.iteration = datasetshape[0] + 1
 
-        vals = self.detector_function.acquire_data_point()
+        vals = self.detector_function.acquire_data_point(SHFQA, n_shots, n_avg)
         start_idx, stop_idx = self.get_datawriting_indices_update_ctr(vals)
         # Resizing dataset and saving
 
