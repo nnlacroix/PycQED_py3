@@ -6,6 +6,7 @@ import itertools
 import matplotlib as mpl
 from collections import OrderedDict, defaultdict
 
+from pycqed.utilities.timer import Timer
 from sklearn.mixture import GaussianMixture as GM
 from sklearn.tree import DecisionTreeClassifier as DTC
 
@@ -8036,3 +8037,36 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     'color': 'r',
                     'linestyle': '-',
                     'marker': 'x'}
+
+class RunTimeAnalysis(ba.BaseDataAnalysis):
+
+    def __init__(self,
+                 label: str = '',
+                 t_start: str = None, t_stop: str = None, data_file_path: str = None,
+                 options_dict: dict = None, extract_only: bool = False,
+                 do_fitting: bool = True, auto=True,
+                 params_dict=None, numeric_params=None, **kwargs):
+
+        super().__init__(t_start=t_start, t_stop=t_stop, label=label,
+                         data_file_path=data_file_path,
+                         options_dict=options_dict,
+                         extract_only=extract_only,
+                         do_fitting=do_fitting, **kwargs)
+
+
+        if not hasattr(self, "job"):
+            self.create_job(t_start=t_start, t_stop=t_stop,
+                            label=label, data_file_path=data_file_path,
+                            do_fitting=do_fitting, options_dict=options_dict,
+                            extract_only=extract_only, params_dict=params_dict,
+                            numeric_params=numeric_params, **kwargs)
+        self.params_dict = {f"{Timer.HDF_GRP_NAME}": f"{Timer.HDF_GRP_NAME}",
+                            "repetition_rate": "Instrument settings/TriggerDevice.pulse_period",
+                            }
+
+
+        if auto:
+            self.run_analysis()
+
+    def process_data(self):
+        pass
