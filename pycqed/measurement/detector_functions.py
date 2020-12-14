@@ -1136,6 +1136,7 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
             result_logging_mode=result_logging_mode,
             **kw)
 
+        self.name = '{}_UHFQC_correlation_detector'.format(result_logging_mode)
         self.result_logging_mode = result_logging_mode
         self.correlations = correlations
         self.thresholding = self.result_logging_mode == 'digitized'
@@ -1186,7 +1187,6 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
 
         self.set_up_correlation_weights()
 
-        self.UHFQC.qas_0_result_source(self.result_logging_mode_idx)
         self.UHFQC.qudev_acquisition_initialize(channels=self.channels, 
                                           samples=self.nr_sweep_points,
                                           averages=self.nr_averages,
