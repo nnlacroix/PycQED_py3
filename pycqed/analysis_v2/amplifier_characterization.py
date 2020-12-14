@@ -95,6 +95,9 @@ class Amplifier_Characterization_Analysis(ba.BaseDataAnalysis):
         self.proc_data_dict['signal_power_gain_dB'] = \
             10 * np.log10(self.proc_data_dict['signal_power'] /
                           self.proc_data_dict['signal_power_ref'])
+        self.proc_data_dict['noise_power_gain_dB'] = \
+            10 * np.log10(self.proc_data_dict['noise_power'] /
+                          self.proc_data_dict['noise_power_ref'])
         self.proc_data_dict['snr2_gain_dB'] = \
             10 * np.log10(self.proc_data_dict['signal_power'] *
                           self.proc_data_dict['noise_power_ref'] /
@@ -116,8 +119,9 @@ class Amplifier_Characterization_Analysis(ba.BaseDataAnalysis):
         else:
             marker = ''
         self.plot_dicts['signal_power_gain'] = {
-            'title': 'Signal power gain\n' +
+            'title': 'Signal power gain \n' +
                      self.timestamps[0] + ', ' + self.timestamps[1],
+            'fig_id': 'signal_power_gain',
             'plotfn': self.plot_line,
             'xvals': self.proc_data_dict['sweep_points'],
             'yvals': self.proc_data_dict['signal_power_gain_dB'],
@@ -125,7 +129,18 @@ class Amplifier_Characterization_Analysis(ba.BaseDataAnalysis):
             'xunit': self.proc_data_dict['sweep_unit'],
             'ylabel': 'Signal power gain',
             'yunit': 'dB',
+            'setlabel': 'Signal gain',
+            'do_legend': True,
             'line_kws': {'color': 'C0'},
+            'marker': marker}
+        self.plot_dicts['signal_power_gain_2'] = {
+            'fig_id': 'signal_power_gain',
+            'plotfn': self.plot_line,
+            'xvals': self.proc_data_dict['sweep_points'],
+            'yvals': self.proc_data_dict['noise_power_gain_dB'],
+            'setlabel': 'Noise gain',
+            'do_legend': True,
+            'line_kws': {'color': 'C1', 'alpha': 0.5},
             'marker': marker}
         self.plot_dicts['snr2_gain'] = {
             'title': 'SNR${}^2$ gain ' +
@@ -136,6 +151,44 @@ class Amplifier_Characterization_Analysis(ba.BaseDataAnalysis):
             'xlabel': self.proc_data_dict['sweep_label'],
             'xunit': self.proc_data_dict['sweep_unit'],
             'ylabel': 'SNR${}^2$ gain',
+            'yunit': 'dB',
+            'line_kws': {'color': 'C0'},
+            'marker': marker}
+        self.plot_dicts['noise_power'] = {
+            # 'fig_name':'dummy',
+            'fig_id': 'noise_power',
+            'title': 'Noise power ' +
+                     self.timestamps[0] + ', ' + self.timestamps[1],
+            'plotfn': self.plot_line,
+            'xvals': self.proc_data_dict['sweep_points'],
+            'yvals': self.proc_data_dict['noise_power'],
+            'xlabel': self.proc_data_dict['sweep_label'],
+            'xunit': self.proc_data_dict['sweep_unit'],
+            'ylabel': 'Noise power',
+            'yunit': 'a.u.',
+            'yscale': 'log',
+            'setlabel': 'TWPA On',
+            'do_legend': True,
+            'line_kws': {'color': 'C0'},
+            'marker': marker}
+        self.plot_dicts['noise_power_2'] = {
+            'fig_id': 'noise_power',
+            'plotfn': self.plot_line,
+            'xvals': self.proc_data_dict['sweep_points'],
+            'yvals': self.proc_data_dict['noise_power_ref'],
+            'setlabel': 'TWPA Off',
+            'do_legend': True,
+            'line_kws': {'color': 'C1'},
+            'marker': marker}
+        self.plot_dicts['noise_power_gain'] = {
+            'title': 'Noise power rise \n' +
+                     self.timestamps[0] + ', ' + self.timestamps[1],
+            'plotfn': self.plot_line,
+            'xvals': self.proc_data_dict['sweep_points'],
+            'yvals': self.proc_data_dict['noise_power_gain_dB'],
+            'xlabel': self.proc_data_dict['sweep_label'],
+            'xunit': self.proc_data_dict['sweep_unit'],
+            'ylabel': 'Noise power rise',
             'yunit': 'dB',
             'line_kws': {'color': 'C0'},
             'marker': marker}
