@@ -207,8 +207,8 @@ def Qubit_dac_to_freq_res(dac_voltage, Ej_max, E_c, asymmetry, coupling, fr,
     for ej in Ej:
         freqs.append((transmon.transmon_resonator_levels(E_c,
                                                          ej,
-                                                         fr,
-                                                         coupling,
+                                                         2*np.pi*fr,
+                                                         2*np.pi*coupling,
                                                          states=[(1, 0), (2, 0)]
                                                          ) / (2 * np.pi))[0])
     qubit_freq = np.array(freqs)
