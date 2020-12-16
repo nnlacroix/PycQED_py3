@@ -47,20 +47,25 @@ class TWPAObject(qc.Instrument):
                                     self.instr_pump.get_instr().status(val)))
 
         # Add signal control parameters
-        def set_lo_freq(val, self=self):
-            # self.instr_signal.get_instr().frequency(val)
-            # self.instr_lo.get_instr().frequency(val - self.acq_mod_freq())
+        def set_freq(val, self=self):
             if self.pulsed() is True:
                 self.instr_signal.get_instr().frequency(val - self.acq_mod_freq())
-                self.instr_lo.get_instr().frequency(val - self.acq_mod_freq())
+                if self.instr_lo() != self.instr_signal():
+                    self.instr_lo.get_instr().frequency(val - self.acq_mod_freq())
             else:
                 self.instr_signal.get_instr().frequency(val)
                 self.instr_lo.get_instr().frequency(val - self.acq_mod_freq())
 
+        # Add signal control parameters
+        def get_freq(self=self):
+            if self.pulsed() is True:
+                return self.instr_signal.get_instr().frequency() + \
+                       self.acq_mod_freq()
+            else:
+                return self.instr_signal.get_instr().frequency()
+
         self.add_parameter('signal_freq', label='Signal frequency', unit='Hz',
-                           get_cmd=(lambda self=self:
-                                    self.instr_signal.get_instr().frequency()),
-                           set_cmd=set_lo_freq)
+                           get_cmd=get_freq, set_cmd=set_freq)
         self.add_parameter('signal_power', label='Signal power', unit='dBm',
                            get_cmd=(lambda self=self:
                                     self.instr_signal.get_instr().power()),
@@ -129,8 +134,8 @@ class TWPAObject(qc.Instrument):
 
         if self.pulsed() is True:
             pulse = {'pulse_type': 'GaussFilteredCosIQPulse',
-                     'I_channel': pulsar.find_awg_channels(UHF.name)[0],
-                     'Q_channel': pulsar.find_awg_channels(UHF.name)[1],
+                     'I_channel': pulsar._id_channel('ch1', UHF.name),
+                     'Q_channel': pulsar._id_channel('ch2', UHF.name),
                      'amplitude': self.pulse_amplitude(),
                      'pulse_length': self.pulse_length(),
                      'gaussian_filter_sigma': 1e-08,
@@ -175,10 +180,7 @@ class TWPAObject(qc.Instrument):
         if analyze:
             ma.MeasurementAnalysis(auto=True)
 
-        if self.instr_signal() == self.instr_lo():
-            parameter(initial_value + self.acq_mod_freq())
-        else:
-            parameter(initial_value)
+        parameter(initial_value)
 
     def _measure_2D(self, parameter1, parameter2, values1, values2,
                     label, analyze=True):
