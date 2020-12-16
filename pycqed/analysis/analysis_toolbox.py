@@ -2,6 +2,7 @@ import logging
 log = logging.getLogger(__name__)
 
 import os
+import shutil
 import time
 import h5py
 import datetime
@@ -1715,3 +1716,68 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
                                             b=maxval),
         cmap(np.linspace(minval, maxval, n)))
     return new_cmap
+
+
+def fetch_data(timestamp, source_dir, folder=None, delete_if_exists=False):
+    """
+    Copies data from a source folder to the data folder.
+    :param timestamp: (list or str) A single timestamp or a list of
+        timestamps indicating which folder(s) should be copied.
+    :param source_dir: (str) path to the source datadir
+    :param folder: (str) path to the target datadir (default: None, in which
+        case the stored datadir is used)
+    :param delete_if_exists: (bool, default False) If True, existing folders
+        are deleted before copying them from the source_dir. Otherwise, an
+        exception is raised if a folder exists already.
+
+    :return: None
+    """
+    if isinstance(timestamp, list):
+        for t in timestamp:
+            fetch_data(t, source_dir, folder=folder,
+                       delete_if_exists=delete_if_exists)
+        return
+    if folder is None:
+        folder = datadir
+    f_src = data_from_time(timestamp, folder=source_dir)
+    daystamp, tstamp = verify_timestamp(timestamp)
+    daydir = os.path.join(folder, daystamp)
+    if not os.path.isdir(daydir):
+        os.makedirs(daydir)
+    exists = True
+    try:
+        f = data_from_time(timestamp)
+    except KeyError:
+        f = os.path.join(daydir, os.path.basename(f_src))
+        exists = False
+
+    if delete_if_exists and exists:
+        shutil.rmtree(f)
+    if delete_if_exists or not exists:
+        shutil.copytree(f_src, f)
+    else:
+        raise OSError(f'Folder for timestamp {timestamp} already exists, '
+                      f'and delete_if_exists was set to False.')
+
+
+def fetch_data_in_range(timestamp_start, timestamp_end, source_dir,
+                        folder=None, delete_if_exists=False, **kw):
+    """
+    Copies data corresponding to a range of timestamps from a source folder
+    to the data folder.
+    :param timestamp_start: (str) start of the range that could be copied.
+    :param timestamp_end: (str) end of the range that could be copied.
+    :param source_dir: (str) path to the source datadir
+    :param folder: (str) path to the target datadir (default: None, in which
+        case the stored datadir is used)
+    :param delete_if_exists: (bool, default False) If True, existing folders
+        are deleted before copying them from the source_dir. Otherwise,
+        an exception is raised if a folder exists already.
+    :param kw: keyword arguments are passed to get_timestamps_in_range.
+
+    :return: None
+    """
+    ts = get_timestamps_in_range(timestamp_start, timestamp_end,
+                                 folder=source_dir, **kw)
+    fetch_data(ts, source_dir, folder=folder,
+               delete_if_exists=delete_if_exists)
