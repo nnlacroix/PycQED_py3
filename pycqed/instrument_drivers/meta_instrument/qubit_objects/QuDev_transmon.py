@@ -3490,7 +3490,7 @@ class QuDev_transmon(Qubit):
             try:
                 tda.FluxPulseScopeAnalysis(
                     qb_names=[self.name],
-                    options_dict=dict(TwoD=True, global_PCA=True,))
+                    options_dict=dict(TwoD=True, rotation_type='global_PCA'))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)
 
@@ -3570,7 +3570,7 @@ class QuDev_transmon(Qubit):
                              'data_to_fit': {self.name: 'pe'},
                              "sweep_name": "Amplitude",
                              "sweep_unit": "V",
-                             "global_PCA": True})
+                             "rotation_type": 'global_PCA'})
         MC.run_2D(label, exp_metadata=exp_metadata)
 
         if analyze:
@@ -3683,7 +3683,8 @@ class QuDev_transmon(Qubit):
                              'cal_points': repr(cp),
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
-                             'global_PCA': not cal_points})
+                             "rotation_type": 'global_PCA' if not cal_points \
+                                else 'cal_states'})
         MC.run(label, exp_metadata=exp_metadata)
 
         if analyze:
@@ -3779,7 +3780,8 @@ class QuDev_transmon(Qubit):
                              'cal_points': repr(cp),
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
-                             'global_PCA': not cal_points})
+                             "rotation_type": 'global_PCA' if not cal_points \
+                                 else 'cal_states'})
         MC.run(label, exp_metadata=exp_metadata)
 
         if analyze:
