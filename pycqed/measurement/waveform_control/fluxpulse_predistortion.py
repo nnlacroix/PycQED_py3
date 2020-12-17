@@ -133,12 +133,37 @@ def convert_expmod_to_IIR(expmod, dt, inverse_IIR=True):
         b = [i[1] for i in iir]
     else:
         A, B, tau = expmod
-        if 1 / tau < 1e-14:
-            a, b = np.array([1, -1]), np.array([A + B, -(A + B)])
+        if isinstance(tau, list):  # sum of exp mod
+            import sympy
+            N = len(tau)
+            a = sympy.symbols(','.join([f'a{i}' for i in range(N + 1)]))
+            tau_s = sympy.symbols(','.join([f'tau{i + 1}' for i in range(
+                N)]))
+            T = sympy.symbols('T')
+            z = sympy.symbols('z')
+            p = 2 / T * (1 - 1 / z) / (1 + 1 / z)
+            r = [sympy.prod(
+                [tau * p + 1 for i, tau in enumerate(tau_s) if i != j]) for j
+                in
+                range(N)]
+            s = sympy.prod([tau * p + 1 for tau in tau_s])
+            f = (a[0] * s + sum(
+                [r * tau * a * p for r, tau, a in zip(r, tau_s, a[1:])])) / s
+
+            n, d = sympy.fraction(f.simplify())
+            sym_coeffs_n = n.as_poly(z).all_coeffs()
+            coeffs_n = sympy.lambdify([a] + [tau_s] + [T], sym_coeffs_n)
+            sym_coeffs_d = d.as_poly(z).all_coeffs()
+            coeffs_d = sympy.lambdify([a] + [tau_s] + [T], sym_coeffs_d)
+            b = np.array(coeffs_d([A] + B, tau, dt))
+            a = np.array(coeffs_n([A] + B, tau, dt))
         else:
-            a = np.array(
-                [(A + (A + B) * tau * 2 / dt), (A - (A + B) * tau * 2 / dt)])
-            b = np.array([1 + tau * 2 / dt, 1 - tau * 2 / dt])
+            if 1 / tau < 1e-14:
+                a, b = np.array([1, -1]), np.array([A + B, -(A + B)])
+            else:
+                a = np.array(
+                    [(A + (A + B) * tau * 2 / dt), (A - (A + B) * tau * 2 / dt)])
+                b = np.array([1 + tau * 2 / dt, 1 - tau * 2 / dt])
         if not inverse_IIR:
             a, b = b, a
         b = b / a[0]
