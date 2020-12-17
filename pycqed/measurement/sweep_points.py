@@ -2,6 +2,7 @@ import logging
 log = logging.getLogger(__name__)
 from collections import OrderedDict
 from copy import deepcopy
+import numpy as np
 from numpy import array  # Needed for eval. Do not remove.
 
 class SweepPoints(list):
@@ -212,12 +213,14 @@ class SweepPoints(list):
         else:
             return sweep_param_values[0]
 
-    def get_sweep_params_property(self, property, dimension, param_names=None):
+    def get_sweep_params_property(self, property, dimension='all',
+                                  param_names=None):
         """
         Get a property of the sweep parameters param_names in self.
         :param property: str with the name of a sweep param property. Can be
             "values", "unit", "label."
         :param dimension: 'all' or int specifying a sweep dimension
+            (default 'all')
         :param param_names: None, or string or list of strings corresponding to
             keys in the sweep dimension specified by dimension.
             Can also be 'all'
@@ -360,3 +363,30 @@ class SweepPoints(list):
             if param_name in self[dim]:
                 return dim
         return None
+
+    def subset(self, i, dimension=0):
+        """
+        Returns a new SweepPoints object with one of the dimensions reduced
+        to a subset of the sweep values. The other dimensions are unchanged.
+        :param i: (list) indices of the sweep values that should be
+            contained in the subset.
+        :param dimension: (int, default 0) index of the dimension that
+            should be reduced
+        """
+        sp = SweepPoints(self)
+        for k, v in sp[dimension].items():
+            sp[dimension][k] = (np.array(v[0])[i], v[1], v[2])
+        return sp
+
+    def remove_sweep_parameter(self, param_name):
+        """
+        Removes a the sweep parameter with a given name from the SweepPoints
+        object. If the parameter is not found, a warning is issued.
+        :param param_name: (str) name of the sweep parameter to remove
+        """
+        dim = self.find_parameter(param_name)
+        if dim is None:
+            log.warning(f"remove_sweep_parameter: Sweep parameter "
+                        f"{param_name} not found.")
+        else:
+            del self[dim][param_name]
