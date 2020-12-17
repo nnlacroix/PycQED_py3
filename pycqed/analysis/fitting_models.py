@@ -186,7 +186,8 @@ def Qubit_dac_to_freq_res(dac_voltage, Ej_max, E_c, asymmetry, coupling, fr,
     Ec (Hz): charging energy of the qubit
     d =  abs((EJ1-EJ2)/(EJ1+EJ2)))
     dac_sweet_spot (V): voltage at which the sweet-spot is found
-    V_per_phi0 (V): volt per phi0 (convert voltage to flux
+    V_per_phi0 (V): volt per phi0 (convert voltage to flux)
+    phi_park
     '''
     if np.ndim(dac_voltage) == 0:
         dac_voltage = np.array([dac_voltage])
@@ -213,6 +214,75 @@ def Qubit_dac_to_freq_res(dac_voltage, Ej_max, E_c, asymmetry, coupling, fr,
                                                          ) / (2 * np.pi))[0])
     qubit_freq = np.array(freqs)
     return qubit_freq
+
+def Qubit_freq_to_dac_res(frequency, Ej_max, E_c, asymmetry, coupling, fr,
+                              dac_sweet_spot=0.0, V_per_phi0=None,
+                              dac_flux_coefficient=None,
+                              phi_park=None,
+                      branch='smallest'):
+    '''
+    The cosine Arc model for uncalibrated flux for asymmetric qubit.
+    This function implements the inverse of "Qubit_dac_to_freq"
+
+    frequency (Hz)
+    Ej_max (Hz): Maximum josephson energy
+    E_c (Hz): charging energy of the qubit
+    V_per_phi0 (V): volt per phi0 (convert voltage to flux)
+    asym (dimensionless asymmetry param) = abs((EJ1-EJ2)/(EJ1+EJ2))
+    couping (Hz): coupling to resonator
+    fr (Hz): frequency of resonator
+    dac_sweet_spot (V): voltage at which the sweet-spot is found
+    branch (enum: 'positive' 'negative' or "smallest")
+    '''
+    if V_per_phi0 is None and dac_flux_coefficient is None:
+        raise ValueError('Please specify "V_per_phi0".')
+    if dac_sweet_spot is None and phi_park is None:
+        raise ValueError('Please specify "phi_park".')
+    elif dac_sweet_spot is not None and phi_park is not None:
+        raise ValueError('"phi_park" and "dac_sweet_spot" cannot '
+                         'be used simultaneously.')
+
+    if phi_park is not None:
+        dac_sweet_spot = phi_park * V_per_phi0
+
+    pi = np.pi
+    if np.ndim(frequency) > 0:
+        E_j = [transmon.transmon_resonator_ej_anh_frg_chi(
+            f, ec=E_c, frb= fr, gb=coupling)[0]
+             for f in frequency]
+        E_j = np.array(E_j)
+    else:
+        E_j = transmon.transmon_resonator_ej_anh_frg_chi(
+            frequency, ec=E_c, frb=2 * np.pi * fr, gb=2 * np.pi * coupling)[0] / (2 * pi)
+
+    r = E_j / Ej_max
+    phi = np.arccos(np.sqrt((r**2 -asymmetry**2)/(1-asymmetry**2)))
+
+    if dac_flux_coefficient is not None:
+        log.warning('"dac_flux_coefficient" deprecated. Please use the '
+                        'physically meaningful "V_per_phi0" instead.')
+        V_per_phi0 = np.pi / dac_flux_coefficient
+
+    dac_voltage_pos = phi * V_per_phi0 / np.pi + dac_sweet_spot
+    dac_voltage_neg = -phi * V_per_phi0 / np.pi + dac_sweet_spot
+    if branch == 'positive':
+        dac_voltage = dac_voltage_pos
+    elif branch == 'negative':
+        dac_voltage = dac_voltage_neg
+    elif branch == 'smallest':
+        if np.ndim(phi) != 0:
+            dac_voltage = np.array([dac_voltage_pos, dac_voltage_neg])
+            idxs0 = np.argmin(np.abs(dac_voltage), 0)
+            idxs1 = np.arange(len(dac_voltage_pos))
+            dac_voltage = dac_voltage[idxs0, idxs1]
+        else:
+            dac_voltage = dac_voltage_pos \
+                if abs(dac_voltage_pos) < abs(dac_voltage_neg) \
+                else dac_voltage_neg
+    else:
+        raise ValueError('branch {} not recognized'.format(branch))
+
+    return dac_voltage
 
 def Resonator_dac_to_freq(dac_voltage, f_max_qubit, f_0_res,
                           E_c, dac_sweet_spot,
