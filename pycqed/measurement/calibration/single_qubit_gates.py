@@ -14,6 +14,8 @@ from pycqed.analysis import measurement_analysis as ma
 from pycqed.utilities.general import temporary_value
 import logging
 
+from pycqed.utilities.timer import Timer
+
 log = logging.getLogger(__name__)
 
 
@@ -71,8 +73,7 @@ class T1FrequencySweep(CalibBuilder):
             self.analysis = None
             self.data_to_fit = {qb: 'pe' for qb in self.meas_obj_names}
             self.sweep_points = SweepPoints(
-                from_dict_list=[{}, {}] if self.sweep_points is None
-                else self.sweep_points)
+                [{}, {}] if self.sweep_points is None else self.sweep_points)
             self.add_amplitude_sweep_points()
 
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -80,7 +81,8 @@ class T1FrequencySweep(CalibBuilder):
                 self.parallel_sweep(self.preprocessed_task_list,
                                     self.t1_flux_pulse_block, **kw)
             self.exp_metadata.update({
-                'global_PCA': len(self.cal_points.states) == 0
+                "rotation_type": 'global_PCA' if
+                    len(self.cal_points.states) == 0 else 'cal_states'
             })
 
             if kw.get('compression_seg_lim', None) is None:
@@ -108,7 +110,7 @@ class T1FrequencySweep(CalibBuilder):
         # TODO: check combination of sweep points in task and in sweep_points
         for task in task_list:
             sweep_points = task.get('sweep_points', [{}, {}])
-            sweep_points = SweepPoints(from_dict_list=sweep_points)
+            sweep_points = SweepPoints(sweep_points)
             if len(sweep_points) == 1:
                 sweep_points.add_sweep_dimension()
             if 'qubit_freqs' in sweep_points[1]:
@@ -192,6 +194,7 @@ class T1FrequencySweep(CalibBuilder):
         return self.sequential_blocks(f't1 flux pulse {qubit_name}',
                                       [pb, pp, fp])
 
+    @Timer()
     def run_analysis(self, **kw):
         """
         Runs analysis and stores analysis instance in self.analysis.
@@ -205,7 +208,8 @@ class T1FrequencySweep(CalibBuilder):
             qb_names=self.meas_obj_names,
             do_fitting=self.do_fitting,
             options_dict=dict(TwoD=True, all_fits=self.all_fits,
-                              global_PCA=not len(self.cal_points.states)))
+                              rotation_type='global_PCA' if not
+                                len(self.cal_points.states) else 'cal_states'))
 
 
 class ParallelLOSweepExperiment(CalibBuilder):
@@ -294,7 +298,10 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         Returns: None
 
     """
-    kw_for_task_keys = ['ro_pulse_delay', 'fp_truncation', 'fp_truncation_buffer']
+    kw_for_task_keys = ['ro_pulse_delay', 'fp_truncation',
+                        'fp_truncation_buffer',
+                        'fp_compensation',
+                        'fp_compensation_amp']
     kw_for_sweep_points = {
         'freqs': dict(param_name='freq', unit='Hz',
                       label=r'drive frequency, $f_d$',
@@ -315,7 +322,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
 
     def sweep_block(self, qb, sweep_points, flux_op_code=None,
                     ro_pulse_delay=None,
-                    fp_truncation=None, fp_truncation_buffer=None, **kw):
+                    fp_truncation=False, fp_compensation=False,
+                    fp_compensation_amp=None, fp_truncation_buffer=None, **kw):
         """
         Performs X180 pulse on top of a fluxpulse
         Timings of sequence
@@ -339,22 +347,22 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             flux_op_code = f'FP {qb}'
         if ro_pulse_delay is None:
             ro_pulse_delay = 100e-9
-        if fp_truncation is None:
-            fp_truncation = False
         if fp_truncation_buffer is None:
             fp_truncation_buffer = 5e-8
+        if fp_compensation_amp is None:
+            fp_compensation_amp = -2
 
         if ro_pulse_delay is 'auto' and fp_truncation is True:
             raise Exception('fp_truncation does currently not work ' + \
-                'with the auto mode of ro_pulse_delay.')
+                            'with the auto mode of ro_pulse_delay.')
 
         pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
                         'attr=element_name,op_code=X180': 'FPS_Pi_el'}
         b = self.block_from_ops(f'ge_flux {qb}',
                                 [f'X180 {qb}'] + [flux_op_code] * \
-                                    (2 if fp_truncation else 1),
+                                (2 if fp_compensation else 1),
                                 pulse_modifs=pulse_modifs)
-    
+
         fp = b.pulses[1]
         fp['ref_point'] = 'middle'
         bl_start = fp.get('buffer_length_start', 0)
@@ -364,28 +372,38 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             'delay', func=lambda x, o=bl_start: -(x + o))
 
         if fp_truncation:
-            cp = b.pulses[2]
             original_fp_length = fp['pulse_length']
             max_fp_sweep_length = np.max(
                 sweep_points.get_sweep_params_property(
                     'values', dimension=0, param_names='delay'))
             sweep_diff = max(max_fp_sweep_length - original_fp_length, 0)
             length_function = lambda x, opl=original_fp_length, \
-                o=bl_start+fp_truncation_buffer: max(min((x + o), opl), 0) # TODO: check what happens if buffer_length_start and buffer_length_end are zero.
+                                     o=bl_start + fp_truncation_buffer: max(
+                min((x + o), opl), 0)
+            # TODO: check what happens if buffer_length_start and buffer_length_end are zero.
 
             fp['pulse_length'] = ParametricValue(
                 'delay', func=length_function)
-            cp['pulse_length'] = ro_pulse_delay - 2 * bl_start - 2 * bl_end \
-                                    - fp_truncation_buffer - sweep_diff
-            if cp['pulse_length'] <= 0:
-                raise Exception('ro_pulse_delay is too short to fit the ' + \
-                    'compensation pulse. Please choose a longer ro_pulse_delay.')
-            cp['pulse_delay'] = sweep_diff + bl_start
-            comp_amp_func = (lambda x, a=fp['amplitude'], cpl=cp['pulse_length'], \
-                                fnc=length_function: - a * fnc(x) / cpl)
-            cp['amplitude'] = ParametricValue(
-                'delay', func=comp_amp_func
-            )
+            if fp_compensation:
+                cp = b.pulses[2]
+                cp['amplitude'] = -np.sign(fp['amplitude']) * np.abs(
+                    fp_compensation_amp)
+                cp['pulse_delay'] = sweep_diff + bl_start
+                tau = 200e-9 * 100
+
+                def t_trunc(x, fnc=length_function, tau=tau,
+                            fp_amp=fp['amplitude'], cp_amp=cp['amplitude']):
+                    fp_length = fnc(x)
+
+                    def v_c(tau, fp_length, fp_amp, v_c_start=0):
+                        return fp_amp - (fp_amp - v_c_start) * np.exp(
+                            -fp_length / tau)
+
+                    v_c_fp = v_c(tau, fp_length, fp_amp, v_c_start=0)
+                    return -np.log(cp_amp / (cp_amp - v_c_fp)) * tau
+
+                cp['pulse_length'] = ParametricValue('delay', func=t_trunc)
+                # TODO: implement that the ro_delay is adjusted accordingly!
 
         if ro_pulse_delay == 'auto':
             delay = \
@@ -402,14 +420,25 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         self.data_to_fit.update({qb: 'pe'})
         return b
 
-    def run_analysis(self, **kw):
+    @Timer()
+    def run_analysis(self, analysis_kwargs=None, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.
+        :param analysis_kwargs: (dict) keyword arguments for analysis
         :param kw:
         """
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+
+        options_dict = {'rotation_type': 'fixed_cal_points' if
+                            len(self.cal_points.states) > 0 else 'global_PCA',
+                        'TwoD': True}
+        if 'options_dict' not in analysis_kwargs:
+            analysis_kwargs['options_dict'] = {}
+        analysis_kwargs['options_dict'].update(options_dict)
+
         self.analysis = tda.FluxPulseScopeAnalysis(
-            qb_names=self.meas_obj_names,
-            options_dict=dict(TwoD=True, global_PCA=True,))
+            qb_names=self.meas_obj_names, **analysis_kwargs)
 
 
 class Cryoscope(CalibBuilder):
@@ -437,6 +466,8 @@ class Cryoscope(CalibBuilder):
     :param awg_sample_length: (float) the length of one sample on the flux
         AWG used by the measurement objects in this experiment. Can also be
         specified separately in each task.
+    :param sequential: (bool) whether to apply the cryoscope pulses sequentially
+        (True) or simultaneously on n-qubits
     :param kw: keyword arguments: passed down to parent class(es)
 
     The sweep_points for this measurements must contain
@@ -503,7 +534,8 @@ class Cryoscope(CalibBuilder):
     """
 
     def __init__(self, task_list, sweep_points=None, estimation_window=None,
-                 separation_buffer=50e-9, awg_sample_length=None, **kw):
+                 separation_buffer=50e-9, awg_sample_length=None,
+                 sequential=False, **kw):
         try:
             self.experiment_name = 'Cryoscope'
             for task in task_list:
@@ -529,6 +561,7 @@ class Cryoscope(CalibBuilder):
                                  'the class input parameter estimation_window.')
 
             super().__init__(task_list, sweep_points=sweep_points, **kw)
+            self.sequential = sequential
             self.add_default_soft_sweep_points(**kw)
             self.add_default_hard_sweep_points(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -750,9 +783,13 @@ class Cryoscope(CalibBuilder):
             parallel_block_list += [cryo_blk]
             self.data_to_fit.update({qb: 'pe'})
 
-        return self.simultaneous_blocks(
-            f'sim_rb_{sp2d_idx}_{sp1d_idx}', parallel_block_list,
-            block_align='end')
+        if self.sequential:
+            return self.sequential_blocks(
+                f'sim_rb_{sp2d_idx}_{sp1d_idx}', parallel_block_list)
+        else:
+            return self.simultaneous_blocks(
+                f'sim_rb_{sp2d_idx}_{sp1d_idx}', parallel_block_list,
+                block_align='end')
 
     def update_sweep_points(self, **kw):
         """
@@ -776,6 +813,7 @@ class Cryoscope(CalibBuilder):
                                    unit, label, dimension=1)
         self.sweep_points.update(sp)
 
+    @Timer()
     def run_analysis(self, analysis_kwargs=None, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.
@@ -821,7 +859,7 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         try:
             self.experiment_name = 'Flux_amplitude'
             super().__init__(task_list, sweep_points=sweep_points, **kw)
-            self.exp_metadata.update({"global_PCA": True})
+            self.exp_metadata.update({'rotation_type': 'global_PCA'})
             self.autorun(**kw)
 
         except Exception as x:
@@ -858,6 +896,7 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
 
         return b
 
+    @Timer()
     def run_analysis(self, analysis_kwargs=None, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.

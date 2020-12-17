@@ -8,6 +8,9 @@
 import numpy as np
 import math
 import logging
+
+from pycqed.utilities.timer import Timer
+
 log = logging.getLogger(__name__)
 from copy import deepcopy
 import pycqed.measurement.waveform_control.pulse as bpl
@@ -22,6 +25,10 @@ class Segment:
     Consists of a list of UnresolvedPulses, each of which contains information 
     about in which element the pulse is played and when it is played 
     (reference point + delay) as well as an instance of class Pulse.
+
+    Property distortion_dicts: a key of the form {AWG}_{channel} specifies
+        that the respective val should be used as distortion dict instead of
+        self.pulsar.{AWG}_{channel}_distortion_dict.
     """
 
     trigger_pulse_length = 20e-9
@@ -37,6 +44,7 @@ class Segment:
         self.elements = odict()
         self.element_start_end = {}
         self.elements_on_awg = {}
+        self.distortion_dicts = {}
         self.trigger_pars = {
             'pulse_length': self.trigger_pulse_length,
             'amplitude': self.trigger_pulse_amplitude,
@@ -46,6 +54,7 @@ class Segment:
                                       self.trigger_pars['buffer_length_start']
         self._pulse_names = set()
         self.acquisition_elements = set()
+        self.timer = Timer(self.name)
 
         for pulse_pars in pulse_pars_list:
             self.add(pulse_pars)
@@ -119,6 +128,7 @@ class Segment:
         for p in pulses:
             self.add(p)
 
+    @Timer()
     def resolve_segment(self):
         """
         Top layer method of Segment class. After having addded all pulses,
@@ -930,9 +940,18 @@ class Segment:
 
                         wf = wfs[codeword][c]
 
-                        distortion_dictionary = self.pulsar.get(
-                            '{}_distortion_dict'.format(c))
-                        fir_kernels = distortion_dictionary.get('FIR', None)
+                        distortion_dict = self.distortion_dicts.get(c, None)
+                        if distortion_dict is None:
+                            distortion_dict = self.pulsar.get(
+                                '{}_distortion_dict'.format(c))
+                        else:
+                            distortion_dict = \
+                                flux_dist.process_filter_coeffs_dict(
+                                    distortion_dict,
+                                    default_dt=1 / self.pulsar.clock(
+                                        channel=c))
+
+                        fir_kernels = distortion_dict.get('FIR', None)
                         if fir_kernels is not None:
                             if hasattr(fir_kernels, '__iter__') and not \
                             hasattr(fir_kernels[0], '__iter__'): # 1 kernel
@@ -940,7 +959,7 @@ class Segment:
                             else:
                                 for kernel in fir_kernels:
                                     wf = flux_dist.filter_fir(kernel, wf)
-                        iir_filters = distortion_dictionary.get('IIR', None)
+                        iir_filters = distortion_dict.get('IIR', None)
                         if iir_filters is not None:
                             wf = flux_dist.filter_iir(iir_filters[0],
                                                       iir_filters[1], wf)
@@ -1111,7 +1130,7 @@ class Segment:
     def plot(self, instruments=None, channels=None, legend=True,
              delays=None, savefig=False, prop_cycle=None, frameon=True,
              channel_map=None, plot_kwargs=None, axes=None, demodulate=False,
-             show_and_close=True):
+             show_and_close=True, col_ind=0):
         """
         Plots a segment. Can only be done if the segment can be resolved.
         :param instruments (list): instruments for which pulses have to be
@@ -1120,7 +1139,8 @@ class Segment:
         :param delays (dict): keys are instruments, values are additional
             delays. If passed, the delay is substracted to the time values of
             this instrument, such that the pulses are plotted at timing when
-            they physically occur.
+            they physically occur. A key 'default' can be used to specify a
+            delay for all instruments that are not explicitly given as keys.
         :param savefig: save the plot
         :param channel_map (dict): indicates which instrument channels
             correspond to which qubits. Keys = qb names, values = list of
@@ -1133,6 +1153,9 @@ class Segment:
         :param demodulate (bool): plot only envelope of pulses by temporarily
             setting modulation and phase to 0. Need to recompile the sequence
         :param show_and_close: (bool) show and close the plot (default: True)
+        :param col_ind: (int) when passed together with axes, this specifies
+            in which column of subfigures the plots should be added
+            (default: 0)
         :return: The figure and axes objects if show_and_close is False,
             otherwise no return value.
         """
@@ -1165,11 +1188,13 @@ class Segment:
                                        squeeze=False,
                                        figsize=(16, n_instruments * 3))
             if prop_cycle is not None:
-                for a in ax[:,0]:
+                for a in ax[:,col_ind]:
                     a.set_prop_cycle(**prop_cycle)
             sorted_keys = sorted(wfs.keys()) if instruments is None \
                 else [i for i in instruments if i in wfs]
             for i, instr in enumerate(sorted_keys):
+                if instr not in delays and 'default' in delays:
+                    delays[instr] = delays['default']
                 # plotting
                 for elem_name, v in wfs[instr].items():
                     for k, wf_per_ch in v.items():
@@ -1183,8 +1208,8 @@ class Segment:
                                     f"{instr}_{ch}"] - delays.get(instr, 0)
                                 if channel_map is None:
                                     # plot per device
-                                    ax[i, 0].set_title(instr)
-                                    ax[i, 0].plot(
+                                    ax[i, col_ind].set_title(instr)
+                                    ax[i, col_ind].plot(
                                         tvals * 1e6, wf,
                                         label=f"{elem_name[1]}_{k}_{ch}",
                                         **plot_kwargs)
@@ -1196,14 +1221,14 @@ class Segment:
                                              enumerate(channel_map.items())
                                              if f"{instr}_{ch}" in qb_chs}
                                     for qbi, qb_name in match.items():
-                                        ax[qbi, 0].set_title(qb_name)
-                                        ax[qbi, 0].plot(
+                                        ax[qbi, col_ind].set_title(qb_name)
+                                        ax[qbi, col_ind].plot(
                                             tvals * 1e6, wf,
                                             label=f"{elem_name[1]}"
                                                   f"_{k}_{instr}_{ch}",
                                             **plot_kwargs)
                                         if demodulate: # filling
-                                            ax[qbi, 0].fill_between(
+                                            ax[qbi, col_ind].fill_between(
                                                 tvals * 1e6, wf,
                                                 label=f"{elem_name[1]}_"
                                                       f"{k}_{instr}_{ch}",
@@ -1211,7 +1236,7 @@ class Segment:
                                                 **plot_kwargs)
 
             # formatting
-            for a in ax[:, 0]:
+            for a in ax[:, col_ind]:
                 if isinstance(frameon, bool):
                     frameon = {k: frameon for k in ['top', 'bottom',
                                                     "right", "left"]}
@@ -1222,7 +1247,7 @@ class Segment:
                 if legend:
                     a.legend(loc=[1.02, 0], prop={'size': 8})
                 a.set_ylabel('Voltage (V)')
-            ax[-1, 0].set_xlabel('time ($\mu$s)')
+            ax[-1, col_ind].set_xlabel('time ($\mu$s)')
             fig.suptitle(f'{self.name}', y=1.01)
             plt.tight_layout()
             if savefig:
@@ -1363,6 +1388,9 @@ class Segment:
 
         # rename segment name
         self.name = new_name
+
+        # rename timer
+        self.timer.name = new_name
 
     def __deepcopy__(self, memo):
         cls = self.__class__

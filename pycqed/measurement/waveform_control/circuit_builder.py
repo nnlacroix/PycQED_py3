@@ -787,6 +787,9 @@ class CircuitBuilder:
         Currently, only 1D and 2D sweeps are implemented.
 
         :param sweep_points: SweepPoints object
+            If it contains sweep points whose name parameter names of the form
+            with "Segment.property", the respective property of the created
+            Segment objects will be swept.
         :param body_block: block containing the pulses to be swept (excluding
             initialization and readout)
         :param body_block_func: a function that creates the body block at each
@@ -884,8 +887,19 @@ class CircuitBuilder:
 
                 segblock = self.sequential_blocks(
                         'segblock', [prep, this_body_block, final, ro])
-                seq.add(Segment(f'seg{j}', segblock.build(
-                    sweep_dicts_list=sweep_points, sweep_index_list=[j, i])))
+                seg = Segment(f'seg{j}', segblock.build(
+                    sweep_dicts_list=sweep_points, sweep_index_list=[j, i]))
+                # apply Segment sweep points
+                for dim in [0, 1]:
+                    for param, vals in [
+                            [s[2], s[0]] for s in
+                            sweep_points.get_sweep_params_description(
+                                'all', dimension=dim)]:
+                        if param.startswith('Segment.'):
+                            setattr(seg, param[len('Segment.'):],
+                                    vals[j if dim == 0 else i])
+                # add the new segment to the sequence
+                seq.add(seg)
             if cal_points is not None:
                 block_align_cal_pts = kw.get('block_align_cal_pts', 'end')
                 seq.extend(self.seg_from_cal_points(

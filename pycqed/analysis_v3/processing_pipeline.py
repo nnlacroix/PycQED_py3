@@ -1,9 +1,15 @@
+import traceback
 import logging
 log = logging.getLogger(__name__)
 import re
 import os
 from copy import deepcopy
+from pycqed.analysis_v3 import saving as save_mod
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+from numpy import array  # Needed for eval. Do not remove.
+
+search_modules = set()
+search_modules.add(hlp_mod)
 
 try:
     import pygraphviz as pgv
@@ -40,7 +46,7 @@ nodes.
 
 Instructions for use:
     Initialization
-        - from a list of dicts: ProcessingPipeline(from_dict_list=dict_list)
+        - from a list of dicts: ProcessingPipeline(dict_list)
         - without any input arguments: ProcessingPipeline()
         - or with input parameters:
          ProcessingPipeline(node_name, **node_params), where node_name is
@@ -243,38 +249,133 @@ Final pipeline:
 
 class ProcessingPipeline(list):
 
-    def __init__(self, node_name=None, from_dict_list=None,
-                 global_keys_out_container='', **node_params):
+    global_node_param_defaults = {'keys_out_container': '',
+                                  'meaj_obj_names': None}
+
+    def __init__(self, pipeline=None, **kw):
         """
         Creates a processing pipeline for analysis_v3.
+        :param pipeline: repr of a ProcessingPipeline instance, or list of dicts
+        :param global_
+        :param kw: keyword arguments. Used to create global_node_param_values
+            with user provided values to the keys in global_node_param_defaults:
+                - keys_out_container: str specifying a container for the
+                keys_out that will be prepended to all the keys_out in all the
+                nodes in the pipeline
+                - meaj_obj_names: str or list of str specifying the measured
+                object names for all the nodes in the pipeline
+        """
+        super().__init__()
+        if isinstance(pipeline, list):
+            self._add_dict_list(pipeline)
+        elif isinstance(pipeline, str):
+            self._add_dict_list(eval(pipeline))
+
+        self.data_dict = {}
+        self.global_node_param_values = {k: kw.get(k, val) for k, val in
+                                         self.global_node_param_defaults.items()
+                                         }
+
+    def __getitem__(self, i):
+        new_instance = super().__getitem__(i)
+        if type(i) == slice:
+            new_instance = self.__class__(new_instance)
+            self._set_attributes_to_other(new_instance)
+        return new_instance
+
+    def __add__(self, other):
+        for p, v in self.global_node_param_values.items():
+            if other.global_node_param_values[p] != \
+                    self.global_node_param_defaults[p] and \
+                    other.global_node_param_values[p] != v:
+                # cannot add pipelines that do not have the same global
+                # node params. Exception: if other has the values from
+                # global_node_param_defaults, they will be overwritten with
+                # those from self.global_node_param_values
+                raise ValueError(f'Cannot add, the two pipelines do not '
+                                 f'have the same value for the attribute '
+                                 f'{p}.')
+
+        new_instance = self.__class__(super().__add__(other))
+        self._set_attributes_to_other(new_instance)
+        return new_instance
+
+    def __call__(self, *args, **params):
+        self.run(*args, **params)
+
+    def _set_attributes_to_other(self, other):
+        """
+        Update other.__dict__ with self.__dict__. Values will be deepcopied,
+        if possible.
+        :param other: other instance of this class
+        """
+        for attr, value in self.__dict__.items():
+            # value_to_assign = value
+            # if attr == 'data_dict':
+            value_to_assign = {}
+            value_to_assign.update(other.__dict__[attr])
+            value_to_assign.update(value)
+
+            try:
+                value_to_assign = deepcopy(value_to_assign)
+            except Exception as e:
+                log.warning(f'Unable to deepcopy data_dict: {e}.'
+                            f'\nSetting the un-copied instance.')
+            other.__dict__[attr] = value_to_assign
+
+    def _add_dict_list(self, dict_list):
+        """
+        Add the dicts in dict_list to the pipeline.
+        Assumes that dicts have the same format as this class!
+        :param dict_list: list of dicts
+        """
+        for d in dict_list:
+            if isinstance(d, dict):
+                self.append(d)
+            else:
+                raise ValueError('Entries in list must be dicts.')
+
+    def add_node(self, node_name, before_node_dict=None, at_idx=-1,
+                 **node_params):
+        """
+        Adds a node to self.
         :param node_name: name of the processing function
-        :param from_dict_list: list of dicts to be instantiated as a
-            ProcessingPipeline
-        :param global_keys_out_container: str specifying a container for the
-            keys_out that will be prepended to all the keys_out in all the nodes
+        :param before_node_dict: node dict (can be incomplete) before which
+            to add current node. Passed to find_node, see docstring there.
+        :param at_idx: int specifying at which index to add current node
         :param node_params: keyword arguments that will be passed to the
             processing function specified by node_name
         """
-        super().__init__()
-        self.global_keys_out_container = global_keys_out_container
-        if node_name is not None:
-            if 'keys_out_container' not in node_params:
-                node_params['keys_out_container'] = \
-                    self.global_keys_out_container
-            node_params['node_name'] = node_name
+        for param, value in self.global_node_param_values.items():
+            if value not in node_params:
+                node_params[param] = value
+        node_params['node_name'] = node_name
+
+        if before_node_dict is not None:
+            at_idx = self.find_node(before_node_dict, strict_comparison=True)[1]
+            if len(at_idx) > 1:
+                raise ValueError(f'{len(at_idx)} nodes were found that matched '
+                                 f'the dict {before_node_dict}, at indices '
+                                 f'{at_idx}. Unclear where to add the node, '
+                                 f'specify at_idx instead.')
+            else:
+                at_idx = at_idx[0]
+
+        if at_idx == -1:
             self.append(node_params)
-        elif from_dict_list is not None:
-            for d in from_dict_list:
-                if isinstance(d, dict):
-                    # assume that dicts have the same format as this class
-                    self.append(d)
-                else:
-                    raise ValueError('Entries in list must be dicts.')
+        else:
+            if at_idx >= len(self):
+                raise ValueError(f'Cannot add node after index {at_idx}, '
+                                 f'the pipeline has only {len(self)} entries.')
+            if at_idx < 0:
+                at_idx = len(self) + at_idx + 1
+            first_slice = self[:at_idx + 1]
+            first_slice[-1] = node_params
+            second_slice = self[at_idx:]
+            self.clear()
+            self.extend(first_slice + second_slice)
 
-    def __add__(self, other):
-        return ProcessingPipeline.cast_init(super().__add__(other))
-
-    def __call__(self, meas_obj_value_names_map):
+    def resolve(self, meas_obj_value_names_map):
         """
         Resolves the keys_in and keys_out of a raw ProcessingPipeline, if they
         exist.
@@ -288,7 +389,7 @@ class ProcessingPipeline(list):
         self.clear()
         for i, node_params in enumerate(pipeline):
             if node_params.get('was_resolved', False):
-                # if node was already resolved, just add it
+                # if node was already resolved, just add it to the pipeline
                 self.append(node_params)
                 continue
 
@@ -296,7 +397,10 @@ class ProcessingPipeline(list):
                 if 'keys_in' not in node_params:
                     self.append(node_params)
                     continue
+
                 meas_obj_names_raw = node_params['meas_obj_names']
+                if meas_obj_names_raw is None:
+                    meas_obj_names_raw = list(meas_obj_value_names_map)
                 if isinstance(meas_obj_names_raw, str):
                     meas_obj_names_raw = [meas_obj_names_raw]
                 joint_processing = node_params.pop('joint_processing', False)
@@ -352,18 +456,6 @@ class ProcessingPipeline(list):
                 self.clear()
                 [self.append(node) for node in fallback_pipeline]
                 raise e
-
-    def add_node(self, node_name, **node_params):
-        """
-        Adds a node to self.
-        :param node_name: name of the processing function
-        :param node_params: keyword arguments that will be passed to the
-            processing function specified by node_name
-        """
-        if 'keys_out_container' not in node_params:
-            node_params['keys_out_container'] = self.global_keys_out_container
-        node_params['node_name'] = node_name
-        self.append(node_params)
 
     def resolve_keys_in(self, keys_in, mobj_name, meas_obj_value_names_map,
                         node_idx=None):
@@ -431,10 +523,12 @@ class ProcessingPipeline(list):
                 else:
                     raise ValueError('The first node in the pipeline cannot '
                                      'have "keys_in" = "previous".')
-        try:
-            keys_in.sort()
-        except AttributeError:
-            pass
+
+        if keys_in != keys_in_temp:
+            try:
+                keys_in.sort()
+            except AttributeError:
+                pass
 
         if len(keys_in) == 0 or keys_in is None:
             raise ValueError(f'No "keys_in" could be determined '
@@ -540,6 +634,61 @@ class ProcessingPipeline(list):
 
         return keys_out
 
+    def run(self, data_dict=None, **params):
+        """
+        Calls all the functions specified by node_name keys of each node in self
+
+        All node functions must exist in the modules specified in the global
+        vaiable "search_modules" define at the top of this module, and will
+        process the data corresponding to the keys specified as "keys_in" in the
+        **node_params of each node.
+
+        Each node in the pipeline will put the processed data in the
+        self.data_dict, under the key(s)/dictionary key path(s) specified in
+        'keys_out' in the the **node_params of each node.
+
+        :param data_dict: dictionary where to store the processed results
+        :param params: keyword arguments
+        """
+        if data_dict is None:
+            data_dict = {}
+        self.data_dict.update(data_dict)
+        self.data_dict['processing_pipeline'] = repr(self)
+
+        for node_params in self:
+            try:
+                node = None
+                for module in search_modules:
+                    try:
+                        node = getattr(module, node_params["node_name"])
+                        break
+                    except AttributeError:
+                        continue
+                if node is None:
+                    raise KeyError(f'Node function "{node_params["node_name"]}"'
+                                   f' not recognized')
+                node(self.data_dict, **node_params)
+            except Exception:
+                log.warning(
+                    f'Unhandled error during node {node_params["node_name"]}!')
+                log.warning(traceback.format_exc())
+
+    def save(self, data_dict=None, **params):
+        """
+        Calls saving.py/Save on the data in self.data_dict, updated with the
+        user-provided data_dict.
+        :param data_dict: dictionary with data to be saved
+        :param params: keyword arguments to be passed to Save
+        """
+        if data_dict is None:
+            data_dict = {}
+        self.data_dict.update(data_dict)
+        # Add flag that this is an analysis_v3 data_dict. This is used by the
+        # Saving class.
+        if 'is_data_dict' not in self.data_dict:
+            self.data_dict['is_data_dict'] = True
+        save_mod.Save(self.data_dict, **params)
+
     def get_keys_out(self, meas_obj_names, node_name, keys_out_container=''):
         """
         Find keys_out in self that contain meas_obj_names, node_name, and
@@ -573,17 +722,18 @@ class ProcessingPipeline(list):
 
         return keys_out
 
-    def find_node(self, dict_to_match, strict_comparison=False):
+    def find_node(self, node_dict_to_match, strict_comparison=False):
         """
         Find and return nodes in self whose have (k, v) pairs that match
         the (k, v) pairs in dict_to_match.
-        :param dict_to_match: dict that is used to specify which nodes you are
-            looking for. THE ORDER IN dict_to_match MATTERS! The function will
-            go through the (k, v) pairs in dict_to_match and select the
+        :param node_dict_to_match: dict that is used to specify which nodes you
+            are looking for. THE ORDER IN dict_to_match MATTERS! The function
+            will go through the (k, v) pairs in dict_to_match and select the
             node(s) that contain v in/ have v as the value corresponding to k.
         :param strict_comparison: whether to only look for strict equality
             node[k] == v
-        :return: list of found node(s)
+        :return: list of found node(s) and list of the indices of the found
+            nodes in self
 
         Assumptions:
             - if the value to match v is list/tuple of strings, then, if
@@ -594,12 +744,12 @@ class ProcessingPipeline(list):
         """
         nodes = self
         found = False
-        for k, v in dict_to_match.items():
+        for k, v in node_dict_to_match.items():
             if isinstance(v, dict):
                 raise NotImplementedError('There is no support for searching '
                                           'for dicts inside the nodes.')
             matched_nodes = []
-            for node in nodes:
+            for idx, node in enumerate(nodes):
                 if k not in node:
                     continue
                 if type(node[k]) != type(v):
@@ -616,7 +766,8 @@ class ProcessingPipeline(list):
                     if isinstance(v_temp, str):
                         v_temp = [v_temp]
 
-                    if hasattr(v_temp, '__iter__') and isinstance(v_temp[0], str):
+                    if hasattr(v_temp, '__iter__') and \
+                            isinstance(v_temp[0], str):
                         condition = (len(
                             hlp_mod.get_sublst_with_all_strings_of_list(
                                 node_v, v_temp)) > 0)
@@ -631,9 +782,14 @@ class ProcessingPipeline(list):
                 print(f'No nodes found to have {k} = {v}')
 
         if not found:
-            return []
+            return [], []
         else:
-            return nodes
+            matched_node_idxs = [''] * len(nodes)
+            for i, found_node in enumerate(nodes):
+                for idx, node in enumerate(self):
+                    if hlp_mod.check_equal(node, found_node):
+                        matched_node_idxs[i] = idx
+            return nodes, matched_node_idxs
 
     def show(self, meas_obj_value_names_map=None,
              save_name=None, save_folder=None, fmt='png'):
@@ -667,7 +823,7 @@ class ProcessingPipeline(list):
                           node.get("keys_out_container", "") else '')
                 node_name = f'{prefix}{node["node_name"]}'
                 matched_nodes = pipeline.find_node(
-                    dict_to_match={'keys_out': node['keys_in']})
+                    node_dict_to_match={'keys_out': node['keys_in']})[0]
                 for n in matched_nodes:
                     prefix = (f'{n.get("keys_out_container", "")} ' if
                               n.get("keys_out_container", "") else '')
@@ -681,20 +837,3 @@ class ProcessingPipeline(list):
             G.draw(f'{save_folder}\{save_name}.{fmt}')
 
         return G
-
-    @staticmethod
-    def cast_init(processing_pipeline):
-        """
-        Recreates a ProcessingPipeline object from a string representation of
-        a ProcessingPipeline instance, or a list of dicts.
-        Avoids having "eval" statements throughout the codebase.
-        Args:
-            processing_pipeline: string representation of ProcessingPipeline
-                instance, or a list of dicts
-
-        Returns: ProcessingPipeline object
-        """
-        if isinstance(processing_pipeline, str):
-            return ProcessingPipeline(from_dict_list=eval(processing_pipeline))
-        else:
-            return ProcessingPipeline(from_dict_list=processing_pipeline)

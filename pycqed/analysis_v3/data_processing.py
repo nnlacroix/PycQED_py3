@@ -1,15 +1,16 @@
 import logging
 log = logging.getLogger(__name__)
 
+import itertools
 import numpy as np
 from collections import OrderedDict
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import helper_functions as hlp_mod
+from pycqed.analysis_v3 import processing_pipeline as pp_mod
 from pycqed.measurement.calibration.calibration_points import CalibrationPoints
 
 import sys
-from pycqed.analysis_v3 import pipeline_analysis as pla
-pla.search_modules.add(sys.modules[__name__])
+pp_mod.search_modules.add(sys.modules[__name__])
 
 
 def filter_data(data_dict, keys_in, keys_out=None, **params):
@@ -97,7 +98,7 @@ def get_std_deviation(data_dict, keys_in, keys_out=None, **params):
             np.reshape(data_to_proc_dict[keyi], shape)
         hlp_mod.add_param(
             keys_out[k], np.std(data_for_std, axis=averaging_axis), data_dict,
-            update_value=params.get('update_value', False), **params)
+            **params)
     return data_dict
 
 
@@ -170,6 +171,55 @@ def classify_gm(data_dict, keys_out, keys_in, **params):
     # return data_dict
 
 
+def do_standard_preselection(data_dict, keys_in, keys_out=None,
+                             joint_processing=False, **params):
+    """
+    Does standard preselection on the data shot arrays in data_dict specified
+    by keys_in. Only the data shots for which the preselection readout
+    preceding it found the qubit in the 0 state.
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+    :param keys_out: list of key names or dictionary keys paths in
+                    data_dict for the processed data to be saved into
+    :param joint_processing: bool specifying whether to preselect on all the
+        measurement objects (arrays specified by keys_in) being in ground state
+    :param params: keyword arguments
+
+    Assumptions:
+        - the data pointed to by keys_in is assumed to be 1D arrays of
+            thresholded/classified shots
+        - every other shot starting at 0 is assumed to be a preselection readout
+
+    WARNING! The processed data array will not necessarily have the same length
+    as the input array.
+    """
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+    if not joint_processing:
+        for k, keyi in enumerate(data_to_proc_dict):
+            th_shots = data_to_proc_dict[keyi]
+            if not all(e in [0, 1, 2] for e in np.unique(th_shots)):
+                raise TypeError(f'The data corresponding to {keyi} does not '
+                                f'contain thresholded shots.')
+            presel_shots = th_shots[::2]
+            data_shots = th_shots[1::2]
+            hlp_mod.add_param(
+                keys_out[k], data_shots[
+                    np.logical_not(np.ma.make_mask(presel_shots))],
+                data_dict, **params)
+    else:
+        all_shots = np.array(list(data_to_proc_dict.values()))
+        presel_states = all_shots[:, ::2]
+        data_states = all_shots[:, 1::2]
+        presel_data = data_states[:, np.where(
+            np.all(presel_states.transpose() == (0, 0, 0, 0), axis=1))[0]]
+        for k, keyo in enumerate(keys_out):
+            hlp_mod.add_param(
+                keyo, presel_data[k],
+                data_dict, **params)
+
+
 def do_preselection(data_dict, classified_data, keys_out, **params):
     """
     Keeps only the data for which the preselection readout data in
@@ -234,8 +284,7 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                 else:
                     mask[idx] = val
             preselected_data = data_to_proc_dict[keyi][mask]
-            hlp_mod.add_param(keys_out[i], preselected_data, data_dict,
-                              update_value=params.get('update_value', False))
+            hlp_mod.add_param(keys_out[i], preselected_data, data_dict)
     else:
         for i, keyo in enumerate(keys_out):
             # Check if the entry in classified_data is an array or a string
@@ -257,8 +306,7 @@ def do_preselection(data_dict, classified_data, keys_out, **params):
                     mask[idx] = False
                 else:
                     mask[idx] = val
-            hlp_mod.add_param(keyo, classif_data[mask], data_dict,
-                              update_value=params.get('update_value', False))
+            hlp_mod.add_param(keyo, classif_data[mask], data_dict)
     return data_dict
 
 
@@ -300,9 +348,7 @@ def average_data(data_dict, keys_in, keys_out=None, **params):
         avg_data = np.mean(data_to_avg, axis=averaging_axis)
         if avg_data.ndim > 1:
             avg_data = avg_data.flatten()
-        hlp_mod.add_param(
-            keys_out[k], avg_data ,
-            data_dict, update_value=params.get('update_value', False), **params)
+        hlp_mod.add_param(keys_out[k], avg_data, data_dict, **params)
     return data_dict
 
 
@@ -339,7 +385,7 @@ def transform_data(data_dict, keys_in, keys_out, **params):
     for keyi, keyo in zip(data_to_proc_dict, keys_out):
         hlp_mod.add_param(
             keyo, transform_func(data_to_proc_dict[keyi], **tf_kwargs),
-            data_dict, update_value=params.get('update_value', False))
+            data_dict)
     return data_dict
 
 
@@ -369,9 +415,7 @@ def correct_readout(data_dict, keys_in, keys_out, state_prob_mtx, **params):
     uncorrected_data = np.stack(list(data_to_proc_dict.values()))
     corrected_data = (np.linalg.inv(state_prob_mtx).T @ uncorrected_data).T
     for i, keyo in enumerate(keys_out):
-        hlp_mod.add_param(
-            keyo, corrected_data[:, i],
-            data_dict, update_value=params.get('update_value', False))
+        hlp_mod.add_param(keyo, corrected_data[:, i], data_dict)
     return data_dict
 
 
@@ -434,8 +478,7 @@ def rotate_iq(data_dict, keys_in, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    hlp_mod.add_param(keys_out[0], rotated_data, data_dict,
-                      update_value=params.get('update_value', False))
+    hlp_mod.add_param(keys_out[0], rotated_data, data_dict)
     return data_dict
 
 
@@ -498,8 +541,7 @@ def rotate_1d_array(data_dict, keys_in, keys_out=None, **params):
                 cp.get_indices()[mobjn][ordered_cal_states[0]],
             cal_one_points=None if len(ordered_cal_states) == 0 else
                 cp.get_indices()[mobjn][ordered_cal_states[1]])
-    hlp_mod.add_param(keys_out[0], rotated_data, data_dict,
-                      update_value=params.get('update_value', False))
+    hlp_mod.add_param(keys_out[0], rotated_data, data_dict)
     return data_dict
 
 
@@ -574,8 +616,7 @@ def classify_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
                 dd[all_keys[i]] = OrderedDict()
             dd = dd[all_keys[i]]
         hlp_mod.add_param(all_keys[-1], np.zeros(
-            len(list(data_to_proc_dict.values())[0])), dd,
-            update_value=params.get('update_value', False))
+            len(list(data_to_proc_dict.values())[0])), dd)
 
         # get the decimal values corresponding to state from threshold_map.
         state_idxs = [k for k, v in threshold_map.items() if v == state]
@@ -640,8 +681,7 @@ def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
 
     for i, keyo, in enumerate(keys_out):
         hlp_mod.add_param(
-            keyo, thresh_dat[:, i].astype('int'), data_dict,
-            update_value=params.get('update_value', False))
+            keyo, thresh_dat[:, i].astype('int'), data_dict)
 
 
 def correlate_qubits(data_dict, keys_in, keys_out, **params):
@@ -672,8 +712,7 @@ def correlate_qubits(data_dict, keys_in, keys_out, **params):
     if not np.all(np.logical_or(all_data_arr == 0, all_data_arr == 1)):
         raise ValueError('Not all shots have been thresholded.')
     hlp_mod.add_param(
-        keys_out[0], np.sum(all_data_arr, axis=0) % 2, data_dict,
-        update_value=params.get('update_value', False))
+        keys_out[0], np.sum(all_data_arr, axis=0) % 2, data_dict)
 
 
 def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
@@ -717,6 +756,9 @@ def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
     :param params: keyword arguments: used if get_observables is called
         - preselection_shift (int, default: -1)
         - do_preselection (bool, default: False)
+        - return_counts (bool, default: False): whether to return raw counts
+            for each state (True), or normalize the counts by
+            n_readouts/n_shots (False)
     :return adds to data_dict, under keys_out, a dict with observables as keys
         and np.array of normalized counts with size n_readouts as values
 
@@ -733,6 +775,9 @@ def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
                                    **params)
     observables = hlp_mod.get_param('observables', data_dict,
                                     raise_error=True, **params)
+
+    return_counts = hlp_mod.get_param('return_counts', data_dict,
+                                      default_value=False, **params)
 
     n_shots = next(iter(data_to_proc_dict.values())).shape[0]
     table = OrderedDict({obs: np.zeros(n_readouts) for obs in observables})
@@ -761,7 +806,8 @@ def calculate_probability_table(data_dict, keys_in, keys_out=None, **params):
                     mask = np.logical_and(mask, res_e[mobjn][seg])
                 else:
                     mask = np.logical_and(mask, res_g[mobjn][seg])
-            table[obs][readout_n] = np.count_nonzero(mask)*n_readouts/n_shots
+            table[obs][readout_n] = np.count_nonzero(mask) * (
+                    n_readouts/n_shots if not return_counts else 1)
 
     if keys_out is not None:
         if len(keys_out) != 1:
@@ -937,3 +983,46 @@ def calculate_meas_ops_and_covariations_cal_points(
 
     hlp_mod.add_param(keys_out[0], Fs, data_dict, **params)
     hlp_mod.add_param(keys_out[1], Omega, data_dict, **params)
+
+
+def count_states(data_dict, keys_in, keys_out, states=None, n_meas_objs=None,
+                 **params):
+    """
+    Averages data in data_dict specified by keys_in into num_bins.
+    :param data_dict: OrderedDict containing data to be processed and where
+                    processed data is to be stored
+    :param keys_in: list of key names or dictionary keys paths in
+                    data_dict for the data to be processed
+    :param keys_out: list of key names or dictionary keys paths in
+                    data_dict for the processed data to be saved into
+    :param states: list of tuples of 0, 1, (2 if qutrits) denoting qubit/qutrit
+        basis states to match
+    :param n_meas_objs: number of measurement objects. If this is given and
+        states is None, all possible basis states for n_meas_objs qubits will
+        be generated
+    :param params: keyword arguments
+
+    Assumptions:
+        - each array pointed to by keys_in is assumed to correspond to one of
+            the qubits/qutrits in the basis states. IMPORTANT TO SPECIFY
+            KEYS_IN IN THE CORRECT ORDER, SUCH THAT ARRAYS CORRESPOND TO YOUR
+            STATE
+        - the data pointed to by keys_in is assumed to be 1D arrays of
+            thresholded/classified shots
+        - len(keys_out) == 1
+    """
+
+    if len(keys_out) != 1:
+        raise ValueError(f'keys_out must have length one. {len(keys_out)} '
+                         f'entries were given.')
+    if states is None:
+        if n_meas_objs is None:
+            raise ValueError('Please specify either states or n_meas_objs.')
+        states = itertools.product((0, 1), repeat=n_meas_objs)
+
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+    shots = np.array(list(data_to_proc_dict.values()))
+    state_counts = np.array([
+        np.count_nonzero(np.all(shots.transpose() == state, axis=1))
+        for state in states])
+    hlp_mod.add_param(keys_out[0], state_counts, data_dict, **params)
