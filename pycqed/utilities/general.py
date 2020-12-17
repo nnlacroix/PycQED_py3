@@ -147,7 +147,7 @@ def to_hex_string(byteval):
 
 def load_settings(instrument,
                   label: str='', folder: str=None,
-                  timestamp: str=None, **kw):
+                  timestamp: str=None, update=True, **kw):
     '''
     Loads settings from an hdf5 file onto the instrument handed to the
     function. By default uses the last hdf5 file in the datadirectory.
@@ -156,12 +156,15 @@ def load_settings(instrument,
 
     Args:
         instrument (instrument) : instrument onto which settings
-            should be loaded
+            should be loaded. Can be an instrument name (str) if update is
+            set to False.
         label (str)           : label used for finding the last datafile
         folder (str)        : exact filepath of the hdf5 file to load.
             if filepath is specified, this takes precedence over the file
             locating options (label, timestamp etc.).
         timestamp (str)       : timestamp of file in the datadir
+        update (bool, default True): if set to False, the loaded settings
+            will be returned instead of updating them in the instrument.
 
     Kwargs:
         params_to_set (list)    : list of strings referring to the parameters
@@ -173,9 +176,11 @@ def load_settings(instrument,
     else:
         folder_specified = True
 
-    instrument_name = instrument.name
+    if isinstance(instrument, str) and not update:
+        instrument_name = instrument
+    else:
+        instrument_name = instrument.name
     verbose = kw.pop('verbose', True)
-    update = kw.pop('update', True)
     older_than = kw.pop('older_than', None)
     success = False
     count = 0
