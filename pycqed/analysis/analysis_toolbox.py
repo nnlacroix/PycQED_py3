@@ -23,6 +23,7 @@ from matplotlib import cm
 latest_data_match_whole_words = False
 datadir = get_default_datadir()
 print('Data directory set to:', datadir)
+fetch_data_dir = None
 
 
 ######################################################################
@@ -1716,7 +1717,8 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
     return new_cmap
 
 
-def fetch_data(timestamp, source_dir, folder=None, delete_if_exists=False):
+def fetch_data(timestamp, source_dir=None, folder=None,
+               delete_if_exists=False):
     """
     Copies data from a source folder to the data folder.
     :param timestamp: (list or str) A single timestamp or a list of
@@ -1730,6 +1732,10 @@ def fetch_data(timestamp, source_dir, folder=None, delete_if_exists=False):
 
     :return: None
     """
+    if source_dir is None:
+        source_dir = fetch_data_dir
+    assert source_dir is not None, "source_dir needs to be passed if the " \
+                                   "variable module fetch_data_dir is not set."
     if isinstance(timestamp, list):
         for t in timestamp:
             fetch_data(t, source_dir, folder=folder,
@@ -1758,7 +1764,7 @@ def fetch_data(timestamp, source_dir, folder=None, delete_if_exists=False):
                       f'and delete_if_exists was set to False.')
 
 
-def fetch_data_in_range(timestamp_start, timestamp_end, source_dir,
+def fetch_data_in_range(timestamp_start, timestamp_end, source_dir=None,
                         folder=None, delete_if_exists=False, **kw):
     """
     Copies data corresponding to a range of timestamps from a source folder
@@ -1775,6 +1781,10 @@ def fetch_data_in_range(timestamp_start, timestamp_end, source_dir,
 
     :return: None
     """
+    if source_dir is None:
+        source_dir = fetch_data_dir
+    assert source_dir is not None, "source_dir needs to be passed if the " \
+                                   "variable module fetch_data_dir is not set."
     ts = get_timestamps_in_range(timestamp_start, timestamp_end,
                                  folder=source_dir, **kw)
     fetch_data(ts, source_dir, folder=folder,
