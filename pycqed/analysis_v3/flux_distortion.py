@@ -68,6 +68,18 @@ class Node:
         pass
 
 
+class CombiningNode(Node):
+    def run(self):
+        data_names = [k.replace('keys_', 'data_') for k in self.keys.keys()
+                      if not k.startswith('keys_out')]
+        ks = [v for k, v in self.keys.items()
+              if not k.startswith('keys_out')]
+        data = {p: self.get(k) for p, k in zip(data_names, ks)}
+        data_out = self.node_action(**data, **self.control_params)
+        hlp_mod.add_param(self.keys['keys_out'][0], data_out, self.data_dict,
+                          **self.params)
+
+
 class fd_resample(Node):
     control_params = {'method': 'interp'}
 
@@ -245,16 +257,19 @@ def fd_FIR_from_distortion_dict(data_dict, keys_in, keys_out, **params):
         distortion_dict = hlp_mod.get_param(keys_in[0], data_dict, **params)
         hlp_mod.add_param(ko, distortion_dict['FIR'], data_dict, **params)
 
-def fd_volt_to_freq(data_dict, keys_in, keys_out, keys_conv=None, **params):
+def fd_volt_to_freq(data_dict, keys_in, keys_out, keys_conv=None,
+                    method='fit_mods', **params):
     if keys_conv is None:
         keys_conv = [f'volt_freq_conv']
     volt_freq_conv = hlp_mod.get_param(keys_conv[0], data_dict, **params)
     for ki, ko in zip(keys_in, keys_out):
         s = hlp_mod.get_param(ki, data_dict, **params)
-        hlp_mod.add_param(ko,
-                          [s[0], fit_mods.Qubit_dac_to_freq(
-                              s[1], **volt_freq_conv)],
-                          data_dict, **params)
+        # print(ko, s, volt_freq_conv, params)
+        if method == 'fit_mods':
+            freqs = fit_mods.Qubit_dac_to_freq(s[1], **volt_freq_conv)
+        elif method == 'Qubit_freq_to_dac_res':
+            freqs = fit_mods.Qubit_dac_to_freq_res(s[1], **volt_freq_conv)
+        hlp_mod.add_param(ko, np.array([s[0], freqs]), data_dict, **params)
 
 def fd_freq_to_volt(data_dict, keys_in, keys_out, method='fit_mods', **params):
     s = hlp_mod.get_param(keys_in[0], data_dict, **params)
@@ -265,6 +280,16 @@ def fd_freq_to_volt(data_dict, keys_in, keys_out, method='fit_mods', **params):
             [s[0], np.mod(fit_mods.Qubit_freq_to_dac(s[1], **volt_freq_conv,
                                                      branch='negative'),
                           volt_freq_conv['V_per_phi0'])],
+            data_dict, **params)
+    elif method == 'Qubit_freq_to_dac_res':
+        volt_freq_conv = hlp_mod.get_param('volt_freq_conv', data_dict,
+                                           **params)
+        branch = hlp_mod.get_param('branch', data_dict, **params)
+        # print(repr(dict(frequency=s[1], **volt_freq_conv, branch=branch)))
+        hlp_mod.add_param(
+            keys_out[0],
+            [s[0], fit_mods.Qubit_freq_to_dac_res(
+                s[1], **volt_freq_conv, branch=branch)],
             data_dict, **params)
     else:
         d = hlp_mod.get_param('asymmetry', data_dict, raise_error=True,
@@ -436,43 +461,18 @@ def fd_apply_distortion(data_dict, keys_in, keys_out, keys_filter, filter_type,
 def fd_expmod_to_IIR(data_dict, keys_in, keys_out, inverse_IIR=True, **params):
     dt = hlp_mod.get_param('dt', data_dict, **params)
     for ki, ko in zip(keys_in, keys_out):
-        A, B, tau = hlp_mod.get_param(ki, data_dict, **params)
-        if 1 / tau < 1e-14:
-            a, b = np.array([1, -1]), np.array([A + B, -(A + B)])
-        else:
-            a = np.array(
-                [(A + (A + B) * tau * 2 / dt), (A - (A + B) * tau * 2 / dt)])
-            b = np.array([1 + tau * 2 / dt, 1 - tau * 2 / dt])
-        if not inverse_IIR:
-            a, b = b, a
-        b = b / a[0]
-        a = a / a[0]
-        hlp_mod.add_param(ko, [a, b], data_dict, **params)
+        iir = fpdist.convert_expmod_to_IIR(
+            hlp_mod.get_param(ki, data_dict, **params),
+            dt=dt, inverse_IIR=inverse_IIR)
+        hlp_mod.add_param(ko, iir, data_dict, **params)
 
 def fd_IIR_to_expmod(data_dict, keys_in, keys_out, inverse_IIR=True, **params):
     dt = hlp_mod.get_param('dt', data_dict, **params)
     for ki, ko in zip(keys_in, keys_out):
-        a_, b_ = hlp_mod.get_param(ki, data_dict, **params)
-        single_iir = not hasattr(a_[0], '__iter__')
-        if single_iir:
-            a_, b_ = [a_], [b_]
-        expmods = []
-        for a, b in zip(a_, b_):
-            if not inverse_IIR:
-                a, b = b, a
-                b = b / a[0]
-                a = a / a[0]
-            gamma = np.mean(b)
-            if np.abs(gamma) < 1e-14:
-                A, B, tau =  1, 0, np.inf
-            else:
-                a_, b_ = a / gamma, b / gamma
-                A = 1 / 2 * (a_[0] + a_[1])
-                tau = 1 / 2 * (b_[0] - b_[1]) * dt / 2
-                B = 1 / 2 * (a_[0] - a_[1]) * dt / (2 * tau) - A
-            expmods.append([A, B, tau])
-        hlp_mod.add_param(ko, expmods[0] if single_iir else expmods,
-                          data_dict, **params)
+        expmod = fpdist.convert_IIR_to_expmod(
+            hlp_mod.get_param(ki, data_dict, **params),
+            dt=dt, inverse_IIR=inverse_IIR)
+        hlp_mod.add_param(ko, expmod, data_dict, **params)
 
 def fd_invert_IIR(data_dict, keys_in, keys_out, **params):
     for ki, ko in zip(keys_in, keys_out):
@@ -717,11 +717,13 @@ def fd_select_from_list(data_dict, keys_in, keys_out, index, **params):
 
 def fd_fit_iir(data_dict, keys_in, keys_out, keys_corrected=None, method='JB',
                set_param_hints=True, fixed_A=None, return_expmod=False,
-               **params):
-    if method not in ['JB', 'JB_iter', 'integral']:
+               start_vals=None, **params):
+    if method not in ['JB', 'JB_iter', 'integral', 'multiexp']:
         raise NotImplementedError(f"Method {method} not implemented.")
     if isinstance(fixed_A, str):  # a key was given
         fixed_A = hlp_mod.get_param(fixed_A, data_dict, **params)
+    if isinstance(start_vals, str):  # a key was given
+        start_vals = hlp_mod.get_param(start_vals, data_dict, **params)
     folder = hlp_mod.get_param('folder', data_dict, **params)
     if folder is None:
         timestamp = hlp_mod.get_param('timestamps', data_dict, **params)[0]
@@ -782,14 +784,26 @@ def fd_fit_iir(data_dict, keys_in, keys_out, keys_corrected=None, method='JB',
             hlp_mod.add_param('fit_dicts',
                               {f'IIR_{method}_{ki}': dict(fit_res=fit_res)},
                               data_dict, add_param_method='update', **params)
-        if method=='integral':
-            mask = np.logical_and(data[0] > fit_range[0],
-                                  data[0] < fit_range[1])
+        if method in ['integral', 'multiexp']:
+            mask = np.logical_and(data[0] >= fit_range[0],
+                                  data[0] <= fit_range[1])
+        if method == 'integral':
             A, B, C = fit_exp_integral_method(
                 data[0][mask] / t_factor, data[1][mask] / pulse_amp,
                 fixed_A=fixed_A)
             tau = -1 / C * t_factor
-        if method in ['integral', 'JB']:
+        if method == 'multiexp':
+            fit_res = fit_exp_lmfit(data[0][mask],
+                                    data[1][mask] / pulse_amp,
+                                    fixed_A=fixed_A, start_vals=start_vals)
+            hlp_mod.add_param('fit_dicts',
+                              {f'IIR_{method}_{ki}': dict(fit_res=fit_res)},
+                              data_dict, add_param_method='update', **params)
+            N = len([k for k in fit_res.values if k.startswith('tau')])
+            A = fit_res.values.get('A', 0)
+            B = [fit_res.values.get(f'B{i}') for i in range(N)]
+            tau = [fit_res.values.get(f'tau{i}') for i in range(N)]
+        if method in ['integral', 'JB', 'multiexp']:
             if return_expmod:
                 hlp_mod.add_param(ko, [A, B, tau], data_dict, **params)
             else:
@@ -856,6 +870,34 @@ def fit_exp_integral_method(x, y, fixed_A=None):
     B = b2
     C = c1
     return A, B, C
+
+
+def fit_exp_lmfit(x, y, start_vals=None, fixed_A=None):
+    """
+    Fits y(x) = A + sum_i B_i * exp(- x / tau_i) with tau_i>=0 to given data.
+    """
+    from lmfit.models import ExpressionModel
+    if start_vals is None:
+        start_vals = {'A': 0, 'B': [1], 'tau': [1e-6],}
+    if 'A' not in start_vals:
+        fixed_A = 0
+    if fixed_A is not None:
+        start_vals['A'] = fixed_A
+    N = len(start_vals['tau'])
+    fit_model = 'A + '
+    fit_params = {'A': start_vals['A']}
+    fit_params.update({f'{k}{i}': v for k in ['B', 'tau']
+                       for i, v in enumerate(start_vals[k])})
+    fit_model += ' + '.join(
+        [f'B{i} * exp(-x/tau{i})' for i in range(N)])
+    lmfit_model = ExpressionModel(fit_model)
+    for i in range(N):
+        lmfit_model.set_param_hint(f'tau{i}', min=0)
+    if fixed_A is not None:
+        lmfit_model.set_param_hint('A', vary=False)
+    res = lmfit_model.fit(y, x=x, **fit_params)
+    return res
+
 
 def fd_cut_time_range(data_dict, keys_in, keys_out, keys_range, **params):
     if len(keys_range) == 1 and len(keys_in) > 1:
@@ -992,7 +1034,9 @@ def fd_fitted_curve(data_dict, keys_in, keys_expmod, keys_out, **params):
         if data_tvals.ndim == 2:  # interpret as time series
             data_tvals = data_tvals[0]
         A, B, tau = hlp_mod.get_param(kf, data_dict, **params)
-        data = (A + B * np.exp(- data_tvals / tau))
+        B, tau = np.atleast_1d(B), np.atleast_1d(tau)
+        data = (A + np.sum(([B * np.exp(- data_tvals / tau) for B, tau in
+                             zip(B, tau)]), axis=0))
         hlp_mod.add_param(ko, np.array([data_tvals, data]), data_dict,
                           **params)
 
@@ -1019,3 +1063,19 @@ class fd_timerange(Node):
         mask = np.logical_and(tvals >= data_in_range[0],
                               tvals <= data_in_range[1])
         return [tvals[mask], wf[mask]]
+
+
+class fd_combine(CombiningNode):
+    def __init__(self, data_dict, keys_in, keys_out, **params):
+        super().__init__(data_dict, keys_in=keys_in, keys_out=keys_out,
+                         **params)
+
+    @staticmethod
+    def node_action(data_in):
+        # print([d for d in data_in])
+        if np.array(data_in[0]).ndim == 2:
+            data = np.concatenate([d for d in data_in], axis=1)
+            data = data[:, np.argsort(data[0])]
+        else:
+            data = np.concatenate([d for d in data_in])
+        return data
