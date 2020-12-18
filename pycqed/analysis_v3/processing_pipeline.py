@@ -11,14 +11,6 @@ from numpy import array  # Needed for eval. Do not remove.
 search_modules = set()
 search_modules.add(hlp_mod)
 
-try:
-    import pygraphviz as pgv
-except ModuleNotFoundError:
-    log.warning('Visualizing the pipeline tree requires graphviz '
-                '(http://www.graphviz.org/download/) and '
-                'the module pygraphviz '
-                '(conda install graphviz pygraphviz -c alubbock).')
-
 ###################################################################
 #### This module creates a processing pipeline for analysis_v3 ####
 ###################################################################
@@ -804,6 +796,7 @@ class ProcessingPipeline(list):
         :param fmt: file format (png, pdf)
         :return: a pygraphviz.AGraph instance
         """
+        import pygraphviz as pgv
         pipeline = self
         if not any([node.get('was_resolved', False) for node in pipeline]):
             if meas_obj_value_names_map is None:
