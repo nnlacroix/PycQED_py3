@@ -171,6 +171,7 @@ def fd_create_pulse(data_dict, keys_in, keys_out, **params):
                                    **params)
     pulse_params_dict.update(pulse_dict)
     pulse_params_dict['element_name'] = 'element'
+    # print(pulse_params_dict['pulse_length'])
 
     pulse = seg_mod.UnresolvedPulse(pulse_params_dict).pulse_obj
     pulse.algorithm_time(0)
@@ -736,8 +737,9 @@ def fd_fit_iir(data_dict, keys_in, keys_out, keys_corrected=None, method='JB',
     for ki, ko, kcorr in zip(keys_in, keys_out, keys_corrected):
         data = hlp_mod.get_param(ki, data_dict, **params)
         dt = hlp_mod.get_param('dt', data_dict, raise_error=True, **params)
-
-        t_factor = 1e-6  # seems reasonable for numerical stability
+        # scaling by 1e-6 seems reasonable for numerical stability
+        t_factor = hlp_mod.get_param('fit_iir_scaling', data_dict,
+                                     default_value=1e-6, **params)
         if method in ['JB', 'JB_iter']:
             prep_data, delays_filter, dt_osc, i_start, i_end, t_end = \
                 IIR_fitting.prepare_data(
@@ -793,16 +795,20 @@ def fd_fit_iir(data_dict, keys_in, keys_out, keys_corrected=None, method='JB',
                 fixed_A=fixed_A)
             tau = -1 / C * t_factor
         if method == 'multiexp':
-            fit_res = fit_exp_lmfit(data[0][mask],
-                                    data[1][mask] / pulse_amp,
-                                    fixed_A=fixed_A, start_vals=start_vals)
+            weights = hlp_mod.get_param('fit_iir_weights', data_dict, **params)
+            fit_res = fit_exp_lmfit(
+                data[0][mask] / t_factor, data[1][mask] / pulse_amp,
+                fixed_A=fixed_A, start_vals={
+                    k : np.array(v) / t_factor if k == 'tau' else v
+                    for k, v in start_vals.items()}, weights=weights)
             hlp_mod.add_param('fit_dicts',
                               {f'IIR_{method}_{ki}': dict(fit_res=fit_res)},
                               data_dict, add_param_method='update', **params)
             N = len([k for k in fit_res.values if k.startswith('tau')])
             A = fit_res.values.get('A', 0)
             B = [fit_res.values.get(f'B{i}') for i in range(N)]
-            tau = [fit_res.values.get(f'tau{i}') for i in range(N)]
+            tau = np.array(
+                [fit_res.values.get(f'tau{i}') for i in range(N)]) * t_factor
         if method in ['integral', 'JB', 'multiexp']:
             if return_expmod:
                 hlp_mod.add_param(ko, [A, B, tau], data_dict, **params)
@@ -872,11 +878,15 @@ def fit_exp_integral_method(x, y, fixed_A=None):
     return A, B, C
 
 
-def fit_exp_lmfit(x, y, start_vals=None, fixed_A=None):
+def fit_exp_lmfit(x, y, start_vals=None, fixed_A=None, weights=None):
     """
     Fits y(x) = A + sum_i B_i * exp(- x / tau_i) with tau_i>=0 to given data.
     """
     from lmfit.models import ExpressionModel
+    if weights == 'auto':
+        weights = np.diff(np.log10(x))
+        weights = np.concatenate([[weights[0]], weights])
+        weights = weights / max(weights)
     if start_vals is None:
         start_vals = {'A': 0, 'B': [1], 'tau': [1e-6],}
     if 'A' not in start_vals:
@@ -895,7 +905,7 @@ def fit_exp_lmfit(x, y, start_vals=None, fixed_A=None):
         lmfit_model.set_param_hint(f'tau{i}', min=0)
     if fixed_A is not None:
         lmfit_model.set_param_hint('A', vary=False)
-    res = lmfit_model.fit(y, x=x, **fit_params)
+    res = lmfit_model.fit(y, x=x, weights=weights, **fit_params)
     return res
 
 
@@ -928,8 +938,13 @@ def fd_normalize(data_dict, keys_in, keys_out, target_interval=None, **params):
         if target_interval is None:
             return x / np.max(np.abs(x))
         else:
-            m = np.min(x)
-            return (x - m) / (np.max(x) - m)
+            mi = np.min(x)
+            ma = np.max(x)
+            if mi == ma:
+                return target_interval[1] * np.ones_like(x)
+            else:
+                return ((x - mi) / (ma - mi)) * np.diff(
+                    target_interval) + target_interval[0]
 
     for ki, ko in zip(keys_in, keys_out):
         data = np.array(hlp_mod.get_param(ki, data_dict, **params))
