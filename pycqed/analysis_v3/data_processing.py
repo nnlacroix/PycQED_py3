@@ -1051,10 +1051,10 @@ def data_from_analysis_v2(data_dict, class_name, class_params,
     except AttributeError:
         try:
             ana = getattr(ra, class_name)
-        except AttributeError as e:
-            print(f'{class_name} was not found in either timedomain_analysis.py'
-                  ' or readout_analysis.')
-            raise e
+        except AttributeError:
+            raise AttributeError(
+                f'{class_name} was not found in either '
+                f'timedomain_analysis.py or readout_analysis.py.')
 
     # run analysis
     options_dict = class_params.get('options_dict', {})
