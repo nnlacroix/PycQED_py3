@@ -24,6 +24,8 @@ import scipy as sp
 import scipy.optimize
 import functools
 from typing import Optional, List, Tuple
+import logging
+log = logging.getLogger(__name__)
 
 
 @functools.lru_cache()
@@ -254,7 +256,14 @@ def transmon_resonator_levels(ec: float, ej: float, frb: float, gb: float,
     ham_int = gb * np.kron(n_mon, a_res + a_res.T)
     ham = np.kron(ham_mon, id_res) + np.kron(id_mon, ham_res) + ham_int
 
-    levels_full, states_full = np.linalg.eig(ham)
+    try:
+        levels_full, states_full = np.linalg.eig(ham)
+    except Exception:
+        # try again
+        log.warning('Eigenvalue calculation in transmon_resonator_levels '
+                    'failed in first attempt. Trying again.')
+        levels_full, states_full = np.linalg.eig(ham)
+        log.warning('Second attempt successful.')
     levels_transmon, states_transmon = np.linalg.eig(ham_mon)
     states_transmon = states_transmon[:, np.argsort(levels_transmon)]
 
