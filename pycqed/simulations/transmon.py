@@ -257,14 +257,18 @@ def transmon_resonator_levels(ec: float, ej: float, frb: float, gb: float,
     ham = np.kron(ham_mon, id_res) + np.kron(id_mon, ham_res) + ham_int
 
     try:
-        levels_full, states_full = np.linalg.eig(ham)
-    except Exception:
-        # try again
-        log.warning('Eigenvalue calculation in transmon_resonator_levels '
-                    'failed in first attempt. Trying again.')
-        levels_full, states_full = np.linalg.eig(ham)
+        levels_full, states_full = np.linalg.eigh(ham)
+        levels_transmon, states_transmon = np.linalg.eigh(ham_mon)
+        if any(np.isnan(levels_full)) or any(np.isnan(levels_transmon)):
+            raise np.linalg.LinAlgError('Some eigenvalues are nan.')
+    except np.linalg.LinAlgError as e:
+        log.warning(f'Eigenvalue calculation in transmon_resonator_levels '
+                    f'failed in first attempt: {e} Trying again.')
+        levels_full, states_full = np.linalg.eigh(ham)
+        levels_transmon, states_transmon = np.linalg.eigh(ham_mon)
+        if any(np.isnan(levels_full)) or any(np.isnan(levels_transmon)):
+            raise np.linalg.LinAlgError('Some eigenvalues are nan.')
         log.warning('Second attempt successful.')
-    levels_transmon, states_transmon = np.linalg.eig(ham_mon)
     states_transmon = states_transmon[:, np.argsort(levels_transmon)]
 
     return_idxs = []
