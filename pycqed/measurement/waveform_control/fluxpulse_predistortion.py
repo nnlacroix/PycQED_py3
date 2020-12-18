@@ -139,6 +139,8 @@ def convert_expmod_to_IIR(expmod, dt, inverse_IIR=True):
             a = sympy.symbols(','.join([f'a{i}' for i in range(N + 1)]))
             tau_s = sympy.symbols(','.join([f'tau{i + 1}' for i in range(
                 N)]))
+            if N == 1:
+                tau_s = [tau_s]
             T = sympy.symbols('T')
             z = sympy.symbols('z')
             p = 2 / T * (1 - 1 / z) / (1 + 1 / z)
