@@ -233,13 +233,15 @@ def latest_data(contains='', older_than=None, newer_than=None, or_equal=False,
             return paths
 
 
-def data_from_time(timestamp, folder=None):
+def data_from_time(timestamp, folder=None, auto_fetch=None):
     '''
     returns the full path of the data specified by its timestamp in the
     form YYYYmmddHHMMSS.
     '''
     if folder is None:
         folder = datadir
+    if auto_fetch is None:
+        auto_fetch = (fetch_data_dir is not None)
     daydirs = os.listdir(folder)
     if len(daydirs) == 0:
         raise Exception('No data in the data directory specified')
@@ -248,13 +250,22 @@ def data_from_time(timestamp, folder=None):
     daystamp, tstamp = verify_timestamp(timestamp)
 
     if not os.path.isdir(os.path.join(folder, daystamp)):
-        raise KeyError("Requested day '%s' not found" % daystamp)
+        msg = "Requested day '%s' not found" % daystamp
+        if auto_fetch:
+            log.warning(msg + f'\n Trying to fetch from {fetch_data_dir}')
+            fetch_data(timestamp, folder=folder)
+            return data_from_time(timestamp, folder=folder, auto_fetch=False)
+        raise KeyError(msg)
 
     measdirs = [d for d in os.listdir(os.path.join(folder, daystamp))
                 if d[:6] == tstamp]
     if len(measdirs) == 0:
-        raise KeyError("Requested data '%s_%s' not found"
-                       % (daystamp, tstamp))
+        msg = "Requested data '%s_%s' not found" % (daystamp, tstamp)
+        if auto_fetch:
+            log.warning(msg + f'\n Trying to fetch from {fetch_data_dir}')
+            fetch_data(timestamp, folder=folder)
+            return data_from_time(timestamp, folder=folder, auto_fetch=False)
+        raise KeyError(msg)
     elif len(measdirs) == 1:
         return os.path.join(folder, daystamp, measdirs[0])
     else:
@@ -1752,7 +1763,7 @@ def fetch_data(timestamp, source_dir=None, folder=None,
         os.makedirs(daydir)
     exists = True
     try:
-        f = data_from_time(timestamp)
+        f = data_from_time(timestamp, folder=folder, auto_fetch=False)
     except KeyError:
         f = os.path.join(daydir, os.path.basename(f_src))
         exists = False
