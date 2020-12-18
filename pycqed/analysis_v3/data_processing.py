@@ -1026,3 +1026,55 @@ def count_states(data_dict, keys_in, keys_out, states=None, n_meas_objs=None,
         np.count_nonzero(np.all(shots.transpose() == state, axis=1))
         for state in states])
     hlp_mod.add_param(keys_out[0], state_counts, data_dict, **params)
+
+
+def data_from_analysis_v2(data_dict, class_name, class_params,
+                          keys_in=None, keys_out=None, **params):
+    """
+    Instantiates an analysis class with name class_name and input parameters
+    class_params from either timedomain_analysis.py or readout_analysis.py.
+    :param data_dict: OrderedDict where the data from the analysis class will
+        be stored.
+    :param class_name: string specifying the name of the analysis class to run
+    :param class_params: keyword input parameters to the analysis class
+    :param keys_in: list of paths inside the __dict__ of the analysis instance
+        pointing to the parameters that should be extracted and stored in
+        data_dict
+    :param keys_out: list of paths inside data_dict where the value of the
+        parameters corresponding to keys_in are to be stored.
+    :param params: keyword arguments passed to hlp_mod.add_param
+    """
+    from pycqed.analysis_v2 import timedomain_analysis as tda
+    from pycqed.analysis_v2 import readout_analysis as ra
+    try:
+        ana = getattr(tda, class_name)
+    except AttributeError:
+        try:
+            ana = getattr(ra, class_name)
+        except AttributeError as e:
+            print(f'{class_name} was not found in either timedomain_analysis.py'
+                  ' or readout_analysis.')
+            raise e
+
+    # run analysis
+    options_dict = class_params.get('options_dict', {})
+    options_dict['delegate_plotting'] = options_dict.get('delegate_plotting',
+                                                         False)
+    class_params['options_dict'] = options_dict
+    ana = ana(**class_params)
+
+    if keys_in is None:
+        keys_in = ['proc_data_dict']
+        if keys_out is None:
+            keys_out = [f'proc_data_dict_{class_name}']
+
+    if keys_out is None:
+        keys_out = [f'{keyi}_{class_name}' for keyi in keys_in]
+
+    params['add_param_method'] = params.get('add_param_method', 'replace')
+    for keyi, keyo in zip(keys_in, keys_out):
+        data = hlp_mod.get_param(keyi, ana.__dict__)
+        if data is None:
+            log.warning(f'{keyi} was not found in {class_name} instance.')
+            continue
+        hlp_mod.add_param(keyo, data, data_dict, **params)
