@@ -615,14 +615,6 @@ def rb_analysis(data_dict, keys_in, sweep_type=None, **params):
     do_plotting = hlp_mod.pop_param('do_plotting', data_dict,
                                     default_value=True, node_params=params)
 
-    keys_in_std = hlp_mod.get_param('keys_in_std', data_dict,
-                                    raise_error=False, **params)
-    if keys_in_std is None:
-        keys_in_std = [''] * len(keys_in)
-    if len(keys_in_std) != len(keys_in):
-        raise ValueError('keys_in_std and keys_in do not have '
-                         'the same length.')
-
     sp, mospm, mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['sp', 'mospm', 'mobjn'], **params)
     if sweep_type is None:
@@ -636,7 +628,7 @@ def rb_analysis(data_dict, keys_in, sweep_type=None, **params):
     # prepare fitting
     if prep_fit_dicts:
         prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
-                        **params)
+                           **params)
 
         if do_fitting:
             getattr(fit_mod, 'run_fitting')(data_dict, keys_in=list(
@@ -688,6 +680,11 @@ def prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
 
     keys_in_std = hlp_mod.get_param('keys_in_std', data_dict, raise_error=False,
                                     **params)
+    if keys_in_std is None:
+        keys_in_std = [''] * len(data_to_proc_dict)
+    if len(keys_in_std) != len(data_to_proc_dict):
+        raise ValueError('keys_in_std and keys_in do not have '
+                         'the same length.')
     for keyi, keys in zip(data_to_proc_dict, keys_in_std):
         if 'pf' in keyi:
             # if this is the |f> state population data, then do an additional
