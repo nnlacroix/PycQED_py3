@@ -133,7 +133,7 @@ def convert_expmod_to_IIR(expmod, dt, inverse_IIR=True):
         b = [i[1] for i in iir]
     else:
         A, B, tau = expmod
-        if isinstance(tau, list):  # sum of exp mod
+        if np.array(tau).ndim > 0:  # sum of exp mod
             import sympy
             N = len(tau)
             a = sympy.symbols(','.join([f'a{i}' for i in range(N + 1)]))
