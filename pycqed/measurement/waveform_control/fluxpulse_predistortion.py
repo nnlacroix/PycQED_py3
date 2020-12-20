@@ -128,17 +128,25 @@ def convert_expmod_to_IIR(expmod, dt, inverse_IIR=True, direct=False):
     :param dt: (float) AWG sampling period
     :param inverse_IIR: (bool, default: True) whether the IIR filters inverting
         the exponential model should be returned.
+    :param direct: (bool, default: False) whether higher-order IIR filters
+        should be implemented in directly. The default is to implement
+        them as second-order sections.
 
     :return: A list of IIR filter coefficients in the form
         [aIIRfilterList, bIIRfilterList] according to the definition in
-        filter_iir(). If expmod is a single exponential model, a single
+        filter_iir(). If expmod is a single first-order exponential model (or a
+        single higher-order exponential model with direct=True), a single
         filter is returned in the form [a, b].
     """
     if hasattr(expmod[0], '__iter__'):
-        # FIXME: probably this does not work for multiple sos filter lists
-        iir = [convert_expmod_to_IIR(e, dt, inverse_IIR) for e in expmod]
-        a = [i[0] for i in iir]
-        b = [i[1] for i in iir]
+        iir = [convert_expmod_to_IIR(e, dt, inverse_IIR=inverse_IIR,
+                                     direct=direct) for e in expmod]
+        # Checking whether i[0][0] is iterable is needed because a single expmod
+        # might be converted to multiple IIRs (second-order sections, SOS)
+        a = np.concatenate(
+            [[i[0]] if not hasattr(i[0][0], '__iter__') else i[0] for i in iir])
+        b = np.concatenate(
+            [[i[1]] if not hasattr(i[1][0], '__iter__') else i[1] for i in iir])
     else:
         A, B, tau = expmod
         if np.array(tau).ndim > 0:  # sum of exp mod
@@ -285,7 +293,8 @@ def process_filter_coeffs_dict(flux_distortion, datadir=None, default_dt=None):
                 if not hasattr(expmod[0], '__iter__'):
                     expmod = [expmod]
                 coeffs = convert_expmod_to_IIR(expmod,
-                                               dt=f.get('dt', default_dt))
+                                               dt=f.get('dt', default_dt),
+                                               direct=f.get('direct', False))
             elif f['type'] == 'csv':
                 if datadir is not None:
                     filename = os.path.join(datadir,
