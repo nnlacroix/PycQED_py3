@@ -293,7 +293,8 @@ def process_filter_coeffs_dict(flux_distortion, datadir=None, default_dt=None):
                 if not hasattr(expmod[0], '__iter__'):
                     expmod = [expmod]
                 coeffs = convert_expmod_to_IIR(expmod,
-                                               dt=f.get('dt', default_dt))
+                                               dt=f.get('dt', default_dt),
+                                               direct=f.get('direct', False))
             elif f['type'] == 'csv':
                 if datadir is not None:
                     filename = os.path.join(datadir,
