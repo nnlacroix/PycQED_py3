@@ -631,7 +631,8 @@ class HDAWG8Pulsar:
 
                     if not internal_mod:
                         playback_strings += self._zi_playback_string(name=obj.name,
-                            device='hdawg', wave=wave, codeword=(nr_cw != 0))
+                            device='hdawg', wave=wave, codeword=(nr_cw != 0),
+                            append_zeros=getattr(self, 'append_zeros', 0))
                     else:
                         pb_string, interleave_string = \
                             self._zi_interleaved_playback_string(name=obj.name, 
@@ -1366,7 +1367,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                     defined_waves.add(wc)
         return wave_definition
 
-    def _zi_playback_string(self, name, device, wave, acq=False, codeword=False):
+    def _zi_playback_string(self, name, device, wave, acq=False, codeword=False,
+                            append_zeros=0):
         playback_string = []
         w1, w2 = self._zi_waves_to_wavenames(wave)
 
@@ -1402,6 +1404,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         if acq:
             playback_string.append('setTrigger(RO_TRIG);')
             playback_string.append('setTrigger(WINT_EN);')
+        if append_zeros:
+            playback_string.append(f'playZero({append_zeros});')
         return playback_string
 
     def _zi_interleaved_playback_string(self, name, device, counter, 
