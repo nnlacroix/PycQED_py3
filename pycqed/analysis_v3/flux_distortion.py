@@ -268,7 +268,7 @@ def fd_volt_to_freq(data_dict, keys_in, keys_out, keys_conv=None,
         # print(ko, s, volt_freq_conv, params)
         if method == 'fit_mods':
             freqs = fit_mods.Qubit_dac_to_freq(s[1], **volt_freq_conv)
-        elif method == 'Qubit_freq_to_dac_res':
+        elif method == 'hamiltonian_with_res':
             freqs = fit_mods.Qubit_dac_to_freq_res(s[1], **volt_freq_conv)
         hlp_mod.add_param(ko, np.array([s[0], freqs]), data_dict, **params)
 
@@ -282,7 +282,7 @@ def fd_freq_to_volt(data_dict, keys_in, keys_out, method='fit_mods', **params):
                                                      branch='negative'),
                           volt_freq_conv['V_per_phi0'])],
             data_dict, **params)
-    elif method == 'Qubit_freq_to_dac_res':
+    elif method == 'hamiltonian_with_res':
         volt_freq_conv = hlp_mod.get_param('volt_freq_conv', data_dict,
                                            **params)
         branch = hlp_mod.get_param('branch', data_dict, **params)
@@ -439,32 +439,58 @@ def fd_apply_distortion_dict(data_dict, keys_in, keys_out, **params):
 
 def fd_apply_distortion(data_dict, keys_in, keys_out, keys_filter, filter_type,
                         **params):
+    dt = hlp_mod.get_param('dt', data_dict, **params)
     if len(keys_filter) == 1 and len(keys_in) > 1:
         keys_filter = keys_filter * len(keys_in)
     if len(keys_in) == 1 and len(keys_filter) > 1:
         keys_in = keys_in * len(keys_filter)
     for ki, ko, kf in zip(keys_in, keys_out, keys_filter):
-        dist = hlp_mod.get_param(kf, data_dict, **params)
-        if filter_type == 'expmod':
-            tvals, wf = hlp_mod.get_param(ki, data_dict, **params)
-            tmpdict = {'expmod': dist, 'dt': np.diff(tvals)[0]}
-            fd_expmod_to_IIR(tmpdict, ['expmod'], ['iir'], **params)
-            wf = fpdist.filter_iir([tmpdict['iir'][0]], [tmpdict['iir'][1]],
-                                   wf)
-            hlp_mod.add_param(ko, [tvals, wf], data_dict, **params)
-        else:
-            if filter_type == 'IIR' and not hasattr(dist[0][0], '__iter__'):
+        dist = hlp_mod.get_param(kf, data_dict, raise_error=True, **params)
+        tvals, wf = hlp_mod.get_param(ki, data_dict, raise_error=True,
+                                      **params)
+        if dt is None:
+            dt = min(np.diff(tvals))
+        # resample if needed
+        tvals_new = None
+        if any(np.diff(tvals) != dt):
+            tvals_new = np.arange(tvals[0], tvals[-1], dt)
+            wf = fd_do_resample(tvals_new, tvals, wf, **params)
+        # apply filter
+        if filter_type in ['IIR', 'expmod']:
+            if filter_type == 'expmod':
+                # calculate IIR from expmod if needed
+                tmpdict = {'expmod': dist, 'dt': dt}
+                fd_expmod_to_IIR(tmpdict, ['expmod'], ['iir'], **params)
+                dist = tmpdict['iir']
+            if not hasattr(dist[0][0], '__iter__'):
                 dist = [[d] for d in dist]
-            fd_apply_distortion_dict(data_dict, [ki], [ko],
-                                     distortion_dict={filter_type: dist},
-                                     **params)
+            # print((dist, dt, wf))
+            wf = fpdist.filter_iir(dist[0], dist[1], wf)
+        elif filter_type == 'FIR':
+            if hasattr(dist, '__iter__') and not \
+                    hasattr(dist[0], '__iter__'):  # 1 kernel
+                wf = fpdist.filter_fir(dist, wf)
+            else:
+                for kernel in dist:
+                    wf = fpdist.filter_fir(kernel, wf)
+        else:
+            raise NotImplementedError(
+                f'Filter type {filter_type} not implemented.')
+        # undo resampling if needed
+        if tvals_new is not None:
+            wf = fd_do_resample(tvals, tvals_new, wf, **params)
+        # save result
+        hlp_mod.add_param(ko, [tvals, wf], data_dict, **params)
+
 
 def fd_expmod_to_IIR(data_dict, keys_in, keys_out, inverse_IIR=True, **params):
     dt = hlp_mod.get_param('dt', data_dict, **params)
     for ki, ko in zip(keys_in, keys_out):
         iir = fpdist.convert_expmod_to_IIR(
             hlp_mod.get_param(ki, data_dict, **params),
-            dt=dt, inverse_IIR=inverse_IIR)
+            dt=dt, inverse_IIR=inverse_IIR,
+            direct=hlp_mod.get_param('expmod_to_IIR_direct', data_dict,
+                                     default_value=False, **params))
         hlp_mod.add_param(ko, iir, data_dict, **params)
 
 def fd_IIR_to_expmod(data_dict, keys_in, keys_out, inverse_IIR=True, **params):
@@ -540,8 +566,9 @@ def fd_compare(data_dict, keys_in, keys_out, method='difference', **params):
             raise NotImplementedError(f'Comparison method {method} not '
                                       f'implemented.')
 
-    data = hlp_mod.get_param(keys_in[0], data_dict, **params)
-    data2 = hlp_mod.get_param(keys_in[1], data_dict, **params)
+    data = hlp_mod.get_param(keys_in[0], data_dict, raise_error=True, **params)
+    data2 = hlp_mod.get_param(keys_in[1], data_dict, raise_error=True,
+                              **params)
     if np.asarray(data).ndim == 2:
         # interpret as time series
         [tvals, wf], [tvals2, wf2] = data, data2
@@ -796,11 +823,14 @@ def fd_fit_iir(data_dict, keys_in, keys_out, keys_corrected=None, method='JB',
             tau = -1 / C * t_factor
         if method == 'multiexp':
             weights = hlp_mod.get_param('fit_iir_weights', data_dict, **params)
+            lmfit_kwargs = hlp_mod.get_param('lmfit_kwargs', data_dict,
+                                             default_value={},  **params)
             fit_res = fit_exp_lmfit(
                 data[0][mask] / t_factor, data[1][mask] / pulse_amp,
                 fixed_A=fixed_A, start_vals={
                     k : np.array(v) / t_factor if k == 'tau' else v
-                    for k, v in start_vals.items()}, weights=weights)
+                    for k, v in start_vals.items()},
+                weights=weights, **lmfit_kwargs)
             hlp_mod.add_param('fit_dicts',
                               {f'IIR_{method}_{ki}': dict(fit_res=fit_res)},
                               data_dict, add_param_method='update', **params)
@@ -878,7 +908,7 @@ def fit_exp_integral_method(x, y, fixed_A=None):
     return A, B, C
 
 
-def fit_exp_lmfit(x, y, start_vals=None, fixed_A=None, weights=None):
+def fit_exp_lmfit(x, y, start_vals=None, fixed_A=None, weights=None, **kw):
     """
     Fits y(x) = A + sum_i B_i * exp(- x / tau_i) with tau_i>=0 to given data.
     """
@@ -905,7 +935,8 @@ def fit_exp_lmfit(x, y, start_vals=None, fixed_A=None, weights=None):
         lmfit_model.set_param_hint(f'tau{i}', min=0)
     if fixed_A is not None:
         lmfit_model.set_param_hint('A', vary=False)
-    res = lmfit_model.fit(y, x=x, weights=weights, **fit_params)
+    # print(kw)
+    res = lmfit_model.fit(y, x=x, weights=weights, **kw, **fit_params)
     return res
 
 
