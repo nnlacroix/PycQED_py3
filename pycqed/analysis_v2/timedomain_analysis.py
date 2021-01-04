@@ -190,8 +190,10 @@ class Single_Qubit_TimeDomainAnalysis(ba.BaseDataAnalysis):
 class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
     """
     Base class for multi-qubit time-domain analyses.
-    Raw data rotation is specified in the option_dict under the keys
-    rotation_type. Types of rotations supported by this class:
+
+    Parameters that can be specified in the options dict:
+     - rotation_type: type of rotation to be done on the raw data.
+       Types of rotations supported by this class:
         - 'cal_states' (default, no need to specify): rotation based on
             CalibrationPoints for 1D and TwoD data. Supports 2 and 3 cal states
             per qubit
@@ -207,6 +209,16 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         - 'column_PCA': cal points and does pca; in the case of TwoD data it
             does PCA column by column
         - 'global_PCA' (only for TwoD): does PCA on the whole 2D array
+     - main_sp (default: None): dict with keys qb_name used to specify which
+        sweep parameter should be used as axis label in plot
+     - functionality to split measurements with tiled sweep_points:
+         - split_params (default: None): list of strings with sweep parameters
+            names expected to be found in SweepPoints. Groups data by these
+            parameters and stores it in proc_data_dict['split_data_dict'].
+         - select_split (default: None): dict with keys qb_names and values
+            a tuple (sweep_param_name, value). Stored in
+            self.measurement_strings which specify the plot title. The selected
+            parameter must also be part of the split_params for that qubit.
     """
     def __init__(self,
                  qb_names: list=None, label: str='',
@@ -247,7 +259,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             if self.qb_names is None:
                 raise ValueError('Provide the "qb_names."')
         self.measurement_strings = {
-            qbn: self.raw_data_dict['measurementstring'] + f' {qbn}' for qbn in
+            qbn: self.raw_data_dict['measurementstring'] for qbn in
             self.qb_names}
 
         self.data_filter = self.get_param_value('data_filter')
@@ -287,14 +299,26 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         hard_sweep_params = self.get_param_value('hard_sweep_params')
         if self.sp is not None:
             self.mospm = self.get_param_value('meas_obj_sweep_points_map')
+            main_sp = self.get_param_value('main_sp')
             if self.mospm is None:
                 raise ValueError('When providing "sweep_points", '
                                  '"meas_obj_sweep_points_map" has to be '
                                  'provided in addition.')
-            self.proc_data_dict['sweep_points_dict'] = \
-                {qbn: {'sweep_points': self.sp.get_sweep_params_property(
-                    'values', 0, self.mospm[qbn])[0]}
-                 for qbn in self.qb_names}
+            if main_sp is not None:
+                self.proc_data_dict['sweep_points_dict'] = {}
+                for qbn, p in main_sp.items():
+                    dim = self.sp.find_parameter(p)
+                    if dim == 1:
+                        log.warning(f"main_sp is only implemented for sweep "
+                                    f"dimension 0, but {p} is in dimension 1.")
+                    self.proc_data_dict['sweep_points_dict'][qbn] = \
+                        {'sweep_points': self.sp.get_sweep_params_property(
+                            'values', dim, p)}
+            else:
+                self.proc_data_dict['sweep_points_dict'] = \
+                    {qbn: {'sweep_points': self.sp.get_sweep_params_property(
+                        'values', 0, self.mospm[qbn])[0]}
+                     for qbn in self.qb_names}
         elif sweep_points_dict is not None:
             # assumed to be of the form {qbn1: swpts_array1, qbn2: swpts_array2}
             self.proc_data_dict['sweep_points_dict'] = \
@@ -530,21 +554,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if self.options_dict.get('TwoD', False):
             self.create_sweep_points_2D_dict()
 
-        main_sp = self.get_param_value('main_sp', None)
-        if main_sp is not None:
-            spd = self.proc_data_dict['sweep_points_dict']
-            for qbn, p in main_sp.items():
-                dim = self.sp.find_parameter(p)
-                if dim == 1:
-                    log.warning(f"main_sp is only implemented for sweep "
-                                f"dimension 0, but {p} is in dimension 1.")
-                spd[qbn]['msmt_sweep_points'] = \
-                    self.sp.get_sweep_params_property('values', param_names=p)
-                spd[qbn]['sweep_points'] = self.cp.extend_sweep_points(
-                    spd[qbn]['msmt_sweep_points'], qbn)
-                spd[qbn]['cal_points_sweep_points'] = spd[qbn][
-                    'sweep_points'][-len(spd[qbn]['cal_points_sweep_points']):]
+        # handle data splitting if needed
+        self.split_data()
 
+    def split_data(self):
         def unique(l):
             try:
                 return np.unique(l, return_inverse=True)
@@ -554,93 +567,92 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 return l[i], j
 
         split_params = self.get_param_value('split_params', [])
-        if len(split_params):
-            pdd = self.proc_data_dict
-            pdd['split_data_dict'] = {}
+        if not len(split_params):
+            return
 
-            for qbn in self.qb_names:
-                pdd['split_data_dict'][qbn] = {}
+        pdd = self.proc_data_dict
+        pdd['split_data_dict'] = {}
 
-                for p in split_params:
-                    dim = self.sp.find_parameter(p)
-                    sv = self.sp.get_sweep_params_property(
-                        'values', param_names=p, dimension=dim)
-                    usp, ind = unique(sv)
-                    if len(usp) <= 1:
-                        continue
+        for qbn in self.qb_names:
+            pdd['split_data_dict'][qbn] = {}
 
-                    svs = [self.sp.subset(ind == i, dim) for i in
-                              range(len(usp))]
-                    [s.remove_sweep_parameter(p) for s in svs]
+            for p in split_params:
+                dim = self.sp.find_parameter(p)
+                sv = self.sp.get_sweep_params_property(
+                    'values', param_names=p, dimension=dim)
+                usp, ind = unique(sv)
+                if len(usp) <= 1:
+                    continue
 
-                    sdd = {}
-                    pdd['split_data_dict'][qbn][p] = sdd
-                    for i in range(len(usp)):
-                        subset = (np.concatenate(
-                            [ind == i,
-                             [True] * len(pdd['sweep_points_dict'][qbn][
-                                              'cal_points_sweep_points'])]))
-                        sdd[i] = {}
-                        sdd[i]['value'] = usp[i]
-                        sdd[i]['sweep_points'] = svs[i]
+                svs = [self.sp.subset(ind == i, dim) for i in
+                          range(len(usp))]
+                [s.remove_sweep_parameter(p) for s in svs]
 
-                        d = pdd['sweep_points_dict'][qbn]
-                        if dim == 0:
-                            sdd[i]['sweep_points_dict'] = {
-                                'sweep_points': d['sweep_points'][subset],
-                                'msmt_sweep_points':
-                                    d['msmt_sweep_points'][ind == i],
-                                'cal_points_sweep_points':
-                                    d['cal_points_sweep_points'],
-                            }
-                            sdd[i]['sweep_points_2D_dict'] = pdd[
-                                'sweep_points_2D_dict'][qbn]
-                        else:
-                            sdd[i]['sweep_points_dict'] = \
-                                pdd['sweep_points_dict'][qbn]
-                            sdd[i]['sweep_points_2D_dict'] = {
-                                k: v[ind == i] for k, v in pdd[
-                                'sweep_points_2D_dict'][qbn].items()}
-                        for d in ['projected_data_dict', 'data_to_fit']:
-                            if isinstance(pdd[d][qbn], dict):
-                                if dim == 0:
-                                    sdd[i][d] = {k: v[:, subset] for
-                                                 k, v in pdd[d][qbn].items()}
-                                else:
-                                    sdd[i][d] = {k: v[ind == i, :] for
-                                                 k, v in pdd[d][qbn].items()}
+                sdd = {}
+                pdd['split_data_dict'][qbn][p] = sdd
+                for i in range(len(usp)):
+                    subset = (np.concatenate(
+                        [ind == i,
+                         [True] * len(pdd['sweep_points_dict'][qbn][
+                                          'cal_points_sweep_points'])]))
+                    sdd[i] = {}
+                    sdd[i]['value'] = usp[i]
+                    sdd[i]['sweep_points'] = svs[i]
+
+                    d = pdd['sweep_points_dict'][qbn]
+                    if dim == 0:
+                        sdd[i]['sweep_points_dict'] = {
+                            'sweep_points': d['sweep_points'][subset],
+                            'msmt_sweep_points':
+                                d['msmt_sweep_points'][ind == i],
+                            'cal_points_sweep_points':
+                                d['cal_points_sweep_points'],
+                        }
+                        sdd[i]['sweep_points_2D_dict'] = pdd[
+                            'sweep_points_2D_dict'][qbn]
+                    else:
+                        sdd[i]['sweep_points_dict'] = \
+                            pdd['sweep_points_dict'][qbn]
+                        sdd[i]['sweep_points_2D_dict'] = {
+                            k: v[ind == i] for k, v in pdd[
+                            'sweep_points_2D_dict'][qbn].items()}
+                    for d in ['projected_data_dict', 'data_to_fit']:
+                        if isinstance(pdd[d][qbn], dict):
+                            if dim == 0:
+                                sdd[i][d] = {k: v[:, subset] for
+                                             k, v in pdd[d][qbn].items()}
                             else:
-                                if dim == 0:
-                                    sdd[i][d] = pdd[d][qbn][:, subset]
-                                else:
-                                    sdd[i][d] = pdd[d][qbn][ind == i, :]
+                                sdd[i][d] = {k: v[ind == i, :] for
+                                             k, v in pdd[d][qbn].items()}
+                        else:
+                            if dim == 0:
+                                sdd[i][d] = pdd[d][qbn][:, subset]
+                            else:
+                                sdd[i][d] = pdd[d][qbn][ind == i, :]
 
-            select_split = self.get_param_value('select_split', None)
-            if select_split is None:
-                select_split = {}
-            if select_split is not None:
-                for qbn, select in select_split.items():
-                    p, v = select
-                    if p not in pdd['split_data_dict'][qbn]:
-                        log.warning(f"Split parameter {p} for {qbn} not "
-                                    f"found. Ignoring this selection.")
+        select_split = self.get_param_value('select_split')
+        if select_split is not None:
+            for qbn, select in select_split.items():
+                p, v = select
+                if p not in pdd['split_data_dict'][qbn]:
+                    log.warning(f"Split parameter {p} for {qbn} not "
+                                f"found. Ignoring this selection.")
+                try:
+                    ind = [a['value'] for a in pdd['split_data_dict'][
+                        qbn][p].values()].index(v)
+                except ValueError:
+                    ind = v
                     try:
-                        ind = [a['value'] for a in pdd['split_data_dict'][
-                            qbn][p].values()].index(v)
+                        pdd['split_data_dict'][qbn][p][ind]
                     except ValueError:
-                        ind = v
-                        try:
-                            pdd['split_data_dict'][qbn][p][ind]
-                        except ValueError:
-                            log.warning(f"Value {v} for split parameter {p} "
-                                        f"of {qbn} not found. Ignoring this "
-                                        f"selection.")
-                            continue
-                    for d in ['projected_data_dict', 'data_to_fit',
-                              'sweep_points_dict', 'sweep_points_2D_dict']:
-                        pdd[d][qbn] = pdd['split_data_dict'][qbn][p][ind][d]
-                    self.measurement_strings[qbn] += f' ({p}: {v})'
-                    self.measurement_strings[qbn] += f' ({p}: {v})'
+                        log.warning(f"Value {v} for split parameter {p} "
+                                    f"of {qbn} not found. Ignoring this "
+                                    f"selection.")
+                        continue
+                for d in ['projected_data_dict', 'data_to_fit',
+                          'sweep_points_dict', 'sweep_points_2D_dict']:
+                    pdd[d][qbn] = pdd['split_data_dict'][qbn][p][ind][d]
+                self.measurement_strings[qbn] += f' ({p}: {v})'
 
     def get_cal_data_points(self):
         self.num_cal_points = np.array(list(
@@ -1306,23 +1318,35 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     def prepare_plots(self):
         if self.get_param_value('plot_proj_data', default_value=True):
+            title_suffix = self.get_param_value('title_suffix', '')
+            fig_name_suffix = self.get_param_value('fig_name_suffix', '')
+            select_split = self.get_param_value('select_split')
             for qb_name, corr_data in self.proc_data_dict[
                     'projected_data_dict'].items():
-                fig_name = 'projected_plot_' + qb_name
+                fig_name = f'projected_plot_{qb_name}'
+                if select_split is not None:
+                    param, idx = select_split[qb_name]
+                    # remove qb_name from param
+                    p = '_'.join([e for e in param.split('_') if e != qb_name])
+                    # create suffix
+                    suf = f'({p}, {str(np.round(idx, 3))})'
+                    # add suffix
+                    fig_name += f'_{suf}'
+                    title_suffix = f'{suf}_{title_suffix}' if \
+                        len(title_suffix) else suf
+
                 if isinstance(corr_data, dict):
                     for data_key, data in corr_data.items():
                         if not self.rotate:
                             data_label = data_key
-                            title_suffix = ''
                             plot_name_suffix = data_key
                             plot_cal_points = False
                             data_axis_label = 'Population'
                         else:
-                            fig_name = 'projected_plot_' + qb_name + \
-                                       data_key
+                            fig_name += f'_{data_key}'
                             data_label = 'Data'
-                            title_suffix = data_key
                             plot_name_suffix = ''
+                            title_suffix = f'{data_key}_{title_suffix}'
                             plot_cal_points = (
                                 not self.options_dict.get('TwoD', False))
                             data_axis_label = \
@@ -1335,6 +1359,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             data_label=data_label,
                             title_suffix=title_suffix,
                             plot_name_suffix=plot_name_suffix,
+                            fig_name_suffix=fig_name_suffix,
                             data_axis_label=data_axis_label,
                             plot_cal_points=plot_cal_points)
 
@@ -1443,9 +1468,13 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     def prepare_projected_data_plot(
             self, fig_name, data, qb_name, title_suffix='', sweep_points=None,
-            plot_cal_points=True, plot_name_suffix='', data_label='Data',
-            data_axis_label='', do_legend_data=True, do_legend_cal_states=True):
-        title_suffix = qb_name + title_suffix
+            plot_cal_points=True, plot_name_suffix='', fig_name_suffix='',
+            data_label='Data', data_axis_label='', do_legend_data=True,
+            do_legend_cal_states=True):
+
+        if len(fig_name_suffix):
+            fig_name = f'{fig_name}_{fig_name_suffix}'
+
         if data_axis_label == '':
             data_axis_label = 'Strongest principal component (arb.)' if \
                 'pca' in self.rotation_type.lower() else \
@@ -1499,10 +1528,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             xvals = sweep_points
         title = (self.raw_data_dict['timestamp'] + ' ' +
                  self.raw_data_dict['measurementstring'])
-        if title_suffix is not None:
-            title += '\n' + title_suffix
+        title += '\n' + f'{qb_name}_{title_suffix}' if len(title_suffix) else \
+            qb_name
 
-        plot_dict_name = fig_name + '_' + plot_name_suffix
+        plot_dict_name = f'{fig_name}_{plot_name_suffix}'
         xlabel, xunit = self.get_xaxis_label_unit(qb_name)
 
         if self.get_param_value('TwoD', default_value=False):
