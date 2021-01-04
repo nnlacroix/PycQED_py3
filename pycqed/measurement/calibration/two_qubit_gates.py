@@ -685,6 +685,8 @@ class CalibBuilder(MultiTaskingExperiment):
                 If there already exist sweep points in dimension 0, this
                 parameter is ignored and the number of phases is adapted to
                 the number of existing sweep points.
+            endpoint_phases: (bool, default True) whether the endpoint (360 deg.)
+                should be included in the linspace for the phase sweep points.
         :return: sweep_points with the added phase sweep points
         """
         if tile > 0 and repeat > 0:
@@ -701,7 +703,8 @@ class CalibBuilder(MultiTaskingExperiment):
         # create the phase sweep points (with each phase twice)
         hard_sweep_dict = SweepPoints()
         if 'phase' not in sweep_points[0]:
-            phases = np.linspace(0, 360, nr_phases, endpoint=False)
+            phases = np.linspace(0, 360, nr_phases,
+                                 endpoint=kw.get('endpoint', True))
             if tile > 0:
                 phases = np.tile(phases, tile)
             elif repeat > 0:

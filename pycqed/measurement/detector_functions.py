@@ -552,6 +552,7 @@ class UHFQC_Base(Hard_Detector):
         self.UHF_map = {UHF.name: i
                    for UHF, i in zip(self.UHFs, range(len(self.detectors)))}
 
+    @Timer()
     def poll_data(self):
         if self.AWG is not None:
             self.AWG.stop()
