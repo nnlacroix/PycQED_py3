@@ -371,11 +371,16 @@ class MultiTaskingExperiment(QuantumExperiment):
                 'all', self.all_main_blocks)
         else:
             self.all_main_blocks = self.all_main_blocks[0]
+        if len(self.sweep_points[0]) == 0:
+            # Create a single segement if no hard sweep points are provided.
+            self.sweep_points.add_sweep_parameter('dummy_hard_sweep', [0],
+                                                  dimension=0)
         if len(self.sweep_points[1]) == 0:
             # Internally, 1D and 2D sweeps are handled as 2D sweeps.
             # With this dummy soft sweep, exactly one sequence will be created
             # and the data format will be the same as for a true soft sweep.
-            self.sweep_points.add_sweep_parameter('dummy_sweep_param', [0])
+            self.sweep_points.add_sweep_parameter('dummy_soft_sweep', [0],
+                                                  dimension=1)
         # ro_qubits in kw determines for which qubits sweep_n_dim will add
         # readout pulses. If it is not provided (which is usually the case
         # since create_meas_objs_list pops it from kw) all qubits in
