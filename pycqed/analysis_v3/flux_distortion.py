@@ -8,6 +8,7 @@ from copy import deepcopy
 from copy import copy
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import processing_pipeline as pp_mod
+from pycqed.analysis_v3 import data_extraction as dat_extr_mod
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.measurement.waveform_control import segment as seg_mod
 from pycqed.analysis import fitting_models as fit_mods
@@ -69,13 +70,17 @@ class Node:
 
 
 class CombiningNode(Node):
+    empty_output = ()
     def run(self):
         data_names = [k.replace('keys_', 'data_') for k in self.keys.keys()
                       if not k.startswith('keys_out')]
         ks = [v for k, v in self.keys.items()
               if not k.startswith('keys_out')]
         data = {p: self.get(k) for p, k in zip(data_names, ks)}
-        data_out = self.node_action(**data, **self.control_params)
+        if len(list(data.values())[0]) == 0:
+            data_out = self.empty_output
+        else:
+            data_out = self.node_action(**data, **self.control_params)
         hlp_mod.add_param(self.keys['keys_out'][0], data_out, self.data_dict,
                           **self.params)
 
@@ -98,32 +103,6 @@ class fd_resample(Node):
 
 
 def fd_create_pulse(data_dict, keys_in, keys_out, **params):
-    """
-    keys_out = ['tvals', 'volts']
-    keys_out = ['volts', 'tvals']
-
-    Thresholds the data in data_dict specified by keys_in about the
-    threshold values in threshold_list (one for each keyi in keys_in).
-    :param data_dict: OrderedDict containing data to be processed and where
-                    processed data is to be stored
-    :param keys_in: list of key names or dictionary keys paths in
-                    data_dict for the data to be processed
-    :param keys_out: list of key names or dictionary keys paths in
-                    data_dict for the processed data to be saved into
-    :param ro_thresholds: dict with keys meas_obj_names and values specifying
-        the thresholds around which the data array for each meas_obj
-        should be thresholded.
-    :param params: keyword arguments.
-
-    Assumptions:
-        - this function must be used for one meas_obj only! Meaning:
-            - keys_in and keys_out have length 1
-            - meas_obj_names exists in either data_dict or params and has one
-                entry
-    """
-
-    # data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
-
     mobjn = hlp_mod.get_measurement_properties(
         data_dict, props_to_extract=['mobjn'], **params)
 
@@ -274,6 +253,9 @@ def fd_volt_to_freq(data_dict, keys_in, keys_out, keys_conv=None,
 
 def fd_freq_to_volt(data_dict, keys_in, keys_out, method='fit_mods', **params):
     s = hlp_mod.get_param(keys_in[0], data_dict, **params)
+    if len(s[0]) == 0:
+        fd_identity(data_dict, [keys_in[0]], [keys_out[0]], **params)
+        return
     if method == 'fit_mods':
         volt_freq_conv = hlp_mod.get_param('volt_freq_conv', data_dict, **params)
         hlp_mod.add_param(
@@ -406,10 +388,12 @@ def fd_apply_distortion_dict(data_dict, keys_in, keys_out, **params):
     key_distortion = 'distortion_dict'
     distortion_dict = hlp_mod.get_param(key_distortion, data_dict, **params)
     if isinstance(distortion_dict, str):  # a key was passed instead of a dict
-        distortion_dict = hlp_mod.get_param(distortion_dict, data_dict,
-                                            raise_error=True, **params)
-    elif distortion_dict is None:
-        fd_load_distortion_dict(data_dict, key_distortion=key_distortion)
+        key_distortion = distortion_dict
+        distortion_dict = hlp_mod.get_param(key_distortion, data_dict,
+                                            raise_error=False, **params)
+    if distortion_dict is None:
+        fd_load_distortion_dict(data_dict, key_distortion=key_distortion,
+                                **params)
         distortion_dict = hlp_mod.get_param(key_distortion, data_dict,
                                             **params)
 
@@ -964,13 +948,16 @@ def fd_derivative(data_dict, keys_in, keys_out, **params):
             data = np.diff(data)
         hlp_mod.add_param(ko, data, data_dict, **params)
 
-def fd_normalize(data_dict, keys_in, keys_out, target_interval=None, **params):
-    def normalize(x):
+def fd_normalize(data_dict, keys_in, keys_out, target_interval=None,
+                 time_range=None, **params):
+    def normalize(x, mask=None):
+        if mask is None:
+            mask = np.ones_like(x)
         if target_interval is None:
-            return x / np.max(np.abs(x))
+            return x / np.max(np.abs(x[mask]))
         else:
-            mi = np.min(x)
-            ma = np.max(x)
+            mi = np.min(x[mask])
+            ma = np.max(x[mask])
             if mi == ma:
                 return target_interval[1] * np.ones_like(x)
             else:
@@ -980,7 +967,10 @@ def fd_normalize(data_dict, keys_in, keys_out, target_interval=None, **params):
     for ki, ko in zip(keys_in, keys_out):
         data = np.array(hlp_mod.get_param(ki, data_dict, **params))
         if data.ndim == 2:  # interpret as time series
-            data[1] = normalize(data[1])
+            if time_range is not None:
+                mask = np.logical_and(data[0] >= time_range[0],
+                                      data[0] <= time_range[1])
+            data[1] = normalize(data[1], mask)
         else:
             data = normalize(data)
         hlp_mod.add_param(ko, data, data_dict, **params)
@@ -1074,6 +1064,47 @@ def fd_read_cryoscope_data(data_dict, keys_out, keys_out_stderr=None,
                                     tmpdict['freqs_stderr']]),
                           data_dict, **params)
 
+
+def fd_import_time_trace(data_dict, keys_out, **params):
+    mobjn = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['mobjn'], **params)
+    timestamps = hlp_mod.get_param('timestamps', data_dict, **params)
+    for ko, ts in zip(keys_out, timestamps):
+        dd = dict(meas_obj_names=[mobjn])
+        dat_extr_mod.extract_data_hdf(dd, timestamps=[ts])
+        sp = sp_mod.SweepPoints(dd['exp_metadata']['sweep_points'])
+        fd_load_qb_params(dd, {'ch': 'flux_pulse_channel'}, timestamp=ts)
+
+        success = False
+        for t, trace in zip(dd['exp_metadata']['task_list'],
+                            dd[mobjn].values()):
+            if t['flux_channel'] == dd['ch']:
+                x = sp.get_sweep_params_property('values') \
+                    + dd['exp_metadata'].get('ro_delay', 0)
+                hlp_mod.add_param(ko, np.array([x, trace]), data_dict,
+                                  **params)
+                success = True
+                break
+        if not success:
+            raise KeyError(f"No data for flux_channel {dd['ch']} found.")
+
+
+def fd_import_time_trace_csv(data_dict, keys_out, filename=None,
+                             **params):
+    mobjn = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['mobjn'], **params)
+    timestamps = hlp_mod.get_param('timestamps', data_dict, **params)
+    for ko, ts in zip(keys_out, timestamps):
+        folder = a_tools.get_folder(ts)
+        if filename is None:
+            filepath = os.path.join(folder, [f for f in os.listdir(folder)
+                                             if f.lower().endswith('.csv')][0])
+        else:
+            filepath = os.path.join(folder, filename)
+        data = np.loadtxt(filepath, skiprows=1, delimiter=',').T
+        hlp_mod.add_param(ko, data, data_dict, **params)
+
+
 def fd_fitted_curve(data_dict, keys_in, keys_expmod, keys_out, **params):
     for ki, kf, ko in zip(keys_in, keys_expmod, keys_out):
         data_tvals = np.array(hlp_mod.get_param(ki, data_dict, **params))
@@ -1112,6 +1143,7 @@ class fd_timerange(Node):
 
 
 class fd_combine(CombiningNode):
+    empty_output = ((), ())
     def __init__(self, data_dict, keys_in, keys_out, **params):
         super().__init__(data_dict, keys_in=keys_in, keys_out=keys_out,
                          **params)
