@@ -3,6 +3,8 @@ import scipy.signal as signal
 import logging
 import os
 from copy import deepcopy
+import logging
+log = logging.getLogger(__name__)
 
 def import_iir(filename):
     """
@@ -66,9 +68,14 @@ def filter_iir(aIIRfilterList, bIIRfilterList, x):
     returns:
         y : filtered data array
     """
-    y = x
-    for a,b in zip(aIIRfilterList,bIIRfilterList):
-        y = signal.lfilter(b,a,y)
+    if len(aIIRfilterList[0]) == 3:  # second-order sections:
+        sos = [list(b) + list(a) for a, b in zip(aIIRfilterList,
+                                                 bIIRfilterList)]
+        y = signal.sosfilt(sos, x)
+    else:
+        y = x
+        for a, b in zip(aIIRfilterList, bIIRfilterList):
+            y = signal.lfilter(b, a, y)
     return y
 
 
@@ -110,7 +117,7 @@ def combine_FIR_filters(kernels):
         return kernels
 
 
-def convert_expmod_to_IIR(expmod, dt, inverse_IIR=True):
+def convert_expmod_to_IIR(expmod, dt, inverse_IIR=True, direct=False):
     """
     Convert an exponential model A + B * exp(- t/tau) (or a list of such
     models) to a first-order IIR filter (or a list of such filters).
@@ -121,24 +128,75 @@ def convert_expmod_to_IIR(expmod, dt, inverse_IIR=True):
     :param dt: (float) AWG sampling period
     :param inverse_IIR: (bool, default: True) whether the IIR filters inverting
         the exponential model should be returned.
+    :param direct: (bool, default: False) whether higher-order IIR filters
+        should be implemented in directly. The default is to implement
+        them as second-order sections.
 
     :return: A list of IIR filter coefficients in the form
         [aIIRfilterList, bIIRfilterList] according to the definition in
-        filter_iir(). If expmod is a single exponential model, a single
+        filter_iir(). If expmod is a single first-order exponential model (or a
+        single higher-order exponential model with direct=True), a single
         filter is returned in the form [a, b].
     """
     if hasattr(expmod[0], '__iter__'):
-        iir = [convert_expmod_to_IIR(e, dt, inverse_IIR) for e in expmod]
-        a = [i[0] for i in iir]
-        b = [i[1] for i in iir]
+        iir = [convert_expmod_to_IIR(e, dt, inverse_IIR=inverse_IIR,
+                                     direct=direct) for e in expmod]
+        # Checking whether i[0][0] is iterable is needed because a single expmod
+        # might be converted to multiple IIRs (second-order sections, SOS)
+        a = np.concatenate(
+            [[i[0]] if not hasattr(i[0][0], '__iter__') else i[0] for i in iir])
+        b = np.concatenate(
+            [[i[1]] if not hasattr(i[1][0], '__iter__') else i[1] for i in iir])
     else:
         A, B, tau = expmod
-        if 1 / tau < 1e-14:
-            a, b = np.array([1, -1]), np.array([A + B, -(A + B)])
+        if np.array(tau).ndim > 0:  # sum of exp mod
+            import sympy as sp
+            N = len(tau)
+            a = [sp.Rational(a) for a in [A] + list(B)]
+            tau_s = [sp.Rational(t / 1e-9) * 1e-9 for t in list(tau)]
+            # In the next line, going via the reciprocal value is more precise
+            # since we usually specify dt a 1 over sampling frequency.
+            T = 1 / sp.Rational(f"{1 / dt}")
+            if direct:
+                z = sp.symbols('z')
+                p = 2 / T * (1 - 1 / z) / (1 + 1 / z)
+            else:
+                p = sp.symbols('p')
+                z = sp.exp(T * p)
+            d = sp.prod([tau * p + 1 for tau in tau_s])
+            r = [sp.prod([tau * p + 1 for i, tau in enumerate(tau_s)
+                          if i != j]) for j in range(N)]
+            n = (a[0] * d + sum([r * tau * a * p for r, tau, a
+                                 in zip(r, tau_s, a[1:])]))
+            if direct:
+                n, d = sp.fraction((n / d).simplify(rational=True), exact=True)
+                coeffs_n = n.as_poly(z).all_coeffs()
+                coeffs_d = d.as_poly(z).all_coeffs()
+                a = np.cast['float']([v.evalf() for v in coeffs_n])
+                b = np.cast['float']([v.evalf() for v in coeffs_d])
+                # further processing after the end of the if statement
+            else:
+                roots_n = n.as_poly(p).all_roots()
+                # TODO: it seems that zeros can be complex even in the
+                #  overdamped case. Double-check this!
+                z_zeros = np.cast['complex128'](
+                    [complex(z.subs(p, r).evalf()) for r in roots_n])
+                z_poles = np.exp(dt * (- 1 / np.array(tau)))
+                gain = sum([A] + list(B))
+                if inverse_IIR:
+                    sos = signal.zpk2sos(z_poles, z_zeros, 1 / gain)
+                else:
+                    sos = signal.zpk2sos(z_zeros, z_poles, gain)
+                b = [sec[:3] for sec in sos]
+                a = [sec[3:] for sec in sos]
+                return [a, b]
         else:
-            a = np.array(
-                [(A + (A + B) * tau * 2 / dt), (A - (A + B) * tau * 2 / dt)])
-            b = np.array([1 + tau * 2 / dt, 1 - tau * 2 / dt])
+            if 1 / tau < 1e-14:
+                a, b = np.array([1, -1]), np.array([A + B, -(A + B)])
+            else:
+                a = np.array(
+                    [(A + (A + B) * tau * 2 / dt), (A - (A + B) * tau * 2 / dt)])
+                b = np.array([1 + tau * 2 / dt, 1 - tau * 2 / dt])
         if not inverse_IIR:
             a, b = b, a
         b = b / a[0]
@@ -235,7 +293,8 @@ def process_filter_coeffs_dict(flux_distortion, datadir=None, default_dt=None):
                 if not hasattr(expmod[0], '__iter__'):
                     expmod = [expmod]
                 coeffs = convert_expmod_to_IIR(expmod,
-                                               dt=f.get('dt', default_dt))
+                                               dt=f.get('dt', default_dt),
+                                               direct=f.get('direct', False))
             elif f['type'] == 'csv':
                 if datadir is not None:
                     filename = os.path.join(datadir,

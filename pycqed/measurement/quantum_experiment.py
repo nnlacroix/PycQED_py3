@@ -518,6 +518,8 @@ class QuantumExperiment(CircuitBuilder):
                 self.meas_objs, df)
         self.exp_metadata.update(
             {'meas_obj_value_names_map': meas_obj_value_names_map})
+        if 'meas_obj_sweep_points_map' not in self.exp_metadata:
+            self.exp_metadata['meas_obj_sweep_points_map'] = {}
 
         if len(self.mc_points[1]) > 0:
             mmnt_mode = "2D"

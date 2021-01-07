@@ -371,11 +371,16 @@ class MultiTaskingExperiment(QuantumExperiment):
                 'all', self.all_main_blocks)
         else:
             self.all_main_blocks = self.all_main_blocks[0]
+        if len(self.sweep_points[0]) == 0:
+            # Create a single segement if no hard sweep points are provided.
+            self.sweep_points.add_sweep_parameter('dummy_hard_sweep', [0],
+                                                  dimension=0)
         if len(self.sweep_points[1]) == 0:
             # Internally, 1D and 2D sweeps are handled as 2D sweeps.
             # With this dummy soft sweep, exactly one sequence will be created
             # and the data format will be the same as for a true soft sweep.
-            self.sweep_points.add_sweep_parameter('dummy_sweep_param', [0])
+            self.sweep_points.add_sweep_parameter('dummy_soft_sweep', [0],
+                                                  dimension=1)
         # ro_qubits in kw determines for which qubits sweep_n_dim will add
         # readout pulses. If it is not provided (which is usually the case
         # since create_meas_objs_list pops it from kw) all qubits in
@@ -663,6 +668,8 @@ class CalibBuilder(MultiTaskingExperiment):
                 If there already exist sweep points in dimension 0, this
                 parameter is ignored and the number of phases is adapted to
                 the number of existing sweep points.
+            endpoint_phases: (bool, default True) whether the endpoint (360 deg.)
+                should be included in the linspace for the phase sweep points.
         :return: sweep_points with the added phase sweep points
         """
         if tile > 0 and repeat > 0:
@@ -679,7 +686,8 @@ class CalibBuilder(MultiTaskingExperiment):
         # create the phase sweep points (with each phase twice)
         hard_sweep_dict = SweepPoints()
         if 'phase' not in sweep_points[0]:
-            phases = np.linspace(0, 360, nr_phases, endpoint=False)
+            phases = np.linspace(0, 360, nr_phases,
+                                 endpoint=kw.get('endpoint', True))
             if tile > 0:
                 phases = np.tile(phases, tile)
             elif repeat > 0:
