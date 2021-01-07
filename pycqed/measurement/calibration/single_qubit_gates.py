@@ -351,7 +351,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         if fp_compensation_amp is None:
             fp_compensation_amp = -2
 
-        if ro_pulse_delay is 'auto' and fp_truncation is True:
+        if ro_pulse_delay is 'auto' and (fp_truncation or \
+            hasattr(fp_truncation, '__iter__')):
             raise Exception('fp_truncation does currently not work ' + \
                             'with the auto mode of ro_pulse_delay.')
 
@@ -370,15 +371,20 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         fp['pulse_delay'] = ParametricValue(
             'delay', func=lambda x, o=bl_start: -(x + o))
 
-        if fp_truncation:
+        if (fp_truncation or hasattr(fp_truncation, '__iter__')):
+            if not hasattr(fp_truncation, '__iter__'):
+                fp_truncation = [-np.inf, np.inf]
             original_fp_length = fp['pulse_length']
             max_fp_sweep_length = np.max(
                 sweep_points.get_sweep_params_property(
                     'values', dimension=0, param_names='delay'))
             sweep_diff = max(max_fp_sweep_length - original_fp_length, 0)
-            length_function = lambda x, opl=original_fp_length, \
-                                     o=bl_start + fp_truncation_buffer: max(
-                min((x + o), opl), 0)
+            def length_function(x, opl=original_fp_length, \
+                o=bl_start + fp_truncation_buffer, trunc=fp_truncation):
+                if (x>np.min(trunc) and x<np.max(trunc)):
+                    return max(min((x + o), opl), 0)
+                else:
+                    return opl
             # TODO: check what happens if buffer_length_start and buffer_length_end are zero.
 
             fp['pulse_length'] = ParametricValue(
