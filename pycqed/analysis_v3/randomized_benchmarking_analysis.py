@@ -407,7 +407,7 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
         mospm['correlation_object'] = list(mospm.values())[0]
     labels = ['rb', 'irb'] if interleaved_irb else ['rb']
     for label in labels:
-        pp = pp_mod.ProcessingPipeline(global_keys_out_container=label)
+        pp = pp_mod.ProcessingPipeline(keys_out_container=label)
         keys_in_0 = 'previous average_data'
         if interleaved_irb:
             pp.add_node('submsmt_data_from_interleaved_msmt',

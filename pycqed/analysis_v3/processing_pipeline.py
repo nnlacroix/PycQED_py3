@@ -250,7 +250,7 @@ Final pipeline:
 class ProcessingPipeline(list):
 
     global_node_param_defaults = {'keys_out_container': '',
-                                  'meaj_obj_names': None}
+                                  'meas_obj_names': None}
 
     def __init__(self, pipeline=None, **kw):
         """
@@ -347,7 +347,7 @@ class ProcessingPipeline(list):
             processing function specified by node_name
         """
         for param, value in self.global_node_param_values.items():
-            if value not in node_params:
+            if param not in node_params:
                 node_params[param] = value
         node_params['node_name'] = node_name
 
