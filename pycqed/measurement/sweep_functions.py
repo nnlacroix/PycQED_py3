@@ -265,3 +265,51 @@ class Offset_Sweep(Soft_Sweep):
 
     def set_parameter(self, val):
         self.sweep_function.set_parameter(val + self.offset)
+
+
+class MajorMinorSweep(Soft_Sweep):
+    """A soft sweep function that combines two sweep function such that the
+    major sweep function takes only discrete values from a given set while
+    the minor sweep function takes care of the difference between the
+    discrete values and the desired sweep values."""
+
+    def __init__(self,
+                 major_sweep_function,
+                 minor_sweep_function,
+                 major_values,
+                 name=None,
+                 parameter_name=None,
+                 unit=None):
+        super().__init__()
+
+        self.major_sweep_function = \
+            mc_parameter_wrapper.wrap_par_to_swf(major_sweep_function) \
+                if isinstance(major_sweep_function, qcodes.Parameter) \
+                else major_sweep_function
+        self.minor_sweep_function = \
+            mc_parameter_wrapper.wrap_par_to_swf(minor_sweep_function) \
+                if isinstance(minor_sweep_function, qcodes.Parameter) \
+                else minor_sweep_function
+        if self.major_sweep_function.sweep_control != 'soft' or \
+                self.minor_sweep_function.sweep_control != 'soft':
+            raise ValueError('Offset_Sweep: Only software sweeps supported')
+        self.sweep_control = 'soft'
+        self.major_values = np.array(major_values)
+        self.parameter_name = self.major_sweep_function.parameter_name \
+            if parameter_name is None else parameter_name
+        self.name = self.major_sweep_function.name if name is None else name
+        self.unit = self.major_sweep_function.unit if unit is None else unit
+
+    def prepare(self, *args, **kwargs):
+        self.major_sweep_function.prepare(*args, **kwargs)
+        self.minor_sweep_function.prepare(*args, **kwargs)
+
+    def finish(self, *args, **kwargs):
+        self.major_sweep_function.finish(*args, **kwargs)
+        self.minor_sweep_function.finish(*args, **kwargs)
+
+    def set_parameter(self, val):
+        ind = np.argmin(np.abs(self.major_values - val))
+        mval = self.major_values[ind]
+        self.major_sweep_function.set_parameter(mval)
+        self.minor_sweep_function.set_parameter(val - mval)
