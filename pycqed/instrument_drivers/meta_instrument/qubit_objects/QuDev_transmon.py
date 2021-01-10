@@ -401,6 +401,9 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter(op_name, ps_name + '_gaussian_filter_sigma',
                                  'gaussian_filter_sigma', initial_value=2e-9,
                                  vals=vals.Numbers(0))
+        self.add_pulse_parameter(op_name, ps_name + '_square_wave',
+                                 'square_wave', initial_value=False,
+                                 vals=vals.Bool())
 
         # dc flux parameters
         self.add_parameter('dc_flux_parameter', initial_value=None,

@@ -487,6 +487,7 @@ class BufferedCZPulse(pulse.Pulse):
             'amplitude': 0,
             'frequency': 0,
             'phase': 0,
+            'square_wave': False,
             'pulse_length': 0,
             'buffer_length_start': 0,
             'buffer_length_end': 0,
@@ -518,8 +519,11 @@ class BufferedCZPulse(pulse.Pulse):
                 (tvals - tstart) * scaling) - sp.special.erf(
                 (tvals - tend) * scaling)) * amp
         t_rel = tvals - tvals[0]
-        wave *= np.cos(
+        carrier = np.cos(
             2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
+        if self.square_wave:
+            carrier = np.sign(carrier)
+        wave *= carrier
         return wave
 
     def hashables(self, tstart, channel):
@@ -541,7 +545,7 @@ class BufferedCZPulse(pulse.Pulse):
 
         hashlist += [amp, pulse_length, buffer_start, buffer_end]
         hashlist += [self.gaussian_filter_sigma]
-        hashlist += [self.frequency, self.phase % 360]
+        hashlist += [self.frequency, self.phase % 360, self.square_wave]
         return hashlist
 
 
