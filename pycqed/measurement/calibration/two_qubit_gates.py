@@ -647,7 +647,8 @@ class CalibBuilder(MultiTaskingExperiment):
         if prepend_pulse_dicts is not None:
             for i, pp in enumerate(prepend_pulse_dicts):
                 # op_code determines which pulse to use
-                prepend_pulse = self.get_pulse(pp['op_code'])
+                prepend_pulse = self.get_pulse(pp['op_code']) \
+                    if 'op_code' in pp else {}
                 # all other entries in the pulse dict are interpreted as
                 # pulse parameters that overwrite the default values
                 prepend_pulse.update(pp)
