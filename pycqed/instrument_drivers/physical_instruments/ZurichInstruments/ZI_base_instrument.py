@@ -702,7 +702,10 @@ class ZI_base_instrument(Instrument):
 
             # Create waveform parameters
             self._num_codewords = 0
-            self._add_codeword_waveform_parameters(num_codewords)
+            # CH: this Delft function should not be needed for us, and removing it
+            # should save time in the init script. Please let me know if you
+            # experience any issues with the init of HDAWG/UHF.
+            # self._add_codeword_waveform_parameters(num_codewords)
 
         # Create other neat parameters
         self._add_extra_parameters()
