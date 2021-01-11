@@ -306,19 +306,21 @@ class QuantumExperiment(CircuitBuilder):
                 self.label += mqm.get_multi_qubit_msmt_suffix(self.meas_objs)
 
     @Timer()
-    def run_analysis(self, analysis_class=None, **kwargs):
+    def run_analysis(self, analysis_class=None, analysis_kwargs=None, **kw):
         """
         Launches the analysis.
         Args:
             analysis_class: Class to use for the analysis
-            **kwargs: keyword arguments passed to the analysis class
+            analysis_kwargs: keyword arguments passed to the analysis class
 
         Returns: analysis object
 
         """
         if analysis_class is None:
             analysis_class = ba.BaseDataAnalysis
-        self.analysis = analysis_class(**kwargs)
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+        self.analysis = analysis_class(**analysis_kwargs)
         return self.analysis
 
     def autorun(self, **kw):
