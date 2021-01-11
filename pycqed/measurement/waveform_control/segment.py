@@ -55,6 +55,7 @@ class Segment:
         self._pulse_names = set()
         self.acquisition_elements = set()
         self.timer = Timer(self.name)
+        self.pulse_pars = []
 
         for pulse_pars in pulse_pars_list:
             self.add(pulse_pars)
@@ -65,6 +66,7 @@ class Segment:
         and sets default values where necessary. After that an UnresolvedPulse
         is instantiated.
         """
+        self.pulse_pars.append(deepcopy(pulse_pars))
         pars_copy = deepcopy(pulse_pars)
 
         # Makes sure that pulse name is unique
@@ -157,7 +159,7 @@ class Segment:
                     self.pulsar.get(f'{ch_awg}_enforce_single_element'))
             if all(ch_mask) and len(ch_mask) != 0:
                 p = deepcopy(p)
-                p.pulse_obj.element_name = f'default_{self.name}'
+                p.pulse_obj.element_name = f'default_ese_{self.name}'
                 self.resolved_pulses.append(p)
             elif any(ch_mask):
                 p0 = deepcopy(p)

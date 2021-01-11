@@ -203,16 +203,15 @@ def Qubit_dac_to_freq_res(dac_voltage, Ej_max, E_c, asymmetry, coupling, fr,
         dac_sweet_spot = phi_park * V_per_phi0
 
     phi = np.pi / V_per_phi0 * (dac_voltage - dac_sweet_spot)
-    Ej = 2 * np.pi * Ej_max * np.cos(phi) * np.sqrt(1 + asymmetry ** 2 * np.tan(phi) ** 2)
-    E_c = 2 * np.pi * E_c
+    Ej =  Ej_max * np.cos(phi) * np.sqrt(1 + asymmetry ** 2 * np.tan(phi) ** 2)
     with Timer('fitmod.loop', verbose=False):
             freqs = [(transmon.transmon_resonator_levels(E_c,
                                                          ej,
-                                                         2*np.pi*fr,
-                                                         2*np.pi*coupling,
+                                                         fr,
+                                                         coupling,
                                                          states=[(1, 0), (2, 0)],
                                                          dim_charge=dim_charge
-                                                             ) / (2 * np.pi))[0]
+                                                             ))[0]
                      for ej in Ej]
     qubit_freq = np.array(freqs)
     return qubit_freq
@@ -252,7 +251,7 @@ def Qubit_freq_to_dac_res(frequency, Ej_max, E_c, asymmetry, coupling, fr,
         frequency = [frequency]
         return_float = True
     E_j = [transmon.transmon_resonator_ej_anh_frg_chi(
-            f, ec=E_c, frb= fr, gb=coupling)[0]
+            f, ec=E_c, frb=fr, gb=coupling)[0]
             for f in frequency]
     E_j = np.array(E_j)
 
