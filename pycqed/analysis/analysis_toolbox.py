@@ -484,9 +484,12 @@ def compare_instrument_settings(analysis_object_a, analysis_object_b):
 
 
 def get_timestamps_in_range(timestamp_start, timestamp_end=None,
-                            label=None, exact_label_match=False, folder=None):
+                            label=None, exact_label_match=False, folder=None,
+                            auto_fetch=None, **kw):
     if folder is None:
         folder = datadir
+    if auto_fetch is None:
+        auto_fetch = (fetch_data_dir is not None)
     if not isinstance(label, list):
         label = [label]
 
@@ -556,6 +559,22 @@ def get_timestamps_in_range(timestamp_start, timestamp_end=None,
         all_timestamps += timestamps
     # Ensures the order of the timestamps is ascending
     all_timestamps.sort()
+
+    if auto_fetch:
+        kwargs = dict(timestamp_start=timestamp_start,
+                      timestamp_end=timestamp_end,
+                      label=label, exact_label_match=exact_label_match,
+                      )
+        kwargs.update(kw)
+        remote_timestamps = get_timestamps_in_range(
+            folder=fetch_data_dir, auto_fetch=False, **kwargs)
+        if len(all_timestamps) != len(remote_timestamps):
+            log.warning(f'Fetching from {fetch_data_dir}')
+            [fetch_data(timestamp=t, folder=folder, **kw) for t in
+             remote_timestamps if t not in all_timestamps]
+            kwargs['folder'] = folder
+            return get_timestamps_in_range(auto_fetch=False, **kwargs)
+
     return all_timestamps
 
 
