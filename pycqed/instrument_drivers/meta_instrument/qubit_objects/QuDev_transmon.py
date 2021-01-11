@@ -274,6 +274,11 @@ class QuDev_transmon(Qubit):
                            label='Parameters for frequency vs flux pulse '
                                  'amplitude fit',
                            initial_value={}, parameter_class=ManualParameter)
+        self.add_parameter('fit_ge_amp180_over_ge_freq',
+                           label='String representation of function to '
+                                 'calculate a pi pulse amplitude for a given '
+                                 'ge transition frequency.',
+                           initial_value=None, parameter_class=ManualParameter)
         # add drive pulse parameters
         self.add_operation('X180')
         self.add_pulse_parameter('X180', 'ge_pulse_type', 'pulse_type',
