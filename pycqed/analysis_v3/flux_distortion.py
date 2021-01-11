@@ -952,7 +952,7 @@ def fd_normalize(data_dict, keys_in, keys_out, target_interval=None,
                  time_range=None, **params):
     def normalize(x, mask=None):
         if mask is None:
-            mask = np.ones_like(x)
+            mask = np.ones_like(x, dtype=bool)
         if target_interval is None:
             return x / np.max(np.abs(x[mask]))
         else:
@@ -970,6 +970,8 @@ def fd_normalize(data_dict, keys_in, keys_out, target_interval=None,
             if time_range is not None:
                 mask = np.logical_and(data[0] >= time_range[0],
                                       data[0] <= time_range[1])
+            else:
+                mask = None
             data[1] = normalize(data[1], mask)
         else:
             data = normalize(data)
