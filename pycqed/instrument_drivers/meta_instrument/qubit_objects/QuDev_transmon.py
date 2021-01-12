@@ -274,6 +274,11 @@ class QuDev_transmon(Qubit):
                            label='Parameters for frequency vs flux pulse '
                                  'amplitude fit',
                            initial_value={}, parameter_class=ManualParameter)
+        self.add_parameter('fit_ge_amp180_over_ge_freq',
+                           label='String representation of function to '
+                                 'calculate a pi pulse amplitude for a given '
+                                 'ge transition frequency.',
+                           initial_value=None, parameter_class=ManualParameter)
         # add drive pulse parameters
         self.add_operation('X180')
         self.add_pulse_parameter('X180', 'ge_pulse_type', 'pulse_type',
@@ -440,6 +445,23 @@ class QuDev_transmon(Qubit):
 
     def get_idn(self):
         return {'driver': str(self.__class__), 'name': self.name}
+
+    def get_ge_amp180_from_ge_freq(self, ge_freq):
+        """
+        Calculates the pi pulse amplitude required for a given ge transition
+        frequency using the function stored in the parameter
+        fit_ge_amp180_over_ge_freq. If this parameter is None, the method
+        returns None.
+
+        :param ge_freq: ge transition frequency or an array of frequencies
+        :return: pi pulse amplitude or an array of amplitudes (or None)
+        """
+        amp_func = self.fit_ge_amp180_over_ge_freq()
+        if amp_func is None:
+            log.warning(f'Cannot calculate drive amp for {self.name} since '
+                        f'fit_ge_amp180_over_ge_freq is None.')
+            return None
+        return eval(amp_func)(ge_freq)
 
     def update_detector_functions(self):
         if self.acq_Q_channel() is None or \
