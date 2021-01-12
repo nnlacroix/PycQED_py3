@@ -239,7 +239,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         if self.params_dict is None:
             self.params_dict = {}
         self.numeric_params = numeric_params
-        self.measurement_strings = {qbn: qbn for qbn in qb_names}
+        self.measurement_strings = {}
         if self.numeric_params is None:
             self.numeric_params = []
 
