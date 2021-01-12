@@ -216,9 +216,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             names expected to be found in SweepPoints. Groups data by these
             parameters and stores it in proc_data_dict['split_data_dict'].
          - select_split (default: None): dict with keys qb_names and values
-            a tuple (sweep_param_name, value). Stored in
-            self.measurement_strings which specify the plot title. The selected
-            parameter must also be part of the split_params for that qubit.
+            a tuple (sweep_param_name, value) or (sweep_param_name, index).
+            Stored in self.measurement_strings which specify the plot title.
+            The selected parameter must also be part of the split_params for
+            that qubit.
     """
     def __init__(self,
                  qb_names: list=None, label: str='',
