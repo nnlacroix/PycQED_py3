@@ -380,7 +380,9 @@ class FluxPulseScope(ParallelLOSweepExperiment):
     kw_for_task_keys = ['ro_pulse_delay', 'fp_truncation',
                         'fp_truncation_buffer',
                         'fp_compensation',
-                        'fp_compensation_amp']
+                        'fp_compensation_amp',
+                        'fp_during_ro', 'tau',
+                        'fp_during_ro_length']
     kw_for_sweep_points = {
         'freqs': dict(param_name='freq', unit='Hz',
                       label=r'drive frequency, $f_d$',
@@ -402,7 +404,9 @@ class FluxPulseScope(ParallelLOSweepExperiment):
     def sweep_block(self, qb, sweep_points, flux_op_code=None,
                     ro_pulse_delay=None,
                     fp_truncation=False, fp_compensation=False,
-                    fp_compensation_amp=None, fp_truncation_buffer=None, **kw):
+                    fp_compensation_amp=None, fp_truncation_buffer=None,
+                    fp_during_ro=False, tau=None,
+                    fp_during_ro_length=None, **kw):
         """
         Performs X180 pulse on top of a fluxpulse
         Timings of sequence
@@ -419,6 +423,19 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             the end of the flux pulse or a delay in seconds to start a fixed
             amount of time after the drive pulse. If not provided or set to
             None, a default fixed delay of 100e-9 is used.
+        :param fp_truncation: Truncate the flux pulse after the drive pulse
+        :param fp_truncation_buffer: Time buffer after the drive pulse, before
+            the truncation happens.
+        :param fp_compensation: Custom compensation for the charge build-up
+            in the bias T.
+        :param fp_compensation_amp: Fixed amplitude for the custom compensation
+            pulse.
+        :param fp_during_ro: Play a flux pulse during the read-out pulse to
+            bring the qubit actively to the parking position in the case where
+            the flux-pulse is not filtered yet.
+        :param fp_during_ro_length: Length of the fp_during_ro.
+        :param tau: Approximate dominant time constant in the flux line, which
+            is used to calculate the amplitude of the fp_during_ro.
 
         :param kw:
         """
@@ -430,17 +447,24 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             fp_truncation_buffer = 5e-8
         if fp_compensation_amp is None:
             fp_compensation_amp = -2
+        if tau is None:
+            tau = 20e-6
+        if fp_during_ro_length is None:
+            fp_during_ro_length = 2e-6
 
         if ro_pulse_delay is 'auto' and (fp_truncation or \
             hasattr(fp_truncation, '__iter__')):
             raise Exception('fp_truncation does currently not work ' + \
                             'with the auto mode of ro_pulse_delay.')
 
+        assert not (fp_compensation and fp_during_ro)
+
         pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
                         'attr=element_name,op_code=X180': 'FPS_Pi_el'}
         b = self.block_from_ops(f'ge_flux {qb}',
                                 [f'X180 {qb}'] + [flux_op_code] * \
-                                (2 if fp_compensation else 1),
+                                (2 if fp_compensation else 1) \
+                                + ([f'FP {qb}'] if fp_during_ro else []),
                                 pulse_modifs=pulse_modifs)
 
         fp = b.pulses[1]
@@ -489,6 +513,32 @@ class FluxPulseScope(ParallelLOSweepExperiment):
 
                 cp['pulse_length'] = ParametricValue('delay', func=t_trunc)
                 # TODO: implement that the ro_delay is adjusted accordingly!
+
+            # TODO: this feature does not work if the delay is larger
+            # than the pulse length!
+            if fp_during_ro:
+                rfp = b.pulses[2]
+                rfp['pulse_delay'] = 0
+                rfp['pulse_length'] = fp_during_ro_length
+
+                def rfp_amp(x, fnc=length_function, tau=tau,
+                    fp_amp=fp['amplitude']):
+                    fp_length = fnc(x)
+                    return fp_amp * (1-np.exp(-fp_length/tau))
+
+                rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
+
+        else: #fp_truncation == False
+            # TODO: this feature does not work if the delay is larger
+            # than the pulse length!
+            if fp_during_ro:
+                rfp = b.pulses[2]
+                rfp['pulse_delay'] = 0
+                rfp['pulse_length'] = fp_during_ro_length
+
+                fp_amp = fp['amplitude']
+                fp_length = fp['pulse_length']
+                rfp['amplitude'] = fp_amp * (1-np.exp(-fp_length/tau))
 
         if ro_pulse_delay == 'auto':
             delay = \
