@@ -382,7 +382,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                         'fp_compensation',
                         'fp_compensation_amp',
                         'fp_during_ro', 'tau',
-                        'fp_during_ro_length']
+                        'fp_during_ro_length',
+                        'fp_during_ro_buffer']
     kw_for_sweep_points = {
         'freqs': dict(param_name='freq', unit='Hz',
                       label=r'drive frequency, $f_d$',
@@ -406,7 +407,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                     fp_truncation=False, fp_compensation=False,
                     fp_compensation_amp=None, fp_truncation_buffer=None,
                     fp_during_ro=False, tau=None,
-                    fp_during_ro_length=None, **kw):
+                    fp_during_ro_length=None,
+                    fp_during_ro_buffer=None, **kw):
         """
         Performs X180 pulse on top of a fluxpulse
         Timings of sequence
@@ -451,6 +453,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             tau = 20e-6
         if fp_during_ro_length is None:
             fp_during_ro_length = 2e-6
+        if fp_during_ro_buffer is None:
+            fp_during_ro_buffer = 0.2e-6
 
         if ro_pulse_delay is 'auto' and (fp_truncation or \
             hasattr(fp_truncation, '__iter__')):
@@ -458,6 +462,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                             'with the auto mode of ro_pulse_delay.')
 
         assert not (fp_compensation and fp_during_ro)
+
+        assert not (fp_truncation and fp_during_ro)
 
         pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
                         'attr=element_name,op_code=X180': 'FPS_Pi_el'}
@@ -516,29 +522,39 @@ class FluxPulseScope(ParallelLOSweepExperiment):
 
             # TODO: this feature does not work if the delay is larger
             # than the pulse length!
-            if fp_during_ro:
-                rfp = b.pulses[2]
-                rfp['pulse_delay'] = 0
-                rfp['pulse_length'] = fp_during_ro_length
+            # if fp_during_ro:
+            #     rfp = b.pulses[2]
+            #     rfp['pulse_delay'] = 0
+            #     rfp['pulse_length'] = fp_during_ro_length
 
-                def rfp_amp(x, fnc=length_function, tau=tau,
-                    fp_amp=fp['amplitude']):
-                    fp_length = fnc(x)
-                    return fp_amp * (1-np.exp(-fp_length/tau))
+            #     def rfp_amp(x, fnc=length_function, tau=tau,
+            #         fp_amp=fp['amplitude']):
+            #         fp_length = fnc(x)
+            #         return fp_amp * (1-np.exp(-fp_length/tau))
 
-                rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
+            #     rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
 
         else: #fp_truncation == False
             # TODO: this feature does not work if the delay is larger
             # than the pulse length!
             if fp_during_ro:
                 rfp = b.pulses[2]
-                rfp['pulse_delay'] = 0
-                rfp['pulse_length'] = fp_during_ro_length
 
-                fp_amp = fp['amplitude']
-                fp_length = fp['pulse_length']
-                rfp['amplitude'] = fp_amp * (1-np.exp(-fp_length/tau))
+                def length_func(x, offset=fp_during_ro_buffer):
+                    return max(x+offset, 0)
+
+                def rfp_delay(x, length_func=length_func, opl=fp['pulse_length']):
+                    return -(opl-length_func(x))
+
+                def rfp_amp(x, length_func=length_func, rfp_delay=rfp_delay,
+                    tau=tau, fp_amp=fp['amplitude']):
+                    fp_length=length_func(x)
+                    return fp_amp*(-1+np.exp(-fp_length/tau)) \
+                        * (-1 if rfp_delay(x) > 0 else 1)
+
+                rfp['pulse_length'] = fp_during_ro_length
+                rfp['pulse_delay'] = ParametricValue('delay', func=rfp_delay)
+                rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
 
         if ro_pulse_delay == 'auto':
             delay = \
