@@ -426,7 +426,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         :param flux_op_code: (optional str) the flux pulse op_code (default
             FP qb)
         :param ro_pulse_delay: Can be 'auto' to start the readout after
-            the end of the flux pulse or a delay in seconds to start a fixed
+            the end of the flux pulse (or in the middle of the readout-flux-pulse
+            if fp_during_ro is True) or a delay in seconds to start a fixed
             amount of time after the drive pulse. If not provided or set to
             None, a default fixed delay of 100e-9 is used.
         :param fp_truncation: Truncate the flux pulse after the drive pulse
@@ -565,13 +566,19 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                 rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
 
         if ro_pulse_delay == 'auto':
-            delay = \
-                fp['pulse_length'] - np.min(
-                    sweep_points.get_sweep_params_property(
-                        'values', dimension=0, param_names='delay')) + \
-                fp.get('buffer_length_end', 0) + fp.get('trans_length', 0)
-            b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'middle',
-                                'pulse_delay': delay})
+            if fp_during_ro:
+                # start the ro pulse in the middle of the fp_during_ro pulse
+                delay = fp_during_ro_buffer + fp_during_ro_length/2
+                b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'end',
+                                    'pulse_delay': delay})
+            else:
+                delay = \
+                    fp['pulse_length'] - np.min(
+                        sweep_points.get_sweep_params_property(
+                            'values', dimension=0, param_names='delay')) + \
+                    fp.get('buffer_length_end', 0) + fp.get('trans_length', 0)
+                b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'middle',
+                                    'pulse_delay': delay})
         else:
             b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'end',
                                 'pulse_delay': ro_pulse_delay})
