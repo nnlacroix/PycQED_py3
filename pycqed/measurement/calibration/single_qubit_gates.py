@@ -439,8 +439,10 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             pulse.
         :param fp_during_ro: Play a flux pulse during the read-out pulse to
             bring the qubit actively to the parking position in the case where
-            the flux-pulse is not filtered yet.
+            the flux-pulse is not filtered yet. This assumes a unipolar flux-pulse.
         :param fp_during_ro_length: Length of the fp_during_ro.
+        :param fp_during_ro_buffer: Time buffer between the drive pulse and
+            the fp_during_ro
         :param tau: Approximate dominant time constant in the flux line, which
             is used to calculate the amplitude of the fp_during_ro.
 
@@ -525,23 +527,9 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                 cp['pulse_length'] = ParametricValue('delay', func=t_trunc)
                 # TODO: implement that the ro_delay is adjusted accordingly!
 
-            # TODO: this feature does not work if the delay is larger
-            # than the pulse length!
-            # if fp_during_ro:
-            #     rfp = b.pulses[2]
-            #     rfp['pulse_delay'] = 0
-            #     rfp['pulse_length'] = fp_during_ro_length
-
-            #     def rfp_amp(x, fnc=length_function, tau=tau,
-            #         fp_amp=fp['amplitude']):
-            #         fp_length = fnc(x)
-            #         return fp_amp * (1-np.exp(-fp_length/tau))
-
-            #     rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
-
         else: #fp_truncation == False
-            # TODO: this feature does not work if the delay is larger
-            # than the pulse length!
+            # assumes a unipolar flux-pulse for the calculation of the
+            # amplitude decay.
             if fp_during_ro:
                 rfp = b.pulses[2]
 
