@@ -3985,7 +3985,7 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
     seq, sp = mqs.n_qubit_rabi_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
         upload=False, n=n, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
-        prep_params=prep_params)
+        prep_params=prep_params, **kw)
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
         sequence=seq, upload=upload,
         parameter_name=list(sweep_points[0].values())[0][2],
