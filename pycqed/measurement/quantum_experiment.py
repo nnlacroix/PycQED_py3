@@ -306,19 +306,21 @@ class QuantumExperiment(CircuitBuilder):
                 self.label += mqm.get_multi_qubit_msmt_suffix(self.meas_objs)
 
     @Timer()
-    def run_analysis(self, analysis_class=None, **kwargs):
+    def run_analysis(self, analysis_class=None, analysis_kwargs=None, **kw):
         """
         Launches the analysis.
         Args:
             analysis_class: Class to use for the analysis
-            **kwargs: keyword arguments passed to the analysis class
+            analysis_kwargs: keyword arguments passed to the analysis class
 
         Returns: analysis object
 
         """
         if analysis_class is None:
             analysis_class = ba.BaseDataAnalysis
-        self.analysis = analysis_class(**kwargs)
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+        self.analysis = analysis_class(**analysis_kwargs)
         return self.analysis
 
     def autorun(self, **kw):
@@ -471,9 +473,16 @@ class QuantumExperiment(CircuitBuilder):
             unit = list(self.sweep_points[0].values())[0][2]
         except TypeError:
             sweep_param_name, unit = "None", ""
-        sweep_func_1st_dim = self.sweep_functions[0](
-            sequence=self.sequences[0], upload=self.upload,
-            parameter_name=sweep_param_name,  unit=unit)
+        if self.sweep_functions[0] == awg_swf.SegmentHardSweep:
+            sweep_func_1st_dim = self.sweep_functions[0](
+                sequence=self.sequences[0], upload=self.upload,
+                parameter_name=sweep_param_name, unit=unit)
+        else:
+            # In case of an unknown sweep function type, it is assumed
+            # that self.sweep_functions[0] has already been initialized
+            # with all required parameters and can be directly passed to
+            # MC.
+            sweep_func_1st_dim = self.sweep_functions[0]
 
         self.MC.set_sweep_function(sweep_func_1st_dim)
         self.MC.set_sweep_points(self.mc_points[0])
@@ -518,6 +527,8 @@ class QuantumExperiment(CircuitBuilder):
                 self.meas_objs, df)
         self.exp_metadata.update(
             {'meas_obj_value_names_map': meas_obj_value_names_map})
+        if 'meas_obj_sweep_points_map' not in self.exp_metadata:
+            self.exp_metadata['meas_obj_sweep_points_map'] = {}
 
         if len(self.mc_points[1]) > 0:
             mmnt_mode = "2D"

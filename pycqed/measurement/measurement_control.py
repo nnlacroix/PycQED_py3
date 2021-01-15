@@ -438,6 +438,7 @@ class MeasurementControl(Instrument):
                                 'MC.measure_hard() DATA STORING BLOCK section. '
                                 'Something might have gone wrong with your '
                                 'measurement.')
+                log.warning(traceback.format_exc())
 
         self.check_keyboard_interrupt()
         self.update_instrument_monitor()

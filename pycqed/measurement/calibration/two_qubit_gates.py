@@ -328,7 +328,8 @@ class MultiTaskingExperiment(QuantumExperiment):
             keyword arguments for block_func, plus a key 'prefix' with a unique
             prefix string, plus optionally a key 'params_to_prefix' created
             by preprocess_task indicating which sweep parameters have to be
-            prefixed with the task prefix.
+            prefixed with the task prefix, plus optionally a key
+            pulse_modifs with pulse modifiers for the created blocks.
         :param block_func: a handle to a function that creates a block. As
             an alternative, a task-specific block_func can be given as a
             parameter of the task. If the block creation function instead
@@ -352,6 +353,7 @@ class MultiTaskingExperiment(QuantumExperiment):
             # the block creation function
             prefix = task.pop('prefix')
             params_to_prefix = task.pop('params_to_prefix', None)
+            pulse_modifs = task.pop('pulse_modifs', None)
             # the block_func passed as argument is used for all tasks that
             # do not define their own block_func
             if not 'block_func' in task:
@@ -364,6 +366,8 @@ class MultiTaskingExperiment(QuantumExperiment):
             if not isinstance(new_block, list):
                 new_block = [new_block]
             for b in new_block:
+                if pulse_modifs is not None:
+                    b.pulses = b.pulses_sweepcopy([pulse_modifs], [None])
                 # prefix the block names to avoid naming conflicts later on
                 b.name = prefix + b.name
                 # For the sweep points that need to be prefixed (see
@@ -393,11 +397,16 @@ class MultiTaskingExperiment(QuantumExperiment):
                 'all', self.all_main_blocks)
         else:
             self.all_main_blocks = self.all_main_blocks[0]
+        if len(self.sweep_points[0]) == 0:
+            # Create a single segement if no hard sweep points are provided.
+            self.sweep_points.add_sweep_parameter('dummy_hard_sweep', [0],
+                                                  dimension=0)
         if len(self.sweep_points[1]) == 0:
             # Internally, 1D and 2D sweeps are handled as 2D sweeps.
             # With this dummy soft sweep, exactly one sequence will be created
             # and the data format will be the same as for a true soft sweep.
-            self.sweep_points.add_sweep_parameter('dummy_sweep_param', [0])
+            self.sweep_points.add_sweep_parameter('dummy_soft_sweep', [0],
+                                                  dimension=1)
         # ro_qubits in kw determines for which qubits sweep_n_dim will add
         # readout pulses. If it is not provided (which is usually the case
         # since create_meas_objs_list pops it from kw) all qubits in
@@ -660,7 +669,8 @@ class CalibBuilder(MultiTaskingExperiment):
         if prepend_pulse_dicts is not None:
             for i, pp in enumerate(prepend_pulse_dicts):
                 # op_code determines which pulse to use
-                prepend_pulse = self.get_pulse(pp['op_code'])
+                prepend_pulse = self.get_pulse(pp['op_code']) \
+                    if 'op_code' in pp else {}
                 # all other entries in the pulse dict are interpreted as
                 # pulse parameters that overwrite the default values
                 prepend_pulse.update(pp)
