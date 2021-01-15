@@ -6875,7 +6875,8 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                     f'population_loss_{qbn}']
 
                 # this is for getting the right xvals in plotting
-                self.xvals_reduction_func = lambda xvals: xvals[:-1]
+                self.xvals_reduction_func = lambda xvals: \
+                    (xvals[1:] + xvals[:-1])/2
             else:
                 delta_phases = self.proc_data_dict['analysis_params_dict'][
                     f'{self.phase_key}_{qbn}']
