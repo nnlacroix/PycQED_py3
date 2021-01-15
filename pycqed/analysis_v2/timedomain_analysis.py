@@ -1530,7 +1530,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         title = (self.raw_data_dict['timestamp'] + ' ' +
                  self.raw_data_dict['measurementstring'])
         title += '\n' + f'{qb_name}_{title_suffix}' if len(title_suffix) else \
-            qb_name
+            ' ' + qb_name
 
         plot_dict_name = f'{fig_name}_{plot_name_suffix}'
         xlabel, xunit = self.get_xaxis_label_unit(qb_name)
