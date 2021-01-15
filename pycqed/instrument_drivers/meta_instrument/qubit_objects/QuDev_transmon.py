@@ -274,6 +274,10 @@ class QuDev_transmon(Qubit):
                            label='Parameters for frequency vs flux pulse '
                                  'amplitude fit',
                            initial_value={}, parameter_class=ManualParameter)
+        self.add_parameter('fit_ge_freq_from_dc_offset',
+                           label='Parameters for frequency vs flux dc '
+                                 'offset fit',
+                           initial_value={}, parameter_class=ManualParameter)
         self.add_parameter('fit_ge_amp180_over_ge_freq',
                            label='String representation of function to '
                                  'calculate a pi pulse amplitude for a given '
