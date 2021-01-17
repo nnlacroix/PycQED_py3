@@ -239,13 +239,14 @@ class ParallelLOSweepExperiment(CalibBuilder):
             self.preprocessed_task_list, self.sweep_block, **kw)
 
     def resolve_lo_sweep_points(self, freq_sp_suffix='freq', **kw):
-        all_freqs = self.sweep_points.get_sweep_params_property('values', 1,
-                                                                'all')
+        all_freqs = np.array(
+            self.sweep_points.get_sweep_params_property('values', 1, 'all'))
         if np.ndim(all_freqs) == 1:
             all_freqs = [all_freqs]
         all_diffs = [np.diff(freqs) for freqs in all_freqs]
-        assert all([np.mean(abs(diff - all_diffs[0]) / all_diffs[0]) < 1e-10
-                    for diff in all_diffs]), \
+        assert all([len(d) == 0 for d in all_diffs]) or \
+            all([np.mean(abs(diff - all_diffs[0]) / all_diffs[0]) < 1e-10
+                 for diff in all_diffs]), \
             "The steps between frequency sweep points must be the same for " \
             "all qubits."
         self.lo_sweep_points = all_freqs[0] - all_freqs[0][0]
@@ -304,6 +305,13 @@ class ParallelLOSweepExperiment(CalibBuilder):
                     lambda x, qb=qb, s=max_amp,
                            o=f[0] - self.lo_sweep_points[0] :
                     qb.get_ge_amp180_from_ge_freq(x + o) / s)
+                if not kw.get('adapt_cal_point_drive_amp', False):
+                    if self.cal_points.pulse_modifs is None:
+                        self.cal_points.pulse_modifs = {}
+                    self.cal_points.pulse_modifs.update(
+                        {f'e_X180 {qb.name}*.amplitude': [
+                            qb.ge_amp180() / (qb.get_ge_amp180_from_ge_freq(
+                                qb.ge_freq()) / max_amp)]})
 
         with temporary_value(*temp_vals):
             self.update_operation_dict()
@@ -323,12 +331,20 @@ class ParallelLOSweepExperiment(CalibBuilder):
                         'mod_frequency']
                     pulsar = qb.instr_pulsar.get_instr()
                     param = pulsar.parameters[f'{qb.ge_I_channel()}_mod_freq']
+                    # Pulsar assumes that the first channel in a pair is the
+                    # I component. If this is not the case, the following
+                    # workaround swaps the sign of the modulation frequency
+                    # to get the correct sideband.
+                    iq_swapped = (int(qb.ge_I_channel()[-1:])
+                                  > int(qb.ge_Q_channel()[-1:]))
                     # The following temporary value ensures that HDAWG
                     # modulation is set back to its previous state after the end
                     # of the modulation frequency sweep.
                     temp_vals.append((param, None))
                     qb_sweep_functions.append(
-                        swf.Offset_Sweep(param, mod_freq))
+                        swf.Transformed_Sweep(param, transformation=(
+                            lambda x, o=mod_freq, s=(-1 if iq_swapped else 1)
+                            : s * (x + o))))
                 minor_sweep_functions.append(swf.multi_sweep_function(
                     qb_sweep_functions))
             sweep_functions = [
@@ -426,7 +442,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         :param flux_op_code: (optional str) the flux pulse op_code (default
             FP qb)
         :param ro_pulse_delay: Can be 'auto' to start the readout after
-            the end of the flux pulse or a delay in seconds to start a fixed
+            the end of the flux pulse (or in the middle of the readout-flux-pulse
+            if fp_during_ro is True) or a delay in seconds to start a fixed
             amount of time after the drive pulse. If not provided or set to
             None, a default fixed delay of 100e-9 is used.
         :param fp_truncation: Truncate the flux pulse after the drive pulse
@@ -438,8 +455,10 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             pulse.
         :param fp_during_ro: Play a flux pulse during the read-out pulse to
             bring the qubit actively to the parking position in the case where
-            the flux-pulse is not filtered yet.
+            the flux-pulse is not filtered yet. This assumes a unipolar flux-pulse.
         :param fp_during_ro_length: Length of the fp_during_ro.
+        :param fp_during_ro_buffer: Time buffer between the drive pulse and
+            the fp_during_ro
         :param tau: Approximate dominant time constant in the flux line, which
             is used to calculate the amplitude of the fp_during_ro.
 
@@ -524,23 +543,9 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                 cp['pulse_length'] = ParametricValue('delay', func=t_trunc)
                 # TODO: implement that the ro_delay is adjusted accordingly!
 
-            # TODO: this feature does not work if the delay is larger
-            # than the pulse length!
-            # if fp_during_ro:
-            #     rfp = b.pulses[2]
-            #     rfp['pulse_delay'] = 0
-            #     rfp['pulse_length'] = fp_during_ro_length
-
-            #     def rfp_amp(x, fnc=length_function, tau=tau,
-            #         fp_amp=fp['amplitude']):
-            #         fp_length = fnc(x)
-            #         return fp_amp * (1-np.exp(-fp_length/tau))
-
-            #     rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
-
         else: #fp_truncation == False
-            # TODO: this feature does not work if the delay is larger
-            # than the pulse length!
+            # assumes a unipolar flux-pulse for the calculation of the
+            # amplitude decay.
             if fp_during_ro:
                 rfp = b.pulses[2]
 
@@ -553,21 +558,31 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                 def rfp_amp(x, length_func=length_func, rfp_delay=rfp_delay,
                     tau=tau, fp_amp=fp['amplitude']):
                     fp_length=length_func(x)
-                    return fp_amp*(-1+np.exp(-fp_length/tau)) \
-                        * (-1 if rfp_delay(x) > 0 else 1)
+                    if rfp_delay(x) < 0:
+                        # in the middle of the fp
+                        return -fp_amp * np.exp(-fp_length / tau)
+                    else:
+                        # after the end of the fp
+                        return fp_amp * (1 - np.exp(-fp_length / tau))
 
                 rfp['pulse_length'] = fp_during_ro_length
                 rfp['pulse_delay'] = ParametricValue('delay', func=rfp_delay)
                 rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
 
         if ro_pulse_delay == 'auto':
-            delay = \
-                fp['pulse_length'] - np.min(
-                    sweep_points.get_sweep_params_property(
-                        'values', dimension=0, param_names='delay')) + \
-                fp.get('buffer_length_end', 0) + fp.get('trans_length', 0)
-            b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'middle',
-                                'pulse_delay': delay})
+            if fp_during_ro:
+                # start the ro pulse in the middle of the fp_during_ro pulse
+                delay = fp_during_ro_buffer + fp_during_ro_length/2
+                b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'end',
+                                    'pulse_delay': delay})
+            else:
+                delay = \
+                    fp['pulse_length'] - np.min(
+                        sweep_points.get_sweep_params_property(
+                            'values', dimension=0, param_names='delay')) + \
+                    fp.get('buffer_length_end', 0) + fp.get('trans_length', 0)
+                b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'middle',
+                                    'pulse_delay': delay})
         else:
             b.block_end.update({'ref_pulse': 'FPS_Pi', 'ref_point': 'end',
                                 'pulse_delay': ro_pulse_delay})
@@ -903,10 +918,11 @@ class Cryoscope(CalibBuilder):
                     main_fpbk.pulses[meas_pulse_idx][k] = \
                         sweep_points.get_sweep_params_property('values', 1, k)[
                             sp2d_idx]
-                # set hard sweep truncation_length
-                main_fpbk.pulses[meas_pulse_idx]['truncation_length'] += \
-                    sweep_points.get_sweep_params_property(
-                        'values', 0, 'extra_truncation_length')[sp1d_idx]
+                if task['estimation_window'] is not None:
+                    # set hard sweep truncation_length
+                    main_fpbk.pulses[meas_pulse_idx]['truncation_length'] += \
+                        sweep_points.get_sweep_params_property(
+                            'values', 0, 'extra_truncation_length')[sp1d_idx]
 
             # reparking flux pulse
             if 'reparking_flux_pulse' in task:

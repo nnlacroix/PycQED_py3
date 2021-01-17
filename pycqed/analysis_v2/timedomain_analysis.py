@@ -6257,16 +6257,23 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                     self.proc_data_dict['data_to_fit'][qbn][prob_label] = data.T
 
         # reshape data for ease of use
+        qbn = self.qb_names[0]
+        phase_sp_param_name = [p for p in self.mospm[qbn] if 'phase' in p][0]
+        phases = self.sp.get_sweep_params_property('values', 0,
+                                                   phase_sp_param_name)
+        self.dim_scale_factor = len(phases) // len(np.unique(phases))
+
         self.proc_data_dict['data_to_fit_reshaped'] = OrderedDict()
         for qbn in self.qb_names:
             self.proc_data_dict['data_to_fit_reshaped'][qbn] = {
                 prob_label: np.reshape(
                     self.proc_data_dict['data_to_fit'][qbn][prob_label][
                     :, :-self.num_cal_points],
-                    (2*self.proc_data_dict['data_to_fit'][qbn][prob_label][
+                    (self.dim_scale_factor * \
+                     self.proc_data_dict['data_to_fit'][qbn][prob_label][
                        :, :-self.num_cal_points].shape[0],
                      self.proc_data_dict['data_to_fit'][qbn][prob_label][
-                     :, :-self.num_cal_points].shape[1]//2))
+                     :, :-self.num_cal_points].shape[1]//self.dim_scale_factor))
                 for prob_label in self.proc_data_dict['data_to_fit'][qbn]}
 
         # convert phases to radians
@@ -6284,11 +6291,12 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
 
         data_2d_reshaped = np.reshape(
             data_2d[:, :-self.num_cal_points],
-            (2*data_2d[:, :-self.num_cal_points].shape[0],
-             data_2d[:, :-self.num_cal_points].shape[1]//2))
+            (self.dim_scale_factor*data_2d[:, :-self.num_cal_points].shape[0],
+             data_2d[:, :-self.num_cal_points].shape[1]//self.dim_scale_factor))
 
         data_2d_cal_reshaped = [[data_2d[:, -self.num_cal_points:]]] * \
-                               (2*data_2d[:, :-self.num_cal_points].shape[0])
+                               (self.dim_scale_factor *
+                                data_2d[:, :-self.num_cal_points].shape[0])
 
         ref_states_plot_dicts = {}
         for row in range(data_2d_reshaped.shape[0]):
@@ -6485,6 +6493,11 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                     phases_errs = np.array([fr.params['phase'].stderr for fr in
                                             fit_res_objs], dtype=np.float64)
                     phases_errs = np.nan_to_num(phases_errs)
+                    self.proc_data_dict['analysis_params_dict'][
+                        f'phases_{qbn}'] = {
+                        'val': phases, 'stderr': phases_errs}
+
+                    # compute phase diffs
                     phase_diffs = phases[0::2] - phases[1::2]
                     phase_diffs %= (2*np.pi)
                     phase_diffs_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
@@ -6665,6 +6678,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 for idx, ss_pname in enumerate(ss_pars):
                     xvals = self.sp.get_sweep_params_property('values', 1,
                                                               ss_pname)
+                    xvals_to_use = deepcopy(xvals)
                     xlabel = self.sp.get_sweep_params_property('label', 1,
                                                                ss_pname)
                     xunit = self.sp.get_sweep_params_property('unit', 1,
@@ -6672,7 +6686,22 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                     for param_name, results_dict in self.proc_data_dict[
                             'analysis_params_dict'].items():
                         if qbn in param_name:
-                            reps = len(results_dict['val']) / len(xvals)
+                            reps = 1
+                            if len(results_dict['val']) >= len(xvals):
+                                reps = len(results_dict['val']) / len(xvals)
+                            else:
+                                # cyroscope case
+                                if hasattr(self, 'xvals_reduction_func'):
+                                    xvals_to_use = self.xvals_reduction_func(
+                                        xvals)
+                                else:
+                                    log.warning(f'Length mismatch between xvals'
+                                                ' and analysis param for'
+                                                ' {param_name}, and no'
+                                                ' xvals_reduction_func has been'
+                                                ' defined. Unclear how to'
+                                                ' reduce xvals.')
+
                             plot_name = f'{param_name}_vs_{xlabel}'
                             if 'phase' in param_name:
                                 yvals = results_dict['val']*180/np.pi - (180 if
@@ -6684,8 +6713,8 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                     'fig_id': plot_name,
                                     'plotfn': self.plot_hlines,
                                     'y': 0,
-                                    'xmin': np.min(xvals),
-                                    'xmax': np.max(xvals),
+                                    'xmin': np.min(xvals_to_use),
+                                    'xmax': np.max(xvals_to_use),
                                     'colors': 'gray'}
                             else:
                                 yvals = results_dict['val']
@@ -6700,7 +6729,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                 yunit = ''
                             self.plot_dicts[plot_name] = {
                                 'plotfn': self.plot_line,
-                                'xvals': np.repeat(xvals, reps),
+                                'xvals': np.repeat(xvals_to_use, reps),
                                 'xlabel': xlabel,
                                 'xunit': xunit,
                                 'yvals': yvals,
@@ -6815,8 +6844,8 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
             delta_tau = deepcopy(global_delta_tau)
             if delta_tau is None:
                 if task_list is None:
-                    log.warning(f'estimation_window is None and task_list was '
-                                f'for {qbn} not found. Assuming no '
+                    log.warning(f'estimation_window is None and task_list '
+                                f'for {qbn} was not found. Assuming no '
                                 f'estimation_window was used.')
                 else:
                     task = [t for t in task_list if t['qb'] == qbn]
@@ -6825,14 +6854,35 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                     delta_tau = task[0].get('estimation_window', None)
 
             if delta_tau is None:
-                raise NotImplementedError(
-                    'Analysis for a cryoscope measurement without an '
-                    'estimation_window not yet implemented.')
+                trunc_lengths = self.sp.get_sweep_params_property(
+                    'values', 1, f'{qbn}_truncation_length')
+                delta_tau = np.diff(trunc_lengths)
 
-            delta_phases = self.proc_data_dict['analysis_params_dict'][
-                f'{self.phase_key}_{qbn}']
-            delta_phases_vals = delta_phases['val']
-            delta_phases_errs = delta_phases['stderr']
+                phases = self.proc_data_dict['analysis_params_dict'][
+                    f'phases_{qbn}']
+                delta_phases_vals = np.diff(phases['val'])
+                delta_phases_vals %= (2*np.pi)
+                delta_phases_errs = np.sqrt(np.array(phases['stderr'][1:]**2 +
+                                                     phases['stderr'][:-1]**2,
+                                                     dtype=np.float64))
+                self.proc_data_dict['analysis_params_dict'][
+                    f'{self.phase_key}_{qbn}']['stderr'] = delta_phases_errs
+
+                # remove the entries in analysis_params_dict that are not
+                # relevant for Cryoscope (pop_loss), since
+                # these will cause a problem with plotting in this case.
+                del self.proc_data_dict['analysis_params_dict'][
+                    f'population_loss_{qbn}']
+
+                # this is for getting the right xvals in plotting
+                self.xvals_reduction_func = lambda xvals: \
+                    (xvals[1:] + xvals[:-1])/2
+            else:
+                delta_phases = self.proc_data_dict['analysis_params_dict'][
+                    f'{self.phase_key}_{qbn}']
+                delta_phases_vals = delta_phases['val']
+                delta_phases_errs = delta_phases['stderr']
+
             if self.get_param_value('unwrap_phases', False):
                 delta_phases_vals = np.unwrap((delta_phases_vals + np.pi) %
                                               (2*np.pi) - np.pi)
@@ -6854,7 +6904,6 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
 
         self.save_processed_data(key='analysis_params_dict')
         self.save_processed_data(key='tvals')
-
 
     def get_generated_and_measured_pulse(self, qbn=None):
         """
