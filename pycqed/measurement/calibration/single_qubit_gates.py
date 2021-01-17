@@ -918,10 +918,11 @@ class Cryoscope(CalibBuilder):
                     main_fpbk.pulses[meas_pulse_idx][k] = \
                         sweep_points.get_sweep_params_property('values', 1, k)[
                             sp2d_idx]
-                # set hard sweep truncation_length
-                main_fpbk.pulses[meas_pulse_idx]['truncation_length'] += \
-                    sweep_points.get_sweep_params_property(
-                        'values', 0, 'extra_truncation_length')[sp1d_idx]
+                if task['estimation_window'] is not None:
+                    # set hard sweep truncation_length
+                    main_fpbk.pulses[meas_pulse_idx]['truncation_length'] += \
+                        sweep_points.get_sweep_params_property(
+                            'values', 0, 'extra_truncation_length')[sp1d_idx]
 
             # reparking flux pulse
             if 'reparking_flux_pulse' in task:
