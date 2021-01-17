@@ -77,7 +77,8 @@ class Sequence:
             for segname, seg in self.segments.items():
                 # Store the name of the segment
                 sequences[awg][segname] = None
-                for elname in seg.elements_on_awg.get(awg, []):
+                elnames = seg.elements_on_awg.get(awg, [])
+                for elname in elnames:
                     sequences[awg][elname] = {'metadata': {}}
                     for cw in seg.get_element_codewords(elname, awg=awg):
                         sequences[awg][elname][cw] = {}
@@ -95,6 +96,13 @@ class Sequence:
                         sequences[awg][elname]['metadata']['acq'] = True
                     else:
                         sequences[awg][elname]['metadata']['acq'] = False
+                if seg.sweep_params is not None and len(seg.sweep_params):
+                    sequences[awg][elnames[0]]['metadata']['loop'] = len(
+                        list(seg.sweep_params.values())[0])
+                    sequences[awg][elnames[0]]['metadata']['sweep_params'] = \
+                        {k[len(awg) + 1:]: v for k, v in
+                         seg.sweep_params.items() if k.startswith(awg + '_')}
+                    sequences[awg][elnames[-1]]['metadata']['end_loop'] = True
         return waveforms, sequences
                 
     def n_acq_elements(self, per_segment=False):

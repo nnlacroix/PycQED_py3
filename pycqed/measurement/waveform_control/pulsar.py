@@ -12,6 +12,7 @@ from qcodes.instrument.parameter import (
     ManualParameter, InstrumentRefParameter)
 import qcodes.utils.validators as vals
 import time
+from copy import deepcopy
 
 from pycqed.instrument_drivers.virtual_instruments.virtual_awg5014 import \
     VirtualAWG5014
@@ -225,17 +226,20 @@ class UHFQCPulsar:
         current_segment = 'no_segment'
 
         def play_element(element, playback_strings, wave_definitions):
-            if awg_sequence[element] is None:
+            awg_sequence_element = deepcopy(awg_sequence[element])
+            if awg_sequence_element is None:
                 current_segment = element
                 playback_strings.append(f'// Segment {current_segment}')
                 return playback_strings, wave_definitions
             playback_strings.append(f'// Element {element}')
 
-            metadata = awg_sequence[element].pop('metadata', {})
-            if list(awg_sequence[element].keys()) != ['no_codeword']:
+            metadata = awg_sequence_element.pop('metadata', {})
+            playback_strings += self._zi_playback_string_loop_start(
+                metadata, ['ch1', 'ch2'])
+            if list(awg_sequence_element.keys()) != ['no_codeword']:
                 raise NotImplementedError('UHFQC sequencer does currently\
                                                        not support codewords!')
-            chid_to_hash = awg_sequence[element]['no_codeword']
+            chid_to_hash = awg_sequence_element['no_codeword']
 
             wave = (chid_to_hash.get('ch1', None), None,
                     chid_to_hash.get('ch2', None), None)
@@ -247,6 +251,7 @@ class UHFQCPulsar:
                                                          device='uhf', 
                                                          wave=wave, 
                                                          acq=acq)
+            playback_strings += self._zi_playback_string_loop_end(metadata)
 
             ch_has_waveforms['ch1'] |= wave[0] is not None
             ch_has_waveforms['ch2'] |= wave[2] is not None
@@ -669,26 +674,29 @@ class HDAWG8Pulsar:
             counter = 1
             current_segment = 'no_segment'
             for element in awg_sequence:
-                if awg_sequence[element] is None:
+                awg_sequence_element = deepcopy(awg_sequence[element])
+                if awg_sequence_element is None:
                     current_segment = element
                     playback_strings.append(f'// Segment {current_segment}')
                     continue
                 playback_strings.append(f'// Element {element}')
                 
-                metadata = awg_sequence[element].pop('metadata', {})
-                
-                nr_cw = len(set(awg_sequence[element].keys()) - \
+                metadata = awg_sequence_element.pop('metadata', {})
+                playback_strings += self._zi_playback_string_loop_start(
+                    metadata, [ch1id, ch2id, ch1mid, ch2mid])
+
+                nr_cw = len(set(awg_sequence_element.keys()) - \
                             {'no_codeword'})
 
                 if nr_cw == 1:
                     log.warning(
                         f'Only one codeword has been set for {element}')
                 else:
-                    for cw in awg_sequence[element]:
+                    for cw in awg_sequence_element:
                         if cw == 'no_codeword':
                             if nr_cw != 0:
                                 continue
-                        chid_to_hash = awg_sequence[element][cw]
+                        chid_to_hash = awg_sequence_element[cw]
                         wave = tuple(chid_to_hash.get(ch, None)
                                     for ch in [ch1id, ch1mid, ch2id, ch2mid])
                         wave_definitions += self._zi_wave_definition(wave,
@@ -723,7 +731,8 @@ class HDAWG8Pulsar:
                         counter += 1
                         playback_strings += pb_string
                         interleaves += interleave_string
-                
+                playback_strings += self._zi_playback_string_loop_end(metadata)
+
             if not any([ch_has_waveforms[ch] 
                     for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
                 awg_str = "while(1){wait(200);}"
@@ -1538,6 +1547,32 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             playback_string.append('setTrigger(RO_TRIG);')
             playback_string.append('setTrigger(WINT_EN);')
         return playback_string, interleaves
+
+    @staticmethod
+    def _zi_playback_string_loop_start(metadata, channels):
+        loop_len = metadata.get('loop', False)
+        if not loop_len:
+            return []
+        playback_string = []
+        sweep_params = metadata.get('sweep_params', {})
+        for k, v in sweep_params.items():
+            for ch in channels:
+                if k.startswith(f'{ch}_'):
+                    playback_string.append(
+                        f"wave {k} = vect({','.join([f'{a}' for a in v])})")
+        playback_string.append(
+            f"for (cvar i_sweep = 0; i_sweep < {loop_len}; i_sweep += 1) {{")
+        for k, v in sweep_params.items():
+            for ch in channels:
+                if k.startswith(f'{ch}_'):
+                    node = k[len(f'{ch}_'):].replace('_', '/')
+                    playback_string.append(
+                        f'setDouble("{node}", {k}[i_sweep]);')
+        return playback_string
+
+    @staticmethod
+    def _zi_playback_string_loop_end(metadata):
+        return ['}'] if metadata.get('end_loop', False) else []
 
     def _zi_codeword_table_entry(self, codeword, wave):
         w1, w2 = self._zi_waves_to_wavenames(wave)
