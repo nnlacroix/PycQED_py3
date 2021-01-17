@@ -1124,6 +1124,7 @@ class GaussFilteredCosIQPulseWithFlux(GaussFilteredCosIQPulse):
         if channel == self.flux_channel:
             self.fp.algorithm_time(self.algorithm_time())
             return self.fp.hashables(tstart, channel)
+        return []  # empty list if neither of the conditions is satisfied
 
 
 class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
