@@ -6857,14 +6857,20 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                 trunc_lengths = self.sp.get_sweep_params_property(
                     'values', 1, f'{qbn}_truncation_length')
                 delta_tau = np.diff(trunc_lengths)
-
+                m = delta_tau > 0
+                delta_tau = delta_tau[m]
                 phases = self.proc_data_dict['analysis_params_dict'][
                     f'phases_{qbn}']
-                delta_phases_vals = np.diff(phases['val'])
-                delta_phases_vals %= (2*np.pi)
-                delta_phases_errs = np.sqrt(np.array(phases['stderr'][1:]**2 +
-                                                     phases['stderr'][:-1]**2,
-                                                     dtype=np.float64))
+                delta_phases_vals = -np.diff(phases['val'])[m]
+                delta_phases_vals = (delta_phases_vals + np.pi) % (
+                            2 * np.pi) - np.pi
+                delta_phases_errs = (np.sqrt(
+                    np.array(phases['stderr'][1:] ** 2 +
+                             phases['stderr'][:-1] ** 2, dtype=np.float64)))[m]
+
+                self.xvals_reduction_func = lambda xvals: \
+                    ((xvals[1:] + xvals[:-1]) / 2)[m]
+
                 self.proc_data_dict['analysis_params_dict'][
                     f'{self.phase_key}_{qbn}']['stderr'] = delta_phases_errs
 
@@ -6873,10 +6879,6 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                 # these will cause a problem with plotting in this case.
                 del self.proc_data_dict['analysis_params_dict'][
                     f'population_loss_{qbn}']
-
-                # this is for getting the right xvals in plotting
-                self.xvals_reduction_func = lambda xvals: \
-                    (xvals[1:] + xvals[:-1])/2
             else:
                 delta_phases = self.proc_data_dict['analysis_params_dict'][
                     f'{self.phase_key}_{qbn}']
@@ -6884,8 +6886,20 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                 delta_phases_errs = delta_phases['stderr']
 
             if self.get_param_value('unwrap_phases', False):
-                delta_phases_vals = np.unwrap((delta_phases_vals + np.pi) %
-                                              (2*np.pi) - np.pi)
+                if hasattr(delta_tau, '__iter__'):
+                    # unwrap in frequency such that we don't jump more than half
+                    # the nyquist band at any step
+                    df = []
+                    prev_df = 0
+                    for dp, dt in zip(delta_phases_vals, delta_tau):
+                        df.append(dp / (2 * np.pi * dt))
+                        df[-1] += np.round((prev_df - df[-1]) * dt) / dt
+                        prev_df = df[-1]
+                    delta_phases_vals = np.array(df)*(2*np.pi*delta_tau)
+                else:
+                    delta_phases_vals = np.unwrap((delta_phases_vals + np.pi) %
+                                                  (2*np.pi) - np.pi)
+
             self.proc_data_dict['analysis_params_dict'][
                 f'{self.phase_key}_{qbn}']['val'] = delta_phases_vals
 
@@ -6898,8 +6912,15 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
             self.proc_data_dict['analysis_params_dict'][f'freq_{qbn}'] = \
                 {'val':  qb_freqs, 'stderr': delta_freqs_errs}
 
-            self.proc_data_dict['tvals'][f'{qbn}'] = \
-                self.proc_data_dict['sweep_points_2D_dict'][qbn][
+            if hasattr(self, 'xvals_reduction_func') and \
+                    self.xvals_reduction_func is not None:
+                self.proc_data_dict['tvals'][f'{qbn}'] = \
+                    self.xvals_reduction_func(
+                    self.proc_data_dict['sweep_points_2D_dict'][qbn][
+                        f'{qbn}_truncation_length'])
+            else:
+                self.proc_data_dict['tvals'][f'{qbn}'] = \
+                    self.proc_data_dict['sweep_points_2D_dict'][qbn][
                     f'{qbn}_truncation_length']
 
         self.save_processed_data(key='analysis_params_dict')
@@ -6924,8 +6945,7 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
         if qbn is None:
             qbn = self.qb_names[0]
 
-        tvals_meas = self.proc_data_dict['sweep_points_2D_dict'][qbn][
-            f'{qbn}_truncation_length']
+        tvals_meas = self.proc_data_dict['tvals'][qbn]
         freqs_meas = self.proc_data_dict['analysis_params_dict'][
             f'freq_{qbn}']['val']
         freq_errs_meas = self.proc_data_dict['analysis_params_dict'][
