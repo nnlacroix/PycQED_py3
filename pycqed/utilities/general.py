@@ -696,12 +696,12 @@ def temporary_value(*param_value_pairs):
                 [(param, param()) for param, value in self.param_value_pairs]
             for param, value in self.param_value_pairs:
                 param(value)
-    
+
         def __exit__(self, type, value, traceback):
-            for param, value in self.old_value_pairs: 
+            for param, value in self.old_value_pairs:
                 param(value)
             log.debug('Exited TemporaryValueContext')
-    
+
     return TemporaryValueContext(*param_value_pairs)
 
 
@@ -768,3 +768,22 @@ def find_symmetry_index(data):
         data_filtered = data[np.int(iflip-span):np.int(iflip+span+1)]
         corr.append((data_filtered*data_filtered[::-1]).sum())
     return np.argmax(corr), corr
+
+class TempLogLevel:
+    """
+    With Handler to temporarily change the log level.
+    """
+    LOG_LEVELS = dict(debug=logging.DEBUG, info=logging.INFO,
+                      warning=logging.WARNING, error=logging.ERROR,
+                      critical=logging.CRITICAL, fatal=logging.FATAL)
+
+    def __init__(self, logger, log_level="info"):
+        self.logger = logger
+        self.log_level = logger.level
+        self.temp_log_level = self.LOG_LEVELS.get(log_level, log_level)
+
+    def __enter__(self):
+        self.logger.setLevel(self.temp_log_level)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.logger.setLevel(self.log_level)
