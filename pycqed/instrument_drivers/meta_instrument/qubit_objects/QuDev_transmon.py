@@ -216,7 +216,7 @@ class QuDev_transmon(Qubit):
                            label='Optimized weights for Q channel',
                            parameter_class=ManualParameter)
         self.add_parameter('acq_weights_type', initial_value='SSB',
-                           vals=vals.Enum('SSB', 'DSB', 'optimal',
+                           vals=vals.Enum('SSB', 'DSB', 'DSB2', 'optimal',
                                           'square_rot', 'manual',
                                           'optimal_qutrit'),
                            docstring=(
@@ -274,6 +274,11 @@ class QuDev_transmon(Qubit):
                            label='Parameters for frequency vs flux pulse '
                                  'amplitude fit',
                            initial_value={}, parameter_class=ManualParameter)
+        self.add_parameter('fit_ge_amp180_over_ge_freq',
+                           label='String representation of function to '
+                                 'calculate a pi pulse amplitude for a given '
+                                 'ge transition frequency.',
+                           initial_value=None, parameter_class=ManualParameter)
         # add drive pulse parameters
         self.add_operation('X180')
         self.add_pulse_parameter('X180', 'ge_pulse_type', 'pulse_type',
@@ -401,6 +406,9 @@ class QuDev_transmon(Qubit):
         self.add_pulse_parameter(op_name, ps_name + '_gaussian_filter_sigma',
                                  'gaussian_filter_sigma', initial_value=2e-9,
                                  vals=vals.Numbers(0))
+        self.add_pulse_parameter(op_name, ps_name + '_square_wave',
+                                 'square_wave', initial_value=False,
+                                 vals=vals.Bool())
 
         # dc flux parameters
         self.add_parameter('dc_flux_parameter', initial_value=None,
@@ -438,9 +446,26 @@ class QuDev_transmon(Qubit):
     def get_idn(self):
         return {'driver': str(self.__class__), 'name': self.name}
 
+    def get_ge_amp180_from_ge_freq(self, ge_freq):
+        """
+        Calculates the pi pulse amplitude required for a given ge transition
+        frequency using the function stored in the parameter
+        fit_ge_amp180_over_ge_freq. If this parameter is None, the method
+        returns None.
+
+        :param ge_freq: ge transition frequency or an array of frequencies
+        :return: pi pulse amplitude or an array of amplitudes (or None)
+        """
+        amp_func = self.fit_ge_amp180_over_ge_freq()
+        if amp_func is None:
+            log.warning(f'Cannot calculate drive amp for {self.name} since '
+                        f'fit_ge_amp180_over_ge_freq is None.')
+            return None
+        return eval(amp_func)(ge_freq)
+
     def update_detector_functions(self):
         if self.acq_Q_channel() is None or \
-           self.acq_weights_type() not in ['SSB', 'DSB', 'optimal_qutrit']:
+           self.acq_weights_type() not in ['SSB', 'DSB', 'DSB2', 'optimal_qutrit']:
             channels = [self.acq_I_channel()]
         else:
             channels = [self.acq_I_channel(), self.acq_Q_channel()]
@@ -651,10 +676,18 @@ class QuDev_transmon(Qubit):
                 uhf.set('qas_0_integration_weights_{}_imag'.format(c1), sinI)
                 uhf.set('qas_0_integration_weights_{}_imag'.format(c2), cosI)
             elif weights_type == 'DSB':
+                # same as SSB but using only the first physical input channel
+                # doesn't allow to distinguish positive and negative sideband
                 uhf.set('qas_0_integration_weights_{}_real'.format(c1), cosI)
-                uhf.set('qas_0_rotations_{}'.format(c1), 1.0+0j)
+                uhf.set('qas_0_rotations_{}'.format(c1), 1.0 + 0j)
                 uhf.set('qas_0_integration_weights_{}_real'.format(c2), sinI)
-                uhf.set('qas_0_rotations_{}'.format(c2), 1.0+0j)
+                uhf.set('qas_0_rotations_{}'.format(c2), 1.0 + 0j)
+            elif weights_type == 'DSB2':
+                # same as DSB but using the second physical input channel
+                uhf.set('qas_0_rotations_{}'.format(c1), 0.0 + 1.0j)
+                uhf.set('qas_0_rotations_{}'.format(c2), 0.0 - 1.0j)
+                uhf.set('qas_0_integration_weights_{}_imag'.format(c1), sinI)
+                uhf.set('qas_0_integration_weights_{}_imag'.format(c2), cosI)
             elif weights_type == 'square_rot':
                 uhf.set('qas_0_integration_weights_{}_real'.format(c1), cosI)
                 uhf.set('qas_0_rotations_{}'.format(c1), 1.0+1.0j)
@@ -2281,7 +2314,7 @@ class QuDev_transmon(Qubit):
                     self.acq_state_prob_mtx(state_prob_mtx)
                 return state_prob_mtx, classifier_params
             else:
-                rotate = self.acq_weights_type() in {'SSB', 'DSB'}
+                rotate = self.acq_weights_type() in {'SSB', 'DSB', 'DSB2'}
                 preselection = prep_params['preparation_type'] == 'preselection'
                 channels = det_func.value_names
                 if preselection:
@@ -3658,7 +3691,7 @@ class QuDev_transmon(Qubit):
             try:
                 tda.FluxPulseScopeAnalysis(
                     qb_names=[self.name],
-                    options_dict=dict(TwoD=True, global_PCA=True,))
+                    options_dict=dict(TwoD=True, rotation_type='global_PCA'))
             except Exception:
                 ma.MeasurementAnalysis(TwoD=True)
 
@@ -3738,7 +3771,7 @@ class QuDev_transmon(Qubit):
                              'data_to_fit': {self.name: 'pe'},
                              "sweep_name": "Amplitude",
                              "sweep_unit": "V",
-                             "global_PCA": True})
+                             "rotation_type": 'global_PCA'})
         MC.run_2D(label, exp_metadata=exp_metadata)
 
         if analyze:
@@ -3851,7 +3884,8 @@ class QuDev_transmon(Qubit):
                              'cal_points': repr(cp),
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
-                             'global_PCA': not cal_points})
+                             "rotation_type": 'global_PCA' if not cal_points \
+                                else 'cal_states'})
         MC.run(label, exp_metadata=exp_metadata)
 
         if analyze:
@@ -3947,7 +3981,8 @@ class QuDev_transmon(Qubit):
                              'cal_points': repr(cp),
                              'rotate': cal_points,
                              'data_to_fit': {self.name: 'pe'},
-                             'global_PCA': not cal_points})
+                             "rotation_type": 'global_PCA' if not cal_points \
+                                 else 'cal_states'})
         MC.run(label, exp_metadata=exp_metadata)
 
         if analyze:
@@ -3998,7 +4033,7 @@ class QuDev_transmon(Qubit):
         Configures the fluxline distortion in a pulsar object according to the
         settings in the parameter flux_distortion of the qubit object.
 
-        :param pulse: the pulsar object. If None, self.find_instrument is
+        :param pulsar: the pulsar object. If None, self.find_instrument is
             used to find an obejct called 'Pulsar'.
         :param datadir: path to the pydata directory. If None,
             self.find_instrument is used to find an obejct called 'MC' and
@@ -4011,41 +4046,9 @@ class QuDev_transmon(Qubit):
         flux_distortion = deepcopy(self.DEFAULT_FLUX_DISTORTION)
         flux_distortion.update(self.flux_distortion())
 
-        filterCoeffs = {}
-        for fclass in 'IIR', 'FIR':
-            filterCoeffs[fclass] = []
-            for f in flux_distortion[f'{fclass}_filter_list']:
-                if f['type'] == 'Gaussian':
-                    coeffs = fl_predist.gaussian_filter_kernel(
-                        f.get('sigma', 1e-9),
-                        f.get('nr_sigma', 40),
-                        f.get('dt', 1 / pulsar.clock(
-                            channel=self.flux_pulse_channel())))
-                elif f['type'] == 'csv':
-                    filename = os.path.join(datadir,
-                                            f['filename'].lstrip('\\'))
-                    if fclass == 'IIR':
-                        coeffs = fl_predist.import_iir(filename)
-                    else:
-                        coeffs = np.loadtxt(filename)
-                else:
-                    raise KeyError(f"Unknown filter type {f['type']}")
-                filterCoeffs[fclass].append(coeffs)
-
-        if len(filterCoeffs['FIR']) > 0:
-            filterCoeffs['FIR'] = [
-                fl_predist.combine_FIR_filters(filterCoeffs['FIR'])]
-        else:
-            del filterCoeffs['FIR']
-        if len(filterCoeffs['IIR']) > 1:
-            log.warning('For now, only one IIR filter can be used. Taking '
-                        'the last one.')
-        if len(filterCoeffs['IIR']) > 0:
-            filterCoeffs['IIR'] = filterCoeffs['IIR'][-1]
-            fl_predist.scale_and_negate_IIR(filterCoeffs['IIR'],
-                                 flux_distortion['scale_IIR'])
-        else:
-            del filterCoeffs['IIR']
+        filterCoeffs = fl_predist.process_filter_coeffs_dict(
+            flux_distortion, datadir=datadir,
+            default_dt=1 / pulsar.clock(channel=self.flux_pulse_channel()))
 
         pulsar.set(f'{self.flux_pulse_channel()}_distortion_dict',
                    filterCoeffs)

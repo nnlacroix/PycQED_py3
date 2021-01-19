@@ -1,7 +1,6 @@
 import logging
 log = logging.getLogger(__name__)
 
-import sys
 import lmfit
 import numpy as np
 from scipy import optimize
@@ -11,12 +10,12 @@ from pycqed.analysis_v3 import fitting as fit_mod
 from pycqed.analysis_v3 import plotting as plot_mod
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import processing_pipeline as pp_mod
-from pycqed.analysis_v3 import pipeline_analysis as pla
 from pycqed.measurement import sweep_points as sp_mod
 from pycqed.measurement.calibration import calibration_points as cp_mod
 from copy import deepcopy
 
-pla.search_modules.add(sys.modules[__name__])
+import sys
+pp_mod.search_modules.add(sys.modules[__name__])
 
 # Create pipelines
 
@@ -62,7 +61,7 @@ def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
         sweep_type = {'cliffords': 0, 'seeds': 1}
     slow_cliffords = sweep_type['cliffords'] == 1
 
-    sweep_points = sp_mod.SweepPoints.cast_init(sweep_points)
+    sweep_points = sp_mod.SweepPoints(sweep_points)
     if cal_points is None:
         num_cal_states = 0
     else:
@@ -102,7 +101,7 @@ def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
                                  keys_in='previous threshold_data',
                                  meas_obj_names=meas_obj_names)
     for label in ['rb']:
-        pp = pp_mod.ProcessingPipeline(global_keys_out_container=label)
+        pp = pp_mod.ProcessingPipeline(keys_out_container=label)
         pp.add_node('average_data',
                     shape=(n_sequences, n_segments),
                     averaging_axis=-1 if slow_cliffords else 0,
@@ -115,6 +114,7 @@ def pipeline_single_qubit_rb_ssro(meas_obj_names, mospm, sweep_points,
                     meas_obj_names=meas_obj_names)
         pp.add_node('rb_analysis',
                     d=dim_hilbert,
+                    sweep_type=sweep_type,
                     keys_in=f'previous {label}.average_data',
                     keys_in_std=f'previous {label}.get_std_deviation',
                     keys_in_all_seeds_data='previous average_data',
@@ -192,7 +192,7 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
         sweep_type = {'cliffords': 0, 'seeds': 1}
     slow_cliffords = sweep_type['cliffords'] == 1
 
-    sweep_points = sp_mod.SweepPoints.cast_init(sweep_points)
+    sweep_points = sp_mod.SweepPoints(sweep_points)
     if cal_points is None:
         num_cal_states = 0
     else:
@@ -322,7 +322,7 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
         sweep_type = {'cliffords': 0, 'seeds': 1}
     slow_cliffords = sweep_type['cliffords'] == 1
 
-    sweep_points = sp_mod.SweepPoints.cast_init(sweep_points)
+    sweep_points = sp_mod.SweepPoints(sweep_points)
     if cal_points is None:
         num_cal_states = 0
     else:
@@ -434,7 +434,6 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
                     do_plotting=False,
                     keys_out=None,
                     meas_obj_names=meas_obj_names)
-
         for mobjn in meas_obj_names:
             cliffords = sweep_points.get_sweep_params_property(
                 'values', sweep_type['cliffords'], mospm[mobjn])[0]
@@ -472,7 +471,7 @@ def combine_datafiles_split_by_seeds(data_dict, keys_in, keys_out,
                                      interleaved_irb=False, **params):
     """
     NOT FULLY IMPLEMENTED FOR slow_cliffords == True!!!
-    Combines the data from an interleaved RB/IRB measurement that was saved in
+    Combines the data from an (interleaved) RB/IRB measurement that was saved in
     multiple files into one data set that would look as if it had all been
     taken in one measurement (one file).
     :param data_dict: OrderedDict containing data to be processed and where
@@ -505,10 +504,11 @@ def combine_datafiles_split_by_seeds(data_dict, keys_in, keys_out,
                                       raise_error=True, **params)
     sp_list = [hlp_mod.get_param('sweep_points', mdl, raise_error=True)
                for mdl in metadata_list]
-    sp0 = sp_mod.SweepPoints.cast_init(sp_list[0])
+    sp0 = sp_mod.SweepPoints(sp_list[0])
 
     nr_segments = sp0.length(0) + len(cp.states)
     nr_uploads = sp0.length(1)
+    chunk = nr_segments*n_shots
 
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     for keyi, keyo in zip(keys_in, keys_out):
@@ -520,9 +520,10 @@ def combine_datafiles_split_by_seeds(data_dict, keys_in, keys_out,
         # them. Put all the nr_cliffords concatenations in the
         # list data_combined
         data_combined = [np.concatenate(
-            [d[j*nr_segments*n_shots:(j+1)*nr_segments*n_shots]
-             for d in data]) for j in np.arange(
-            (interleaved_irb+1)*nr_uploads)]
+            [d[m * chunk + j * nr_segments: m * chunk + (j + 1) * nr_segments]
+             for d in data])
+            for m in np.arange((interleaved_irb + 1)*nr_uploads)
+            for j in np.arange(n_shots)]
         # concatenate all the lists in data_combined to get one complete
         # array of data
         data_combined = np.concatenate(data_combined)
@@ -531,11 +532,11 @@ def combine_datafiles_split_by_seeds(data_dict, keys_in, keys_out,
     # update the sweep_points if they were a list
     nr_sp0 = sp0.length(0)
     nr_exp = len(sp_list)
-    sp_all_vals_list = [np.zeros(nr_exp*nr_sp0) for _
+    sp_all_vals_list = [np.zeros(nr_exp*nr_sp0, dtype=int) for _
                         in range(len(sp0.get_sweep_dimension(0)))]
 
     for i, sp in enumerate(sp_list):
-        sp = sp_mod.SweepPoints.cast_init(sp)
+        sp = sp_mod.SweepPoints(sp)
         sp_vals_list = sp.get_sweep_params_property('values', 0, 'all')
         for j, sp_vals in enumerate(sp_vals_list):
             sp_all_vals_list[j][i::nr_exp] = sp_vals
@@ -548,7 +549,7 @@ def combine_datafiles_split_by_seeds(data_dict, keys_in, keys_out,
             sp0.get_sweep_params_property('label', 0, sp_name))
     sweep_points += [sp0.get_sweep_dimension(1)]
     hlp_mod.add_param('exp_metadata.sweep_points', sweep_points,
-                      data_dict, replace_value=True)
+                      data_dict, add_param_method='replace')
 
 
 def submsmt_data_from_interleaved_msmt(data_dict, keys_in, msmt_name,
@@ -729,7 +730,7 @@ def prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
 
             hlp_mod.add_param(
                 keys, epsilon, data_dict,
-                replace_value=params.get('replace_value', False))
+                add_param_method=params.get('add_param_method', None))
             # Run fit again with scale_covar=False, and
             # weights = 1/epsilon if an entry in epsilon_sqrd is 0,
             # replace it with half the minimum value in the epsilon_sqrd
@@ -739,7 +740,8 @@ def prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
             fit_kwargs = {'scale_covar': False, 'weights': 1/epsilon}
         fit_dicts[key]['fit_kwargs'] = fit_kwargs
 
-    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('fit_dicts', fit_dicts, data_dict,
+                      add_param_method='update')
 
 
 def analyze_rb_fit_results(data_dict, keys_in, **params):
@@ -752,16 +754,16 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
         fit_res = fit_dicts['rb_fit' + keyi]['fit_res']
         hlp_mod.add_param(f'{keys_out_container}.EPC value',
                           fit_res.params['error_per_Clifford'].value,
-                          data_dict, replace_value=True)
+                          data_dict, add_param_method='replace')
         hlp_mod.add_param(f'{keys_out_container}.EPC stderr',
                           fit_res.params['fidelity_per_Clifford'].stderr,
-                          data_dict, replace_value=True)
+                          data_dict, add_param_method='replace')
         hlp_mod.add_param(f'{keys_out_container}.depolarization parameter value',
                           fit_res.params['p'].value,
-                          data_dict, replace_value=True)
+                          data_dict, add_param_method='replace')
         hlp_mod.add_param(f'{keys_out_container}.depolarization parameter stderr',
                           fit_res.params['p'].stderr,
-                          data_dict, replace_value=True)
+                          data_dict, add_param_method='replace')
         if 'pf' in keyi:
             A = fit_res.best_values['Amplitude']
             Aerr = fit_res.params['Amplitude'].stderr
@@ -772,19 +774,19 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
             hlp_mod.add_param(f'{keys_out_container}.IBM-style leakage value',
                               A*(1-p),
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.IBM-style leakage stderr',
                               np.sqrt((A*perr)**2 + (Aerr*(p-1))**2),
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.IBM-style seepage value',
                               (1-A)*(1-p),
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.IBM-style seepage stderr',
                               np.sqrt((Aerr*(p-1))**2 + ((A-1)*perr)**2),
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
 
             # Google-style leakage and seepage:
             # https://journals.aps.org/prl/pdf/10.1103/PhysRevLett.116.020501
@@ -792,19 +794,19 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
             hlp_mod.add_param(f'{keys_out_container}.Google-style leakage value',
                               fit_res.best_values['pu'],
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.Google-style leakage stderr',
                               fit_res.params['pu'].stderr,
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.Google-style seepage value',
                               fit_res.best_values['pd'],
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
             hlp_mod.add_param(f'{keys_out_container}.Google-style seepage stderr',
                               fit_res.params['pd'].stderr,
                               data_dict,
-                              replace_value=True)
+                              add_param_method='replace')
 
     if hlp_mod.get_param('plot_T1_lim', data_dict, default_value=False,
                          **params):
@@ -818,10 +820,10 @@ def analyze_rb_fit_results(data_dict, keys_in, **params):
             hlp_mod.get_param('gate_decomp', data_dict,
                               default_value='HZ', **params))
         hlp_mod.add_param(f'{keys_out_container}.EPC coh_lim', 1-F_T1,
-                          data_dict, replace_value=True)
+                          data_dict, add_param_method='replace')
         hlp_mod.add_param(
             f'{keys_out_container}.depolarization parameter coh_lim', p_T1,
-            data_dict, replace_value=True)
+            data_dict, add_param_method='replace')
 
 
 def prepare_rb_plots(data_dict, keys_in, sweep_type, **params):
@@ -983,7 +985,8 @@ def prepare_rb_plots(data_dict, keys_in, sweep_type, **params):
             'legend_ncol': 2,
             'yrange': (-0.05, 0.675)
         })
-    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict, update_value=True)
+    hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
+                      add_param_method='update')
 
 
 def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
@@ -1090,7 +1093,7 @@ def prepare_cz_irb_plot(data_dict_rb, data_dict_irb, keys_in, **params):
                 'text_string': textstr}
 
     hlp_mod.add_param('plot_dicts', plot_dicts, data_dict_irb,
-                      update_value=True)
+                      add_param_method='update')
     if do_plotting:
         getattr(plot_mod, 'plot')(data_dict_irb, keys_in=list(plot_dicts),
                                      **params)
@@ -1263,15 +1266,15 @@ def irb_gate_error(data_dict, **params):
 
 def calc_rb_coherence_limited_fidelity(T1, T2, pulse_length, gate_decomp='HZ'):
     """
-    Formula from Asaad et al.
-    pulse separation is time between start of pulses
+    Formula from Asaad et al. (2016):
+    https://www.nature.com/articles/npjqi201629
 
     Returns:
         F_cl (float): decoherence limited fildelity
         p (float): decoherence limited depolarization parameter
     """
     # Np = 1.875  # Avg. number of gates per Clifford for XY decomposition
-    # Np = 0.9583  # Avg. number of gates per Clifford for HZ decomposition
+    # Np = 1.125  # Avg. number of gates per Clifford for HZ decomposition
     if gate_decomp == 'HZ':
         Np = 1.125
     elif gate_decomp == 'XY':

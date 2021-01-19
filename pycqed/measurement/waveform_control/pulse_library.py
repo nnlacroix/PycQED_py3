@@ -92,10 +92,15 @@ class SSB_DRAG_pulse(pulse.Pulse):
                 tvals - tc < half)
         deriv_gauss_env = -self.motzoi * (tvals - tc) * gauss_env / self.sigma
 
-        I_mod, Q_mod = apply_modulation(
-            gauss_env, deriv_gauss_env, tvals, self.mod_frequency,
-            phase=self.phase, phi_skew=self.phi_skew, alpha=self.alpha,
-            tval_phaseref=0 if self.phaselock else tc)
+        if self.mod_frequency is not None:
+            I_mod, Q_mod = apply_modulation(
+                gauss_env, deriv_gauss_env, tvals, self.mod_frequency,
+                phase=self.phase, phi_skew=self.phi_skew, alpha=self.alpha,
+                tval_phaseref=0 if self.phaselock else tc)
+        else:
+            # Ignore the Q component and program the I component to both
+            # channels. See HDAWG8Pulsar._hdawg_mod_setter
+            I_mod, Q_mod = gauss_env, gauss_env
 
         if channel == self.I_channel:
             return I_mod
@@ -113,8 +118,9 @@ class SSB_DRAG_pulse(pulse.Pulse):
         hashlist += [channel == self.I_channel, self.amplitude, self.sigma]
         hashlist += [self.nr_sigma, self.motzoi, self.mod_frequency]
         phase = self.phase
-        phase += 360 * self.phaselock * self.mod_frequency * (
-                self.algorithm_time() + self.nr_sigma * self.sigma / 2)
+        if self.mod_frequency is not None:
+            phase += 360 * self.phaselock * self.mod_frequency * (
+                    self.algorithm_time() + self.nr_sigma * self.sigma / 2)
         hashlist += [self.alpha, self.phi_skew, phase]
         return hashlist
 
@@ -484,6 +490,7 @@ class BufferedCZPulse(pulse.Pulse):
             'amplitude': 0,
             'frequency': 0,
             'phase': 0,
+            'square_wave': False,
             'pulse_length': 0,
             'buffer_length_start': 0,
             'buffer_length_end': 0,
@@ -505,18 +512,21 @@ class BufferedCZPulse(pulse.Pulse):
 
         if self.gaussian_filter_sigma == 0:
             wave = np.ones_like(tvals) * amp
-            wave *= (tvals >= tvals[0] + buffer_start)
-            wave *= (tvals < tvals[0] + buffer_start + pulse_length)
+            wave *= (tvals >= self.algorithm_time() + buffer_start)
+            wave *= (tvals < self.algorithm_time() + buffer_start + pulse_length)
         else:
-            tstart = tvals[0] + buffer_start
-            tend = tvals[0] + buffer_start + pulse_length
+            tstart = self.algorithm_time() + buffer_start
+            tend = tstart + pulse_length
             scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
                 (tvals - tend) * scaling)) * amp
         t_rel = tvals - tvals[0]
-        wave *= np.cos(
+        carrier = np.cos(
             2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
+        if self.square_wave:
+            carrier = np.sign(carrier)
+        wave *= carrier
         return wave
 
     def hashables(self, tstart, channel):
@@ -538,7 +548,7 @@ class BufferedCZPulse(pulse.Pulse):
 
         hashlist += [amp, pulse_length, buffer_start, buffer_end]
         hashlist += [self.gaussian_filter_sigma]
-        hashlist += [self.frequency, self.phase % 360]
+        hashlist += [self.frequency, self.phase % 360, self.square_wave]
         return hashlist
 
 
@@ -1114,6 +1124,7 @@ class GaussFilteredCosIQPulseWithFlux(GaussFilteredCosIQPulse):
         if channel == self.flux_channel:
             self.fp.algorithm_time(self.algorithm_time())
             return self.fp.hashables(tstart, channel)
+        return []  # empty list if neither of the conditions is satisfied
 
 
 class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
