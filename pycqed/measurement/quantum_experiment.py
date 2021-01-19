@@ -1,7 +1,11 @@
+import traceback
+
 import numpy as np
+from pycqed.analysis_v3 import helper_functions
 
 from pycqed.measurement.waveform_control.sequence import Sequence
 from pycqed.utilities.general import temporary_value
+from pycqed.utilities.timer import Timer, Checkpoint
 from pycqed.measurement.waveform_control.circuit_builder import CircuitBuilder
 import pycqed.measurement.awg_sweep_functions as awg_swf
 from pycqed.measurement import multi_qubit_module as mqm
@@ -31,6 +35,7 @@ class QuantumExperiment(CircuitBuilder):
                  analyze=True, temporary_values=(), drive="timedomain",
                  sequences=(), sequence_function=None,
                  sequence_kwargs=None, df_kwargs=None, df_name=None,
+                 timer_kwargs=None,
                  mc_points=None, sweep_functions=(awg_swf.SegmentHardSweep,
                                                       awg_swf.SegmentSoftSweep),
                  compression_seg_lim=None, force_2D_sweep=True, callback=None,
@@ -70,6 +75,8 @@ class QuantumExperiment(CircuitBuilder):
             sequence_kwargs (dict): keyword arguments passed to the sequence_function.
                 see self._prepare_sequences()
             df_kwargs (dict): detector function keyword arguments.
+            timer_kwargs (dict): keyword arguments for timer. See pycqed.utilities.timer.
+                Timer.
             df_name (str): detector function name.
             mc_points (tuple): tuple of 2 lists with first and second dimension
                 measurement control points (previously also called sweep_points,
@@ -104,7 +111,8 @@ class QuantumExperiment(CircuitBuilder):
             **kw:
                 further keyword arguments are passed to the CircuitBuilder __init__
         """
-
+        self.timer = Timer('QuantumExperiment', **timer_kwargs if timer_kwargs is
+                                                                  not None else {})
         if qubits is None and dev is None and operation_dict is None:
             raise NotImplementedError('Experiments without qubits are not '
                                       'implemented yet. Either dev or qubits'
@@ -206,6 +214,7 @@ class QuantumExperiment(CircuitBuilder):
                 else:
                     setattr(self, param_name, param_value)
 
+    @Timer()
     def run_measurement(self, **kw):
         """
         Runs a measurement. Any keyword argument passes to this function that
@@ -296,19 +305,22 @@ class QuantumExperiment(CircuitBuilder):
                 # guess_label is called from run_measurement -> we have qubits
                 self.label += mqm.get_multi_qubit_msmt_suffix(self.meas_objs)
 
-    def run_analysis(self, analysis_class=None, **kwargs):
+    @Timer()
+    def run_analysis(self, analysis_class=None, analysis_kwargs=None, **kw):
         """
         Launches the analysis.
         Args:
             analysis_class: Class to use for the analysis
-            **kwargs: keyword arguments passed to the analysis class
+            analysis_kwargs: keyword arguments passed to the analysis class
 
         Returns: analysis object
 
         """
         if analysis_class is None:
             analysis_class = ba.BaseDataAnalysis
-        self.analysis = analysis_class(**kwargs)
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+        self.analysis = analysis_class(**analysis_kwargs)
         return self.analysis
 
     def autorun(self, **kw):
@@ -319,6 +331,8 @@ class QuantumExperiment(CircuitBuilder):
             self.run_analysis(**kw)
         if self.callback is not None and self.callback_condition():
             self.callback(**kw)
+        if self.measure: # for now store timers only if creating new file
+            self.save_timers()
         return self
 
     def serialize(self, omitted_attrs=('MC', 'device', 'qubits')):
@@ -330,6 +344,7 @@ class QuantumExperiment(CircuitBuilder):
         """
         raise NotImplementedError()
 
+    @Timer()
     def _prepare_sequences(self, sequences=None, sequence_function=None,
                            sequence_kwargs=None):
         """
@@ -389,6 +404,7 @@ class QuantumExperiment(CircuitBuilder):
         # check sequence
         assert len(self.sequences) != 0, "No sequence found."
 
+    @Timer()
     def _configure_mc(self, MC=None):
         """
         Configure the measurement control (self.MC) for the measurement.
@@ -458,9 +474,16 @@ class QuantumExperiment(CircuitBuilder):
             unit = list(self.sweep_points[0].values())[0][2]
         except TypeError:
             sweep_param_name, unit = "None", ""
-        sweep_func_1st_dim = self.sweep_functions[0](
-            sequence=self.sequences[0], upload=self.upload,
-            parameter_name=sweep_param_name,  unit=unit)
+        if self.sweep_functions[0] == awg_swf.SegmentHardSweep:
+            sweep_func_1st_dim = self.sweep_functions[0](
+                sequence=self.sequences[0], upload=self.upload,
+                parameter_name=sweep_param_name, unit=unit)
+        else:
+            # In case of an unknown sweep function type, it is assumed
+            # that self.sweep_functions[0] has already been initialized
+            # with all required parameters and can be directly passed to
+            # MC.
+            sweep_func_1st_dim = self.sweep_functions[0]
 
         self.MC.set_sweep_function(sweep_func_1st_dim)
         self.MC.set_sweep_points(self.mc_points[0])
@@ -505,6 +528,8 @@ class QuantumExperiment(CircuitBuilder):
                 self.meas_objs, df)
         self.exp_metadata.update(
             {'meas_obj_value_names_map': meas_obj_value_names_map})
+        if 'meas_obj_sweep_points_map' not in self.exp_metadata:
+            self.exp_metadata['meas_obj_sweep_points_map'] = {}
 
         if len(self.mc_points[1]) > 0:
             mmnt_mode = "2D"
@@ -563,6 +588,53 @@ class QuantumExperiment(CircuitBuilder):
     #             raise e
     #
     #     self.__dict__[name] = value
+
+    def save_timers(self, quantum_experiment=True, sequence=True, segments=True, filepath=None):
+        if self.MC is None or self.MC.skip_measurement():
+            return
+        data_file = helper_functions.open_hdf_file(self.timestamp, filepath=filepath, mode="r+")
+        try:
+            timer_group = data_file.get(Timer.HDF_GRP_NAME)
+            if timer_group is None:
+                timer_group = data_file.create_group(Timer.HDF_GRP_NAME)
+            if quantum_experiment:
+                self.timer.save(timer_group)
+
+            if sequence:
+                seq_group = timer_group.create_group('Sequences')
+                for s in self.sequences:
+                    # save sequence timers
+                    try:
+                        timer_seq_name = s.timer.name
+                        # check that name doesn't exist and it case it does, append an index
+                        # Note: normally that should not happen (not desirable)
+                        if timer_seq_name in seq_group.keys():
+                            log.warning(f"Timer with name {timer_seq_name} already "
+                                        f"exists in Sequences timers. "
+                                        f"Only last instance will be kept")
+                        s.timer.save(seq_group)
+
+                        if segments:
+                            seg_group = seq_group[timer_seq_name].create_group(timer_seq_name + ".segments")
+                            for _, seg in s.segments.items():
+                                try:
+                                    timer_seg_name = seg.timer.name
+                                    # check that name doesn't exist and it case it does, append an index
+                                    # Note: normally that should not happen (not desirable)
+                                    if timer_seg_name in seg_group.keys():
+                                        log.warning(f"Timer with name {timer_seg_name} already "
+                                                    f"exists in Segments timers. "
+                                                    f"Only last instance will be kept")
+                                    seg.timer.save(seg_group)
+                                except AttributeError:
+                                    pass
+
+                    except AttributeError:
+                        pass # in case some sequences don't have timers
+        except Exception as e:
+            data_file.close()
+            raise e
+
 
     def __repr__(self):
         return f"QuantumExperiment(dev={self.dev}, qubits={self.qubits})"

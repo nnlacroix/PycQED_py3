@@ -201,7 +201,7 @@ def get_multiplexed_readout_detector_functions(qubits, nr_averages=None,
         if uhf not in channels:
             channels[uhf] = []
         channels[uhf] += [qb.acq_I_channel()]
-        if qb.acq_weights_type() in ['SSB', 'DSB', 'optimal_qutrit']:
+        if qb.acq_weights_type() in ['SSB', 'DSB', 'DSB2', 'optimal_qutrit']:
             if qb.acq_Q_channel() is not None:
                 channels[uhf] += [qb.acq_Q_channel()]
 
@@ -679,13 +679,9 @@ def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
                 MC.run(name=name, exp_metadata=exp_metadata)
 
     if analyze:
-        # tps = a_tools.latest_data(n_matches=len(states),
-        #                           return_timestamp=True)[0]
-        #
         tps = [a_tools.latest_data(
             contains=f'timetrace_{s}{get_multi_qubit_msmt_suffix(qubits)}',
             n_matches=1, return_timestamp=True)[0][0] for s in states]
-        print(tps)
         if analysis_kwargs is None:
             analysis_kwargs = {}
         if 't_start' not in analysis_kwargs:
@@ -2639,8 +2635,7 @@ def measure_chevron(dev, qbc, qbt, hard_sweep_params, soft_sweep_params,
     MC.set_sweep_points_2D(soft_sweep_points)
     det_func = qbr.int_avg_classif_det if classified else qbr.int_avg_det
     MC.set_detector_function(det_func)
-    sweep_points = SweepPoints(from_dict_list=[hard_sweep_params,
-                                               soft_sweep_params])
+    sweep_points = SweepPoints([hard_sweep_params, soft_sweep_params])
     exp_metadata.update({
         'preparation_params': prep_params,
         'cal_points': repr(cp),
@@ -3227,7 +3222,7 @@ def measure_J_coupling(dev, qbm, qbs, freqs, cz_pulse_name,
                          'data_to_fit': {qbm.name: 'pe'},
                          "sweep_name": "Amplitude",
                          "sweep_unit": "V",
-                         "global_PCA": True})
+                         "rotation_type": 'global_PCA'})
     MC.run_2D(label, exp_metadata=exp_metadata)
 
     if analyze:
@@ -3986,7 +3981,7 @@ def measure_n_qubit_rabi(dev, qubits, sweep_points=None, amps=None,
     seq, sp = mqs.n_qubit_rabi_seq(
         qubit_names, get_operation_dict(qubits), sweep_points, cp,
         upload=False, n=n, for_ef=for_ef, last_ge_pulse=last_ge_pulse,
-        prep_params=prep_params)
+        prep_params=prep_params, **kw)
     MC.set_sweep_function(awg_swf.SegmentHardSweep(
         sequence=seq, upload=upload,
         parameter_name=list(sweep_points[0].values())[0][2],
