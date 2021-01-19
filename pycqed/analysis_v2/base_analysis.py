@@ -485,7 +485,7 @@ class BaseDataAnalysis(object):
                 raw_data_dict['soft_sweep_points'] = ssp
             elif sweep_points is not None:
                 # deal with hybrid measurements
-                sp = SweepPoints(from_dict_list=sweep_points)
+                sp = SweepPoints(sweep_points)
                 if mc_points.shape[0] == 1 and len(sp) > 1:
                     hybrid_measurement = True
                     if prep_params is None:
@@ -583,7 +583,7 @@ class BaseDataAnalysis(object):
             self.raw_data_dict = self.add_measured_data(
                 self.raw_data_dict,
                 self.get_param_value('compression_factor', 1),
-                SweepPoints.cast_init(self.get_param_value('sweep_points')),
+                SweepPoints(self.get_param_value('sweep_points')),
                 cp, self.get_param_value('preparation_params',
                                          default_value=dict()))
         else:
@@ -728,6 +728,24 @@ class BaseDataAnalysis(object):
     def prepare_fitting(self):
         # initialize everything to an empty dict if not overwritten
         self.fit_dicts = OrderedDict()
+
+    def set_user_guess_pars(self, guess_pars):
+        """
+        Update guess_pars with user-provided guess pars passed in the
+        options_dict under 'guess_pars.' User-provided guess pars must have the
+        form {par_name: {lmfit_par_attr: value}}.
+        Example: {'amplitude': {'value': 10, 'vary': True}}
+        :param guess_pars: lmfit guess params
+        """
+        user_guess_pars = self.get_param_value('guess_pars', default_value={})
+        for par in user_guess_pars:
+            if par in guess_pars:
+                for attr in user_guess_pars[par]:
+                    value = user_guess_pars[par][attr]
+                    if attr == 'value':
+                        attr = '_val'
+                    if attr in guess_pars[par].__dict__:
+                        guess_pars[par].__dict__[attr] = value
 
     def run_fitting(self, keys_to_fit='all'):
         '''

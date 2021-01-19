@@ -191,7 +191,7 @@ class MultiTaskingExperiment(QuantumExperiment):
         # Store a copy of the sweep_points (after ensuring that they are a
         # SweepPoints object). This copy will then be extended with prefixed
         # task-specific sweep_points.
-        self.sweep_points = SweepPoints(from_dict_list=given_sweep_points)
+        self.sweep_points = SweepPoints(given_sweep_points)
         # Internally, 1D and 2D sweeps are handled as 2D sweeps.
         while len(self.sweep_points) < 2:
             self.sweep_points.add_sweep_dimension()
@@ -250,14 +250,13 @@ class MultiTaskingExperiment(QuantumExperiment):
                 task[param] = kw.get(param, None)
 
         # Start with sweep points valid for all tasks
-        current_sweep_points = SweepPoints(from_dict_list=sweep_points)
+        current_sweep_points = SweepPoints(sweep_points)
         # generate kw sweep points for the task
         self.generate_kw_sweep_points(task)
         # Add all task sweep points to the current_sweep_points object.
         # If a task-specific sweep point has the same name as a sweep point
         # valid for all tasks, the task-specific one is used for this task.
-        current_sweep_points.update(
-            SweepPoints(from_dict_list=task['sweep_points']))
+        current_sweep_points.update(SweepPoints(task['sweep_points']))
         # Create a list of lists containing for each dimension the names of
         # the task-specific sweep points. These sweep points have to be
         # prefixed with the task prefix later on (in the global sweep
@@ -506,8 +505,7 @@ class MultiTaskingExperiment(QuantumExperiment):
         :param task: a task dictionary ot the kw dictionary
         """
         # make sure that sweep_points is a SweepPoints object
-        task['sweep_points'] = SweepPoints(
-            from_dict_list=task.get('sweep_points', None))
+        task['sweep_points'] = SweepPoints(task.get('sweep_points', None))
         for k, sp_dict_list in self.kw_for_sweep_points.items():
             if isinstance(sp_dict_list, dict):
                 sp_dict_list = [sp_dict_list]
@@ -581,7 +579,7 @@ class CalibBuilder(MultiTaskingExperiment):
         # Clean up sweep points
         sweep_points = deepcopy(sweep_points)
         if sweep_points is None:
-            sweep_points = SweepPoints(from_dict_list=[{}, {}])
+            sweep_points = SweepPoints([{}, {}])
         while len(sweep_points) < 2:
             sweep_points.add_sweep_dimension()
         for i in range(len(sweep_points)):
@@ -651,7 +649,7 @@ class CalibBuilder(MultiTaskingExperiment):
             raise ValueError('"repeat" and "tile" cannot both be > 0.')
         # ensure that sweep_points is a SweepPoints object with at least two
         # dimensions
-        sweep_points = SweepPoints(from_dict_list=sweep_points, min_length=2)
+        sweep_points = SweepPoints(sweep_points, min_length=2)
         # If there already exist sweep points in dimension 0, this adapt the
         # number of phases to the number of existing sweep points.
         if len(sweep_points[0]) > 0:
@@ -777,7 +775,6 @@ class CPhase(CalibBuilder):
         ref_pi_half = kw.get('ref_pi_half', False)
 
         hard_sweep_dict, soft_sweep_dict = sweep_points
-        assert num_cz_gates % 2 != 0
 
         pb = self.prepend_pulses_block(prepend_pulse_dicts)
 
