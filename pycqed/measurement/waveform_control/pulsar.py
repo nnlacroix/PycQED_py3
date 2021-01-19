@@ -712,12 +712,12 @@ class HDAWG8Pulsar:
 
             if not any([ch_has_waveforms[ch]
                     for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
-                continue
-            
-            awg_str = self._hdawg_sequence_string_template.format(
-                wave_definitions='\n'.join(wave_definitions+interleaves),
-                codeword_table_defs='\n'.join(codeword_table_defs),
-                playback_string='\n  '.join(playback_strings))
+                awg_str = "while(1){wait(200);}"
+            else:
+                awg_str = self._hdawg_sequence_string_template.format(
+                    wave_definitions='\n'.join(wave_definitions+interleaves),
+                    codeword_table_defs='\n'.join(codeword_table_defs),
+                    playback_string='\n  '.join(playback_strings))
 
             if channels_to_upload is not None and not (
                     any([ch in channels_to_upload for ch in
@@ -744,7 +744,7 @@ class HDAWG8Pulsar:
                                                  wave_hashes, waveforms)
 
         for ch in range(8):
-            obj.set('sigouts_{}_on'.format(ch), ch_has_waveforms[f'ch{ch+1}'])
+            obj.set('sigouts_{}_on'.format(ch), True)
 
         if any(ch_has_waveforms.values()):
             self.awgs_with_waveforms(obj.name)
