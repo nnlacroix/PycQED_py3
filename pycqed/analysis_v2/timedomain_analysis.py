@@ -1295,7 +1295,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             classifier_params = {}
             from numpy import array  # for eval
             for qbn in self.qb_names:
-                classifier_params[qbn] =  eval(self.get_hdf_param_value(
+                classifier_params[qbn] = eval(self.get_hdf_param_value(
                 f'Instrument settings/{qbn}', "acq_classifier_params"))
 
         # process single shots per qubit
@@ -7903,8 +7903,8 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
         # reshape data per prepared state before reset for each pg, pe, (pf),
         # for the projected data dict and possibly the readout-corrected version
         pdd = 'projected_data_dict'
-        self.proc_data_dict[pdd]["qb10"]["pe"] = self.proc_data_dict[pdd]["qb10"]["pe"].T
-        self.proc_data_dict[pdd]["qb10"]["pg"] = (1 - self.proc_data_dict[pdd]["qb10"]["pe"])
+        # self.proc_data_dict[pdd]["qb10"]["pe"] = self.proc_data_dict[pdd]["qb10"]["pe"].T
+        # self.proc_data_dict[pdd]["qb10"]["pg"] = (1 - self.proc_data_dict[pdd]["qb10"]["pe"])
         for suffix in ["", "_corrected"]:
             projdd_per_prep_state = \
                 deepcopy(self.proc_data_dict.get(pdd + suffix, {}))
