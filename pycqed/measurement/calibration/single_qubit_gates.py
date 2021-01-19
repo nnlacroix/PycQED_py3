@@ -501,8 +501,11 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         bl_start = fp.get('buffer_length_start', 0)
         bl_end = fp.get('buffer_length_end', 0)
 
+        def fp_delay(x, o=bl_start):
+            return -(x+o)
+
         fp['pulse_delay'] = ParametricValue(
-            'delay', func=lambda x, o=bl_start: -(x + o))
+            'delay', func=fp_delay)
 
         if (fp_truncation or hasattr(fp_truncation, '__iter__')):
             if not hasattr(fp_truncation, '__iter__'):
@@ -549,16 +552,16 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             if fp_during_ro:
                 rfp = b.pulses[2]
 
-                def length_func(x, offset=fp_during_ro_buffer):
-                    return max(x+offset, 0)
+                def rfp_delay(x, fp_delay=fp_delay, opl=fp['pulse_length'],\
+                    fp_bl_start=bl_start, fp_bl_end=bl_end):
+                    return -(opl+fp_bl_start+fp_bl_end+fp_delay(x))
 
-                def rfp_delay(x, length_func=length_func, opl=fp['pulse_length']):
-                    return -(opl-length_func(x))
-
-                def rfp_amp(x, length_func=length_func, rfp_delay=rfp_delay,
-                    tau=tau, fp_amp=fp['amplitude']):
-                    fp_length=length_func(x)
-                    if rfp_delay(x) < 0:
+                def rfp_amp(x, fp_delay=fp_delay, rfp_delay=rfp_delay, tau=tau,
+                    fp_amp=fp['amplitude'], o=fp_during_ro_buffer-bl_start):
+                    fp_length=-fp_delay(x)+o
+                    if fp_length <= 0:
+                        return 0
+                    elif rfp_delay(x) < 0:
                         # in the middle of the fp
                         return -fp_amp * np.exp(-fp_length / tau)
                     else:
@@ -568,6 +571,7 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                 rfp['pulse_length'] = fp_during_ro_length
                 rfp['pulse_delay'] = ParametricValue('delay', func=rfp_delay)
                 rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
+                rfp['buffer_length_start'] = fp_during_ro_buffer
 
         if ro_pulse_delay == 'auto':
             if fp_during_ro:
