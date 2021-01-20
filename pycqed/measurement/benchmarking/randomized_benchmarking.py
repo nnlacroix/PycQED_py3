@@ -163,9 +163,41 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
         Runs analysis and stores analysis instance in self.analysis.
         :param kw: keyword_arguments passed to analysis functions;
             see docstrings there
+
+        Currently only works for a single-shot measurement without preselection,
+        and if the readout thresholds exist in the acq_classifier_params of
+        each qubit at the time of measurement.
+
         """
-        self.analysis = pla.extract_data_hdf()  # returns a dict
-        pla.process_pipeline(self.analysis)
+
+        if 'dim_hilbert' not in kw:
+            raise ValueError('Please specify the dimension of the Hilbert '
+                             'space "dim_hilbert" for this measurement.')
+        if 'log' not in self.df_name:
+            raise NotImplementedError(
+                f'Automatic analysis only works for a single-shot '
+                f'measurement without preselection. '
+                f'There is no support for the detector type '
+                f'{self.df_name}. Use df_name=int_log_det.')
+
+        pp = rb_ana.pipeline_ssro_measurement(
+            self.meas_obj_names, self.exp_metadata[
+                'meas_obj_sweep_points_map'], self.sweep_points,
+            n_shots=max(qb.acq_shots() for qb in self.meas_objs),
+            dim_hilbert=kw['dim_hilbert'], cal_points=self.cal_points,
+            sweep_type=self.sweep_type,
+            interleaved_irb=self.interleaved_gate is not None, **kw)
+        params_dict = {f'{qbn}.acq_classifier_params':
+                           f'Instrument settings.{qbn}.acq_classifier_params'
+                       for qbn in self.meas_obj_names}
+        pp.add_node('extract_data_hdf', params_dict=params_dict, at_idx=0)
+        self.exp_metadata.update({'processing_pipeline': pp})
+        self.analysis = pp
+
+        data_dict = {'plot_T1_lim': True, 'do_simple_fit': False}
+        self.analysis.resolve(self.exp_metadata['meas_obj_value_names_map'])
+        self.analysis(data_dict)
+        self.analysis.save()
 
 
 class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
