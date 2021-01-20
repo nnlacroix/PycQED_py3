@@ -506,6 +506,7 @@ class Cryoscope(CalibBuilder):
 
             super().__init__(task_list, sweep_points=sweep_points, **kw)
             self.sequential = sequential
+            self.blocks_to_save = {}
             self.add_default_soft_sweep_points(**kw)
             self.add_default_hard_sweep_points(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -513,6 +514,7 @@ class Cryoscope(CalibBuilder):
                 self.sweep_points, body_block=None,
                 body_block_func=self.sweep_block, cal_points=self.cal_points,
                 ro_qubits=self.meas_obj_names, **kw)
+            self.add_blocks_to_metadata()
             self.update_sweep_points(**kw)
             self.autorun(**kw)
         except Exception as x:
@@ -722,6 +724,10 @@ class Cryoscope(CalibBuilder):
                     'flux_pulses_{qb}', [main_fpbk, repark_fpbk],
                     block_align='center')
 
+            if sp1d_idx == 0 and sp2d_idx == 0:
+                self.blocks_to_save[qb] = deepcopy(main_fpbk)
+
+
             cryo_blk = self.sequential_blocks(f'cryoscope {qb}',
                 [prep_bk, pihalf_1_bk, main_fpbk, pihalf_2_bk])
 
@@ -770,6 +776,11 @@ class Cryoscope(CalibBuilder):
             analysis_kwargs = {}
         self.analysis = tda.CryoscopeAnalysis(
             qb_names=qb_names, **analysis_kwargs)
+
+    def add_blocks_to_metadata(self):
+        self.exp_metadata['flux_pulse_blocks'] = {}
+        for qb, block in self.blocks_to_save.items():
+            self.exp_metadata['flux_pulse_blocks'][qb] = block.build()
 
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
