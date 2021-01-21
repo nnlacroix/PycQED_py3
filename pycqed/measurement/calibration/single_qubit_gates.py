@@ -240,13 +240,14 @@ class ParallelLOSweepExperiment(CalibBuilder):
             self.preprocessed_task_list, self.sweep_block, **kw)
 
     def resolve_lo_sweep_points(self, freq_sp_suffix='freq', **kw):
-        all_freqs = self.sweep_points.get_sweep_params_property('values', 1,
-                                                                'all')
+        all_freqs = np.array(
+            self.sweep_points.get_sweep_params_property('values', 1, 'all'))
         if np.ndim(all_freqs) == 1:
             all_freqs = [all_freqs]
         all_diffs = [np.diff(freqs) for freqs in all_freqs]
-        assert all([np.mean(abs(diff - all_diffs[0]) / all_diffs[0]) < 1e-10
-                    for diff in all_diffs]), \
+        assert all([len(d) == 0 for d in all_diffs]) or \
+            all([np.mean(abs(diff - all_diffs[0]) / all_diffs[0]) < 1e-10
+                 for diff in all_diffs]), \
             "The steps between frequency sweep points must be the same for " \
             "all qubits."
         self.lo_sweep_points = all_freqs[0] - all_freqs[0][0]
@@ -332,12 +333,20 @@ class ParallelLOSweepExperiment(CalibBuilder):
                         'mod_frequency']
                     pulsar = qb.instr_pulsar.get_instr()
                     param = pulsar.parameters[f'{qb.ge_I_channel()}_mod_freq']
+                    # Pulsar assumes that the first channel in a pair is the
+                    # I component. If this is not the case, the following
+                    # workaround swaps the sign of the modulation frequency
+                    # to get the correct sideband.
+                    iq_swapped = (int(qb.ge_I_channel()[-1:])
+                                  > int(qb.ge_Q_channel()[-1:]))
                     # The following temporary value ensures that HDAWG
                     # modulation is set back to its previous state after the end
                     # of the modulation frequency sweep.
                     temp_vals.append((param, None))
                     qb_sweep_functions.append(
-                        swf.Offset_Sweep(param, mod_freq))
+                        swf.Transformed_Sweep(param, transformation=(
+                            lambda x, o=mod_freq, s=(-1 if iq_swapped else 1)
+                            : s * (x + o))))
                 minor_sweep_functions.append(swf.multi_sweep_function(
                     qb_sweep_functions))
             sweep_functions = [
@@ -508,8 +517,11 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         bl_start = fp.get('buffer_length_start', 0)
         bl_end = fp.get('buffer_length_end', 0)
 
+        def fp_delay(x, o=bl_start):
+            return -(x+o)
+
         fp['pulse_delay'] = ParametricValue(
-            'delay', func=lambda x, o=bl_start: -(x + o))
+            'delay', func=fp_delay)
 
         if (fp_truncation or hasattr(fp_truncation, '__iter__')):
             if not hasattr(fp_truncation, '__iter__'):
@@ -556,16 +568,16 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             if fp_during_ro:
                 rfp = b.pulses[2]
 
-                def length_func(x, offset=fp_during_ro_buffer):
-                    return max(x+offset, 0)
+                def rfp_delay(x, fp_delay=fp_delay, opl=fp['pulse_length'],\
+                    fp_bl_start=bl_start, fp_bl_end=bl_end):
+                    return -(opl+fp_bl_start+fp_bl_end+fp_delay(x))
 
-                def rfp_delay(x, length_func=length_func, opl=fp['pulse_length']):
-                    return -(opl-length_func(x))
-
-                def rfp_amp(x, length_func=length_func, rfp_delay=rfp_delay,
-                    tau=tau, fp_amp=fp['amplitude']):
-                    fp_length=length_func(x)
-                    if rfp_delay(x) < 0:
+                def rfp_amp(x, fp_delay=fp_delay, rfp_delay=rfp_delay, tau=tau,
+                    fp_amp=fp['amplitude'], o=fp_during_ro_buffer-bl_start):
+                    fp_length=-fp_delay(x)+o
+                    if fp_length <= 0:
+                        return 0
+                    elif rfp_delay(x) < 0:
                         # in the middle of the fp
                         return -fp_amp * np.exp(-fp_length / tau)
                     else:
@@ -575,6 +587,7 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                 rfp['pulse_length'] = fp_during_ro_length
                 rfp['pulse_delay'] = ParametricValue('delay', func=rfp_delay)
                 rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
+                rfp['buffer_length_start'] = fp_during_ro_buffer
 
         if ro_pulse_delay == 'auto':
             if fp_during_ro:
@@ -739,6 +752,7 @@ class Cryoscope(CalibBuilder):
 
             super().__init__(task_list, sweep_points=sweep_points, **kw)
             self.sequential = sequential
+            self.blocks_to_save = {}
             self.add_default_soft_sweep_points(**kw)
             self.add_default_hard_sweep_points(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -746,6 +760,7 @@ class Cryoscope(CalibBuilder):
                 self.sweep_points, body_block=None,
                 body_block_func=self.sweep_block, cal_points=self.cal_points,
                 ro_qubits=self.meas_obj_names, **kw)
+            self.add_blocks_to_metadata()
             self.update_sweep_points(**kw)
             self.autorun(**kw)
         except Exception as x:
@@ -925,10 +940,11 @@ class Cryoscope(CalibBuilder):
                     main_fpbk.pulses[meas_pulse_idx][k] = \
                         sweep_points.get_sweep_params_property('values', 1, k)[
                             sp2d_idx]
-                # set hard sweep truncation_length
-                main_fpbk.pulses[meas_pulse_idx]['truncation_length'] += \
-                    sweep_points.get_sweep_params_property(
-                        'values', 0, 'extra_truncation_length')[sp1d_idx]
+                if task['estimation_window'] is not None:
+                    # set hard sweep truncation_length
+                    main_fpbk.pulses[meas_pulse_idx]['truncation_length'] += \
+                        sweep_points.get_sweep_params_property(
+                            'values', 0, 'extra_truncation_length')[sp1d_idx]
 
             # reparking flux pulse
             if 'reparking_flux_pulse' in task:
@@ -954,6 +970,10 @@ class Cryoscope(CalibBuilder):
                 main_fpbk = self.simultaneous_blocks(
                     'flux_pulses_{qb}', [main_fpbk, repark_fpbk],
                     block_align='center')
+
+            if sp1d_idx == 0 and sp2d_idx == 0:
+                self.blocks_to_save[qb] = deepcopy(main_fpbk)
+
 
             cryo_blk = self.sequential_blocks(f'cryoscope {qb}',
                 [prep_bk, pihalf_1_bk, main_fpbk, pihalf_2_bk])
@@ -1004,6 +1024,11 @@ class Cryoscope(CalibBuilder):
             analysis_kwargs = {}
         self.analysis = tda.CryoscopeAnalysis(
             qb_names=qb_names, **analysis_kwargs)
+
+    def add_blocks_to_metadata(self):
+        self.exp_metadata['flux_pulse_blocks'] = {}
+        for qb, block in self.blocks_to_save.items():
+            self.exp_metadata['flux_pulse_blocks'][qb] = block.build()
 
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
