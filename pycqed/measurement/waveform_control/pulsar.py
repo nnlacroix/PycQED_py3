@@ -33,10 +33,17 @@ try:
         ZI_HDAWG8 import ZI_HDAWG8
 except Exception:
     ZI_HDAWG8 = type(None)
+
+try:
+    from pycqed.instrument_drivers.physical_instruments.ZurichInstruments. \
+        ZI_base_instrument import merge_waveforms
+except Exception:
+    pass
+
 log = logging.getLogger(__name__)
 
 from pycqed.instrument_drivers.physical_instruments.ZurichInstruments. \
-        dummy_UHFQC import dummy_UHFQC
+    dummy_UHFQC import dummy_UHFQC
 
 class UHFQCPulsar:
     """
@@ -356,6 +363,9 @@ class HDAWG8Pulsar:
         self.add_parameter('{}_reuse_waveforms'.format(awg.name),
                            initial_value=True, vals=vals.Bool(),
                            parameter_class=ManualParameter)
+        self.add_parameter('{}_use_placeholder_waves'.format(awg.name),
+                           initial_value=False, vals=vals.Bool(),
+                           parameter_class=ManualParameter)
         self.add_parameter('{}_minimize_sequencer_memory'.format(awg.name),
                            initial_value=False, vals=vals.Bool(),
                            parameter_class=ManualParameter,
@@ -616,27 +626,28 @@ class HDAWG8Pulsar:
     def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
             return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
-        
-        if not self._zi_waves_cleared:
-            _zi_clear_waves()
-            self._zi_waves_cleared = True
-        
+
         chids = [f'ch{i+1}{m}' for i in range(8) for m in ['','m']]
         divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
-        
-        waves_to_upload = {h: divisor[chid]*waveforms[h][::divisor[chid]]
-                               for codewords in awg_sequence.values() 
-                                   if codewords is not None 
-                               for cw, chids in codewords.items() 
-                                   if cw != 'metadata'
-                               for chid, h in chids.items()}
-        self._zi_write_waves(waves_to_upload)
-        
-        ch_has_waveforms = {'ch{}{}'.format(i + 1, m): False 
-                                for i in range(8) for m in ['','m']}
+        ch_has_waveforms = {chid: False for chid in chids}
+
+        use_placeholder_waves = self.get(f'{obj.name}_use_placeholder_waves')
+
+        if not use_placeholder_waves:
+            if not self._zi_waves_cleared:
+                _zi_clear_waves()
+                self._zi_waves_cleared = True
+
+            waves_to_upload = {h: divisor[chid]*waveforms[h][::divisor[chid]]
+                                   for codewords in awg_sequence.values()
+                                       if codewords is not None
+                                   for cw, chids in codewords.items()
+                                       if cw != 'metadata'
+                                   for chid, h in chids.items()}
+            self._zi_write_waves(waves_to_upload)
 
         for awg_nr in self._hdawg_active_awgs(obj):
-            defined_waves = set()
+            defined_waves = dict() if use_placeholder_waves else set()
             codeword_table = {}
             wave_definitions = []
             codeword_table_defs = []
@@ -667,6 +678,7 @@ class HDAWG8Pulsar:
                                           'specified per sub AWG!')
 
             counter = 1
+            next_wave_idx = 0
             current_segment = 'no_segment'
             for element in awg_sequence:
                 if awg_sequence[element] is None:
@@ -691,14 +703,34 @@ class HDAWG8Pulsar:
                         chid_to_hash = awg_sequence[element][cw]
                         wave = tuple(chid_to_hash.get(ch, None)
                                     for ch in [ch1id, ch1mid, ch2id, ch2mid])
-                        wave_definitions += self._zi_wave_definition(wave,
-                                                                defined_waves)
+                        if use_placeholder_waves:
+                            if wave in defined_waves.values():
+                                continue
+                            placeholder_wave_index = next_wave_idx
+                            next_wave_idx += 1
+                            placeholder_wave_lengths = [
+                                waveforms[h] for h in wave if h is not None
+                            ]
+                            if max(placeholder_wave_lengths) != \
+                               min(placeholder_wave_lengths):
+                                log.warning(f"Waveforms of unequal length on"
+                                            f"{obj.name}, vawg{awg_nr}, "
+                                            f"{current_segment}, {element}.")
+                            wave_definitions += self._zi_wave_definition(
+                                wave,
+                                defined_waves,
+                                max(placeholder_wave_lengths),
+                                placeholder_wave_index)
+                        else:
+                            wave_definitions += self._zi_wave_definition(
+                                wave, defined_waves)
                         
                         if nr_cw != 0:
                             w1, w2 = self._zi_waves_to_wavenames(wave)
                             if cw not in codeword_table:
                                 codeword_table_defs += \
-                                    self._zi_codeword_table_entry(cw, wave)
+                                    self._zi_codeword_table_entry(
+                                        cw, wave, use_placeholder_waves)
                                 codeword_table[cw] = (w1, w2)
                             elif codeword_table[cw] != (w1, w2) \
                                     and self.reuse_waveforms():
@@ -712,10 +744,12 @@ class HDAWG8Pulsar:
                         ch_has_waveforms[ch2mid] |= wave[3] is not None
 
                     if not internal_mod:
-                        playback_strings += self._zi_playback_string(name=obj.name,
-                            device='hdawg', wave=wave, codeword=(nr_cw != 0),
-                            append_zeros=getattr(self, 'append_zeros', 0))
-                    else:
+                        playback_strings += self._zi_playback_string(
+                            name=obj.name, device='hdawg', wave=wave,
+                            codeword=(nr_cw != 0), 
+                            append_zeros=getattr(self, 'append_zeros', 0),
+                            use_placeholder=use_placeholder_waves)
+                    elif not use_placeholder_waves:
                         pb_string, interleave_string = \
                             self._zi_interleaved_playback_string(name=obj.name, 
                             device='hdawg', counter=counter, wave=wave, 
@@ -723,6 +757,10 @@ class HDAWG8Pulsar:
                         counter += 1
                         playback_strings += pb_string
                         interleaves += interleave_string
+                    else:
+                        raise NotImplementedError("Placeholder waves in "
+                                                  "combination with internal "
+                                                  "modulation not implemented.")
                 
             if not any([ch_has_waveforms[ch] 
                     for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
@@ -743,11 +781,29 @@ class HDAWG8Pulsar:
             obj.set('awgs_{}_dio_valid_polarity'.format(awg_nr),
                     prev_dio_valid_polarity)
 
+            if use_placeholder_waves:
+                for idx, wave_hashes in defined_waves.items():
+                    waveforms = [waveforms.get(h, None) for h in wave]
+                    self._hdawg_update_waveforms(obj, awg_nr, idx, *waveforms)
+
         for ch in range(8):
             obj.set('sigouts_{}_on'.format(ch), True)
 
         if any(ch_has_waveforms.values()):
             self.awgs_with_waveforms(obj.name)
+
+    def _hdawg_update_waveforms(self, obj, awg_nr, wave_idx, a1, m1, a2, m2):
+        n = max([len(w) for w in [a1, m1, a2, m2] if w is not None])
+        if m1 is not None or m2 is not None:
+            m1 = np.zeros(n) if m1 is None else np.pad(m1, n - m1.size)
+            m2 = np.zeros(n) if m2 is None else np.pad(m2, n - m2.size)
+            mc = 2*m2 + m1
+        else:
+            mc = None
+        a1 = None if a1 is None else np.pad(a1, n - a1.size)
+        a2 = None if a2 is None else np.pad(a2, n - a2.size)
+        wf_raw_combined = merge_waveforms(a1, a2, mc)
+        obj.setv(f'awgs/{awg_nr}/waveform/waves/{wave_idx}', wf_raw_combined)
 
     def _is_awg_running(self, obj):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
@@ -1434,31 +1490,52 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             self._hash_to_wavename_table[h] = wname
         return self._hash_to_wavename_table[h]
 
-    def _zi_wave_definition(self, wave, defined_waves=None):
+    def _zi_wave_definition(self, wave, defined_waves=None, 
+                            placeholder_wave_length=None,
+                            placeholder_wave_index=None):
         if defined_waves is None:
-            defined_waves = set()
+            if placeholder_wave_length is None:
+                defined_waves = set()
+            else:
+                defined_waves = dict()
         wave_definition = []
         w1, w2 = self._zi_waves_to_wavenames(wave)
-        for analog, marker, wc in [(wave[0], wave[1], w1), 
-                                   (wave[2], wave[3], w2)]:
-            if analog is not None:
-                wa = self._hash_to_wavename(analog)
-                if wa not in defined_waves:
-                    wave_definition.append(f'wave {wa} = "{wa}";')
-                    defined_waves.add(wa)
-            if marker is not None:        
-                wm = self._hash_to_wavename(marker)
-                if wm not in defined_waves:
-                    wave_definition.append(f'wave {wm} = "{wm}";')
-                    defined_waves.add(wm)
-            if analog is not None and marker is not None:
-                if wc not in defined_waves:
-                    wave_definition.append(f'wave {wc} = {wa} + {wm};')
-                    defined_waves.add(wc)
+        if placeholder_wave_length is None:
+            # don't use placeholder waves
+            for analog, marker, wc in [(wave[0], wave[1], w1),
+                                       (wave[2], wave[3], w2)]:
+                if analog is not None:
+                    wa = self._hash_to_wavename(analog)
+                    if wa not in defined_waves:
+                        wave_definition.append(f'wave {wa} = "{wa}";')
+                        defined_waves.add(wa)
+                if marker is not None:
+                    wm = self._hash_to_wavename(marker)
+                    if wm not in defined_waves:
+                        wave_definition.append(f'wave {wm} = "{wm}";')
+                        defined_waves.add(wm)
+                if analog is not None and marker is not None:
+                    if wc not in defined_waves:
+                        wave_definition.append(f'wave {wc} = {wa} + {wm};')
+                        defined_waves.add(wc)
+        else:
+            # use placeholder waves
+            n = placeholder_wave_length
+            for wc, marker in [(w1, wave[1]), (w2, wave[3])]:
+                if wc is not None:
+                    wave_definition.append(
+                        f'wave {wc} = placeholder({n}' +
+                        ('' if marker is None else ', true') +
+                        ');')
+            wave_definition.append(
+                f'assignWaveIndex({_zi_wavename_pair_to_argument(w1, w2)},'
+                f' {placeholder_wave_index});'
+            )
+            defined_waves[placeholder_wave_index] = wave
         return wave_definition
 
     def _zi_playback_string(self, name, device, wave, acq=False, codeword=False,
-                            append_zeros=0):
+                            append_zeros=0, placeholder_wave=False):
         playback_string = []
         w1, w2 = self._zi_waves_to_wavenames(wave)
 
@@ -1480,11 +1557,11 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         if codeword and not (w1 is None and w2 is None):
             playback_string.append('playWaveDIO();')
         else:
-            if w1 is None and w2 is not None:
+            if w1 is None and w2 is not None and use_hack:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(f'playWave(marker(1,0)*0*{w2}, {w2});')
-            elif w1 is not None and w2 is None:
+            elif w1 is not None and w2 is None and use_hack:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(f'playWave({w1}, marker(1,0)*0*{w1});')
@@ -1537,9 +1614,10 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             playback_string.append('setTrigger(WINT_EN);')
         return playback_string, interleaves
 
-    def _zi_codeword_table_entry(self, codeword, wave):
+    def _zi_codeword_table_entry(self, codeword, wave, placeholder_wave=False):
         w1, w2 = self._zi_waves_to_wavenames(wave)
-        if w1 is None and w2 is not None:
+        use_hack = not placeholder_wave
+        if w1 is None and w2 is not None and use_hack:
             # This hack is needed due to a bug on the HDAWG. 
             # Remove this if case once the bug is fixed.
             return [f'setWaveDIO({codeword}, zeros(1) + marker(1, 0), {w2});']
