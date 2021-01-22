@@ -531,9 +531,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         probas_corrected = np.moveaxis(probas_corrected, 0, -1)
                     else:
                         probas_corrected = np.linalg.inv(corr_mtx).T @ probas_raw
-                    for state_prob in ['pg', 'pe', 'pf']:
-                        self.proc_data_dict['projected_data_dict_corrected'][
-                            qbn] = {state_prob: data for key, data in
+                    self.proc_data_dict['projected_data_dict_corrected'][
+                            qbn] = {key: data for key, data in
                              zip(["pg", "pe", "pf"], probas_corrected)}
 
         # get data_to_fit
@@ -8038,6 +8037,7 @@ class MultiQutritActiveResetAnalysis(MultiQubit_TimeDomain_Analysis):
         for k in keys:
             for qbn, data_qbi in self.proc_data_dict[k].items():
                 for i, (state, data) in enumerate(data_qbi.items()):
+                    print(state)
                     for j, (prep_state, data_prep_state) in \
                             enumerate(data.items()):
                         for seq_nr, pop in enumerate(data_prep_state.T):
