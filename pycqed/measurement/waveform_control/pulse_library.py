@@ -960,7 +960,7 @@ class BufferedCryoscopePulse(pulse.Pulse):
 
         
         l = pulse_length
-        t0 = self.algorithm_time() + buffer_star
+        t0 = self.algorithm_time() + buffer_start
         wave = (np.ones_like(tvals) 
                 + 0.3*np.sin(2*np.pi*(tvals-t0)/l)
                 + 0.3*np.sin(4*np.pi*(tvals-t0)/l)
