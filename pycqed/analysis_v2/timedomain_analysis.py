@@ -521,11 +521,20 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         data_dict[k] for k in data_dict for state_prob in
                         ['pg', 'pe', 'pf'] if state_prob in k])
                     corr_mtx = self.get_param_value("correction_matrix")[qbn]
-                    probas_corrected = np.linalg.inv(corr_mtx).T @ probas_raw
+                    if np.ndim(probas_raw) == 3:
+                        # then dims are (n_probas, n_segments, nsoftsp).
+                        # Temporarily move soft sweep point axis
+                        # such that it is the outer most dimension so that
+                        # matmul can treat the data as as nsoftswp x (2D arrays)
+                        probas_raw = np.moveaxis(probas_raw, -1, 0)
+                        probas_corrected = np.linalg.inv(corr_mtx).T @ probas_raw
+                        probas_corrected = np.moveaxis(probas_corrected, 0, -1)
+                    else:
+                        probas_corrected = np.linalg.inv(corr_mtx).T @ probas_raw
                     for state_prob in ['pg', 'pe', 'pf']:
                         self.proc_data_dict['projected_data_dict_corrected'][
-                            qbn].update({state_prob: data for key, data in
-                             zip(["pg", "pe", "pf"], probas_corrected)})
+                            qbn] = {state_prob: data for key, data in
+                             zip(["pg", "pe", "pf"], probas_corrected)}
 
         # get data_to_fit
         self.proc_data_dict['data_to_fit'] = OrderedDict()
@@ -1295,7 +1304,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             classifier_params = {}
             from numpy import array  # for eval
             for qbn in self.qb_names:
-                classifier_params[qbn] =  eval(self.get_hdf_param_value(
+                classifier_params[qbn] = eval(self.get_hdf_param_value(
                 f'Instrument settings/{qbn}', "acq_classifier_params"))
 
         # process single shots per qubit
