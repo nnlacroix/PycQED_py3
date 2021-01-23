@@ -283,6 +283,12 @@ class QuDev_transmon(Qubit):
                                  'calculate a pi pulse amplitude for a given '
                                  'ge transition frequency.',
                            initial_value=None, parameter_class=ManualParameter)
+        self.add_parameter('flux_amplitude_bias_ratio',
+                           label='Ratio between a flux pulse amplitude '
+                                 'and a DC offset change that lead to '
+                                 'the same change in flux.',
+                           initial_value=None, vals=vals.Numbers(),
+                           parameter_class=ManualParameter)
         # add drive pulse parameters
         self.add_operation('X180')
         self.add_pulse_parameter('X180', 'ge_pulse_type', 'pulse_type',
