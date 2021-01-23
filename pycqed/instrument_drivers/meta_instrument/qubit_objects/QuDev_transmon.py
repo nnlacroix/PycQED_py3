@@ -473,6 +473,93 @@ class QuDev_transmon(Qubit):
             return None
         return eval(amp_func)(ge_freq)
 
+    def calc_freq(self, bias=None, amplitude=0, transition='ge',
+                  model='transmon_res', update=False):
+        """
+        Calculates the transition frequency for a given DC bias and flux
+        pulse amplitude using fit parameters stored in the qubit object.
+        Note that the qubit parameter flux_amplitude_bias_ratio is used for
+        conversion between bias values and amplitudes.
+
+        :param bias: (float) DC bias. If model='approx' is used, the bias is
+            optional, and is understood relative to the parking position at
+            which the  model was measured. Otherwise, it mandatory and is
+            interpreted as voltage of the DC source.
+        :param amplitude: (float, default: 0) flux pulse amplitude
+        :param transition: (str, default: 'ge') the transition whose
+            frequency should be calculated. Currently, only 'ge' is
+            implemented.
+        :param model: (str, default: 'transmon_res') the model to use.
+            'approx': Qubit_dac_to_freq with parameters from
+                the qubit parameter fit_ge_freq_from_flux_pulse_amp.
+                bias is understood as relative to the parking position.
+            'transmon': Qubit_dac_to_freq_precise with parameters from
+                the qubit parameter fit_ge_freq_from_dc_offset.
+                bias is understood as the voltage of the DC source.
+            'transmon_res': Qubit_dac_to_freq_res with parameters from
+                the qubit parameter fit_ge_freq_from_dc_offset.
+                bias is understood as the voltage of the DC source.
+        :param update: (bool, default False) whether the result should be
+            stored as ge_freq parameter of the qubit object.
+        :return: calculated ge transition frequency
+        """
+
+        if transition not in ['ge']:
+            raise NotImplementedError(
+                'Currently, only ge transition is implemented.')
+        flux_amplitude_bias_ratio = self.flux_amplitude_bias_ratio()
+        if flux_amplitude_bias_ratio is None:
+            if ((model in ['transmon', 'transmon_res'] and amplitude != 0) or
+                    (model == ['approx'] and bias is not None and bias != 0)):
+                raise ValueError('flux_amplitude_bias_ratio is None, but is '
+                                 'required for this calculation.')
+            flux_amplitude_bias_ratio = 0
+
+        if model == 'approx':
+            ge_freq = fit_mods.Qubit_dac_to_freq(
+                amplitude + (0 if bias is None else
+                             bias * flux_amplitude_bias_ratio),
+                **self.fit_ge_freq_from_flux_pulse_amp())
+        elif model == 'transmon':
+            kw = deepcopy(self.fit_ge_freq_from_dc_offset())
+            kw.pop('coupling', None)
+            kw.pop('fr', None)
+            ge_freq = fit_mods.Qubit_dac_to_freq_precise(
+                bias + amplitude / flux_amplitude_bias_ratio, **kw)
+        elif model == 'transmon_res':
+            ge_freq = fit_mods.Qubit_dac_to_freq_res(
+                bias + amplitude / flux_amplitude_bias_ratio,
+                **self.fit_ge_freq_from_dc_offset())
+        else:
+            raise NotImplementedError(
+                "Currently, only the models 'approx', 'transmon', and"
+                "'transmon_res' are implemented.")
+        if update:
+            self.ge_freq(ge_freq)
+        return ge_freq
+
+    def calc_flux_amplitude_bias_ratio(self, bias, amplitude, ge_freq,
+                                       update=False):
+        """
+        Calculates the conversion factor between flux pulse amplitudes and bias
+        voltage changes that lead to the same qubit detuning. The calculation is
+        done based on the model Qubit_freq_to_dac_res and the parameters stored
+        in the qubit parameter fit_ge_freq_from_dc_offset.
+
+        :param bias: (float) DC bias, i.e., voltage of the DC source.
+        :param amplitude: (float) flux pulse amplitude
+        :param ge_freq: (float) measured ge transition frequency
+        :param update: (bool, default False) whether the result should be
+            stored as flux_amplitude_bias_ratio parameter of the qubit object.
+        :return: calculated conversion factor
+        """
+        v = fit_mods.Qubit_freq_to_dac_res(
+            ge_freq, **self.fit_ge_freq_from_dc_offset())
+        flux_amplitude_bias_ratio = amplitude / (v - bias)
+        if update:
+            self.flux_amplitude_bias_ratio(flux_amplitude_bias_ratio)
+        return flux_amplitude_bias_ratio
+
     def update_detector_functions(self):
         if self.acq_Q_channel() is None or \
            self.acq_weights_type() not in ['SSB', 'DSB', 'DSB2', 'optimal_qutrit']:
