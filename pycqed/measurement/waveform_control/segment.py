@@ -1078,7 +1078,7 @@ class Segment:
     def plot(self, instruments=None, channels=None, legend=True,
              delays=None, savefig=False, prop_cycle=None, frameon=True,
              channel_map=None, plot_kwargs=None, axes=None, demodulate=False,
-             show_and_close=True, col_ind=0):
+             show_and_close=True, col_ind=0, normalized_amplitudes=True):
         """
         Plots a segment. Can only be done if the segment can be resolved.
         :param instruments (list): instruments for which pulses have to be
@@ -1104,6 +1104,9 @@ class Segment:
         :param col_ind: (int) when passed together with axes, this specifies
             in which column of subfigures the plots should be added
             (default: 0)
+        :param normalized_amplitudes: (bool) whether amplitudes
+            should be normalized to the voltage range of the channel
+            (default: True)
         :return: The figure and axes objects if show_and_close is False,
             otherwise no return value.
         """
@@ -1149,6 +1152,8 @@ class Segment:
                         sorted_chans = sorted(wf_per_ch.keys())
                         for n_wf, ch in enumerate(sorted_chans):
                             wf = wf_per_ch[ch]
+                            if not normalized_amplitudes:
+                                wf = wf * self.pulsar.get(f'{instr}_{ch}_amp')
                             if channels is None or \
                                     ch in channels.get(instr, []):
                                 tvals = \
@@ -1194,7 +1199,10 @@ class Segment:
                 a.spines["left"].set_visible(frameon.get("left", True))
                 if legend:
                     a.legend(loc=[1.02, 0], prop={'size': 8})
-                a.set_ylabel('Voltage (V)')
+                if normalized_amplitudes:
+                    a.set_ylabel('Amplitude (norm.)')
+                else:
+                    a.set_ylabel('Voltage (V)')
             ax[-1, col_ind].set_xlabel('time ($\mu$s)')
             fig.suptitle(f'{self.name}', y=1.01)
             plt.tight_layout()
