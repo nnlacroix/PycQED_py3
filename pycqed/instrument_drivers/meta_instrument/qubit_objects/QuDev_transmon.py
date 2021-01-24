@@ -513,22 +513,23 @@ class QuDev_transmon(Qubit):
                     (model == ['approx'] and bias is not None and bias != 0)):
                 raise ValueError('flux_amplitude_bias_ratio is None, but is '
                                  'required for this calculation.')
-            flux_amplitude_bias_ratio = 0
 
         if model == 'approx':
             ge_freq = fit_mods.Qubit_dac_to_freq(
-                amplitude + (0 if bias is None else
+                amplitude + (0 if bias is None or bias == 0 else
                              bias * flux_amplitude_bias_ratio),
                 **self.fit_ge_freq_from_flux_pulse_amp())
         elif model == 'transmon':
             kw = deepcopy(self.fit_ge_freq_from_dc_offset())
             kw.pop('coupling', None)
             kw.pop('fr', None)
-            ge_freq = fit_mods.Qubit_dac_to_freq_precise(
-                bias + amplitude / flux_amplitude_bias_ratio, **kw)
+            ge_freq = fit_mods.Qubit_dac_to_freq_precise(bias + (
+                0 if amplitude == 0 else amplitude /
+                                         flux_amplitude_bias_ratio), **kw)
         elif model == 'transmon_res':
-            ge_freq = fit_mods.Qubit_dac_to_freq_res(
-                bias + amplitude / flux_amplitude_bias_ratio,
+            ge_freq = fit_mods.Qubit_dac_to_freq_res(bias + (
+                0 if amplitude == 0 else amplitude /
+                                         flux_amplitude_bias_ratio),
                 **self.fit_ge_freq_from_dc_offset())
         else:
             raise NotImplementedError(
