@@ -703,13 +703,15 @@ class HDAWG8Pulsar:
                         chid_to_hash = awg_sequence[element][cw]
                         wave = tuple(chid_to_hash.get(ch, None)
                                     for ch in [ch1id, ch1mid, ch2id, ch2mid])
+                        if wave == (None, None, None, None):
+                            continue
                         if use_placeholder_waves:
                             if wave in defined_waves.values():
                                 continue
                             placeholder_wave_index = next_wave_idx
                             next_wave_idx += 1
                             placeholder_wave_lengths = [
-                                waveforms[h] for h in wave if h is not None
+                                waveforms[h].size for h in wave if h is not None
                             ]
                             if max(placeholder_wave_lengths) != \
                                min(placeholder_wave_lengths):
@@ -748,7 +750,7 @@ class HDAWG8Pulsar:
                             name=obj.name, device='hdawg', wave=wave,
                             codeword=(nr_cw != 0), 
                             append_zeros=getattr(self, 'append_zeros', 0),
-                            use_placeholder=use_placeholder_waves)
+                            placeholder_wave=use_placeholder_waves)
                     elif not use_placeholder_waves:
                         pb_string, interleave_string = \
                             self._zi_interleaved_playback_string(name=obj.name, 
@@ -783,8 +785,8 @@ class HDAWG8Pulsar:
 
             if use_placeholder_waves:
                 for idx, wave_hashes in defined_waves.items():
-                    waveforms = [waveforms.get(h, None) for h in wave]
-                    self._hdawg_update_waveforms(obj, awg_nr, idx, *waveforms)
+                    wfs_for_vawg = [waveforms.get(h, None) for h in wave_hashes]
+                    self._hdawg_update_waveforms(obj, awg_nr, idx, *wfs_for_vawg)
 
         for ch in range(8):
             obj.set('sigouts_{}_on'.format(ch), True)
@@ -1539,6 +1541,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         playback_string = []
         w1, w2 = self._zi_waves_to_wavenames(wave)
 
+        use_hack = not placeholder_wave
         trig_source = self.get('{}_trigger_source'.format(name))
         if trig_source == 'Dig1':
             playback_string.append(
