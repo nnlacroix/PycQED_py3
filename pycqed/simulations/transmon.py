@@ -24,6 +24,8 @@ import scipy as sp
 import scipy.optimize
 import functools
 from typing import Optional, List, Tuple
+import logging
+log = logging.getLogger(__name__)
 
 
 @functools.lru_cache()
@@ -254,8 +256,19 @@ def transmon_resonator_levels(ec: float, ej: float, frb: float, gb: float,
     ham_int = gb * np.kron(n_mon, a_res + a_res.T)
     ham = np.kron(ham_mon, id_res) + np.kron(id_mon, ham_res) + ham_int
 
-    levels_full, states_full = np.linalg.eig(ham)
-    levels_transmon, states_transmon = np.linalg.eig(ham_mon)
+    try:
+        levels_full, states_full = np.linalg.eigh(ham)
+        levels_transmon, states_transmon = np.linalg.eigh(ham_mon)
+        if any(np.isnan(levels_full)) or any(np.isnan(levels_transmon)):
+            raise np.linalg.LinAlgError('Some eigenvalues are nan.')
+    except np.linalg.LinAlgError as e:
+        log.warning(f'Eigenvalue calculation in transmon_resonator_levels '
+                    f'failed in first attempt: {e} Trying again.')
+        levels_full, states_full = np.linalg.eigh(ham)
+        levels_transmon, states_transmon = np.linalg.eigh(ham_mon)
+        if any(np.isnan(levels_full)) or any(np.isnan(levels_transmon)):
+            raise np.linalg.LinAlgError('Some eigenvalues are nan.')
+        log.warning('Second attempt successful.')
     states_transmon = states_transmon[:, np.argsort(levels_transmon)]
 
     return_idxs = []

@@ -906,6 +906,101 @@ class BufferedFLIPPulse(pulse.Pulse):
         return hashlist
 
 
+class BufferedCryoscopePulse(pulse.Pulse):
+    def __init__(self,
+                 channel,
+                 element_name,
+                 aux_channels_dict=None,
+                 name='buffered Cryoscope pulse',
+                 **kw):
+        super().__init__(name, element_name, **kw)
+
+        # Set channels
+        self.channel = channel
+        self.aux_channels_dict = aux_channels_dict
+        self.channels = [self.channel]
+        if self.aux_channels_dict is not None:
+            self.channels += list(self.aux_channels_dict)
+
+        self.length = self.pulse_length + self.buffer_length_start + \
+                      self.buffer_length_end
+
+    @classmethod
+    def pulse_params(cls):
+        """
+        Returns a dictionary of pulse parameters and initial values. These parameters are set upon calling the
+        super().__init__ method.
+        """
+        params = {
+            'pulse_type': 'BufferedCryoscopePulse',
+            'channel': None,
+            'aux_channels_dict': None,
+            'amplitude': 0,
+            'frequency': 0,
+            'phase': 0,
+            'square_wave': False,
+            'pulse_length': 0,
+            'buffer_length_start': 0,
+            'buffer_length_end': 0,
+            'extra_buffer_aux_pulse': 5e-9,
+            'gaussian_filter_sigma': 0,
+        }
+        return params
+
+    def chan_wf(self, chan, tvals):
+        amp = self.amplitude
+        buffer_start = self.buffer_length_start
+        buffer_end = self.buffer_length_end
+        pulse_length = self.pulse_length
+        if chan != self.channel:
+            amp = self.aux_channels_dict[chan]
+            buffer_start -= self.extra_buffer_aux_pulse
+            buffer_end -= self.extra_buffer_aux_pulse
+            pulse_length += 2 * self.extra_buffer_aux_pulse
+
+        
+        l = pulse_length
+        t0 = self.algorithm_time() + buffer_start
+        wave = (np.ones_like(tvals) 
+                + 0.3*np.sin(2*np.pi*(tvals-t0)/l)
+                + 0.3*np.sin(4*np.pi*(tvals-t0)/l)
+                + 0.2*np.sin(6*np.pi*(tvals-t0)/l)
+                + 0.2*np.sin(8*np.pi*(tvals-t0)/l)
+            ) * amp
+        wave *= (tvals >= self.algorithm_time() + buffer_start)
+        wave *= (tvals < self.algorithm_time() + buffer_start + pulse_length)
+        
+        t_rel = tvals - tvals[0]
+        carrier = np.cos(
+            2 * np.pi * (self.frequency * t_rel + self.phase / 360.))
+        if self.square_wave:
+            carrier = np.sign(carrier)
+        wave *= carrier
+        return wave
+
+    def hashables(self, tstart, channel):
+        if channel not in self.channels:
+            return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
+        hashlist = [type(self), self.algorithm_time() - tstart]
+
+        amp = self.amplitude
+        buffer_start = self.buffer_length_start
+        buffer_end = self.buffer_length_end
+        pulse_length = self.pulse_length
+        if channel != self.channel:
+            amp = self.aux_channels_dict[channel]
+            buffer_start -= self.extra_buffer_aux_pulse
+            buffer_end -= self.extra_buffer_aux_pulse
+            pulse_length += 2 * self.extra_buffer_aux_pulse
+
+        hashlist += [amp, pulse_length, buffer_start, buffer_end]
+        hashlist += [self.gaussian_filter_sigma]
+        hashlist += [self.frequency, self.phase % 360, self.square_wave]
+        return hashlist
+
+
 class NZMartinisGellarPulse(pulse.Pulse):
     def __init__(self, channel, element_name, wave_generation_func,
                  aux_channels_dict=None,
@@ -1124,6 +1219,7 @@ class GaussFilteredCosIQPulseWithFlux(GaussFilteredCosIQPulse):
         if channel == self.flux_channel:
             self.fp.algorithm_time(self.algorithm_time())
             return self.fp.hashables(tstart, channel)
+        return []  # empty list if neither of the conditions is satisfied
 
 
 class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):

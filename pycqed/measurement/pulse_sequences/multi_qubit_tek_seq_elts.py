@@ -2345,7 +2345,7 @@ def ro_dynamic_phase_seq(hard_sweep_dict, qbp_name, qbr_names,
 
 def n_qubit_rabi_seq(qubit_names, operation_dict, sweep_points, cal_points,
                      upload=True, n=1, for_ef=False,
-                     last_ge_pulse=False, prep_params=None):
+                     last_ge_pulse=False, prep_params=None, **kw):
     """
     Rabi sequence for n qubits.
     Args:
@@ -2393,6 +2393,8 @@ def n_qubit_rabi_seq(qubit_names, operation_dict, sweep_points, cal_points,
         f'main-|-Rabi_{i}_{qbn}.amplitude': list(sweep_points[0].values())[
             j][0]
         for i in range(n) for j, qbn in enumerate(qubit_names)}
+    if kw.get('pulse_modifs', None) is not None:
+        params_to_sweep.update(kw.get('pulse_modifs'))
     swept_pulses = sweep_pulse_params(pulse_list, params_to_sweep)
     swept_pulses_with_prep = \
         [add_preparation_pulses(p, operation_dict, qubit_names, **prep_params)
