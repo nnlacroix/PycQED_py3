@@ -1323,12 +1323,13 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
     def prepare_plots(self):
         if self.get_param_value('plot_proj_data', default_value=True):
-            title_suffix = self.get_param_value('title_suffix', '')
-            fig_name_suffix = self.get_param_value('fig_name_suffix', '')
             select_split = self.get_param_value('select_split')
+            fig_name_suffix = self.get_param_value('fig_name_suffix', '')
+            title_suffix = self.get_param_value('title_suffix', '')
             for qb_name, corr_data in self.proc_data_dict[
                     'projected_data_dict'].items():
                 fig_name = f'projected_plot_{qb_name}'
+                title_suf = title_suffix
                 if select_split is not None:
                     param, idx = select_split[qb_name]
                     # remove qb_name from param
@@ -1337,8 +1338,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     suf = f'({p}, {str(np.round(idx, 3))})'
                     # add suffix
                     fig_name += f'_{suf}'
-                    title_suffix = f'{suf}_{title_suffix}' if \
-                        len(title_suffix) else suf
+                    title_suf = f'{suf}_{title_suf}' if \
+                        len(title_suf) else suf
 
                 if isinstance(corr_data, dict):
                     for data_key, data in corr_data.items():
@@ -1351,7 +1352,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             fig_name += f'_{data_key}'
                             data_label = 'Data'
                             plot_name_suffix = ''
-                            title_suffix = f'{data_key}_{title_suffix}'
+                            tf = f'{data_key}_{title_suf}' if \
+                                len(title_suf) else data_key
                             plot_cal_points = (
                                 not self.options_dict.get('TwoD', False))
                             data_axis_label = \
@@ -1362,7 +1364,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                         self.prepare_projected_data_plot(
                             fig_name, data, qb_name=qb_name,
                             data_label=data_label,
-                            title_suffix=title_suffix,
+                            title_suffix=tf,
                             plot_name_suffix=plot_name_suffix,
                             fig_name_suffix=fig_name_suffix,
                             data_axis_label=data_axis_label,
@@ -1533,8 +1535,11 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             xvals = sweep_points
         title = (self.raw_data_dict['timestamp'] + ' ' +
                  self.raw_data_dict['measurementstring'])
+        print(qb_name)
+        print(title_suffix)
         title += '\n' + f'{qb_name}_{title_suffix}' if len(title_suffix) else \
             ' ' + qb_name
+        print(title)
 
         plot_dict_name = f'{fig_name}_{plot_name_suffix}'
         xlabel, xunit = self.get_xaxis_label_unit(qb_name)
