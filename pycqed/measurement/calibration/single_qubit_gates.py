@@ -69,8 +69,7 @@ class T1FrequencySweep(CalibBuilder):
             self.analysis = None
             self.data_to_fit = {qb: 'pe' for qb in self.meas_obj_names}
             self.sweep_points = SweepPoints(
-                from_dict_list=[{}, {}] if self.sweep_points is None
-                else self.sweep_points)
+                [{}, {}] if self.sweep_points is None else self.sweep_points)
             self.add_amplitude_sweep_points()
 
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -78,7 +77,8 @@ class T1FrequencySweep(CalibBuilder):
                 self.parallel_sweep(self.preprocessed_task_list,
                                     self.t1_flux_pulse_block, **kw)
             self.exp_metadata.update({
-                'global_PCA': len(self.cal_points.states) == 0
+                "rotation_type": 'global_PCA' if
+                    len(self.cal_points.states) == 0 else 'cal_states'
             })
 
             if kw.get('compression_seg_lim', None) is None:
@@ -106,7 +106,7 @@ class T1FrequencySweep(CalibBuilder):
         # TODO: check combination of sweep points in task and in sweep_points
         for task in task_list:
             sweep_points = task.get('sweep_points', [{}, {}])
-            sweep_points = SweepPoints(from_dict_list=sweep_points)
+            sweep_points = SweepPoints(sweep_points)
             if len(sweep_points) == 1:
                 sweep_points.add_sweep_dimension()
             if 'qubit_freqs' in sweep_points[1]:
@@ -198,10 +198,13 @@ class T1FrequencySweep(CalibBuilder):
         """
 
         self.all_fits = kw.get('all_fits', True)
+        self.do_fitting = kw.get('do_fitting', True)
         self.analysis = tda.T1FrequencySweepAnalysis(
             qb_names=self.meas_obj_names,
+            do_fitting=self.do_fitting,
             options_dict=dict(TwoD=True, all_fits=self.all_fits,
-                              global_PCA=not len(self.cal_points.states)))
+                              rotation_type='global_PCA' if not
+                                len(self.cal_points.states) else 'cal_states'))
 
 
 class ParallelLOSweepExperiment(CalibBuilder):
@@ -361,14 +364,24 @@ class FluxPulseScope(ParallelLOSweepExperiment):
 
         return b
 
-    def run_analysis(self, **kw):
+    def run_analysis(self, analysis_kwargs=None, **kw):
         """
         Runs analysis and stores analysis instances in self.analysis.
+        :param analysis_kwargs: (dict) keyword arguments for analysis
         :param kw:
         """
+        if analysis_kwargs is None:
+            analysis_kwargs = {}
+
+        options_dict = {'rotation_type': 'fixed_cal_points' if
+                            len(self.cal_points.states) > 0 else 'global_PCA',
+                        'TwoD': True}
+        if 'options_dict' not in analysis_kwargs:
+            analysis_kwargs['options_dict'] = {}
+        analysis_kwargs['options_dict'].update(options_dict)
+
         self.analysis = tda.FluxPulseScopeAnalysis(
-            qb_names=self.meas_obj_names,
-            options_dict=dict(TwoD=True, global_PCA=True,))
+            qb_names=self.meas_obj_names, **analysis_kwargs)
 
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
@@ -402,7 +415,7 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         try:
             self.experiment_name = 'Flux_amplitude'
             super().__init__(task_list, sweep_points=sweep_points, **kw)
-            self.exp_metadata.update({"global_PCA": True})
+            self.exp_metadata.update({'rotation_type': 'global_PCA'})
             self.autorun(**kw)
 
         except Exception as x:

@@ -132,6 +132,7 @@ class Segment:
         self.enforce_single_element()
         self.resolve_timing()
         self.resolve_Z_gates()
+        self.add_flux_crosstalk_cancellation_channels()
         self.gen_trigger_el()
         self.add_charge_compensation()
 
@@ -303,6 +304,18 @@ class Segment:
             ordered_unres_pulses.append(p)
 
         self.resolved_pulses = ordered_unres_pulses
+
+    def add_flux_crosstalk_cancellation_channels(self):
+        if self.pulsar.flux_crosstalk_cancellation():
+            for p in self.resolved_pulses:
+                if any([ch in self.pulsar.flux_channels() for ch in
+                        p.pulse_obj.channels]):
+                    p.pulse_obj.crosstalk_cancellation_channels = \
+                        self.pulsar.flux_channels()
+                    p.pulse_obj.crosstalk_cancellation_mtx = \
+                        self.pulsar.flux_crosstalk_cancellation_mtx()
+                    p.pulse_obj.crosstalk_cancellation_shift_mtx = \
+                        self.pulsar.flux_crosstalk_cancellation_shift_mtx()
 
     def add_charge_compensation(self):
         """
@@ -981,9 +994,43 @@ class Segment:
 
         for pulse in self.elements[elname]:
             if pulse.codeword in {'no_codeword', codeword}:
-                hashlist += pulse.hashables(tstart, channel)
+                hashlist += self.hashables(pulse, tstart, channel)
         return tuple(hashlist)
 
+    @staticmethod
+    def hashables(pulse, tstart, channel):
+        """
+        Wrapper for Pulse.hashables making sure to deal correctly with
+        crosstalk cancellation channels.
+
+        The hashables of a cancellation pulse has to include the hashables
+        of all pulses that it cancels. This is needed to ensure that the
+        cancellation pulse gets re-uploaded when any of the cancelled pulses
+        changes. In addition it has to include the parameters of
+        cancellation calibration, i.e., the relevant entries of the
+        crosstalk cancellation matrix and of the shift matrix.
+
+        :param pulse: a Pulse object
+        :param tstart: (float) start time of the element
+        :param channel: (str) channel name
+        """
+        if channel in pulse.crosstalk_cancellation_channels:
+            hashables = []
+            idx_c = pulse.crosstalk_cancellation_channels.index(channel)
+            for c in pulse.channels:
+                if c in pulse.crosstalk_cancellation_channels:
+                    idx_c2 = pulse.crosstalk_cancellation_channels.index(c)
+                    factor = pulse.crosstalk_cancellation_mtx[idx_c, idx_c2]
+                    shift = pulse.crosstalk_cancellation_shift_mtx[
+                        idx_c, idx_c2] \
+                        if pulse.crosstalk_cancellation_shift_mtx is not \
+                           None else 0
+                    if factor != 0:
+                        hashables += pulse.hashables(tstart, c)
+                        hashables += [factor, shift]
+            return hashables
+        else:
+            return pulse.hashables(tstart, channel)
 
     def tvals(self, channel_list, element):
         """
@@ -1031,7 +1078,7 @@ class Segment:
     def plot(self, instruments=None, channels=None, legend=True,
              delays=None, savefig=False, prop_cycle=None, frameon=True,
              channel_map=None, plot_kwargs=None, axes=None, demodulate=False,
-             show_and_close=True):
+             show_and_close=True, col_ind=0, normalized_amplitudes=True):
         """
         Plots a segment. Can only be done if the segment can be resolved.
         :param instruments (list): instruments for which pulses have to be
@@ -1040,7 +1087,8 @@ class Segment:
         :param delays (dict): keys are instruments, values are additional
             delays. If passed, the delay is substracted to the time values of
             this instrument, such that the pulses are plotted at timing when
-            they physically occur.
+            they physically occur. A key 'default' can be used to specify a
+            delay for all instruments that are not explicitly given as keys.
         :param savefig: save the plot
         :param channel_map (dict): indicates which instrument channels
             correspond to which qubits. Keys = qb names, values = list of
@@ -1053,6 +1101,12 @@ class Segment:
         :param demodulate (bool): plot only envelope of pulses by temporarily
             setting modulation and phase to 0. Need to recompile the sequence
         :param show_and_close: (bool) show and close the plot (default: True)
+        :param col_ind: (int) when passed together with axes, this specifies
+            in which column of subfigures the plots should be added
+            (default: 0)
+        :param normalized_amplitudes: (bool) whether amplitudes
+            should be normalized to the voltage range of the channel
+            (default: True)
         :return: The figure and axes objects if show_and_close is False,
             otherwise no return value.
         """
@@ -1085,17 +1139,21 @@ class Segment:
                                        squeeze=False,
                                        figsize=(16, n_instruments * 3))
             if prop_cycle is not None:
-                for a in ax[:,0]:
+                for a in ax[:,col_ind]:
                     a.set_prop_cycle(**prop_cycle)
             sorted_keys = sorted(wfs.keys()) if instruments is None \
                 else [i for i in instruments if i in wfs]
             for i, instr in enumerate(sorted_keys):
+                if instr not in delays and 'default' in delays:
+                    delays[instr] = delays['default']
                 # plotting
                 for elem_name, v in wfs[instr].items():
                     for k, wf_per_ch in v.items():
                         sorted_chans = sorted(wf_per_ch.keys())
                         for n_wf, ch in enumerate(sorted_chans):
                             wf = wf_per_ch[ch]
+                            if not normalized_amplitudes:
+                                wf = wf * self.pulsar.get(f'{instr}_{ch}_amp')
                             if channels is None or \
                                     ch in channels.get(instr, []):
                                 tvals = \
@@ -1103,8 +1161,8 @@ class Segment:
                                     f"{instr}_{ch}"] - delays.get(instr, 0)
                                 if channel_map is None:
                                     # plot per device
-                                    ax[i, 0].set_title(instr)
-                                    ax[i, 0].plot(
+                                    ax[i, col_ind].set_title(instr)
+                                    ax[i, col_ind].plot(
                                         tvals * 1e6, wf,
                                         label=f"{elem_name[1]}_{k}_{ch}",
                                         **plot_kwargs)
@@ -1116,14 +1174,14 @@ class Segment:
                                              enumerate(channel_map.items())
                                              if f"{instr}_{ch}" in qb_chs}
                                     for qbi, qb_name in match.items():
-                                        ax[qbi, 0].set_title(qb_name)
-                                        ax[qbi, 0].plot(
+                                        ax[qbi, col_ind].set_title(qb_name)
+                                        ax[qbi, col_ind].plot(
                                             tvals * 1e6, wf,
                                             label=f"{elem_name[1]}"
                                                   f"_{k}_{instr}_{ch}",
                                             **plot_kwargs)
                                         if demodulate: # filling
-                                            ax[qbi, 0].fill_between(
+                                            ax[qbi, col_ind].fill_between(
                                                 tvals * 1e6, wf,
                                                 label=f"{elem_name[1]}_"
                                                       f"{k}_{instr}_{ch}",
@@ -1131,7 +1189,7 @@ class Segment:
                                                 **plot_kwargs)
 
             # formatting
-            for a in ax[:, 0]:
+            for a in ax[:, col_ind]:
                 if isinstance(frameon, bool):
                     frameon = {k: frameon for k in ['top', 'bottom',
                                                     "right", "left"]}
@@ -1141,8 +1199,11 @@ class Segment:
                 a.spines["left"].set_visible(frameon.get("left", True))
                 if legend:
                     a.legend(loc=[1.02, 0], prop={'size': 8})
-                a.set_ylabel('Voltage (V)')
-            ax[-1, 0].set_xlabel('time ($\mu$s)')
+                if normalized_amplitudes:
+                    a.set_ylabel('Amplitude (norm.)')
+                else:
+                    a.set_ylabel('Voltage (V)')
+            ax[-1, col_ind].set_xlabel('time ($\mu$s)')
             fig.suptitle(f'{self.name}', y=1.01)
             plt.tight_layout()
             if savefig:

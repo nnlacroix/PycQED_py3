@@ -212,12 +212,12 @@ class MeasurementControl(Instrument):
                       datadir=self.datadir()) as self.data_object:
             if exp_metadata is not None:
                 self.exp_metadata = deepcopy(exp_metadata)
-                metadata = self.detector_function.generate_metadata()
-                metadata.update(exp_metadata)
-                self.save_exp_metadata(metadata, self.data_object)
             else:
                 # delete metadata from previous measurement
                 self.exp_metadata = {}
+            det_metadata = self.detector_function.generate_metadata()
+            self.exp_metadata.update(det_metadata)
+            self.save_exp_metadata(self.exp_metadata, self.data_object)
             try:
                 self.check_keyboard_interrupt()
                 self.get_measurement_begintime()
@@ -651,7 +651,7 @@ class MeasurementControl(Instrument):
         sp = self.exp_metadata.get('sweep_points', None)
         if sp is not None:
             try:
-                sp = sp_mod.SweepPoints.cast_init(sp)
+                sp = sp_mod.SweepPoints(sp)
             except Exception:
                 sp = None
         # create a reverse lookup dictionary (value names measure object map)

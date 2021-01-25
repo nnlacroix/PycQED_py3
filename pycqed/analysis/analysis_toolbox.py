@@ -278,7 +278,7 @@ def measurement_filename(directory=os.getcwd(), file_id=None, ext='hdf5', **kw):
 
 
 def get_instr_setting_value_from_file(file_path, instr_name, param_name,
-                                      h5mode='r+'):
+                                      h5mode='r'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
     try:
         instr_settings = data_file['Instrument settings']
@@ -299,7 +299,7 @@ def get_instr_setting_value_from_file(file_path, instr_name, param_name,
         raise e
 
 
-def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r+'):
+def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
     try:
         instr_settings = data_file['Instrument settings']
@@ -336,7 +336,7 @@ def get_qb_channel_map_from_hdf(qb_names, file_path, value_names, h5mode='r+'):
         raise e
 
 
-def get_qb_thresholds_from_file(qb_names, file_path, th_scaling=1, h5mode='r+'):
+def get_qb_thresholds_from_file(qb_names, file_path, th_scaling=1, h5mode='r'):
     data_file = h5py.File(measurement_filename(file_path), h5mode)
     try:
         instr_settings = data_file['Instrument settings']
@@ -372,7 +372,7 @@ def compare_instrument_settings_timestamp(timestamp_a, timestamp_b):
     arguments.
     '''
 
-    h5mode = 'r+'
+    h5mode = 'r'
     h5filepath = measurement_filename(get_folder(timestamp_a))
     analysis_object_a = h5py.File(h5filepath, h5mode)
     try:
@@ -1302,24 +1302,12 @@ def rotate_and_normalize_data_no_cal_points(data, **kw):
     # max_min_difference = max(normalized_data -  min(normalized_data))
     # normalized_data = (normalized_data-min(normalized_data))/max_min_difference
 
-    # data always rotated such that majority of data points is smaller than the mid point
-    # between min and max (if data_mostly_g).
-    mean = np.mean(normalized_data)
-    middle = (np.max(normalized_data) + np.min(normalized_data)) / 2
-
-    if kw.get('data_mostly_g', None) is None:
-        return normalized_data
-
-    if kw.get('data_mostly_g'):
-        normalized_data *= np.sign(middle - mean)
-    else:
-        normalized_data *= -np.sign(middle - mean)
-
     return normalized_data
 
 
 def rotate_and_normalize_data_1ch(data, cal_zero_points=np.arange(-4, -2, 1),
-                                  cal_one_points=np.arange(-2, 0, 1), **kw):
+                                  cal_one_points=np.arange(-2, 0, 1),
+                                  zero_coord=None, one_coord=None, **kw):
     '''
     Normalizes data according to calibration points
     Inputs:
@@ -1330,8 +1318,15 @@ def rotate_and_normalize_data_1ch(data, cal_zero_points=np.arange(-4, -2, 1),
                                  correspond to one
     '''
     # Extract zero and one coordinates
-    I_zero = np.mean(data[cal_zero_points])
-    I_one = np.mean(data[cal_one_points])
+    if zero_coord is not None:
+        I_zero = zero_coord[0]
+    else:
+        I_zero = np.mean(data[cal_zero_points])
+
+    if one_coord is not None:
+        I_one = one_coord[0]
+    else:
+        I_one = np.mean(data[cal_one_points])
     # Translate the date
     trans_data = data - I_zero
     # Normalize the data
@@ -1339,6 +1334,13 @@ def rotate_and_normalize_data_1ch(data, cal_zero_points=np.arange(-4, -2, 1),
     normalized_data = trans_data/one_zero_dist
 
     return normalized_data
+
+
+def set_majority_sign(data, majority_sign=-1):
+    # Data array rotated such that majority of data points is smaller than the
+    # median of the data.
+    return data * (np.sign(majority_sign) *
+                   np.sign(np.median(data) - np.mean(data)))
 
 
 def predict_gm_proba_from_cal_points(X, cal_points):

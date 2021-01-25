@@ -42,7 +42,7 @@ def get_hdf_param_value(group, param_name):
     return convert_attribute(s)
 
 
-def get_value_names_from_timestamp(timestamp, file_id=None,):
+def get_value_names_from_timestamp(timestamp, file_id=None, mode='r'):
     """
     Returns value_names from the HDF5 file specified by timestamp.
     :param timestamp: (str) measurement timestamp of form YYYYMMDD_hhmmsss
@@ -50,7 +50,7 @@ def get_value_names_from_timestamp(timestamp, file_id=None,):
     """
     folder = a_tools.get_folder(timestamp)
     h5filepath = a_tools.measurement_filename(folder, file_id=file_id)
-    data_file = h5py.File(h5filepath, 'r+')
+    data_file = h5py.File(h5filepath, mode)
     try:
         channel_names = get_hdf_param_value(data_file['Experimental Data'],
                                             'value_names')
@@ -62,7 +62,7 @@ def get_value_names_from_timestamp(timestamp, file_id=None,):
 
 
 def get_param_from_metadata_group(timestamp=None, param_name=None, file_id=None,
-                                  data_file=None, close_file=True):
+                                  data_file=None, close_file=True, mode='r'):
     """
     Get a parameter with param_name from the Experimental Metadata group in
     the HDF5 file specified by timestamp, or return the whole group if
@@ -79,7 +79,7 @@ def get_param_from_metadata_group(timestamp=None, param_name=None, file_id=None,
             raise ValueError('Please provide either timestamp or data_file.')
         folder = a_tools.get_folder(timestamp)
         h5filepath = a_tools.measurement_filename(folder, file_id=file_id)
-        data_file = h5py.File(h5filepath, 'r+')
+        data_file = h5py.File(h5filepath, mode)
 
     try:
         if param_name is None:
@@ -107,7 +107,7 @@ def get_param_from_metadata_group(timestamp=None, param_name=None, file_id=None,
 
 
 def get_data_from_hdf_file(timestamp=None, data_file=None,
-                           close_file=True, file_id=None):
+                           close_file=True, file_id=None, mode='r'):
     """
     Return the measurement data stored in Experimental Data group of the file
     specified by timestamp.
@@ -121,7 +121,7 @@ def get_data_from_hdf_file(timestamp=None, data_file=None,
             raise ValueError('Please provide either timestamp or data_file.')
         folder = a_tools.get_folder(timestamp)
         h5filepath = a_tools.measurement_filename(folder, file_id=file_id)
-        data_file = h5py.File(h5filepath, 'r+')
+        data_file = h5py.File(h5filepath, mode)
     try:
         group = data_file['Experimental Data']
         if 'Data' in group:
@@ -136,7 +136,7 @@ def get_data_from_hdf_file(timestamp=None, data_file=None,
     return dataset
 
 
-def open_data_file_from_timestamp(timestamp, mode='r+', file_id=None):
+def open_data_file_from_timestamp(timestamp, mode='r', file_id=None):
     """
     Return the opened HDF5 file specified by timestamp.
     ! File is not closed !
@@ -189,7 +189,7 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
         if len(folder) > 0:
             folder = folder[-1]
 
-    h5mode = get_param('h5mode', data_dict, default_value='r+', **params)
+    h5mode = get_param('h5mode', data_dict, default_value='r', **params)
     h5filepath = a_tools.measurement_filename(folder, **params)
     data_file = h5py.File(h5filepath, h5mode)
 
@@ -235,12 +235,20 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                                   update_value=update_value,
                                   replace_value=replace_value)
                     elif par_name in list(data_file[group_name].keys()):
-                        add_param(all_keys[-1],
-                                  read_dict_from_hdf5(
-                                      {}, data_file[group_name][par_name]),
-                                  epd, append_value=append_value,
-                                  update_value=update_value,
-                                  replace_value=replace_value)
+                        if isinstance(data_file[group_name][par_name],
+                                      h5py._hl.dataset.Dataset):
+                            add_param(all_keys[-1],
+                                      np.array(data_file[group_name][par_name]),
+                                      epd, append_value=append_value,
+                                      update_value=update_value,
+                                      replace_value=replace_value)
+                        else:
+                            add_param(all_keys[-1],
+                                      read_dict_from_hdf5(
+                                          {}, data_file[group_name][par_name]),
+                                      epd, append_value=append_value,
+                                      update_value=update_value,
+                                      replace_value=replace_value)
 
             if all_keys[-1] not in epd:
                 log.warning(f'Parameter {file_par} was not found.')
@@ -519,7 +527,7 @@ def get_measurement_properties(data_dict, props_to_extract='all',
         elif 'sp' == prop:
             sp = get_param('sweep_points', data_dict, raise_error=raise_error,
                            **params)
-            props_to_return += [sp_mod.SweepPoints.cast_init(sp)]
+            props_to_return += [sp_mod.SweepPoints(sp)]
         elif 'mospm' == prop:
             meas_obj_sweep_points_map = get_param(
                 'meas_obj_sweep_points_map', data_dict, raise_error=raise_error,
@@ -901,7 +909,7 @@ def check_equal(value1, value2):
 
 
 def read_analysis_file(timestamp, data_dict=None, file_id=None,
-                       ana_file=None, close_file=True, mode='r+'):
+                       ana_file=None, close_file=True, mode='r'):
     """
     Creates a data_dict from an AnalysisResults file as generated by analysis_v3
     :param timestamp: str with a measurement timestamp
@@ -991,7 +999,7 @@ def read_from_hdf(data_dict, hdf_group):
             if hdf_group.attrs['list_type'] == 'generic_tuple':
                 data_list = tuple(data_list)
             if path[-1] == 'sweep_points':
-                data_list = sp_mod.SweepPoints.cast_init(data_list)
+                data_list = sp_mod.SweepPoints(data_list)
             add_param('.'.join(path), data_list, data_dict, replace_value=True)
         else:
             raise NotImplementedError('cannot read "list_type":"{}"'.format(
