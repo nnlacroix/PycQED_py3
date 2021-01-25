@@ -1349,7 +1349,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                             plot_cal_points = False
                             data_axis_label = 'Population'
                         else:
-                            fig_name += f'_{data_key}'
+                            fn = f'{fig_name}_{data_key}'
                             data_label = 'Data'
                             plot_name_suffix = ''
                             tf = f'{data_key}_{title_suf}' if \
@@ -1362,7 +1362,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                                 '{} state population'.format(
                                 self.get_latex_prob_label(data_key))
                         self.prepare_projected_data_plot(
-                            fig_name, data, qb_name=qb_name,
+                            fn, data, qb_name=qb_name,
                             data_label=data_label,
                             title_suffix=tf,
                             plot_name_suffix=plot_name_suffix,
@@ -1535,11 +1535,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             xvals = sweep_points
         title = (self.raw_data_dict['timestamp'] + ' ' +
                  self.raw_data_dict['measurementstring'])
-        print(qb_name)
-        print(title_suffix)
         title += '\n' + f'{qb_name}_{title_suffix}' if len(title_suffix) else \
             ' ' + qb_name
-        print(title)
 
         plot_dict_name = f'{fig_name}_{plot_name_suffix}'
         xlabel, xunit = self.get_xaxis_label_unit(qb_name)
