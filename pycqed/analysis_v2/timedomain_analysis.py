@@ -485,6 +485,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         # create projected_data_dict
         self.data_to_fit = deepcopy(self.get_param_value('data_to_fit', {}))
+        if not len(self.data_to_fit):
+            # if data_to_fit not specified, set it to 'pe'
+            self.data_to_fit = {qbn: 'pe' for qbn in self.qb_names}
+
         # TODO: Steph 15.09.2020
         # This is a hack to allow list inside data_to_fit. These lists are
         # currently only supported by MultiCZgate_CalibAnalysis
