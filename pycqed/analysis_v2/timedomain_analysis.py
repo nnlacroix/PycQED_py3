@@ -5090,7 +5090,7 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
         if freq_fit > 2 * stepsize:
             log.info('The data could not be fitted correctly. The '
                          'frequency "%s" is too high.' % freq_fit)
-        n = np.arange(-2, 10)
+        n = np.arange(-10, 10)
 
         piPulse_vals = (n*np.pi - phase_fit)/(2*np.pi*freq_fit)
         piHalfPulse_vals = (n*np.pi + np.pi/2 - phase_fit)/(2*np.pi*freq_fit)
@@ -5098,8 +5098,8 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
         # find piHalfPulse
         try:
             piHalfPulse = \
-                np.min(piHalfPulse_vals[piHalfPulse_vals >= sweep_points[1]])
-            n_piHalf_pulse = n[piHalfPulse_vals==piHalfPulse]
+                np.min(piHalfPulse_vals[piHalfPulse_vals >= sweep_points[0]])
+            n_piHalf_pulse = n[piHalfPulse_vals==piHalfPulse][0]
         except ValueError:
             piHalfPulse = np.asarray([])
 
@@ -5118,7 +5118,7 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
                     np.min(piPulse_vals[piPulse_vals >= piHalfPulse])
             else:
                 piPulse = np.min(piPulse_vals[piPulse_vals >= 0.001])
-            n_pi_pulse = n[piHalfPulse_vals == piHalfPulse]
+            n_pi_pulse = n[piHalfPulse_vals == piHalfPulse][0]
 
         except ValueError:
             piPulse = np.asarray([])
@@ -5147,17 +5147,18 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
                 phi=phase_fit,
                 f_err=freq_std,
                 phi_err=phase_std,
-                period_num=n_pi_pulse,
+                period_const=n_pi_pulse*np.pi,
                 cov=cov_freq_phase)
             piHalfPulse_std = self.calculate_pulse_stderr(
                 f=freq_fit,
                 phi=phase_fit,
                 f_err=freq_std,
                 phi_err=phase_std,
-                period_num=n_piHalf_pulse,
+                period_const=n_piHalf_pulse*np.pi + np.pi/2,
                 cov=cov_freq_phase)
         except Exception as e:
-            log.error(e)
+            log.error(f'{e}\nSome stderrs from fit are None, setting stderr '
+                      f'of pi and pi/2 pulses to 0!')
             piPulse_std = 0
             piHalfPulse_std = 0
 
@@ -5169,11 +5170,11 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
         return rabi_amplitudes
 
     def calculate_pulse_stderr(self, f, phi, f_err, phi_err,
-                               period_num, cov=0):
-        x = period_num + phi
-        return np.sqrt((f_err*x/(2*np.pi*(f**2)))**2 +
+                               period_const, cov=0):
+        x = period_const + phi
+        return np.sqrt((2*np.pi*f_err*x/(2*np.pi*(f**2)))**2 +
                        (phi_err/(2*np.pi*f))**2 -
-                       2*(cov**2)*x/((2*np.pi*(f**3))**2))[0]
+                       2*(cov**2)*x/(4*(np.pi**2)*(f**3)))
 
     def prepare_plots(self):
         super().prepare_plots()
