@@ -412,12 +412,17 @@ class HDAWG8Pulsar:
                                       are: "Dig1", "Dig2", "DIO"')
 
         for awg_nr in range(4):
-            self.add_parameter(f'{awg.name}_awgs_{awg_nr}_mod_freq',
+            param_name = f'{awg.name}_awgs_{awg_nr}_mod_freq'
+            self.add_parameter(param_name,
                                unit='Hz',
                                initial_value=None,
                                set_cmd=self._hdawg_mod_setter(awg, awg_nr),
                                get_cmd=self._hdawg_mod_getter(awg, awg_nr),
                                )
+            # qcodes will not set the initial value if it is None, so we set it
+            # manually here to ensure that internal modulation gets switched off
+            # in the init.
+            self.set(f'{awg.name}_awgs_{awg_nr}_mod_freq', None)
 
         for ch_nr in range(8):
             id = 'ch{}'.format(ch_nr + 1)
@@ -709,7 +714,7 @@ class HDAWG8Pulsar:
                     if not internal_mod:
                         playback_strings += self._zi_playback_string(name=obj.name,
                             device='hdawg', wave=wave, codeword=(nr_cw != 0),
-                            append_zeros=getattr(self, 'append_zeros', 0))
+                            append_zeros=self.append_zeros())
                     else:
                         pb_string, interleave_string = \
                             self._zi_interleaved_playback_string(name=obj.name, 
@@ -721,12 +726,12 @@ class HDAWG8Pulsar:
                 
             if not any([ch_has_waveforms[ch] 
                     for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
-                continue
-            
-            awg_str = self._hdawg_sequence_string_template.format(
-                wave_definitions='\n'.join(wave_definitions+interleaves),
-                codeword_table_defs='\n'.join(codeword_table_defs),
-                playback_string='\n  '.join(playback_strings))
+                awg_str = "while(1){wait(200);}"
+            else:
+                awg_str = self._hdawg_sequence_string_template.format(
+                    wave_definitions='\n'.join(wave_definitions+interleaves),
+                    codeword_table_defs='\n'.join(codeword_table_defs),
+                    playback_string='\n  '.join(playback_strings))
 
             # Hack needed to pass the sanity check of the ZI_base_instrument
             # class in 
@@ -739,7 +744,7 @@ class HDAWG8Pulsar:
                     prev_dio_valid_polarity)
 
         for ch in range(8):
-            obj.set('sigouts_{}_on'.format(ch), ch_has_waveforms[f'ch{ch+1}'])
+            obj.set('sigouts_{}_on'.format(ch), True)
 
         if any(ch_has_waveforms.values()):
             self.awgs_with_waveforms(obj.name)
@@ -1148,6 +1153,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                            get_cmd=self._get_inter_element_spacing)
         self.add_parameter('reuse_waveforms', initial_value=False,
                            parameter_class=ManualParameter, vals=vals.Bool())
+        self.add_parameter('append_zeros', initial_value=0, vals=vals.Ints(),
+                           parameter_class=ManualParameter)
         self.add_parameter('flux_crosstalk_cancellation', initial_value=False,
                            parameter_class=ManualParameter, vals=vals.Bool())
         self.add_parameter('flux_channels', initial_value=[],

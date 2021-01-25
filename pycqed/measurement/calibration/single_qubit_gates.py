@@ -227,6 +227,7 @@ class ParallelLOSweepExperiment(CalibBuilder):
                          adapt_drive_amp=adapt_drive_amp, **kw)
         self.lo_offsets = {}
         self.lo_qubits = {}
+        self.qb_offsets = {}
         self.lo_sweep_points = []
         self.allowed_lo_freqs = allowed_lo_freqs
         self.adapt_drive_amp = adapt_drive_amp
@@ -263,6 +264,7 @@ class ParallelLOSweepExperiment(CalibBuilder):
                 freq_sp = [s for s in sp if s.endswith(freq_sp_suffix)][0]
                 f_start[qb] = self.sweep_points.get_sweep_params_property(
                     'values', 1, freq_sp)[0]
+                self.qb_offsets[qb] = f_start[qb] - self.lo_sweep_points[0]
                 lo = qb.instr_ge_lo.get_instr()
                 if lo not in self.lo_qubits:
                     self.lo_qubits[lo] = [qb]
@@ -303,7 +305,7 @@ class ParallelLOSweepExperiment(CalibBuilder):
                 temp_vals.append((qb.ge_amp180, max_amp))
                 self.drive_amp_adaptation[qb] = (
                     lambda x, qb=qb, s=max_amp,
-                           o=f[0] - self.lo_sweep_points[0] :
+                           o=self.qb_offsets[qb] :
                     qb.get_ge_amp180_from_ge_freq(x + o) / s)
                 if not kw.get('adapt_cal_point_drive_amp', False):
                     if self.cal_points.pulse_modifs is None:
@@ -366,6 +368,20 @@ class ParallelLOSweepExperiment(CalibBuilder):
                 # amplitude scaling is set back to its previous state after the
                 # end of the sweep.
                 temp_vals.append((param, 1.0))
+        for task in self.task_list:
+            if 'fluxline' not in task:
+                continue
+            qb = self.get_qubits(task['qb'])[0][0]
+            # offs = self.lo_offsets[[lo for lo, qbs in self.lo_qubits.items()
+            #                         if qb in qbs][0]]
+            dc_amp = (
+                lambda x, o=self.qb_offsets[qb],
+                       vfc=qb.fit_ge_freq_from_dc_offset() :
+                fit_mods.Qubit_freq_to_dac_res(np.array([x + o]), **vfc)[0])
+            sweep_functions += [swf.Transformed_Sweep(
+                task['fluxline'], transformation=dc_amp,
+                name=f'DC Offset {qb.name}',
+                parameter_name=f'Parking freq {qb.name}', unit='Hz')]
         self.sweep_functions = [
             self.sweep_functions[0], swf.multi_sweep_function(
                 sweep_functions, name=name, parameter_name=name)]
@@ -501,8 +517,11 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         bl_start = fp.get('buffer_length_start', 0)
         bl_end = fp.get('buffer_length_end', 0)
 
+        def fp_delay(x, o=bl_start):
+            return -(x+o)
+
         fp['pulse_delay'] = ParametricValue(
-            'delay', func=lambda x, o=bl_start: -(x + o))
+            'delay', func=fp_delay)
 
         if (fp_truncation or hasattr(fp_truncation, '__iter__')):
             if not hasattr(fp_truncation, '__iter__'):
@@ -549,16 +568,16 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             if fp_during_ro:
                 rfp = b.pulses[2]
 
-                def length_func(x, offset=fp_during_ro_buffer):
-                    return max(x+offset, 0)
+                def rfp_delay(x, fp_delay=fp_delay, opl=fp['pulse_length'],\
+                    fp_bl_start=bl_start, fp_bl_end=bl_end):
+                    return -(opl+fp_bl_start+fp_bl_end+fp_delay(x))
 
-                def rfp_delay(x, length_func=length_func, opl=fp['pulse_length']):
-                    return -(opl-length_func(x))
-
-                def rfp_amp(x, length_func=length_func, rfp_delay=rfp_delay,
-                    tau=tau, fp_amp=fp['amplitude']):
-                    fp_length=length_func(x)
-                    if rfp_delay(x) < 0:
+                def rfp_amp(x, fp_delay=fp_delay, rfp_delay=rfp_delay, tau=tau,
+                    fp_amp=fp['amplitude'], o=fp_during_ro_buffer-bl_start):
+                    fp_length=-fp_delay(x)+o
+                    if fp_length <= 0:
+                        return 0
+                    elif rfp_delay(x) < 0:
                         # in the middle of the fp
                         return -fp_amp * np.exp(-fp_length / tau)
                     else:
@@ -568,6 +587,7 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                 rfp['pulse_length'] = fp_during_ro_length
                 rfp['pulse_delay'] = ParametricValue('delay', func=rfp_delay)
                 rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
+                rfp['buffer_length_start'] = fp_during_ro_buffer
 
         if ro_pulse_delay == 'auto':
             if fp_during_ro:
@@ -732,6 +752,7 @@ class Cryoscope(CalibBuilder):
 
             super().__init__(task_list, sweep_points=sweep_points, **kw)
             self.sequential = sequential
+            self.blocks_to_save = {}
             self.add_default_soft_sweep_points(**kw)
             self.add_default_hard_sweep_points(**kw)
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -739,6 +760,7 @@ class Cryoscope(CalibBuilder):
                 self.sweep_points, body_block=None,
                 body_block_func=self.sweep_block, cal_points=self.cal_points,
                 ro_qubits=self.meas_obj_names, **kw)
+            self.add_blocks_to_metadata()
             self.update_sweep_points(**kw)
             self.autorun(**kw)
         except Exception as x:
@@ -949,6 +971,10 @@ class Cryoscope(CalibBuilder):
                     'flux_pulses_{qb}', [main_fpbk, repark_fpbk],
                     block_align='center')
 
+            if sp1d_idx == 0 and sp2d_idx == 0:
+                self.blocks_to_save[qb] = deepcopy(main_fpbk)
+
+
             cryo_blk = self.sequential_blocks(f'cryoscope {qb}',
                 [prep_bk, pihalf_1_bk, main_fpbk, pihalf_2_bk])
 
@@ -998,6 +1024,11 @@ class Cryoscope(CalibBuilder):
             analysis_kwargs = {}
         self.analysis = tda.CryoscopeAnalysis(
             qb_names=qb_names, **analysis_kwargs)
+
+    def add_blocks_to_metadata(self):
+        self.exp_metadata['flux_pulse_blocks'] = {}
+        for qb, block in self.blocks_to_save.items():
+            self.exp_metadata['flux_pulse_blocks'][qb] = block.build()
 
 
 class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
@@ -1086,3 +1117,29 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
         for qb in self.meas_obj_names:
             qb.fit_ge_freq_from_flux_pulse_amp(
                 self.analysis.fit_res[f'freq_fit_{qb.name}'].best_values)
+
+class RabiFrequencySweep(ParallelLOSweepExperiment):
+    kw_for_sweep_points = {
+        'freqs': dict(param_name='freq', unit='Hz',
+                      label=r'drive frequency, $f_d$',
+                      dimension=1),
+        'amps': dict(param_name='amplitude', unit='V',
+                       label=r'drive pulse amplitude',
+                       dimension=0),
+    }
+
+    def __init__(self, task_list, sweep_points=None, **kw):
+        try:
+            self.experiment_name = 'RabiFrequencySweep'
+            super().__init__(task_list, sweep_points=sweep_points, **kw)
+            self.autorun(**kw)
+
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def sweep_block(self, qb, **kw):
+        b = self.block_from_ops(f'ge {qb}', [f'X180 {qb}'])
+        b.pulses[0]['amplitude'] = ParametricValue('amplitude')
+        self.data_to_fit.update({qb: 'pe'})
+        return b

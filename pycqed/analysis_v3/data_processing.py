@@ -628,7 +628,8 @@ def classify_data(data_dict, keys_in, threshold_list, keys_out=None, **params):
     return data_dict
 
 
-def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
+def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None,
+                   mapping=None, **params):
     """
     Thresholds the data in data_dict specified by keys_in about the
     threshold values in threshold_list (one for each keyi in keys_in).
@@ -641,6 +642,8 @@ def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
     :param ro_thresholds: dict with keys meas_obj_names and values specifying
         the thresholds around which the data array for each meas_obj
         should be thresholded.
+    :param mapping: either {0: 'g', 1: 'e'} or {0: 'e', 1: 'g'}; default is
+        first one. Specifies thresholding condition.
     :param params: keyword arguments.
 
     Assumptions:
@@ -651,6 +654,8 @@ def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
     """
     if len(keys_in) != 1:
         raise ValueError('keys_in must have length 1.')
+    if mapping is None:
+        mapping = {0: 'g', 1: 'e'}
 
     mobjn = hlp_mod.get_measurement_properties(data_dict,
                                                props_to_extract=['mobjn'],
@@ -664,7 +669,9 @@ def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
             raise KeyError(f'thresholds does not exist in the '
                            f'acq_classifier_params for {mobjn}.')
         ro_thresholds = {mobjn: acq_classifier_params['thresholds'][0]}
+        mapping = acq_classifier_params.get('mapping', mapping)
 
+    th_func = lambda dat, th: dat > th if mapping[1] == 'e' else dat < th
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     keys_in = list(data_to_proc_dict)
     if len(keys_out) != len(keys_in):
@@ -676,7 +683,7 @@ def threshold_data(data_dict, keys_in, keys_out, ro_thresholds=None, **params):
         raise KeyError(f'{mobjn} not found in ro_thresholds={ro_thresholds}.')
     threshold_list = [ro_thresholds[mobjn]]
     thresh_dat = np.stack(
-        [data_to_proc_dict[keyi] > th for keyi, th in
+        [th_func(data_to_proc_dict[keyi], th) for keyi, th in
          zip(keys_in, threshold_list)], axis=1)
 
     for i, keyo, in enumerate(keys_out):
