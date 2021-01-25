@@ -799,11 +799,17 @@ class HDAWG8Pulsar:
         if m1 is not None or m2 is not None:
             m1 = np.zeros(n) if m1 is None else np.pad(m1, n - m1.size)
             m2 = np.zeros(n) if m2 is None else np.pad(m2, n - m2.size)
-            mc = 2*m2 + m1
+            mc = 4*m2 + m1
         else:
             mc = None
-        a1 = None if a1 is None else np.pad(a1, n - a1.size)
-        a2 = None if a2 is None else np.pad(a2, n - a2.size)
+        if a1 is None:
+            a1 = None if mc is None else np.zeros(n)
+        else:
+            a1 = np.pad(a1, n - a1.size)
+        if a2 is None:
+            a2 = None if mc is None else np.zeros(n)
+        else:
+            a2 = np.pad(a2, n - a1.size)
         wf_raw_combined = merge_waveforms(a1, a2, mc)
         obj.setv(f'awgs/{awg_nr}/waveform/waves/{wave_idx}', wf_raw_combined)
 
