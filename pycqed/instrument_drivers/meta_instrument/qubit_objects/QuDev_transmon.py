@@ -474,7 +474,7 @@ class QuDev_transmon(Qubit):
         return eval(amp_func)(ge_freq)
 
     def calculate_frequency(self, bias=None, amplitude=0, transition='ge',
-                            model='transmon_res', update=False):
+                            model='transmon_res', flux=None, update=False):
         """
         Calculates the transition frequency for a given DC bias and flux
         pulse amplitude using fit parameters stored in the qubit object.
@@ -499,6 +499,10 @@ class QuDev_transmon(Qubit):
             'transmon_res': Qubit_dac_to_freq_res with parameters from
                 the qubit parameter fit_ge_freq_from_dc_offset.
                 bias is understood as the voltage of the DC source.
+        :param flux: (float, default None) if this is not None, the frequency
+            is calculated for the given flux (in units of phi_0) instead of
+            for the given bias (for models 'transmon' and 'transmon_res') or
+            instead of the given amplitude (for model 'approx')
         :param update: (bool, default False) whether the result should be
             stored as ge_freq parameter of the qubit object.
         :return: calculated ge transition frequency
@@ -514,13 +518,21 @@ class QuDev_transmon(Qubit):
                 raise ValueError('flux_amplitude_bias_ratio is None, but is '
                                  'required for this calculation.')
 
+        if model in ['transmon', 'transmon_res']:
+            vfc = self.fit_ge_freq_from_dc_offset()
+            if flux is not None:
+                bias = vfc['dac_sweet_spot'] + vfc['V_per_phi0'] * flux
+        else:
+            vfc = self.fit_ge_freq_from_flux_pulse_amp()
+            if flux is not None:
+                amplitude = vfc['dac_sweet_spot'] + vfc['V_per_phi0'] * flux
+
         if model == 'approx':
             ge_freq = fit_mods.Qubit_dac_to_freq(
                 amplitude + (0 if bias is None or bias == 0 else
-                             bias * flux_amplitude_bias_ratio),
-                **self.fit_ge_freq_from_flux_pulse_amp())
+                             bias * flux_amplitude_bias_ratio), **vfc)
         elif model == 'transmon':
-            kw = deepcopy(self.fit_ge_freq_from_dc_offset())
+            kw = deepcopy(vfc)
             kw.pop('coupling', None)
             kw.pop('fr', None)
             ge_freq = fit_mods.Qubit_dac_to_freq_precise(bias + (
@@ -529,8 +541,7 @@ class QuDev_transmon(Qubit):
         elif model == 'transmon_res':
             ge_freq = fit_mods.Qubit_dac_to_freq_res(bias + (
                 0 if amplitude == 0 else amplitude /
-                                         flux_amplitude_bias_ratio),
-                **self.fit_ge_freq_from_dc_offset())
+                                         flux_amplitude_bias_ratio), **vfc)
         else:
             raise NotImplementedError(
                 "Currently, only the models 'approx', 'transmon', and"
