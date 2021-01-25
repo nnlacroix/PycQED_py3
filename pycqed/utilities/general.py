@@ -20,6 +20,10 @@ import operator
 import string
 from collections import OrderedDict  # for eval in load_settings
 log = logging.getLogger(__name__)
+try:
+    import msvcrt  # used on windows to catch keyboard input
+except:
+    pass
 
 digs = string.digits + string.ascii_letters
 
@@ -662,6 +666,29 @@ class NumpyJsonEncoder(json.JSONEncoder):
             return str(o)
         else:
             return super().default(o)
+
+
+class KeyboardFinish(KeyboardInterrupt):
+    """
+    Indicates that the user safely aborts/finishes the experiment.
+    Used to finish the experiment without raising an exception.
+    """
+
+    pass
+
+
+def check_keyboard_interrupt():
+    try:  # Try except statement is to make it work on non windows pc
+        if msvcrt.kbhit():
+            key = msvcrt.getch()
+            if b"q" in key:
+                # this causes a KeyBoardInterrupt
+                raise KeyboardInterrupt('Human "q" terminated experiment.')
+            elif b"f" in key:
+                # this should not raise an exception
+                raise KeyboardFinish('Human "f" terminated experiment safely.')
+    except Exception:
+        pass
 
 
 
