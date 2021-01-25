@@ -632,7 +632,7 @@ class HDAWG8Pulsar:
                     if not internal_mod:
                         playback_strings += self._zi_playback_string(name=obj.name,
                             device='hdawg', wave=wave, codeword=(nr_cw != 0),
-                            append_zeros=getattr(self, 'append_zeros', 0))
+                            append_zeros=self.append_zeros())
                     else:
                         pb_string, interleave_string = \
                             self._zi_interleaved_playback_string(name=obj.name, 
@@ -1071,7 +1071,9 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                            get_cmd=self._get_inter_element_spacing)
         self.add_parameter('reuse_waveforms', initial_value=False,
                            parameter_class=ManualParameter, vals=vals.Bool())
-                           
+        self.add_parameter('append_zeros', initial_value=0, vals=vals.Ints(),
+                           parameter_class=ManualParameter)
+
         self._inter_element_spacing = 'auto'
         self.channels = set() # channel names
         self.awgs = set() # AWG names
