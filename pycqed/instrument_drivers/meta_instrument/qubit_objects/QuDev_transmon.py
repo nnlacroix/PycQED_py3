@@ -473,8 +473,8 @@ class QuDev_transmon(Qubit):
             return None
         return eval(amp_func)(ge_freq)
 
-    def calc_freq(self, bias=None, amplitude=0, transition='ge',
-                  model='transmon_res', update=False):
+    def calculate_frequency(self, bias=None, amplitude=0, transition='ge',
+                            model='transmon_res', update=False):
         """
         Calculates the transition frequency for a given DC bias and flux
         pulse amplitude using fit parameters stored in the qubit object.
