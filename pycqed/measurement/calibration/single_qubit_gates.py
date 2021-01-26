@@ -502,8 +502,6 @@ class FluxPulseScope(ParallelLOSweepExperiment):
 
         assert not (fp_compensation and fp_during_ro)
 
-        assert not (fp_truncation and fp_during_ro)
-
         pulse_modifs = {'attr=name,op_code=X180': f'FPS_Pi',
                         'attr=element_name,op_code=X180': 'FPS_Pi_el'}
         b = self.block_from_ops(f'ge_flux {qb}',
@@ -523,6 +521,8 @@ class FluxPulseScope(ParallelLOSweepExperiment):
         fp['pulse_delay'] = ParametricValue(
             'delay', func=fp_delay)
 
+        fp_length_function = lambda x: fp['pulse_length']
+
         if (fp_truncation or hasattr(fp_truncation, '__iter__')):
             if not hasattr(fp_truncation, '__iter__'):
                 fp_truncation = [-np.inf, np.inf]
@@ -531,16 +531,13 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                 sweep_points.get_sweep_params_property(
                     'values', dimension=0, param_names='delay'))
             sweep_diff = max(max_fp_sweep_length - original_fp_length, 0)
-            def length_function(x, opl=original_fp_length, \
-                o=bl_start + fp_truncation_buffer, trunc=fp_truncation):
-                if (x>np.min(trunc) and x<np.max(trunc)):
-                    return max(min((x + o), opl), 0)
-                else:
-                    return opl
+            fp_length_function = lambda x, opl=original_fp_length, \
+                o=bl_start + fp_truncation_buffer, trunc=fp_truncation: \
+                max(min((x + o), opl), 0) if (x>np.min(trunc) and x<np.max(trunc)) else opl
             # TODO: check what happens if buffer_length_start and buffer_length_end are zero.
 
             fp['pulse_length'] = ParametricValue(
-                'delay', func=length_function)
+                'delay', func=fp_length_function)
             if fp_compensation:
                 cp = b.pulses[2]
                 cp['amplitude'] = -np.sign(fp['amplitude']) * np.abs(
@@ -548,7 +545,7 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                 cp['pulse_delay'] = sweep_diff + bl_start
                 tau = 200e-9 * 100
 
-                def t_trunc(x, fnc=length_function, tau=tau,
+                def t_trunc(x, fnc=fp_length_function, tau=tau,
                             fp_amp=fp['amplitude'], cp_amp=cp['amplitude']):
                     fp_length = fnc(x)
 
@@ -562,32 +559,31 @@ class FluxPulseScope(ParallelLOSweepExperiment):
                 cp['pulse_length'] = ParametricValue('delay', func=t_trunc)
                 # TODO: implement that the ro_delay is adjusted accordingly!
 
-        else: #fp_truncation == False
-            # assumes a unipolar flux-pulse for the calculation of the
-            # amplitude decay.
-            if fp_during_ro:
-                rfp = b.pulses[2]
+        # assumes a unipolar flux-pulse for the calculation of the
+        # amplitude decay.
+        if fp_during_ro:
+            rfp = b.pulses[2]
 
-                def rfp_delay(x, fp_delay=fp_delay, opl=fp['pulse_length'],\
-                    fp_bl_start=bl_start, fp_bl_end=bl_end):
-                    return -(opl+fp_bl_start+fp_bl_end+fp_delay(x))
+            def rfp_delay(x, fp_delay=fp_delay, fp_length=fp_length_function,\
+                fp_bl_start=bl_start, fp_bl_end=bl_end):
+                return -(fp_length(x)+fp_bl_start+fp_bl_end+fp_delay(x))
 
-                def rfp_amp(x, fp_delay=fp_delay, rfp_delay=rfp_delay, tau=tau,
-                    fp_amp=fp['amplitude'], o=fp_during_ro_buffer-bl_start):
-                    fp_length=-fp_delay(x)+o
-                    if fp_length <= 0:
-                        return 0
-                    elif rfp_delay(x) < 0:
-                        # in the middle of the fp
-                        return -fp_amp * np.exp(-fp_length / tau)
-                    else:
-                        # after the end of the fp
-                        return fp_amp * (1 - np.exp(-fp_length / tau))
+            def rfp_amp(x, fp_delay=fp_delay, rfp_delay=rfp_delay, tau=tau,
+                fp_amp=fp['amplitude'], o=fp_during_ro_buffer-bl_start):
+                fp_length=-fp_delay(x)+o
+                if fp_length <= 0:
+                    return 0
+                elif rfp_delay(x) < 0:
+                    # in the middle of the fp
+                    return -fp_amp * np.exp(-fp_length / tau)
+                else:
+                    # after the end of the fp
+                    return fp_amp * (1 - np.exp(-fp_length / tau))
 
-                rfp['pulse_length'] = fp_during_ro_length
-                rfp['pulse_delay'] = ParametricValue('delay', func=rfp_delay)
-                rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
-                rfp['buffer_length_start'] = fp_during_ro_buffer
+            rfp['pulse_length'] = fp_during_ro_length
+            rfp['pulse_delay'] = ParametricValue('delay', func=rfp_delay)
+            rfp['amplitude'] = ParametricValue('delay', func=rfp_amp)
+            rfp['buffer_length_start'] = fp_during_ro_buffer
 
         if ro_pulse_delay == 'auto':
             if fp_during_ro:
