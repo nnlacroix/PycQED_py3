@@ -529,19 +529,19 @@ class QuDev_transmon(Qubit):
 
         if model == 'approx':
             ge_freq = fit_mods.Qubit_dac_to_freq(
-                amplitude + (0 if bias is None or bias == 0 else
+                amplitude + (0 if bias is None or np.all(bias == 0) else
                              bias * flux_amplitude_bias_ratio), **vfc)
         elif model == 'transmon':
             kw = deepcopy(vfc)
             kw.pop('coupling', None)
             kw.pop('fr', None)
             ge_freq = fit_mods.Qubit_dac_to_freq_precise(bias + (
-                0 if amplitude == 0 else amplitude /
-                                         flux_amplitude_bias_ratio), **kw)
+                0 if np.all(amplitude == 0)
+                else amplitude / flux_amplitude_bias_ratio), **kw)
         elif model == 'transmon_res':
             ge_freq = fit_mods.Qubit_dac_to_freq_res(bias + (
-                0 if amplitude == 0 else amplitude /
-                                         flux_amplitude_bias_ratio), **vfc)
+                0 if np.all(amplitude == 0)
+                else amplitude / flux_amplitude_bias_ratio), **vfc)
         else:
             raise NotImplementedError(
                 "Currently, only the models 'approx', 'transmon', and"
