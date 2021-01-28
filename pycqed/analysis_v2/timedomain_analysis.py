@@ -8005,11 +8005,12 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     'label', dimension=1, param_names=param_name)
                 yunit = self.sp.get_sweep_params_property(
                     'unit', dimension=1, param_names=param_name)
+                xvals = self.proc_data_dict['proc_sweep_points_dict'][qbn][
+                    'sweep_points']
                 self.plot_dicts[f'{base_plot_name}_main'] = {
                     'plotfn': self.plot_colorxy,
                     'fig_id': base_plot_name,
-                    'xvals': self.proc_data_dict['proc_sweep_points_dict'][qbn][
-                        'sweep_points'],
+                    'xvals': xvals,
                     'yvals': self.proc_data_dict['proc_sweep_points_2D_dict'][
                         qbn][param_name],
                     'zvals': self.proc_data_dict['proc_data_to_fit'][qbn],
@@ -8036,3 +8037,17 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     'color': 'r',
                     'linestyle': '-',
                     'marker': 'x'}
+
+                # plot with log scale on x-axis
+                self.plot_dicts[f'{base_plot_name}_main_log'] = deepcopy(
+                    self.plot_dicts[f'{base_plot_name}_main'])
+                self.plot_dicts[f'{base_plot_name}_main_log']['fig_id'] = \
+                    f'{base_plot_name}_log'
+                self.plot_dicts[f'{base_plot_name}_main_log']['logxscale'] = True
+                self.plot_dicts[f'{base_plot_name}_main_log']['xrange'] = \
+                    [min(xvals), max(xvals)]
+
+                self.plot_dicts[f'{base_plot_name}_fit_log'] = deepcopy(
+                    self.plot_dicts[f'{base_plot_name}_fit'])
+                self.plot_dicts[f'{base_plot_name}_fit_log']['fig_id'] = \
+                    f'{base_plot_name}_log'
