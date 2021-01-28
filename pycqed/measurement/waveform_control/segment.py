@@ -46,6 +46,7 @@ class Segment:
         self.elements_on_awg = {}
         self.distortion_dicts = {}
         self.sweep_params = {}
+        self.allow_filter = False
         self.trigger_pars = {
             'pulse_length': self.trigger_pulse_length,
             'amplitude': self.trigger_pulse_amplitude,
