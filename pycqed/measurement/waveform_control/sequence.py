@@ -112,6 +112,9 @@ class Sequence:
                         sequences[awg][elname]['metadata']['acq'] = True
                     else:
                         sequences[awg][elname]['metadata']['acq'] = False
+                    if seg.allow_filter is not None:
+                        sequences[awg][elname]['metadata']['allow_filter'] = \
+                            seg.allow_filter
                 if seg.sweep_params is not None and len(seg.sweep_params):
                     sequences[awg][elnames[0]]['metadata']['loop'] = len(
                         list(seg.sweep_params.values())[0])

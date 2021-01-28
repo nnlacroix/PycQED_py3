@@ -290,10 +290,18 @@ class MeasurementControl(Instrument):
                         swf_sweep_points = sweep_points[:, i]
                         val = swf_sweep_points[start_idx]
                         sweep_function.set_parameter(val)
-                    self.detector_function.prepare(
-                        sweep_points=sweep_points[
-                            start_idx:start_idx+self.xlen, 0])
-                    self.measure_hard()
+                    filtered_sweep = getattr(self.sweep_functions[1],
+                                             'filtered_sweep', None)
+                    if filtered_sweep is None:
+                        self.detector_function.prepare(
+                            sweep_points=sweep_points[
+                                start_idx:start_idx+self.xlen, 0])
+                    else:
+                        self.detector_function.prepare(
+                            sweep_points=sweep_points[
+                                         start_idx:start_idx + self.xlen,
+                                         0][filtered_sweep])
+                    self.measure_hard(filtered_sweep)
         else:
             raise Exception('Sweep and Detector functions not '
                             + 'of the same type. \nAborting measurement')
@@ -363,8 +371,18 @@ class MeasurementControl(Instrument):
         self.update_plotmon_adaptive(force_update=True)
         return
 
-    def measure_hard(self):
+    def measure_hard(self, filtered_sweep=None):
         new_data = np.array(self.detector_function.get_values()).T
+
+        if filtered_sweep is not None:
+            shape = list(new_data.shape)
+            shape[0] = len(filtered_sweep)
+            new_data_full = np.zeros(shape) * np.nan
+            if len(shape) > 1:
+                new_data_full[filtered_sweep, :] = new_data
+            else:
+                new_data_full[filtered_sweep] = new_data
+            new_data = new_data_full
 
         ###########################
         # Shape determining block #

@@ -331,3 +331,31 @@ class MajorMinorSweep(Soft_Sweep):
         mval = self.major_values[ind]
         self.major_sweep_function.set_parameter(mval)
         self.minor_sweep_function.set_parameter(val - mval)
+
+
+class FilteredSweep(multi_sweep_function):
+    def __init__(self,
+                 sequence,
+                 filter_lookup,
+                 sweep_functions: list,
+                 parameter_name=None,
+                 name=None,
+                 **kw):
+        self.sequence = sequence
+        self.allow_filter = [seg.allow_filter for seg in
+                             sequence.segments.values()]
+        self.filter_lookup = filter_lookup
+        self.filtered_sweep = None
+        super().__init__(sweep_functions, parameter_name, name, **kw)
+
+    def set_parameter(self, val):
+        print(val)
+        print(self.filter_lookup)
+        filter_segments = self.filter_lookup[val]
+        self.sequence.pulsar.filter_segments(filter_segments)
+        seg_mask = np.invert(self.allow_filter)
+        seg_mask[filter_segments[0]:filter_segments[1] + 1] = True
+        acqs = self.sequence.n_acq_elements(per_segment=True)
+        self.filtered_sweep = [m for m, a in zip(seg_mask, acqs) for i in
+                               range(a)]
+        super().set_parameter(val)
