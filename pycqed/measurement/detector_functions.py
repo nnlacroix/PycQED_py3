@@ -1354,20 +1354,21 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
         self.channel_str_mobj = [str(ch) for ch in self.channels]
         self.channel_str_mobj = [''.join(self.channel_str_mobj[k*j: k*j+k])
                                  for j in range(self.n_meas_objs)]
-        self.value_names = ['']*(
-                len(self.state_labels) * len(self.channel_str_mobj))
-        idx = 0
-        for ch_pair in self.channel_str_mobj:
-            for state in self.state_labels:
-                self.value_names[idx] = '{}_{} w{}'.format(UHFQC.name,
-                    state, ch_pair)
-                idx += 1
-        self.value_units = [self.value_units[0]] * len(self.value_names)
+
+        self.classified = self.get_values_function_kwargs.get('classified', True)
+        if self.classified:
+            self.value_names = ['']*(
+                    len(self.state_labels) * len(self.channel_str_mobj))
+            idx = 0
+            for ch_pair in self.channel_str_mobj:
+                for state in self.state_labels:
+                    self.value_names[idx] = '{}_{} w{}'.format(UHFQC.name,
+                                                               state, ch_pair)
+                    idx += 1
+            self.value_units = [self.value_units[0]] * len(self.value_names)
 
         if self.get_values_function_kwargs.get('averaged', True):
             self.acq_data_len_scaling = 1  # to be used in MC
-
-        self.classified = self.get_values_function_kwargs.get('classified', True)
 
     def prepare(self, sweep_points):
         if self.AWG is not None:
