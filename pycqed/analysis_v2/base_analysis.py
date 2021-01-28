@@ -1559,6 +1559,8 @@ class BaseDataAnalysis(object):
         plot_nolabel = pdict.get('no_label', False)
         plot_normalize = pdict.get('normalize', False)
         plot_logzscale = pdict.get('logzscale', False)
+        plot_logxscale = pdict.get('logxscale', False)
+        plot_logyscale = pdict.get('logyscale', False)
         plot_origin = pdict.get('origin', 'lower')
 
         if plot_logzscale:
@@ -1675,6 +1677,12 @@ class BaseDataAnalysis(object):
         axs.cmap = out['cmap']
         if plot_cbar:
             self.plot_colorbar(axs=axs, pdict=pdict)
+
+        if plot_logxscale:
+            print('here')
+            axs.set_xscale('log')
+        if plot_logyscale:
+            axs.set_yscale('log')
 
     def label_color2D(self, pdict, axs):
         plot_transpose = pdict.get('transpose', False)
