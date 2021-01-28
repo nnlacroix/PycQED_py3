@@ -299,13 +299,13 @@ class UHFQCPulsar:
 
                 def filter_count_loop_start(n_tot, allow_filter):
                     s = []
-                    s.append(f"var n_tot = {n_tot}")
+                    s.append(f"var n_tot = {n_tot};")
                     for i, cnt in enumerate(allow_filter.values()):
                         if cnt == 0:
                             continue
                         s.append(
                             f"if ({i} < first_seg || {i} > last_seg) {{")
-                        s.append(f"n_tot -= {cnt}")
+                        s.append(f"n_tot -= {cnt};")
                         s.append("}")
                     return s
 

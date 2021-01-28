@@ -349,8 +349,6 @@ class FilteredSweep(multi_sweep_function):
         super().__init__(sweep_functions, parameter_name, name, **kw)
 
     def set_parameter(self, val):
-        print(val)
-        print(self.filter_lookup)
         filter_segments = self.filter_lookup[val]
         self.sequence.pulsar.filter_segments(filter_segments)
         seg_mask = np.invert(self.allow_filter)
