@@ -1707,7 +1707,6 @@ class BaseDataAnalysis(object):
             self.plot_colorbar(axs=axs, pdict=pdict)
 
         if plot_logxscale:
-            print('here')
             axs.set_xscale('log')
         if plot_logyscale:
             axs.set_yscale('log')
