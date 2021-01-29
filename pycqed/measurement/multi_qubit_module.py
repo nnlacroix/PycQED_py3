@@ -4150,6 +4150,7 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
                 if update:
                     if for_ef:
                         qb.ef_freq(new_qubit_freq)
+                        qb.anharmonicity(qb.ef_freq() - qb.ge_freq())
                         qb.T2_star_ef(T2_star)
                     else:
                         qb.ge_freq(new_qubit_freq)
