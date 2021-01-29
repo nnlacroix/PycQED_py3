@@ -4055,8 +4055,8 @@ def measure_n_qubit_ramsey(dev, qubits, sweep_points=None, delays=None,
     :param last_ge_pulse: whether to use a ge pulse at the end of each segment
            for a ramsey between ef transition
     :param upload: whether to upload to AWGs
-    :param update: whether to update the qubits ge_amp180 (or ef_amp180)
-        parameters
+    :param update: whether to update the qubit parameters ge_freq + T2_star
+        (ef_freq + anharmonicity + T2_star_ef if for_ef)
     :param analyze: whether to analyze data
     :param label: measurement label
     :param exp_metadata: experiment metadata
