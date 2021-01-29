@@ -988,9 +988,8 @@ class Segment:
         hashlist.append(length)  # element length in samples
         if self.pulsar.get(f'{channel}_type') == 'analog' and \
                 self.pulsar.get(f'{channel}_distortion') == 'precalculate':
-            # don't compare the kernels, just assume that all channels'
-            # distortion kernels are different
-            hashlist.append(channel)
+            hashlist.append(repr(self.pulsar.get(
+                f'{channel}_distortion_dict')))
         else:
             hashlist.append(self.pulsar.clock(channel=channel))  # clock rate
             for par in ['type', 'amp', 'internal_modulation']:
@@ -998,6 +997,12 @@ class Segment:
                     hashlist.append(self.pulsar.get(f'{channel}_{par}'))
                 except KeyError:
                     hashlist.append(False)
+        if self.pulsar.get(f'{channel}_type') == 'analog' and \
+                self.pulsar.get(f'{channel}_charge_buildup_compensation'):
+            for par in ['compensation_pulse_delay',
+                        'compensation_pulse_gaussian_filter_sigma',
+                        'compensation_pulse_scale']:
+                hashlist.append(self.pulsar.get(f'{channel}_{par}'))
 
         for pulse in self.elements[elname]:
             if pulse.codeword in {'no_codeword', codeword}:
