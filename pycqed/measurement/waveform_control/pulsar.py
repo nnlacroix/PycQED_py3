@@ -627,7 +627,7 @@ class HDAWG8Pulsar:
 
     
     def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None,
-                     channels_to_upload=None, channels_to_program=None):
+                     channels_to_upload='all', channels_to_program='all'):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
             return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
 
@@ -642,14 +642,6 @@ class HDAWG8Pulsar:
                 _zi_clear_waves()
                 self._zi_waves_cleared = True
 
-            waves_to_upload = {h: divisor[chid]*waveforms[h][::divisor[chid]]
-                                   for codewords in awg_sequence.values()
-                                       if codewords is not None
-                                   for cw, chids in codewords.items()
-                                       if cw != 'metadata'
-                                   for chid, h in chids.items()}
-            self._zi_write_waves(waves_to_upload)
-
         for awg_nr in self._hdawg_active_awgs(obj):
             defined_waves = dict() if use_placeholder_waves else set()
             codeword_table = {}
@@ -658,19 +650,14 @@ class HDAWG8Pulsar:
             playback_strings = ['var i_seg = -1;']
             interleaves = []
 
-            prev_dio_valid_polarity = obj.get(
-                'awgs_{}_dio_valid_polarity'.format(awg_nr))
-            
-            added_cw = set()
             ch1id = 'ch{}'.format(awg_nr * 2 + 1)
             ch1mid = 'ch{}m'.format(awg_nr * 2 + 1)
             ch2id = 'ch{}'.format(awg_nr * 2 + 2)
             ch2mid = 'ch{}m'.format(awg_nr * 2 + 2)
-            chids = [ch1id, ch2id]
+            chids = [ch1id, ch2id, ch1mid, ch2mid]
 
-            channels = [self._id_channel(chid, obj.name) for chid in chids]
-
-            codeword_el = set()
+            channels = [
+                self._id_channel(chid, obj.name) for chid in [ch1id, ch2id]]
             if all([self.get(
                 f'{chan}_internal_modulation') for chan in channels]):
                 internal_mod = True
@@ -775,30 +762,44 @@ class HDAWG8Pulsar:
                 
                 playback_strings += self._zi_playback_string_loop_end(metadata)
 
-            if not any([ch_has_waveforms[ch]
-                    for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
-                awg_str = "while(1){wait(200);}"
-            else:
-                awg_str = self._hdawg_sequence_string_template.format(
-                    wave_definitions='\n'.join(wave_definitions+interleaves),
-                    codeword_table_defs='\n'.join(codeword_table_defs),
-                    playback_string='\n  '.join(playback_strings),
-                    ureg_first=obj.USER_REG_FIRST_SEGMENT,
-                    ureg_last=obj.USER_REG_LAST_SEGMENT,
-                )
+            if not any([ch_has_waveforms[ch] for ch in chids]):
+                # prevent ZI_base_instrument.start() from starting this sub AWG
+                obj._awg_program[awg_nr] = None
+                continue
+            # tell ZI_base_instrument.start() to start this sub AWG
+            obj._awg_needs_configuration[awg_nr] = False
+            obj._awg_program[awg_nr] = True
 
-            if channels_to_upload is not None and not (
-                    any([ch in channels_to_upload for ch in
-                         [ch1id, ch2id, ch1mid, ch2mid]])):
+            # Having determined whether the sub AWG should be started or
+            # not, we can now skip in case no channels need to be uploaded.
+            if channels_to_upload != 'all' and not any(
+                    [ch in channels_to_upload for ch in chids]):
                 continue
 
-            if not use_placeholder_waves or channels_to_program is None or (
-                    any([ch in channels_to_program for ch in
-                         [ch1id, ch2id, ch1mid, ch2mid]])):
-                # Hack needed to pass the sanity check of the ZI_base_instrument
-                # class in
-                obj._awg_needs_configuration[awg_nr] = False
-                obj._awg_program[awg_nr] = True
+            waves_to_upload = {(h, divisor[chid]):
+                                   divisor[chid]*waveforms[h][::divisor[chid]]
+                                   for codewords in awg_sequence.values()
+                                       if codewords is not None
+                                   for cw, chids in codewords.items()
+                                       if cw != 'metadata'
+                                   for chid, h in chids.items()}
+            self._zi_write_waves(waves_to_upload)
+
+            awg_str = self._hdawg_sequence_string_template.format(
+                wave_definitions='\n'.join(wave_definitions+interleaves),
+                codeword_table_defs='\n'.join(codeword_table_defs),
+                playback_string='\n  '.join(playback_strings),
+                ureg_first=obj.USER_REG_FIRST_SEGMENT,
+                ureg_last=obj.USER_REG_LAST_SEGMENT,
+            )
+
+            if not use_placeholder_waves or channels_to_program == 'all' or \
+                    any([ch in channels_to_program for ch in chids]):
+
+                # We have to retrieve the folllowing parameter to set it
+                # again after programming the AWG.
+                prev_dio_valid_polarity = obj.get(
+                    'awgs_{}_dio_valid_polarity'.format(awg_nr))
 
                 obj.configure_awg_from_string(awg_nr, awg_str, timeout=600)
 
@@ -822,10 +823,10 @@ class HDAWG8Pulsar:
         if self.use_sequence_cache():
             if wave_hashes == self._hdawg_waveform_cache[
                     f'{obj.name}_{awg_nr}'].get(wave_idx, None):
-                log.info(
+                log.debug(
                     f'{obj.name} awgs{awg_nr}: {wave_idx} same as in cache')
                 return
-            log.info(
+            log.debug(
                 f'{obj.name} awgs{awg_nr}: {wave_idx} needs to be uploaded')
             self._hdawg_waveform_cache[f'{obj.name}_{awg_nr}'][
                 wave_idx] = wave_hashes
@@ -1523,7 +1524,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             metadata = {}
             channel_hashes, awg_sequences = \
                 sequence.generate_waveforms_sequences(get_channel_hashes=True)
-            log.info(f'Start of waveform hashing sequence {sequence.name} '
+            log.debug(f'End of waveform hashing sequence {sequence.name} '
                      f'{time.time() - t0}')
             for awg, seq in awg_sequences.items():
                 settings[awg] = {
@@ -1556,13 +1557,13 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             channels_to_upload = []
             channels_to_program = []
             for ch, hashes in channel_hashes.items():
+                ch_awg = self.get(f'{ch}_awg')
                 settings[ch] = {
                     s.format(ch): (
                         self.get(s.format(ch))
                         if s.format(ch) in self.parameters else None)
                     for s in settings_to_check}
-                if ch in channels_to_upload \
-                        or ch.split('_')[0] in awgs_to_program:
+                if ch in channels_to_upload or ch_awg in awgs_to_program:
                     continue
                 changed_settings = True
                 try:
@@ -1574,8 +1575,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                         self.sequence_cache['hashes'].get(ch, {}), hashes)
                 except AssertionError:
                     # changed setting, sequence structure, or hash
-                    if ch.split('_')[0] not in awgs_with_channels_to_upload:
-                        awgs_with_channels_to_upload.append(ch.split('_')[0])
+                    if ch_awg not in awgs_with_channels_to_upload:
+                        awgs_with_channels_to_upload.append(ch_awg)
                     for c in self.channel_groups[ch]:
                         channels_to_upload.append(c)
                         if changed_settings:
@@ -1585,12 +1586,12 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 self.sequence_cache['settings'][ch] = settings.get(ch, {})
                 self.sequence_cache['hashes'][ch] = channel_hashes.get(ch, {})
             # generate the waveforms that we need for uploading
-            log.info(f'Start of waveform generation sequence {sequence.name} '
+            log.debug(f'Start of waveform generation sequence {sequence.name} '
                      f'{time.time() - t0}')
             waveforms, _ = sequence.generate_waveforms_sequences(
                 awgs_to_program + awgs_with_channels_to_upload,
                 resolve_segments=False)
-            log.info(f'End of waveform generation sequence {sequence.name} '
+            log.debug(f'End of waveform generation sequence {sequence.name} '
                      f'{time.time() - t0}')
             # Check for which channels the sequence structure, or some element
             # length has changed.
@@ -1599,20 +1600,17 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             # channels can be re-uploaded by replacing the existing waveforms.
             ch_length = {}
             for ch, hashes in channel_hashes.items():
-                if ch.split('_')[0] in awgs_to_program + \
-                        awgs_with_channels_to_upload:
+                ch_awg = self.get(f'{ch}_awg')
+                if ch_awg in awgs_to_program + awgs_with_channels_to_upload:
                     ch_length[ch] = {
                         elname: {cw: len(waveforms[h]) for cw, h in el.items()}
                         for elname, el in hashes.items()}
                 # Checking whether programming is done only for channels that
                 # are marked to be uploaded but not yet marked to be programmed
                 if ch not in channels_to_upload or ch in channels_to_program \
-                        or ch.split('_')[0] in awgs_to_program:
+                        or ch_awg in awgs_to_program:
                     continue
                 try:
-                    np.testing.assert_equal(
-                        self.sequence_cache['settings'].get(ch, {}),
-                        settings[ch])
                     np.testing.assert_equal(
                         self.sequence_cache['length'].get(ch, {}),
                         ch_length[ch])
@@ -1626,17 +1624,17 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             # complete re-programming (these channels might have been skipped
             # above).
             for ch in self.channels:
-                if ch.split('_')[0] in awgs_to_program:
+                if self.get(f'{ch}_awg') in awgs_to_program:
                     self.sequence_cache['settings'][ch] = settings.get(ch, {})
                     self.sequence_cache['hashes'][ch] = channel_hashes.get(
                         ch, {})
                     self.sequence_cache['length'][ch] = ch_length.get(ch, {})
-            log.info(f'awgs_to_program = {repr(awgs_to_program)}\n'
-                     f'awgs_with_channels_to_upload = '
-                     f'{repr(awgs_with_channels_to_upload)}\n'
-                     f'channels_to_upload = {repr(channels_to_upload)}\n'
-                     f'channels_to_program = {repr(channels_to_program)}'
-                     )
+            log.debug(f'awgs_to_program = {repr(awgs_to_program)}\n'
+                      f'awgs_with_channels_to_upload = '
+                      f'{repr(awgs_with_channels_to_upload)}\n'
+                      f'channels_to_upload = {repr(channels_to_upload)}\n'
+                      f'channels_to_program = {repr(channels_to_program)}'
+                      )
         else:
             waveforms, awg_sequences = sequence.generate_waveforms_sequences()
             awgs_to_program = list(awg_sequences.keys())
@@ -1650,17 +1648,22 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self._zi_waves_cleared = False
         self._hash_to_wavename_table = {}
 
-        for awg in awgs_to_program + awgs_with_channels_to_upload:
+        for awg in awg_sequences.keys():
+            if awg not in awgs_to_program + awgs_with_channels_to_upload:
+                # The AWG does not need to be re-programmed, but we have to add
+                # it to the set of AWGs with waveforms (which is otherwise
+                # done after programming it).
+                self.awgs_with_waveforms(awg)
+                continue
             log.info(f'Started programming {awg}')
             t0 = time.time()
             if awg in awgs_to_program:
-                ch_upl = None  # all channels will be uploaded
-                ch_prg = None  # all channels will be programmed
+                ch_upl, ch_prg = 'all', 'all'
             else:
-                ch_upl = [ch.split('_')[1] for ch in channels_to_upload
-                          if ch.split('_')[0] == awg]
-                ch_prg = [ch.split('_')[1] for ch in channels_to_program
-                          if ch.split('_')[0] == awg]
+                ch_upl = [self.get(f'{ch}_id') for ch in channels_to_upload
+                          if self.get(f'{ch}_awg') == awg]
+                ch_prg = [self.get(f'{ch}_id') for ch in channels_to_program
+                          if self.get(f'{ch}_awg') == awg]
             if awg in repeat_dict.keys():
                 self._program_awg(self.AWG_obj(awg=awg),
                                   awg_sequences.get(awg, {}), waveforms,
@@ -1903,6 +1906,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         wave_dir = _zi_wave_dir()
         for h, wf in waveforms.items():
             filename = os.path.join(wave_dir, self._hash_to_wavename(h)+'.csv')
+            if os.path.exists(filename):
+                continue
             fmt = '%.18e' if wf.dtype == np.float else '%d'
             np.savetxt(filename, wf, delimiter=",", fmt=fmt)
 
