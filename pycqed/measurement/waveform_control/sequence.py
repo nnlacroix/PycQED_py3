@@ -53,19 +53,35 @@ class Sequence:
             self.add(seg)
 
     @Timer()
-    def generate_waveforms_sequences(self, awgs=None):
+    def generate_waveforms_sequences(self, awgs=None,
+                                     get_channel_hashes=False,
+                                     resolve_segments=True):
         """
         Calculates and returns 
-            * a dictionary of waveforms used in the sequence, indexed
-                by their hash value
-            * For each awg, a list of elements, each element consisting of
-                a waveform-hash for each codeword and each channel
+            * waveforms: a dictionary of waveforms used in the sequence,
+                indexed by their hash value
+            * sequences: For each awg, a list of elements, each element
+                consisting of a waveform-hash for each codeword and each
+                channel
+        :param awgs: a list of AWG names. If None, waveforms will be
+            generated for all AWGs used in the sequence.
+        :param get_channel_hashes: (bool, default: False) do not create
+            waveforms, and instead return a dict of channel-elements indexed
+            by channel names, each channel-element consisting of a
+            waveform-hash for each codeword on that channel.
+        :param resolve_segments: (bool, default: True) whether the segments
+            in the sequence still need to be resolved.
+        :return: a tuple of waveforms, sequences as described above if
+            get_channel_hashes==False. Otherwise, a tuple channel_hashes,
+            sequences.
         """
         waveforms = {}
         sequences = {}
-        for seg in self.segments.values():
-            seg.resolve_segment()
-            seg.gen_elements_on_awg()
+        channel_hashes = {}
+        if resolve_segments:
+            for seg in self.segments.values():
+                seg.resolve_segment()
+                seg.gen_elements_on_awg()
 
         if awgs is None:
             awgs = set()
@@ -85,17 +101,27 @@ class Sequence:
                             h = seg.calculate_hash(elname, cw, ch)
                             chid = self.pulsar.get(f'{ch}_id')
                             sequences[awg][elname][cw][chid] = h
-                            if h not in waveforms:
-                                wf = seg.waveforms(awgs={awg}, 
-                                    elements={elname}, channels={ch}, 
-                                    codewords={cw})
-                                waveforms[h] = wf.popitem()[1].popitem()[1]\
-                                                 .popitem()[1].popitem()[1]
+                            if get_channel_hashes:
+                                if ch not in channel_hashes:
+                                    channel_hashes[ch] = {}
+                                if elname not in channel_hashes[ch]:
+                                    channel_hashes[ch][elname] = {}
+                                channel_hashes[ch][elname][cw] = h
+                            else:
+                                if h not in waveforms:
+                                    wf = seg.waveforms(awgs={awg},
+                                        elements={elname}, channels={ch},
+                                        codewords={cw})
+                                    waveforms[h] = wf.popitem()[1].popitem()[1]\
+                                                     .popitem()[1].popitem()[1]
                     if elname in seg.acquisition_elements:
                         sequences[awg][elname]['metadata']['acq'] = True
                     else:
                         sequences[awg][elname]['metadata']['acq'] = False
-        return waveforms, sequences
+        if get_channel_hashes:
+            return channel_hashes, sequences
+        else:
+            return waveforms, sequences
                 
     def n_acq_elements(self, per_segment=False):
         """
