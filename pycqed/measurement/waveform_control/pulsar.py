@@ -654,7 +654,7 @@ class HDAWG8Pulsar:
             ch1mid = 'ch{}m'.format(awg_nr * 2 + 1)
             ch2id = 'ch{}'.format(awg_nr * 2 + 2)
             ch2mid = 'ch{}m'.format(awg_nr * 2 + 2)
-            chids = [ch1id, ch2id, ch1mid, ch2mid]
+            chids = [ch1id, ch1mid, ch2id, ch2mid]
 
             channels = [
                 self._id_channel(chid, obj.name) for chid in [ch1id, ch2id]]
@@ -696,10 +696,11 @@ class HDAWG8Pulsar:
                             if nr_cw != 0:
                                 continue
                         chid_to_hash = awg_sequence_element[cw]
-                        wave = tuple(chid_to_hash.get(ch, None)
-                                    for ch in [ch1id, ch1mid, ch2id, ch2mid])
+                        wave = tuple(chid_to_hash.get(ch, None) for ch in chids)
                         if wave == (None, None, None, None):
                             continue
+                        wave = tuple((h, divisor[ch]) if h is not None
+                                     else None for h, ch in zip(wave, chids))
                         if use_placeholder_waves:
                             if wave in defined_waves.values():
                                 continue
@@ -776,14 +777,15 @@ class HDAWG8Pulsar:
                     [ch in channels_to_upload for ch in chids]):
                 continue
 
-            waves_to_upload = {(h, divisor[chid]):
+            if not use_placeholder_waves:
+                waves_to_upload = {(h, divisor[chid]):
                                    divisor[chid]*waveforms[h][::divisor[chid]]
                                    for codewords in awg_sequence.values()
                                        if codewords is not None
                                    for cw, chids in codewords.items()
                                        if cw != 'metadata'
                                    for chid, h in chids.items()}
-            self._zi_write_waves(waves_to_upload)
+                self._zi_write_waves(waves_to_upload)
 
             awg_str = self._hdawg_sequence_string_template.format(
                 wave_definitions='\n'.join(wave_definitions+interleaves),
