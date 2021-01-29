@@ -438,8 +438,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             default_value='cal_states' if self.rotate else 'no_rotation')
 
         # create projected_data_dict
-        self.data_to_fit = deepcopy(self.get_param_value('data_to_fit', {}))
-        if not len(self.data_to_fit):
+        self.data_to_fit = deepcopy(self.get_param_value('data_to_fit'))
+        if self.data_to_fit is None:
             # if data_to_fit not specified, set it to 'pe'
             self.data_to_fit = {qbn: 'pe' for qbn in self.qb_names}
 
