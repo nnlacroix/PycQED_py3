@@ -870,7 +870,7 @@ class HDAWG8Pulsar:
             return super()._get_segment_filter_userregs(obj)
         return [(f'awgs_{i}_userregs_{ZI_HDAWG8.USER_REG_FIRST_SEGMENT}',
                  f'awgs_{i}_userregs_{ZI_HDAWG8.USER_REG_LAST_SEGMENT}')
-                for i in range(4)]
+                for i in range(4) if obj._awg_program[i] is not None]
 
 class AWG5014Pulsar:
     """
@@ -1442,6 +1442,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             return self._awgs_with_waveforms
         else:
             self._awgs_with_waveforms.add(awg)
+            self._set_filter_segments(self._filter_segments, [awg])
 
     def start(self, exclude=None):
         """
@@ -1943,11 +1944,15 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                     '{}_inter_element_deadtime'.format(awg)))
             return max_spacing
 
-    def _set_filter_segments(self, val):
+    def _set_filter_segments(self, val, awgs='with_waveforms'):
         if val is None:
             val = (0, 32767)
         self._filter_segments = val
-        for AWG_name in self.awgs:
+        if awgs == 'with_waveforms':
+            awgs = self.awgs_with_waveforms()
+        elif awgs == 'all':
+            awgs = self.awgs
+        for AWG_name in awgs:
             AWG = self.AWG_obj(awg=AWG_name)
             for regs in self._get_segment_filter_userregs(AWG):
                 AWG.set(regs[0], val[0])
