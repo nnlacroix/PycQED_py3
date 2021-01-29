@@ -767,7 +767,7 @@ class HDAWG8Pulsar:
                         playback_strings += self._zi_playback_string(
                             name=obj.name, device='hdawg', wave=wave,
                             codeword=(nr_cw != 0), 
-                            append_zeros=getattr(self, 'append_zeros', 0),
+                            append_zeros=self.append_zeros(),
                             placeholder_wave=use_placeholder_waves)
                     elif not use_placeholder_waves:
                         pb_string, interleave_string = \
@@ -1269,6 +1269,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self.add_parameter('use_sequence_cache', initial_value=False,
                            parameter_class=ManualParameter, vals=vals.Bool(),
                            set_parser=self._use_sequence_cache_parser)
+        self.add_parameter('append_zeros', initial_value=0, vals=vals.Ints(),
+                           parameter_class=ManualParameter)
         self.add_parameter('flux_crosstalk_cancellation', initial_value=False,
                            parameter_class=ManualParameter, vals=vals.Bool())
         self.add_parameter('flux_channels', initial_value=[],
