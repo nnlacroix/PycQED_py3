@@ -8476,15 +8476,34 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     'marker': 'x'}
 
                 # plot with log scale on x-axis
-                self.plot_dicts[f'{base_plot_name}_main_log'] = deepcopy(
-                    self.plot_dicts[f'{base_plot_name}_main'])
-                self.plot_dicts[f'{base_plot_name}_main_log']['fig_id'] = \
-                    f'{base_plot_name}_log'
-                self.plot_dicts[f'{base_plot_name}_main_log']['logxscale'] = True
-                self.plot_dicts[f'{base_plot_name}_main_log']['xrange'] = \
-                    [min(xvals), max(xvals)]
+                self.plot_dicts[f'{base_plot_name}_main_log'] = {
+                    'plotfn': self.plot_colorxy,
+                    'fig_id': f'{base_plot_name}_log',
+                    'xvals': xvals*1e6,
+                    'yvals': self.proc_data_dict['proc_sweep_points_2D_dict'][
+                        qbn][param_name]/1e9,
+                    'zvals': self.proc_data_dict['proc_data_to_fit'][qbn],
+                    'xlabel': f'{xlabel} ($\\mu${xunit})',
+                    'ylabel': f'{ylabel} (G{yunit})',
+                    'logxscale': True,
+                    'xrange': [min(xvals*1e6), max(xvals*1e6)],
+                    'no_label_units': True,
+                    'no_label': True,
+                    'title': (self.raw_data_dict['timestamp'] + ' ' +
+                              self.measurement_strings[qbn]),
+                    'clabel': 'Strongest principal component (arb.)' if \
+                        'pca' in self.rotation_type.lower() else \
+                        '{} state population'.format(
+                            self.get_latex_prob_label(self.data_to_fit[qbn]))}
 
-                self.plot_dicts[f'{base_plot_name}_fit_log'] = deepcopy(
-                    self.plot_dicts[f'{base_plot_name}_fit'])
-                self.plot_dicts[f'{base_plot_name}_fit_log']['fig_id'] = \
-                    f'{base_plot_name}_log'
+                self.plot_dicts[f'{base_plot_name}_fit_log'] = {
+                    'fig_id': f'{base_plot_name}_log',
+                    'plotfn': self.plot_line,
+                    'xvals': self.delays_for_fit[qbn]*1e6,
+                    'yvals': self.proc_data_dict['analysis_params_dict'][
+                        f'fitted_freqs_{qbn}']['val']/1e9,
+                    'yerr': self.proc_data_dict['analysis_params_dict'][
+                        f'fitted_freqs_{qbn}']['stderr']/1e9,
+                    'color': 'r',
+                    'linestyle': '-',
+                    'marker': 'x'}
