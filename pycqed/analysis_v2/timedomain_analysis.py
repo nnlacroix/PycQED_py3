@@ -8231,14 +8231,16 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             self.ghost = {qbn: False for qbn in self.qb_names}
 
     def prepare_fitting_slice(self, freqs, qbn, mu_guess,
-                              slice_idx=None, data_slice=None):
+                              slice_idx=None, data_slice=None,
+                              mu0_guess=None, do_double_fit=False):
         if slice_idx is None:
             raise ValueError('"slice_idx" cannot be None. It is used '
                              'for unique names in the fit_dicts.')
         if data_slice is None:
             data_slice = self.proc_data_dict['proc_data_to_fit'][qbn][
                          :, slice_idx]
-        GaussianModel = fit_mods.GaussianModel
+        GaussianModel = lmfit.Model(fit_mods.DoubleGaussian) if do_double_fit \
+            else lmfit.Model(fit_mods.Gaussian)
         ampl_guess = (data_slice.max() - data_slice.min()) / \
                      0.4 * self.sign_of_peaks[qbn] * self.sigma_guess[qbn]
         offset_guess = data_slice[0]
@@ -8254,6 +8256,16 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
         GaussianModel.set_param_hint('offset',
                                      value=offset_guess,
                                      vary=True)
+        if do_double_fit:
+            GaussianModel.set_param_hint('sigma0',
+                                         value=self.sigma_guess[qbn],
+                                         vary=True)
+            GaussianModel.set_param_hint('mu0',
+                                         value=mu0_guess,
+                                         vary=True)
+            GaussianModel.set_param_hint('ampl0',
+                                         value=ampl_guess/2,
+                                         vary=True)
         guess_pars = GaussianModel.make_params()
         self.set_user_guess_pars(guess_pars)
 
@@ -8266,6 +8278,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def prepare_fitting(self):
         self.rectangles_exclude = self.get_param_value('rectangles_exclude')
+        self.delays_double_fit = self.get_param_value('delays_double_fit')
         self.delay_ranges_to_fit = self.get_param_value(
             'delay_ranges_to_fit', default_value={})
         self.freq_ranges_to_fit = self.get_param_value(
@@ -8294,6 +8307,7 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                 if first_cal_state_idxs is None:
                     first_cal_state_idxs = []
             for i, delay in enumerate(delays):
+                do_double_fit = False
                 if not fit_first_cal_state.get(qbn, True) and \
                         i-len(delays) in first_cal_state_idxs:
                     continue
@@ -8319,6 +8333,11 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                                 freqs = freqs[reduction_arr]
                                 data_slice = data_slice[reduction_arr]
 
+                    if self.delays_double_fit is not None and \
+                            self.delays_double_fit.get(qbn, None) is not None:
+                        rectangle = self.delays_double_fit[qbn]
+                        do_double_fit = rectangle[0] < delay < rectangle[1]
+
                     reduction_arr = np.invert(np.isnan(data_slice))
                     freqs = freqs[reduction_arr]
                     data_slice = data_slice[reduction_arr]
@@ -8326,10 +8345,23 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     self.freqs_for_fit[qbn].append(freqs)
                     self.delays_for_fit[qbn] = np.append(
                         self.delays_for_fit[qbn], delay)
-                    mu_guess = freqs[np.argmax(
-                        data_slice * self.sign_of_peaks[qbn])]
+
+                    if do_double_fit:
+                        peak_indices = sp.signal.find_peaks(
+                            data_slice, distance=50e6/(freqs[1] - freqs[0]))[0]
+                        peaks = data_slice[peak_indices]
+                        srtd_idxs = np.argsort(np.abs(peaks))
+                        mu_guess = freqs[peak_indices[srtd_idxs[-1]]]
+                        mu0_guess = freqs[peak_indices[srtd_idxs[-2]]]
+                    else:
+                        mu_guess = freqs[np.argmax(
+                            data_slice * self.sign_of_peaks[qbn])]
+                        mu0_guess = None
+
                     self.prepare_fitting_slice(freqs, qbn, mu_guess, i,
-                                               data_slice=data_slice)
+                                               data_slice=data_slice,
+                                               mu0_guess=mu0_guess,
+                                               do_double_fit=do_double_fit)
 
     def analyze_fit_results(self):
         self.proc_data_dict['analysis_params_dict'] = OrderedDict()
@@ -8342,8 +8374,13 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
             deep = False
             for i, fk in enumerate(fit_keys):
                 fit_res = self.fit_dicts[fk]['fit_res']
-                fitted_freqs[i] = fit_res.best_values['mu']
-                fitted_freqs_errs[i] = fit_res.params['mu'].stderr
+                mu_param = 'mu'
+                if 'mu0' in fit_res.best_values:
+                    mu_param = 'mu' if fit_res.best_values['mu'] > \
+                                       fit_res.best_values['mu0'] else 'mu0'
+
+                fitted_freqs[i] = fit_res.best_values[mu_param]
+                fitted_freqs_errs[i] = fit_res.params[mu_param].stderr
                 if self.from_lower[qbn]:
                     if self.ghost[qbn]:
                         if (fitted_freqs[i - 1] - fit_res.best_values['mu']) / \
