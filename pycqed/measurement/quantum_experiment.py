@@ -33,7 +33,8 @@ class QuantumExperiment(CircuitBuilder):
                  sequences=(), sequence_function=None,
                  sequence_kwargs=None, df_kwargs=None, df_name=None,
                  mc_points=None, sweep_functions=(awg_swf.SegmentHardSweep,
-                                                      awg_swf.SegmentSoftSweep),
+                                                  awg_swf.SegmentSoftSweep),
+                 harmonize_element_lengths=False,
                  compression_seg_lim=None, force_2D_sweep=True, callback=None,
                  callback_condition=lambda : True, **kw):
         """
@@ -88,6 +89,9 @@ class QuantumExperiment(CircuitBuilder):
                 sweep_functions has 2 entries, one for each dimension. Defaults to
                 SegmentHardSweep for the first sweep dimensions and SegmentSoftSweep
                 for the second dimension.
+            harmonize_element_lengths (bool, default False): whether it
+                should be ensured for all AWGs and all elements that the
+                element length is the same in all sequences.
             compression_seg_lim (int): maximal number of segments that can be in a
                 single sequence. If not None and the QuantumExperiment is a 2D sweep
                 with more than 1 sequence, and the sweep_functions are
@@ -142,6 +146,7 @@ class QuantumExperiment(CircuitBuilder):
         self.sweep_functions = sweep_functions
         self.force_2D_sweep = force_2D_sweep
         self.compression_seg_lim = compression_seg_lim
+        self.harmonize_element_lengths = harmonize_element_lengths
         self.channels_to_upload = []
         # The experiment_name might have been set by the user in kw or by a
         # child class as an attribute. Otherwise, the default None will
@@ -410,6 +415,9 @@ class QuantumExperiment(CircuitBuilder):
 
         # check sequence
         assert len(self.sequences) != 0, "No sequence found."
+
+        if self.harmonize_element_lengths:
+            self.sequences[0].harmonize_element_lengths(self.sequences)
 
     def _configure_mc(self, MC=None):
         """
