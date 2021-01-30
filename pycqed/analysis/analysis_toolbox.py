@@ -253,7 +253,7 @@ def data_from_time(timestamp, folder=None, auto_fetch=None):
         msg = "Requested day '%s' not found" % daystamp
         if auto_fetch:
             log.warning(msg + f'\n Trying to fetch from {fetch_data_dir}')
-            fetch_data(timestamp, folder=folder)
+            copy_data(timestamp, target_dir=folder)
             return data_from_time(timestamp, folder=folder, auto_fetch=False)
         raise KeyError(msg)
 
@@ -263,7 +263,7 @@ def data_from_time(timestamp, folder=None, auto_fetch=None):
         msg = "Requested data '%s_%s' not found" % (daystamp, tstamp)
         if auto_fetch:
             log.warning(msg + f'\n Trying to fetch from {fetch_data_dir}')
-            fetch_data(timestamp, folder=folder)
+            copy_data(timestamp, target_dir=folder)
             return data_from_time(timestamp, folder=folder, auto_fetch=False)
         raise KeyError(msg)
     elif len(measdirs) == 1:
@@ -570,7 +570,7 @@ def get_timestamps_in_range(timestamp_start, timestamp_end=None,
             folder=fetch_data_dir, auto_fetch=False, **kwargs)
         if len(all_timestamps) != len(remote_timestamps):
             log.warning(f'Fetching from {fetch_data_dir}')
-            [fetch_data(timestamp=t, folder=folder, **kw) for t in
+            [copy_data(timestamp=t, target_dir=folder, **kw) for t in
              remote_timestamps if t not in all_timestamps]
             kwargs['folder'] = folder
             return get_timestamps_in_range(auto_fetch=False, **kwargs)
@@ -1749,14 +1749,14 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
     return new_cmap
 
 
-def fetch_data(timestamp, source_dir=None, folder=None,
-               delete_if_exists=False):
+def copy_data(timestamp, source_dir=None, target_dir=None,
+              delete_if_exists=False):
     """
     Copies data from a source folder to the data folder.
     :param timestamp: (list or str) A single timestamp or a list of
         timestamps indicating which folder(s) should be copied.
     :param source_dir: (str) path to the source datadir
-    :param folder: (str) path to the target datadir (default: None, in which
+    :param target_dir: (str) path to the target datadir (default: None, in which
         case the stored datadir is used)
     :param delete_if_exists: (bool, default False) If True, existing folders
         are deleted before copying them from the source_dir. Otherwise, an
@@ -1770,19 +1770,19 @@ def fetch_data(timestamp, source_dir=None, folder=None,
                                    "variable module fetch_data_dir is not set."
     if isinstance(timestamp, list):
         for t in timestamp:
-            fetch_data(t, source_dir, folder=folder,
-                       delete_if_exists=delete_if_exists)
+            copy_data(t, source_dir, target_dir=target_dir,
+                      delete_if_exists=delete_if_exists)
         return
-    if folder is None:
-        folder = datadir
+    if target_dir is None:
+        target_dir = datadir
     f_src = data_from_time(timestamp, folder=source_dir)
     daystamp, tstamp = verify_timestamp(timestamp)
-    daydir = os.path.join(folder, daystamp)
+    daydir = os.path.join(target_dir, daystamp)
     if not os.path.isdir(daydir):
         os.makedirs(daydir)
     exists = True
     try:
-        f = data_from_time(timestamp, folder=folder, auto_fetch=False)
+        f = data_from_time(timestamp, folder=target_dir, auto_fetch=False)
     except KeyError:
         f = os.path.join(daydir, os.path.basename(f_src))
         exists = False
@@ -1796,15 +1796,15 @@ def fetch_data(timestamp, source_dir=None, folder=None,
                       f'and delete_if_exists was set to False.')
 
 
-def fetch_data_in_range(timestamp_start, timestamp_end, source_dir=None,
-                        folder=None, delete_if_exists=False, **kw):
+def copy_data_in_range(timestamp_start, timestamp_end=None, source_dir=None,
+                       target_dir=None, delete_if_exists=False, **kw):
     """
     Copies data corresponding to a range of timestamps from a source folder
     to the data folder.
     :param timestamp_start: (str) start of the range that could be copied.
     :param timestamp_end: (str) end of the range that could be copied.
     :param source_dir: (str) path to the source datadir
-    :param folder: (str) path to the target datadir (default: None, in which
+    :param target_dir: (str) path to the target datadir (default: None, in which
         case the stored datadir is used)
     :param delete_if_exists: (bool, default False) If True, existing folders
         are deleted before copying them from the source_dir. Otherwise,
@@ -1819,5 +1819,5 @@ def fetch_data_in_range(timestamp_start, timestamp_end, source_dir=None,
                                    "variable module fetch_data_dir is not set."
     ts = get_timestamps_in_range(timestamp_start, timestamp_end,
                                  folder=source_dir, **kw)
-    fetch_data(ts, source_dir, folder=folder,
-               delete_if_exists=delete_if_exists)
+    copy_data(ts, source_dir, target_dir=target_dir,
+              delete_if_exists=delete_if_exists)
