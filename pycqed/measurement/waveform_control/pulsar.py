@@ -715,6 +715,8 @@ class HDAWG8Pulsar:
 
         chids = [f'ch{i+1}{m}' for i in range(8) for m in ['','m']]
         divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
+        def with_divisor(h, ch):
+            return (h if divisor[ch] == 1 else (h, divisor[ch]))
         ch_has_waveforms = {chid: False for chid in chids}
 
         use_placeholder_waves = self.get(f'{obj.name}_use_placeholder_waves')
@@ -781,8 +783,6 @@ class HDAWG8Pulsar:
                         wave = tuple(chid_to_hash.get(ch, None) for ch in chids)
                         if wave == (None, None, None, None):
                             continue
-                        wave = tuple((h, divisor[ch]) if h is not None
-                                     else None for h, ch in zip(wave, chids))
                         if use_placeholder_waves:
                             if wave in defined_waves.values():
                                 continue
@@ -802,6 +802,9 @@ class HDAWG8Pulsar:
                                 max(placeholder_wave_lengths),
                                 placeholder_wave_index)
                         else:
+                            wave = tuple(
+                                with_divisor(h, chid) if h is not None
+                                else None for h, chid in zip(wave, chids))
                             wave_definitions += self._zi_wave_definition(
                                 wave, defined_waves)
                         
@@ -860,7 +863,7 @@ class HDAWG8Pulsar:
                 continue
 
             if not use_placeholder_waves:
-                waves_to_upload = {(h, divisor[chid]):
+                waves_to_upload = {with_divisor(h, chid):
                                    divisor[chid]*waveforms[h][::divisor[chid]]
                                    for codewords in awg_sequence.values()
                                        if codewords is not None
