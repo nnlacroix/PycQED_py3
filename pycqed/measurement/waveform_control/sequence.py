@@ -30,6 +30,7 @@ class Sequence:
         self.awg_sequence = {}
         self.repeat_patterns = {}
         self.extend(segments)
+        self.is_resolved = False
 
     def add(self, segment):
         if segment.name in self.segments:
@@ -48,7 +49,7 @@ class Sequence:
 
     def generate_waveforms_sequences(self, awgs=None,
                                      get_channel_hashes=False,
-                                     resolve_segments=True):
+                                     resolve_segments=None):
         """
         Calculates and returns 
             * waveforms: a dictionary of waveforms used in the sequence,
@@ -62,8 +63,10 @@ class Sequence:
             waveforms, and instead return a dict of channel-elements indexed
             by channel names, each channel-element consisting of a
             waveform-hash for each codeword on that channel.
-        :param resolve_segments: (bool, default: True) whether the segments
-            in the sequence still need to be resolved.
+        :param resolve_segments: (bool, optional) whether the segments in the
+            sequence still need to be resolved. If not provided,
+            self.is_resolved is checked to determine whether segments
+            need to be resolved.
         :return: a tuple of waveforms, sequences as described above if
             get_channel_hashes==False. Otherwise, a tuple channel_hashes,
             sequences.
@@ -71,7 +74,8 @@ class Sequence:
         waveforms = {}
         sequences = {}
         channel_hashes = {}
-        if resolve_segments:
+        if resolve_segments or (resolve_segments is None
+                                and not self.is_resolved):
             for seg in self.segments.values():
                 seg.resolve_segment()
                 seg.gen_elements_on_awg()
@@ -122,6 +126,7 @@ class Sequence:
                         {k[len(awg) + 1:]: v for k, v in
                          seg.sweep_params.items() if k.startswith(awg + '_')}
                     sequences[awg][elnames[-1]]['metadata']['end_loop'] = True
+        self.is_resolved = True
         if get_channel_hashes:
             return channel_hashes, sequences
         else:
