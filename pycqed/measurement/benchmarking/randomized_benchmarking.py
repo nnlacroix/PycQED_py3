@@ -305,6 +305,7 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
             seq_blocks = []
             single_qb_gates = {qb_1: [], qb_2: []}
             for k, idx in enumerate(cl_seq):
+                self.timer.checkpoint("rb_block.seq.iteration.start")
                 pulse_tuples_list = tqc.TwoQubitClifford(idx).gate_decomposition
                 for j, pulse_tuple in enumerate(pulse_tuples_list):
                     if isinstance(pulse_tuple[1], list):
@@ -322,6 +323,7 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
                         pulse_name = pulse_tuple[0]
                         single_qb_gates[qb_name].append(
                             pulse_name + ' ' + qb_name)
+                self.timer.checkpoint("rb_block.seq.iteration.end")
 
             seq_blocks.append(
                 self.simultaneous_blocks(
