@@ -984,23 +984,45 @@ def process_tomography_analysis(data_dict, gate_name='CZ', Uideal=None,
                           data_dict, **params)
 
 
-def bootstrapping(measured_data, n_readouts, n_shots, preselection=False,
-                  **params):
+def bootstrapping(data_dict=None, keys_in=None, measured_data=None, **params):
     """
     Does one round of resampling of measured_data using a uniform distribution.
+    :param data_dict: OrderedDict containing data to be processed
+    :param keys_in: list of channel names or dictionary paths leading to
+            data to be processed of the form (n_readouts*n_shots, n_qubits).
     :param measured_data: array of shape (n_readouts*n_shots, n_qubits)
         containing raw data shots
-    :param n_readouts: number of segments including preselection
-    :param n_shots: number of data shots per segment
-    :param preselection: whether preselection was used
-    :param params: keyword arguments (here so I can pass **kw)
+    :param params: keyword arguments:
+        n_readouts (required): number of segments including preselection
+        n_shots (required): number of data shots per segment
+        preselection: whether preselection was used
+
     :return: array of shape (n_readouts*n_shots, n_qubits) with resampled raw
         data shots.
     """
+    if measured_data is None:
+        if data_dict is None or keys_in is None:
+            raise ValueError('Make sure both data_dict and keys_in are '
+                             'specified. Or provide measured_data.')
+        data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+        measured_data = np.concatenate([arr[:, np.newaxis] for arr in
+                                        list(data_to_proc_dict.values())],
+                                       axis=1)
+
+    if data_dict is None:
+        data_dict = {}
+    n_readouts = hlp_mod.get_param('n_readouts', data_dict, raise_error=True,
+                                   **params)
+    n_shots = hlp_mod.get_param('n_shots', data_dict, raise_error=True,
+                                **params)
+    preselection = hlp_mod.get_param('preselection', data_dict,
+                                     default_value=False, **params)
+
     sample_i = np.zeros(measured_data.shape)
     for seg in range(n_readouts)[preselection::preselection+1]:
         sample = deepcopy(measured_data[seg::n_readouts, :])
         assert len(sample) == n_shots
+        # resample with replacement the shots for the segment seg
         p = np.random.choice(np.arange(n_shots), n_shots)
         sample_i[seg::n_readouts, :] = sample[p]
         # preselection
@@ -1091,7 +1113,8 @@ def bootstrapping_state_tomography(data_dict, keys_in, store_rhos=False,
     for n in range(Nbstrp):
         if verbose:
             print('Bootstrapping run state tomo: ', n)
-        sample_i = bootstrapping(raw_data, n_readouts, n_shots, preselection)
+        sample_i = bootstrapping(measured_data=raw_data, n_readouts=n_readouts,
+                                 n_shots=n_shots, preselection=preselection)
         for i, keyi in enumerate(data_to_proc_dict):
             hlp_mod.add_param(keyi, sample_i[:, i], data_dict_temp,
                               add_param_method='replace')

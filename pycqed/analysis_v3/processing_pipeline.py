@@ -11,14 +11,6 @@ from numpy import array  # Needed for eval. Do not remove.
 search_modules = set()
 search_modules.add(hlp_mod)
 
-try:
-    import pygraphviz as pgv
-except ModuleNotFoundError:
-    log.warning('Visualizing the pipeline tree requires graphviz '
-                '(http://www.graphviz.org/download/) and '
-                'the module pygraphviz '
-                '(conda install graphviz pygraphviz -c alubbock).')
-
 ###################################################################
 #### This module creates a processing pipeline for analysis_v3 ####
 ###################################################################
@@ -250,7 +242,7 @@ Final pipeline:
 class ProcessingPipeline(list):
 
     global_node_param_defaults = {'keys_out_container': '',
-                                  'meaj_obj_names': None}
+                                  'meas_obj_names': None}
 
     def __init__(self, pipeline=None, **kw):
         """
@@ -347,7 +339,7 @@ class ProcessingPipeline(list):
             processing function specified by node_name
         """
         for param, value in self.global_node_param_values.items():
-            if value not in node_params:
+            if param not in node_params:
                 node_params[param] = value
         node_params['node_name'] = node_name
 
@@ -655,8 +647,8 @@ class ProcessingPipeline(list):
         self.data_dict.update(data_dict)
         self.data_dict['processing_pipeline'] = repr(self)
 
-        for node_params in self:
-            try:
+        try:
+            for node_params in self:
                 node = None
                 for module in search_modules:
                     try:
@@ -667,11 +659,11 @@ class ProcessingPipeline(list):
                 if node is None:
                     raise KeyError(f'Node function "{node_params["node_name"]}"'
                                    f' not recognized')
-                node(self.data_dict, **node_params)
-            except Exception:
-                log.warning(
-                    f'Unhandled error during node {node_params["node_name"]}!')
-                log.warning(traceback.format_exc())
+                node(data_dict=self.data_dict, **node_params)
+        except Exception:
+            log.warning(
+                f'Unhandled error during node {node_params["node_name"]}!')
+            log.warning(traceback.format_exc())
 
     def save(self, data_dict=None, **params):
         """
@@ -804,6 +796,7 @@ class ProcessingPipeline(list):
         :param fmt: file format (png, pdf)
         :return: a pygraphviz.AGraph instance
         """
+        import pygraphviz as pgv
         pipeline = self
         if not any([node.get('was_resolved', False) for node in pipeline]):
             if meas_obj_value_names_map is None:

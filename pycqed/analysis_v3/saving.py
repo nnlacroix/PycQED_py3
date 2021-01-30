@@ -143,7 +143,7 @@ class Save:
                 del group[fr_key]
                 fr_group = group.create_group(fr_key)
 
-            d = _convert_dict_rec(deepcopy(fit_res))
+            d = _convert_dict_rec(fit_res)
             h5d.write_dict_to_hdf5(d, entry_point=fr_group)
 
     def save_figures(self, **params):
@@ -211,15 +211,16 @@ class Save:
 
 def _convert_dict_rec(obj):
     try:
+        obj_conv = deepcopy(obj)
         # is iterable?
-        for k in obj:
-            obj[k] = _convert_dict_rec(obj[k])
+        for k in obj_conv:
+            obj_conv[k] = _convert_dict_rec(obj_conv[k])
     except TypeError:
         if isinstance(obj, lmfit.model.ModelResult):
-            obj = _flatten_lmfit_modelresult(obj)
+            obj_conv = _flatten_lmfit_modelresult(obj)
         else:
-            obj = str(obj)
-    return obj
+            obj_conv = deepcopy(str(obj))
+    return obj_conv
 
 
 def _flatten_lmfit_modelresult(model):
