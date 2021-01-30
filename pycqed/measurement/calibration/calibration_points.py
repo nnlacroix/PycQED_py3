@@ -296,7 +296,6 @@ class CalibrationPoints:
             cal_states = []
             unique_cs = set()
             for cs in cal_states_temp:
-                print(unique_cs)
                 if cs not in unique_cs:
                     cal_states += [cs]
                 unique_cs.add(cs)

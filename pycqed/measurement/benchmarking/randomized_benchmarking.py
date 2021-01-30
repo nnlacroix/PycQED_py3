@@ -174,7 +174,7 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
                 n_shots=max(qb.acq_shots() for qb in self.meas_objs),
                 cal_points=self.cal_points, sweep_type=self.sweep_type,
                 interleaved_irb=self.interleaved_gate is not None, **kw)
-            self.exp_metadata.update({'processing_pipeline': pp})
+            # self.exp_metadata.update({'processing_pipeline': pp})
         else:
             log.debug(f'There is no support for automatic pipeline creation '
                       f'for the detector type {self.df_name}')

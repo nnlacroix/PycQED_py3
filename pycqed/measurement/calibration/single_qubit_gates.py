@@ -1175,7 +1175,7 @@ class SingleQubitGateCalib(CalibBuilder):
                     self.preprocessed_task_list, self.sweep_block,
                     block_align='end', **kw)
             if not TwoD_msmt:
-                self.mc_points = [self.mc_points[0]]
+                self.mc_points = [self.mc_points[0], []]
             self.autorun(store_preprocessed_task_list=True, **kw)
 
         except Exception as x:
@@ -1198,7 +1198,13 @@ class SingleQubitGateCalib(CalibBuilder):
         return self.block_from_ops(
             'prepend', [f'X180{trn} {qb}' for trn in prepended_pulses])
 
-    def run_analysis(self, **kw):
+    def run_analysis(self, analysis_kwargs=None, **kw):
+        # if analysis_kwargs is None:
+        #     analysis_kwargs = {}
+        # options_dict = analysis_kwargs.get('options_dict', {})
+        # options_dict['TwoD'] = True
+        # analysis_kwargs['options_dict'] = options_dict
+        # return analysis_kwargs
         pass
 
 
@@ -1249,9 +1255,9 @@ class Rabi(SingleQubitGateCalib):
         :param analysis_kwargs: (dict) keyword arguments for analysis
         :param kw: currently ignored
         """
+        # analysis_kwargs = super().run_analysis(analysis_kwargs=None, **kw)
         if analysis_kwargs is None:
             analysis_kwargs = {}
-
         self.analysis = tda.RabiAnalysis(
             qb_names=self.meas_obj_names, t_start=self.timestamp,
             **analysis_kwargs)
@@ -1331,9 +1337,9 @@ class Ramsey(SingleQubitGateCalib):
         :param analysis_kwargs: (dict) keyword arguments for analysis
         :param kw: currently ignored
         """
+        # analysis_kwargs = super().run_analysis(analysis_kwargs=None, **kw)
         if analysis_kwargs is None:
             analysis_kwargs = {}
-
         options_dict = analysis_kwargs.pop('options_dict', {})
         options_dict.update(dict(
             fit_gaussian_decay=kw.pop('fit_gaussian_decay', True)))

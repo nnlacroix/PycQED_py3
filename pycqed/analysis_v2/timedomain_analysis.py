@@ -1371,17 +1371,18 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
                 if isinstance(corr_data, dict):
                     for data_key, data in corr_data.items():
+                        fn = f'{fig_name}_{data_key}'
+                        tf = f'{data_key}_{title_suf}' if \
+                            len(title_suf) else data_key
                         if not self.rotate:
                             data_label = data_key
                             plot_name_suffix = data_key
                             plot_cal_points = False
                             data_axis_label = 'Population'
                         else:
-                            fn = f'{fig_name}_{data_key}'
+
                             data_label = 'Data'
                             plot_name_suffix = ''
-                            tf = f'{data_key}_{title_suf}' if \
-                                len(title_suf) else data_key
                             plot_cal_points = (
                                 not self.options_dict.get('TwoD', False))
                             data_axis_label = \
@@ -5039,20 +5040,13 @@ class FluxlineCrosstalkAnalysis(MultiQubit_TimeDomain_Analysis):
 class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def get_params_from_file(self):
-        params_dict = kwargs.get('params_dict', {})
-        pd = {}
+        params_dict = {}
         for qbn in self.qb_names:
             trans_name = self.get_transition_name(qbn)
             s = 'Instrument settings.'+qbn
-            for trans_name in ['ge', 'ef']:
-                pd[f'{trans_name}_amp180_'+qbn] = \
-                    s+f'.{trans_name}_amp180'
-                pd[f'{trans_name}_amp90scale_'+qbn] = \
-                    s+f'.{trans_name}_amp90_scale'
-        params_dict.update(pd)
-        kwargs['params_dict'] = params_dict
-        kwargs['numeric_params'] = list(pd)
-        super().__init__(qb_names, *args, **kwargs)
+            params_dict[f'{trans_name}_amp180_'+qbn] = s+f'.{trans_name}_amp180'
+            params_dict[f'{trans_name}_amp90scale_'+qbn] = s+f'.{trans_name}_amp90_scale'
+        super().get_params_from_file(params_dict, list(params_dict))
 
     def prepare_fitting(self):
         self.fit_dicts = OrderedDict()
