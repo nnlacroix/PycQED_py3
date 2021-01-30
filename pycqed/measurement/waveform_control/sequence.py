@@ -139,6 +139,54 @@ class Sequence:
         else:
             return waveforms, sequences
 
+    @staticmethod
+    def harmonize_element_lengths(sequences, awgs=None):
+        """
+        Given a list of sequences, this function ensures for all AWGs and all
+        elements that the element length is the same in all sequences. This is
+        done by setting the length of each AWG element to the maximum length
+        across all sequences. After this, overlap is checked and the sequences
+        are markes as resolved.
+        :param sequences: a list of sequences
+        :param awgs: a list of AWG names. If None, lengths will be harmonized
+            for all AWGs.
+        """
+        seq_awgs = [awgs] * len(sequences)
+        # collect element lengths
+        lengths = odict()
+        for i, seq in enumerate(sequences):
+            for seg in seq.segments.values():
+                seg.resolve_segment()
+                seg.gen_elements_on_awg()
+            if awgs is None:
+                # find awgs for this sequence
+                seq_awgs[i] = set()
+                for seg in seq.segments.values():
+                    seq_awgs[i] |= set(seg.elements_on_awg)
+            for awg in seq_awgs[i]:
+                if awg not in lengths:
+                    lengths[awg] = odict()
+                for segname, seg in seq.segments.items():
+                    elnames = seg.elements_on_awg.get(awg, [])
+                    for elname in elnames:
+                        if elname not in lengths[awg]:
+                            lengths[awg][elname] = []
+                        lengths[awg][elname].append(
+                            seg.element_start_end[elname][awg][1])
+        # set element lengths to the maximum of the collected values
+        for i, seq in enumerate(sequences):
+            for awg in seq_awgs[i]:
+                for segname, seg in seq.segments.items():
+                    elnames = seg.elements_on_awg.get(awg, [])
+                    for elname in elnames:
+                        seg.element_start_end[elname][awg][1] = max(
+                            lengths[awg][elname])
+            # test for overlaps
+            for segname, seg in seq.segments.items():
+                seg._test_overlap()
+            # mark sequence as resolved
+            seq.is_resolved = True
+
     def n_acq_elements(self, per_segment=False):
         """
         Gets the number of acquisition elements in the sequence.
