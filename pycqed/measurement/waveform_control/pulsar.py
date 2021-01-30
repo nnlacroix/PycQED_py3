@@ -717,6 +717,7 @@ class HDAWG8Pulsar:
         divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
         def with_divisor(h, ch):
             return (h if divisor[ch] == 1 else (h, divisor[ch]))
+
         ch_has_waveforms = {chid: False for chid in chids}
 
         use_placeholder_waves = self.get(f'{obj.name}_use_placeholder_waves')
@@ -791,6 +792,7 @@ class HDAWG8Pulsar:
                             placeholder_wave_lengths = [
                                 waveforms[h].size for h in wave if h is not None
                             ]
+                            log.debug(placeholder_wave_lengths)
                             if max(placeholder_wave_lengths) != \
                                min(placeholder_wave_lengths):
                                 log.warning(f"Waveforms of unequal length on"
@@ -895,6 +897,7 @@ class HDAWG8Pulsar:
                 self._hdawg_waveform_cache[f'{obj.name}_{awg_nr}'] = {}
 
             if use_placeholder_waves:
+                log.debug(wave_definitions)
                 for idx, wave_hashes in defined_waves.items():
                     self._hdawg_update_waveforms(obj, awg_nr, idx,
                                                  wave_hashes, waveforms)
@@ -918,6 +921,8 @@ class HDAWG8Pulsar:
             self._hdawg_waveform_cache[f'{obj.name}_{awg_nr}'][
                 wave_idx] = wave_hashes
         a1, m1, a2, m2 = [waveforms.get(h, None) for h in wave_hashes]
+        log.debug([len(w) if w is not None else None
+                   for w in [a1, m1, a2, m2]])
         n = max([len(w) for w in [a1, m1, a2, m2] if w is not None])
         if m1 is not None and a1 is None:
             a1 = np.zeros(n)
@@ -934,7 +939,10 @@ class HDAWG8Pulsar:
             mc = None
         a1 = None if a1 is None else np.pad(a1, n - a1.size)
         a2 = None if a2 is None else np.pad(a2, n - a2.size)
+        log.debug([len(w) if w is not None else None
+                   for w in [a1, m1, a2, m2]])
         wf_raw_combined = merge_waveforms(a1, a2, mc)
+        log.debug(np.shape(wf_raw_combined))
         obj.setv(f'awgs/{awg_nr}/waveform/waves/{wave_idx}', wf_raw_combined)
 
     def _is_awg_running(self, obj):
