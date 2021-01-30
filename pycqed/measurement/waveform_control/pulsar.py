@@ -1333,6 +1333,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         return val
 
     def reset_sequence_cache(self):
+        self.sequence_cache = {}
         self.sequence_cache['settings'] = {}
         self.sequence_cache['metadata'] = {}
         self.sequence_cache['hashes'] = {}
@@ -1530,6 +1531,10 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         log.info(f'Starting compilation of sequence {sequence.name}')
         t0 = time.time()
         if self.use_sequence_cache():
+            sequence_cache = self.sequence_cache
+            # The following makes sure that the sequence cache is empty if
+            # the compilation crashes or gets interrupted.
+            self.reset_sequence_cache()
             # first, we check whether programming the whole AWG is mandatory due
             # to changed AWG settings or due to changed metadata
             awgs_to_program = []
@@ -1553,17 +1558,17 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 if awg not in awgs_to_program:
                     try:
                         np.testing.assert_equal(
-                            self.sequence_cache['settings'].get(awg, {}),
+                            sequence_cache['settings'].get(awg, {}),
                             settings[awg])
                         np.testing.assert_equal(
-                            self.sequence_cache['metadata'].get(awg, {}),
+                            sequence_cache['metadata'].get(awg, {}),
                             metadata[awg])
                     except AssertionError:  # settings or metadata change
                         awgs_to_program.append(awg)
             for awg in awgs_to_program:
                 # update the settings and metadata cache
-                self.sequence_cache['settings'][awg] = settings[awg]
-                self.sequence_cache['metadata'][awg] = metadata[awg]
+                sequence_cache['settings'][awg] = settings[awg]
+                sequence_cache['metadata'][awg] = metadata[awg]
             # Check for which channels some relevant setting or some hash has
             # changed, in which case the group of channels should be uploaded.
             settings_to_check = ['{}_internal_modulation']
@@ -1582,11 +1587,11 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 changed_settings = True
                 try:
                     np.testing.assert_equal(
-                        self.sequence_cache['settings'].get(ch, {}),
+                        sequence_cache['settings'].get(ch, {}),
                         settings[ch])
                     changed_settings = False
                     np.testing.assert_equal(
-                        self.sequence_cache['hashes'].get(ch, {}), hashes)
+                        sequence_cache['hashes'].get(ch, {}), hashes)
                 except AssertionError:
                     # changed setting, sequence structure, or hash
                     if ch_awg not in awgs_with_channels_to_upload:
@@ -1597,8 +1602,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                             channels_to_program.append(c)
             # update the settings cache and hashes cache
             for ch in channels_to_upload:
-                self.sequence_cache['settings'][ch] = settings.get(ch, {})
-                self.sequence_cache['hashes'][ch] = channel_hashes.get(ch, {})
+                sequence_cache['settings'][ch] = settings.get(ch, {})
+                sequence_cache['hashes'][ch] = channel_hashes.get(ch, {})
             # generate the waveforms that we need for uploading
             log.debug(f'Start of waveform generation sequence {sequence.name} '
                      f'{time.time() - t0}')
@@ -1626,23 +1631,23 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                     continue
                 try:
                     np.testing.assert_equal(
-                        self.sequence_cache['length'].get(ch, {}),
+                        sequence_cache['length'].get(ch, {}),
                         ch_length[ch])
                 except AssertionError:  # changed length or sequence structure
                     for c in self.channel_groups[ch]:
                         channels_to_program.append(c)
             # update the length cache
             for ch in channels_to_program:
-                self.sequence_cache['length'][ch] = ch_length.get(ch, {})
+                sequence_cache['length'][ch] = ch_length.get(ch, {})
             # Update the cache for channels that are on an AWG marked for
             # complete re-programming (these channels might have been skipped
             # above).
             for ch in self.channels:
                 if self.get(f'{ch}_awg') in awgs_to_program:
-                    self.sequence_cache['settings'][ch] = settings.get(ch, {})
-                    self.sequence_cache['hashes'][ch] = channel_hashes.get(
+                    sequence_cache['settings'][ch] = settings.get(ch, {})
+                    sequence_cache['hashes'][ch] = channel_hashes.get(
                         ch, {})
-                    self.sequence_cache['length'][ch] = ch_length.get(ch, {})
+                    sequence_cache['length'][ch] = ch_length.get(ch, {})
             log.debug(f'awgs_to_program = {repr(awgs_to_program)}\n'
                       f'awgs_with_channels_to_upload = '
                       f'{repr(awgs_with_channels_to_upload)}\n'
@@ -1690,7 +1695,10 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                                   channels_to_upload=ch_upl,
                                   channels_to_program=ch_prg)
             log.info(f'Finished programming {awg} in {time.time() - t0}')
-        
+
+        if self.use_sequence_cache():
+            # Compilation finished sucessfully. Store sequence cache.
+            self.sequence_cache = sequence_cache
         self.num_seg = len(sequence.segments)
         self.AWGs_prequeried(False)
 
