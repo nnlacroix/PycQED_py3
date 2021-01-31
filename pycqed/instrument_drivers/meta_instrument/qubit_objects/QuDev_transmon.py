@@ -2979,6 +2979,7 @@ class QuDev_transmon(Qubit):
                 if for_ef:
                     try:
                         self.ef_freq(new_qubit_freq)
+                        self.anharmonicity(self.ef_freq() - self.ge_freq())
                     except AttributeError as e:
                         log.warning('%s. This parameter will not be '
                                         'updated.'%e)

@@ -416,6 +416,7 @@ class MeasurementControl(Instrument):
                       len(self.sweep_functions):] = new_vals
         sweep_len = len(self.get_sweep_points().T) * self.acq_data_len_scaling
 
+
         ######################
         # DATA STORING BLOCK #
         ######################
