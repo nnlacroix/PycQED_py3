@@ -239,7 +239,6 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                 try:
                     group_name = '/'.join(file_par.split('.')[:i+1])
                     par_name = '.'.join(file_par.split('.')[i+1:])
-                    print(i, group_name, par_name)
                     if group_name == '':
                         group = data_file
                         attrs = []
