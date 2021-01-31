@@ -866,6 +866,10 @@ class HDAWG8Pulsar:
         n = max([len(w) for w in [a1, m1, a2, m2] if w is not None])
         if m1 is not None and a1 is None:
             a1 = np.zeros(n)
+        if m1 is None and a1 is None and m2 is not None:
+            # Hack needed to work around an HDAWG bug where programming only
+            # m2 channel does not work. Remove once bug is fixed.
+            a1 = np.zeros(n)
         if m2 is not None and a2 is None:
             a2 = np.zeros(n)
         if m1 is not None or m2 is not None:
@@ -1772,6 +1776,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 defined_waves = set()
             else:
                 defined_waves = dict()
+        log.debug(f'adding wave definition: {wave}')
         wave_definition = []
         w1, w2 = self._zi_waves_to_wavenames(wave)
         if placeholder_wave_length is None:
@@ -1795,6 +1800,9 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         else:
             # use placeholder waves
             n = placeholder_wave_length
+            if w1 is None and wave[3] is not None:
+                w1 = f'{w2}_but_zero'
+            log.debug(f'placeholder wave definition: {(w1, w2, wave)}')
             for wc, marker in [(w1, wave[1]), (w2, wave[3])]:
                 if wc is not None:
                     wave_definition.append(
@@ -1816,7 +1824,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             playback_string.append(
                 'if (i_seg >= first_seg && i_seg <= last_seg) {')
         w1, w2 = self._zi_waves_to_wavenames(wave)
-        use_hack = not placeholder_wave
+        use_hack = True # set this to false once the bugs with HDAWG are fixed
         trig_source = self.get('{}_trigger_source'.format(name))
         if trig_source == 'Dig1':
             playback_string.append(
@@ -1835,11 +1843,15 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         if codeword and not (w1 is None and w2 is None):
             playback_string.append('playWaveDIO();')
         else:
-            if w1 is None and w2 is not None and use_hack:
+            if w1 is None and w2 is not None and use_hack and not placeholder_wave:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(f'playWave(marker(1,0)*0*{w2}, {w2});')
-            elif w1 is not None and w2 is None and use_hack:
+            elif w1 is None and wave[3] is not None and use_hack and placeholder_wave:
+                # This hack is needed due to a bug on the HDAWG.
+                # Remove this if case once the bug is fixed.
+                playback_string.append(f'playWave({w2}_but_zero, {w2});')
+            elif w1 is not None and w2 is None and use_hack and not placeholder_wave:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(f'playWave({w1}, marker(1,0)*0*{w1});')
