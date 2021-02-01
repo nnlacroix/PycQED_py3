@@ -755,6 +755,7 @@ class HDAWG8Pulsar:
 
             counter = 1
             next_wave_idx = 0
+            wave_idx_lookup = {}
             current_segment = 'no_segment'
             for element in awg_sequence:
                 awg_sequence_element = deepcopy(awg_sequence[element])
@@ -763,6 +764,7 @@ class HDAWG8Pulsar:
                     playback_strings.append(f'// Segment {current_segment}')
                     playback_strings.append('i_seg += 1;')
                     continue
+                wave_idx_lookup[element] = {}
                 playback_strings.append(f'// Element {element}')
                 
                 metadata = awg_sequence_element.pop('metadata', {})
@@ -780,14 +782,18 @@ class HDAWG8Pulsar:
                         if cw == 'no_codeword':
                             if nr_cw != 0:
                                 continue
+                        wave_idx_lookup[element][cw] = {}
                         chid_to_hash = awg_sequence_element[cw]
                         wave = tuple(chid_to_hash.get(ch, None) for ch in chids)
                         if wave == (None, None, None, None):
                             continue
                         if use_placeholder_waves:
                             if wave in defined_waves.values():
+                                wave_idx_lookup[element][cw] = [
+                                    i for i, v in defined_waves.items()
+                                    if v == wave][0]
                                 continue
-                            placeholder_wave_index = next_wave_idx
+                            wave_idx_lookup[element][cw] = next_wave_idx
                             next_wave_idx += 1
                             placeholder_wave_lengths = [
                                 waveforms[h].size for h in wave if h is not None
@@ -802,7 +808,7 @@ class HDAWG8Pulsar:
                                 wave,
                                 defined_waves,
                                 max(placeholder_wave_lengths),
-                                placeholder_wave_index)
+                                wave_idx_lookup[element][cw])
                         else:
                             wave = tuple(
                                 with_divisor(h, chid) if h is not None
@@ -884,7 +890,19 @@ class HDAWG8Pulsar:
 
             if not use_placeholder_waves or channels_to_program == 'all' or \
                     any([ch in channels_to_program for ch in chids]):
+                run_compiler = True
+            else:
+                cached_lookup = self._hdawg_waveform_cache.get(
+                    f'{obj.name}_{awg_nr}_wave_idx_lookup', None)
+                try:
+                    np.testing.assert_equal(wave_idx_lookup, cached_lookup)
+                    run_compiler = False
+                except AssertionError:
+                    log.debug(f'{obj.name}_{awg_nr}: Waveform reuse pattern '
+                              f'has changed. Forcing recompilation.')
+                    run_compiler = True
 
+            if run_compiler:
                 # We have to retrieve the folllowing parameter to set it
                 # again after programming the AWG.
                 prev_dio_valid_polarity = obj.get(
@@ -894,7 +912,11 @@ class HDAWG8Pulsar:
 
                 obj.set('awgs_{}_dio_valid_polarity'.format(awg_nr),
                         prev_dio_valid_polarity)
-                self._hdawg_waveform_cache[f'{obj.name}_{awg_nr}'] = {}
+                if use_placeholder_waves:
+                    self._hdawg_waveform_cache[f'{obj.name}_{awg_nr}'] = {}
+                    self._hdawg_waveform_cache[
+                        f'{obj.name}_{awg_nr}_wave_idx_lookup'] = \
+                        wave_idx_lookup
 
             if use_placeholder_waves:
                 log.debug(wave_definitions)
