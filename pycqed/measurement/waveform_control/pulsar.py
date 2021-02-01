@@ -1613,6 +1613,10 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         log.info(f'Starting compilation of sequence {sequence.name}')
         t0 = time.time()
         if self.use_sequence_cache():
+            channel_hashes, awg_sequences = \
+                sequence.generate_waveforms_sequences(get_channel_hashes=True)
+            log.debug(f'End of waveform hashing sequence {sequence.name} '
+                      f'{time.time() - t0}')
             sequence_cache = self.sequence_cache
             # The following makes sure that the sequence cache is empty if
             # the compilation crashes or gets interrupted.
@@ -1623,10 +1627,6 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             settings_to_check = ['{}_use_placeholder_waves']
             settings = {}
             metadata = {}
-            channel_hashes, awg_sequences = \
-                sequence.generate_waveforms_sequences(get_channel_hashes=True)
-            log.debug(f'End of waveform hashing sequence {sequence.name} '
-                     f'{time.time() - t0}')
             for awg, seq in awg_sequences.items():
                 settings[awg] = {
                     s.format(awg): (
