@@ -12,6 +12,7 @@ from qcodes.instrument.parameter import (
     ManualParameter, InstrumentRefParameter)
 import qcodes.utils.validators as vals
 import time
+from copy import deepcopy
 
 from pycqed.instrument_drivers.virtual_instruments.virtual_awg5014 import \
     VirtualAWG5014
@@ -33,10 +34,17 @@ try:
         ZI_HDAWG8 import ZI_HDAWG8
 except Exception:
     ZI_HDAWG8 = type(None)
+
+try:
+    from pycqed.instrument_drivers.physical_instruments.ZurichInstruments. \
+        ZI_base_instrument import merge_waveforms
+except Exception:
+    pass
+
 log = logging.getLogger(__name__)
 
 from pycqed.instrument_drivers.physical_instruments.ZurichInstruments. \
-        dummy_UHFQC import dummy_UHFQC
+    dummy_UHFQC import dummy_UHFQC
 
 class UHFQCPulsar:
     """
@@ -44,6 +52,7 @@ class UHFQCPulsar:
     class
     """
     _supportedAWGtypes = (UHFQC, dummy_UHFQC)
+    _num_awgs = 1
     
     _uhf_sequence_string_template = (
         "const WINT_EN   = 0x03ff0000;\n"
@@ -60,6 +69,10 @@ class UHFQCPulsar:
         "{wave_definitions}\n"
         "\n"
         "var loop_cnt = getUserReg(0);\n"
+        "var first_seg = getUserReg({ureg_first});\n"
+        "var last_seg = getUserReg({ureg_last});\n"
+        "\n"
+        "{calc_repeat}\n"
         "\n"
         "repeat (loop_cnt) {{\n"
         "  {playback_string}\n"
@@ -129,11 +142,15 @@ class UHFQCPulsar:
                                       the next waveform. Allowed values \
                                       are: "Dig1", "Dig2", "DIO"')
 
+        group = []
         for ch_nr in range(2):
             id = 'ch{}'.format(ch_nr + 1)
             name = channel_name_map.get(id, awg.name + '_' + id)
             self._uhfqc_create_channel_parameters(id, name, awg)
             self.channels.add(name)
+            group.append(name)
+        for name in group:
+            self.channel_groups.update({name: group})
 
     def _uhfqc_create_channel_parameters(self, id, name, awg):
         self.add_parameter('{}_id'.format(name), get_cmd=lambda _=id: _)
@@ -201,9 +218,11 @@ class UHFQCPulsar:
             raise NotImplementedError('Unknown parameter {}'.format(par))
         return g 
 
-    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None):
+    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None,
+                     **kw):
         if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
-            return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
+            return super()._program_awg(obj, awg_sequence, waveforms,
+                                        repeat_pattern, **kw)
 
         if not self._zi_waves_cleared:
             _zi_clear_waves()
@@ -218,24 +237,29 @@ class UHFQCPulsar:
 
         defined_waves = set()
         wave_definitions = []
-        playback_strings = []
+        playback_strings = ['var i_seg = -1;']
 
         ch_has_waveforms = {'ch1': False, 'ch2': False}
 
         current_segment = 'no_segment'
 
-        def play_element(element, playback_strings, wave_definitions):
-            if awg_sequence[element] is None:
+        def play_element(element, playback_strings, wave_definitions,
+                         allow_filter=True):
+            awg_sequence_element = deepcopy(awg_sequence[element])
+            if awg_sequence_element is None:
                 current_segment = element
                 playback_strings.append(f'// Segment {current_segment}')
+                playback_strings.append('i_seg += 1;')
                 return playback_strings, wave_definitions
             playback_strings.append(f'// Element {element}')
 
-            metadata = awg_sequence[element].pop('metadata', {})
-            if list(awg_sequence[element].keys()) != ['no_codeword']:
+            metadata = awg_sequence_element.pop('metadata', {})
+            playback_strings += self._zi_playback_string_loop_start(
+                metadata, ['ch1', 'ch2'])
+            if list(awg_sequence_element.keys()) != ['no_codeword']:
                 raise NotImplementedError('UHFQC sequencer does currently\
                                                        not support codewords!')
-            chid_to_hash = awg_sequence[element]['no_codeword']
+            chid_to_hash = awg_sequence_element['no_codeword']
 
             wave = (chid_to_hash.get('ch1', None), None,
                     chid_to_hash.get('ch2', None), None)
@@ -243,15 +267,17 @@ class UHFQCPulsar:
                                                          defined_waves)
 
             acq = metadata.get('acq', False)
-            playback_strings += self._zi_playback_string(name=obj.name,
-                                                         device='uhf', 
-                                                         wave=wave, 
-                                                         acq=acq)
+            playback_strings += self._zi_playback_string(
+                name=obj.name, device='uhf', wave=wave, acq=acq,
+                allow_filter=(
+                        allow_filter and metadata.get('allow_filter', False)))
+            playback_strings += self._zi_playback_string_loop_end(metadata)
 
             ch_has_waveforms['ch1'] |= wave[0] is not None
             ch_has_waveforms['ch2'] |= wave[2] is not None
             return playback_strings, wave_definitions
 
+        calc_repeat = ''
         if repeat_pattern is None:
             for element in awg_sequence:
                 playback_strings, wave_definitions = play_element(element,
@@ -259,15 +285,56 @@ class UHFQCPulsar:
                                                                   wave_definitions)
         else:
             real_indicies = []
+            allow_filter = {}
+            seg_indices = []
             for index, element in enumerate(awg_sequence):
                 if awg_sequence[element] is not None:
                     real_indicies.append(index)
+                    metadata = awg_sequence[element].get('metadata', {})
+                    if metadata.get('allow_filter', False):
+                        allow_filter[seg_indices[-1]] += 1
+                else:
+                    seg_indices.append(index)
+                    allow_filter[seg_indices[-1]] = 0
             el_total = len(real_indicies)
+            if any(allow_filter.values()):
+                if repeat_pattern[1] != 1:
+                    raise NotImplementedError(
+                        'Element filtering with nested repeat patterns is not'
+                        'implemented.')
+                n_filter_elements = np.unique(
+                    [f for f in allow_filter.values() if f > 0])
+                if len(n_filter_elements) > 1:
+                    raise NotImplementedError(
+                        'Element filtering with repeat patterns is not '
+                        'requires the same number elements in all segments '
+                        'that can be filtered.')
 
-            def repeat_func(n, el_played, index, playback_strings, wave_definitions):
+                def filter_count_loop_start(n_tot, allow_filter):
+                    s = []
+                    s.append(f"var n_tot = {n_tot};")
+                    for i, cnt in enumerate(allow_filter.values()):
+                        if cnt == 0:
+                            continue
+                        s.append(
+                            f"if ({i} < first_seg || {i} > last_seg) {{")
+                        s.append(f"n_tot -= {cnt};")
+                        s.append("}")
+                    return s
+
+                calc_repeat = '\n'.join(filter_count_loop_start(
+                    repeat_pattern[0], allow_filter))
+                repeat_pattern = ('n_tot', 1)
+
+            def repeat_func(n, el_played, index, playback_strings,
+                            wave_definitions):
                 if isinstance(n, tuple):
                     el_played_list = []
-                    if n[0] > 1:
+                    if isinstance(n[0], str):
+                        playback_strings.append(
+                            f'for (var i_rep = 0; i_rep < {n[0]}; '
+                            f'i_rep += 1) {{')
+                    elif n[0] > 1:
                         playback_strings.append('repeat ('+str(n[0])+') {')
                     for t in n[1:]:
                         el_cnt, playback_strings, wave_definitions = repeat_func(t,
@@ -277,16 +344,18 @@ class UHFQCPulsar:
                                                                playback_strings,
                                                                wave_definitions)
                         el_played_list.append(el_cnt)
-                    if n[0] > 1:
+                    if isinstance(n[0], str) or n[0] > 1:
                         playback_strings.append('}')
+                    if isinstance(n[0], str):
+                        return 'variable', playback_strings, wave_definitions
                     return int(n[0] * np.sum(el_played_list)), playback_strings, wave_definitions
                 else:
                     for k in range(n):
                         el_index = real_indicies[int(index)+k]
                         element = list(awg_sequence.keys())[el_index]
-                        playback_strings, wave_definitions = play_element(element,
-                                                                playback_strings,
-                                                                wave_definitions)
+                        playback_strings, wave_definitions = play_element(
+                            element, playback_strings, wave_definitions,
+                            allow_filter=False)
                         el_played = el_played + 1
                     return el_played, playback_strings, wave_definitions
 
@@ -296,7 +365,7 @@ class UHFQCPulsar:
                                                   playback_strings, wave_definitions)
 
 
-            if int(el_played) != int(el_total):
+            if el_played != 'variable' and int(el_played) != int(el_total):
                 log.error(el_played, ' is not ', el_total)
                 raise ValueError('Check number of sequences in repeat pattern')
 
@@ -308,6 +377,9 @@ class UHFQCPulsar:
         awg_str = self._uhf_sequence_string_template.format(
             wave_definitions='\n'.join(wave_definitions),
             playback_string='\n  '.join(playback_strings),
+            ureg_first=obj.USER_REG_FIRST_SEGMENT,
+            ureg_last=obj.USER_REG_LAST_SEGMENT,
+            calc_repeat=calc_repeat,
         )
 
         # Necessary hack to pass the UHFQC drivers sanity check 
@@ -330,6 +402,12 @@ class UHFQCPulsar:
             return super()._clock(obj)
         return obj.clock_freq()
 
+    def _get_segment_filter_userregs(self, obj):
+        if not isinstance(obj, UHFQCPulsar._supportedAWGtypes):
+            return super()._get_segment_filter_userregs(obj)
+        return [(f'awgs_0_userregs_{UHFQC.USER_REG_FIRST_SEGMENT}',
+                 f'awgs_0_userregs_{UHFQC.USER_REG_LAST_SEGMENT}')]
+
 class HDAWG8Pulsar:
     """
     Defines the Zurich Instruments HDAWG8 specific functionality for the Pulsar
@@ -342,10 +420,17 @@ class HDAWG8Pulsar:
         "\n"
         "{codeword_table_defs}\n"
         "\n"
+        "var first_seg = getUserReg({ureg_first});\n"
+        "var last_seg = getUserReg({ureg_last});\n"
+        "\n"
         "while (1) {{\n"
         "  {playback_string}\n"
         "}}\n"
     )
+
+    def __init__(self, name):
+        super().__init__(name)
+        self._hdawg_waveform_cache = dict()
 
     def _create_awg_parameters(self, awg, channel_name_map):
         if not isinstance(awg, HDAWG8Pulsar._supportedAWGtypes):
@@ -355,6 +440,9 @@ class HDAWG8Pulsar:
 
         self.add_parameter('{}_reuse_waveforms'.format(awg.name),
                            initial_value=True, vals=vals.Bool(),
+                           parameter_class=ManualParameter)
+        self.add_parameter('{}_use_placeholder_waves'.format(awg.name),
+                           initial_value=False, vals=vals.Bool(),
                            parameter_class=ManualParameter)
         self.add_parameter('{}_minimize_sequencer_memory'.format(awg.name),
                            initial_value=False, vals=vals.Bool(),
@@ -424,15 +512,22 @@ class HDAWG8Pulsar:
             # in the init.
             self.set(f'{awg.name}_awgs_{awg_nr}_mod_freq', None)
 
+        group = []
         for ch_nr in range(8):
             id = 'ch{}'.format(ch_nr + 1)
             name = channel_name_map.get(id, awg.name + '_' + id)
             self._hdawg_create_analog_channel_parameters(id, name, awg)
             self.channels.add(name)
+            group.append(name)
             id = 'ch{}m'.format(ch_nr + 1)
             name = channel_name_map.get(id, awg.name + '_' + id)
             self._hdawg_create_marker_channel_parameters(id, name, awg)
             self.channels.add(name)
+            group.append(name)
+            if (ch_nr + 1) % 2 == 0:
+                for name in group:
+                    self.channel_groups.update({name: group})
+                group = []
 
     def _hdawg_create_analog_channel_parameters(self, id, name, awg):
         self.add_parameter('{}_id'.format(name), get_cmd=lambda _=id: _)
@@ -613,49 +708,41 @@ class HDAWG8Pulsar:
             return 1
 
     
-    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None):
+    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None,
+                     channels_to_upload='all', channels_to_program='all'):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
             return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
-        
-        if not self._zi_waves_cleared:
-            _zi_clear_waves()
-            self._zi_waves_cleared = True
-        
+
         chids = [f'ch{i+1}{m}' for i in range(8) for m in ['','m']]
         divisor = {chid: self.get_divisor(chid, obj.name) for chid in chids}
-        
-        waves_to_upload = {h: divisor[chid]*waveforms[h][::divisor[chid]]
-                               for codewords in awg_sequence.values() 
-                                   if codewords is not None 
-                               for cw, chids in codewords.items() 
-                                   if cw != 'metadata'
-                               for chid, h in chids.items()}
-        self._zi_write_waves(waves_to_upload)
-        
-        ch_has_waveforms = {'ch{}{}'.format(i + 1, m): False 
-                                for i in range(8) for m in ['','m']}
+        def with_divisor(h, ch):
+            return (h if divisor[ch] == 1 else (h, divisor[ch]))
+
+        ch_has_waveforms = {chid: False for chid in chids}
+
+        use_placeholder_waves = self.get(f'{obj.name}_use_placeholder_waves')
+
+        if not use_placeholder_waves:
+            if not self._zi_waves_cleared:
+                _zi_clear_waves()
+                self._zi_waves_cleared = True
 
         for awg_nr in self._hdawg_active_awgs(obj):
-            defined_waves = set()
+            defined_waves = dict() if use_placeholder_waves else set()
             codeword_table = {}
             wave_definitions = []
             codeword_table_defs = []
-            playback_strings = []
+            playback_strings = ['var i_seg = -1;']
             interleaves = []
 
-            prev_dio_valid_polarity = obj.get(
-                'awgs_{}_dio_valid_polarity'.format(awg_nr))
-            
-            added_cw = set()
             ch1id = 'ch{}'.format(awg_nr * 2 + 1)
             ch1mid = 'ch{}m'.format(awg_nr * 2 + 1)
             ch2id = 'ch{}'.format(awg_nr * 2 + 2)
             ch2mid = 'ch{}m'.format(awg_nr * 2 + 2)
-            chids = [ch1id, ch2id]
+            chids = [ch1id, ch1mid, ch2id, ch2mid]
 
-            channels = [self._id_channel(chid, obj.name) for chid in chids]
-
-            codeword_el = set()
+            channels = [
+                self._id_channel(chid, obj.name) for chid in [ch1id, ch2id]]
             if all([self.get(
                 f'{chan}_internal_modulation') for chan in channels]):
                 internal_mod = True
@@ -667,38 +754,74 @@ class HDAWG8Pulsar:
                                           'specified per sub AWG!')
 
             counter = 1
+            next_wave_idx = 0
+            wave_idx_lookup = {}
             current_segment = 'no_segment'
             for element in awg_sequence:
-                if awg_sequence[element] is None:
+                awg_sequence_element = deepcopy(awg_sequence[element])
+                if awg_sequence_element is None:
                     current_segment = element
                     playback_strings.append(f'// Segment {current_segment}')
+                    playback_strings.append('i_seg += 1;')
                     continue
+                wave_idx_lookup[element] = {}
                 playback_strings.append(f'// Element {element}')
                 
-                metadata = awg_sequence[element].pop('metadata', {})
-                
-                nr_cw = len(set(awg_sequence[element].keys()) - \
+                metadata = awg_sequence_element.pop('metadata', {})
+                playback_strings += self._zi_playback_string_loop_start(
+                    metadata, [ch1id, ch2id, ch1mid, ch2mid])
+
+                nr_cw = len(set(awg_sequence_element.keys()) - \
                             {'no_codeword'})
 
                 if nr_cw == 1:
                     log.warning(
                         f'Only one codeword has been set for {element}')
                 else:
-                    for cw in awg_sequence[element]:
+                    for cw in awg_sequence_element:
                         if cw == 'no_codeword':
                             if nr_cw != 0:
                                 continue
-                        chid_to_hash = awg_sequence[element][cw]
-                        wave = tuple(chid_to_hash.get(ch, None)
-                                    for ch in [ch1id, ch1mid, ch2id, ch2mid])
-                        wave_definitions += self._zi_wave_definition(wave,
-                                                                defined_waves)
+                        wave_idx_lookup[element][cw] = {}
+                        chid_to_hash = awg_sequence_element[cw]
+                        wave = tuple(chid_to_hash.get(ch, None) for ch in chids)
+                        if wave == (None, None, None, None):
+                            continue
+                        if use_placeholder_waves:
+                            if wave in defined_waves.values():
+                                wave_idx_lookup[element][cw] = [
+                                    i for i, v in defined_waves.items()
+                                    if v == wave][0]
+                                continue
+                            wave_idx_lookup[element][cw] = next_wave_idx
+                            next_wave_idx += 1
+                            placeholder_wave_lengths = [
+                                waveforms[h].size for h in wave if h is not None
+                            ]
+                            log.debug(placeholder_wave_lengths)
+                            if max(placeholder_wave_lengths) != \
+                               min(placeholder_wave_lengths):
+                                log.warning(f"Waveforms of unequal length on"
+                                            f"{obj.name}, vawg{awg_nr}, "
+                                            f"{current_segment}, {element}.")
+                            wave_definitions += self._zi_wave_definition(
+                                wave,
+                                defined_waves,
+                                max(placeholder_wave_lengths),
+                                wave_idx_lookup[element][cw])
+                        else:
+                            wave = tuple(
+                                with_divisor(h, chid) if h is not None
+                                else None for h, chid in zip(wave, chids))
+                            wave_definitions += self._zi_wave_definition(
+                                wave, defined_waves)
                         
                         if nr_cw != 0:
                             w1, w2 = self._zi_waves_to_wavenames(wave)
                             if cw not in codeword_table:
                                 codeword_table_defs += \
-                                    self._zi_codeword_table_entry(cw, wave)
+                                    self._zi_codeword_table_entry(
+                                        cw, wave, use_placeholder_waves)
                                 codeword_table[cw] = (w1, w2)
                             elif codeword_table[cw] != (w1, w2) \
                                     and self.reuse_waveforms():
@@ -712,43 +835,137 @@ class HDAWG8Pulsar:
                         ch_has_waveforms[ch2mid] |= wave[3] is not None
 
                     if not internal_mod:
-                        playback_strings += self._zi_playback_string(name=obj.name,
-                            device='hdawg', wave=wave, codeword=(nr_cw != 0),
-                            append_zeros=self.append_zeros())
-                    else:
+                        playback_strings += self._zi_playback_string(
+                            name=obj.name, device='hdawg', wave=wave,
+                            codeword=(nr_cw != 0), 
+                            append_zeros=self.append_zeros(),
+                            placeholder_wave=use_placeholder_waves,
+                            allow_filter=metadata.get('allow_filter', False))
+                    elif not use_placeholder_waves:
                         pb_string, interleave_string = \
                             self._zi_interleaved_playback_string(name=obj.name, 
                             device='hdawg', counter=counter, wave=wave, 
-                            codeword=(nr_cw != 0)) 
+                            codeword=(nr_cw != 0))
                         counter += 1
                         playback_strings += pb_string
                         interleaves += interleave_string
-                
-            if not any([ch_has_waveforms[ch] 
-                    for ch in [ch1id, ch1mid, ch2id, ch2mid]]):
+                    else:
+                        raise NotImplementedError("Placeholder waves in "
+                                                  "combination with internal "
+                                                  "modulation not implemented.")
+
+                playback_strings += self._zi_playback_string_loop_end(metadata)
+
+            if not any([ch_has_waveforms[ch] for ch in chids]):
                 # prevent ZI_base_instrument.start() from starting this sub AWG
                 obj._awg_program[awg_nr] = None
                 continue
-
-            awg_str = self._hdawg_sequence_string_template.format(
-                wave_definitions='\n'.join(wave_definitions+interleaves),
-                codeword_table_defs='\n'.join(codeword_table_defs),
-                playback_string='\n  '.join(playback_strings))
-
             # tell ZI_base_instrument.start() to start this sub AWG
             obj._awg_needs_configuration[awg_nr] = False
             obj._awg_program[awg_nr] = True
 
-            obj.configure_awg_from_string(awg_nr, awg_str, timeout=600)
+            # Having determined whether the sub AWG should be started or
+            # not, we can now skip in case no channels need to be uploaded.
+            if channels_to_upload != 'all' and not any(
+                    [ch in channels_to_upload for ch in chids]):
+                continue
 
-            obj.set('awgs_{}_dio_valid_polarity'.format(awg_nr),
-                    prev_dio_valid_polarity)
+            if not use_placeholder_waves:
+                waves_to_upload = {with_divisor(h, chid):
+                                   divisor[chid]*waveforms[h][::divisor[chid]]
+                                   for codewords in awg_sequence.values()
+                                       if codewords is not None
+                                   for cw, chids in codewords.items()
+                                       if cw != 'metadata'
+                                   for chid, h in chids.items()}
+                self._zi_write_waves(waves_to_upload)
+
+            awg_str = self._hdawg_sequence_string_template.format(
+                wave_definitions='\n'.join(wave_definitions+interleaves),
+                codeword_table_defs='\n'.join(codeword_table_defs),
+                playback_string='\n  '.join(playback_strings),
+                ureg_first=obj.USER_REG_FIRST_SEGMENT,
+                ureg_last=obj.USER_REG_LAST_SEGMENT,
+            )
+
+            if not use_placeholder_waves or channels_to_program == 'all' or \
+                    any([ch in channels_to_program for ch in chids]):
+                run_compiler = True
+            else:
+                cached_lookup = self._hdawg_waveform_cache.get(
+                    f'{obj.name}_{awg_nr}_wave_idx_lookup', None)
+                try:
+                    np.testing.assert_equal(wave_idx_lookup, cached_lookup)
+                    run_compiler = False
+                except AssertionError:
+                    log.debug(f'{obj.name}_{awg_nr}: Waveform reuse pattern '
+                              f'has changed. Forcing recompilation.')
+                    run_compiler = True
+
+            if run_compiler:
+                # We have to retrieve the folllowing parameter to set it
+                # again after programming the AWG.
+                prev_dio_valid_polarity = obj.get(
+                    'awgs_{}_dio_valid_polarity'.format(awg_nr))
+
+                obj.configure_awg_from_string(awg_nr, awg_str, timeout=600)
+
+                obj.set('awgs_{}_dio_valid_polarity'.format(awg_nr),
+                        prev_dio_valid_polarity)
+                if use_placeholder_waves:
+                    self._hdawg_waveform_cache[f'{obj.name}_{awg_nr}'] = {}
+                    self._hdawg_waveform_cache[
+                        f'{obj.name}_{awg_nr}_wave_idx_lookup'] = \
+                        wave_idx_lookup
+
+            if use_placeholder_waves:
+                log.debug(wave_definitions)
+                for idx, wave_hashes in defined_waves.items():
+                    self._hdawg_update_waveforms(obj, awg_nr, idx,
+                                                 wave_hashes, waveforms)
 
         for ch in range(8):
             obj.set('sigouts_{}_on'.format(ch), True)
 
         if any(ch_has_waveforms.values()):
             self.awgs_with_waveforms(obj.name)
+
+    def _hdawg_update_waveforms(self, obj, awg_nr, wave_idx, wave_hashes,
+                                waveforms):
+        if self.use_sequence_cache():
+            if wave_hashes == self._hdawg_waveform_cache[
+                    f'{obj.name}_{awg_nr}'].get(wave_idx, None):
+                log.debug(
+                    f'{obj.name} awgs{awg_nr}: {wave_idx} same as in cache')
+                return
+            log.debug(
+                f'{obj.name} awgs{awg_nr}: {wave_idx} needs to be uploaded')
+            self._hdawg_waveform_cache[f'{obj.name}_{awg_nr}'][
+                wave_idx] = wave_hashes
+        a1, m1, a2, m2 = [waveforms.get(h, None) for h in wave_hashes]
+        log.debug([len(w) if w is not None else None
+                   for w in [a1, m1, a2, m2]])
+        n = max([len(w) for w in [a1, m1, a2, m2] if w is not None])
+        if m1 is not None and a1 is None:
+            a1 = np.zeros(n)
+        if m2 is not None and a2 is None:
+            a2 = np.zeros(n)
+        if m1 is not None or m2 is not None:
+            m1 = np.zeros(n) if m1 is None else np.pad(m1, n - m1.size)
+            m2 = np.zeros(n) if m2 is None else np.pad(m2, n - m2.size)
+            if a1 is None:
+                mc = m2
+            else:
+                mc = m1 + 4*m2
+        else:
+            mc = None
+        a1 = None if a1 is None else np.pad(a1, n - a1.size)
+        a2 = None if a2 is None else np.pad(a2, n - a2.size)
+        log.debug([len(w) if w is not None else None
+                   for w in [a1, m1, a2, m2]])
+        wf_raw_combined = merge_waveforms(a1, a2, mc)
+        log.debug(np.shape(wf_raw_combined))
+        obj.setv(f'awgs/{awg_nr}/waveform/waves/{wave_idx}', wf_raw_combined)
 
     def _is_awg_running(self, obj):
         if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
@@ -764,6 +981,13 @@ class HDAWG8Pulsar:
 
     def _hdawg_active_awgs(self, obj):
         return [0,1,2,3]
+
+    def _get_segment_filter_userregs(self, obj):
+        if not isinstance(obj, HDAWG8Pulsar._supportedAWGtypes):
+            return super()._get_segment_filter_userregs(obj)
+        return [(f'awgs_{i}_userregs_{ZI_HDAWG8.USER_REG_FIRST_SEGMENT}',
+                 f'awgs_{i}_userregs_{ZI_HDAWG8.USER_REG_LAST_SEGMENT}')
+                for i in range(4) if obj._awg_program[i] is not None]
 
 class AWG5014Pulsar:
     """
@@ -824,6 +1048,7 @@ class AWG5014Pulsar:
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
 
+        group = []
         for ch_nr in range(4):
             id = 'ch{}'.format(ch_nr + 1)
             name = channel_name_map.get(id, awg.name + '_' + id)
@@ -837,6 +1062,9 @@ class AWG5014Pulsar:
             name = channel_name_map.get(id, awg.name + '_' + id)
             self._awg5014_create_marker_channel_parameters(id, name, awg)
             self.channels.add(name)
+            group.append(name)
+        for name in group:
+            self.channel_groups.update({name: group})
 
     def _awg5014_create_analog_channel_parameters(self, id, name, awg):
         self.add_parameter('{}_id'.format(name), get_cmd=lambda _=id: _)
@@ -969,9 +1197,11 @@ class AWG5014Pulsar:
                 raise NotImplementedError('Unknown parameter {}'.format(par))
         return g
 
-    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None):
+    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None,
+                     **kw):
         if not isinstance(obj, AWG5014Pulsar._supportedAWGtypes):
-            return super()._program_awg(obj, awg_sequence, waveforms, repeat_pattern)
+            return super()._program_awg(obj, awg_sequence, waveforms,
+                                        repeat_pattern, **kw)
 
         pars = {
             'ch{}_m{}_low'.format(ch + 1, m + 1)
@@ -1127,6 +1357,10 @@ class AWG5014Pulsar:
                 channel_cfg['CHANNEL_STATE_' + cid[2]] = 1
         return channel_cfg
 
+    def _get_segment_filter_userregs(self, obj):
+        if not isinstance(obj, AWG5014Pulsar._supportedAWGtypes):
+            return super()._get_segment_filter_userregs(obj)
+        return []
 
 class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
     """
@@ -1144,7 +1378,10 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
     def __init__(self, name='Pulsar', master_awg=None):
         super().__init__(name)
 
-        self.add_parameter('master_awg', 
+        self.sequence_cache = dict()
+        self.reset_sequence_cache()
+
+        self.add_parameter('master_awg',
                            parameter_class=InstrumentRefParameter,
                            initial_value=master_awg)
         self.add_parameter('inter_element_spacing',
@@ -1154,6 +1391,9 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                            get_cmd=self._get_inter_element_spacing)
         self.add_parameter('reuse_waveforms', initial_value=False,
                            parameter_class=ManualParameter, vals=vals.Bool())
+        self.add_parameter('use_sequence_cache', initial_value=False,
+                           parameter_class=ManualParameter, vals=vals.Bool(),
+                           set_parser=self._use_sequence_cache_parser)
         self.add_parameter('append_zeros', initial_value=0, vals=vals.Ints(),
                            parameter_class=ManualParameter)
         self.add_parameter('flux_crosstalk_cancellation', initial_value=False,
@@ -1164,6 +1404,10 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                            initial_value=None, parameter_class=ManualParameter)
         self.add_parameter('flux_crosstalk_cancellation_shift_mtx',
                            initial_value=None, parameter_class=ManualParameter)
+        self.add_parameter('filter_segments',
+                           set_cmd=self._set_filter_segments,
+                           get_cmd=self._get_filter_segments,
+                           initial_value=None)
 
         self._inter_element_spacing = 'auto'
         self.channels = set() # channel names
@@ -1171,11 +1415,13 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self.last_sequence = None
         self.last_elements = None
         self._awgs_with_waveforms = set()
+        self.channel_groups = {}
 
         self._awgs_prequeried_state = False
 
         self._zi_waves_cleared = False
         self._hash_to_wavename_table = {}
+        self._filter_segments = None
 
         self.num_seg = 0
 
@@ -1184,6 +1430,18 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
     @staticmethod
     def get_instance():
         return Pulsar._instance
+
+    def _use_sequence_cache_parser(self, val):
+        if val and not self.use_sequence_cache():
+            self.reset_sequence_cache()
+        return val
+
+    def reset_sequence_cache(self):
+        self.sequence_cache = {}
+        self.sequence_cache['settings'] = {}
+        self.sequence_cache['metadata'] = {}
+        self.sequence_cache['hashes'] = {}
+        self.sequence_cache['length'] = {}
 
     # channel handling
     def define_awg_channels(self, awg, channel_name_map=None):
@@ -1216,6 +1474,9 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         #                     .format(awg.name) + str(fail))
         
         self.awgs.add(awg.name)
+        # Make sure that the registers for filter_segments are set in the
+        # new AWG.
+        self.filter_segments(self.filter_segments())
 
     def find_awg_channels(self, awg):
         channel_list = []
@@ -1299,6 +1560,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             return self._awgs_with_waveforms
         else:
             self._awgs_with_waveforms.add(awg)
+            self._set_filter_segments(self._filter_segments, [awg])
 
     def start(self, exclude=None):
         """
@@ -1372,10 +1634,136 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
 
         log.info(f'Starting compilation of sequence {sequence.name}')
         t0 = time.time()
-        waveforms, awg_sequences = sequence.generate_waveforms_sequences()
+        if self.use_sequence_cache():
+            channel_hashes, awg_sequences = \
+                sequence.generate_waveforms_sequences(get_channel_hashes=True)
+            log.debug(f'End of waveform hashing sequence {sequence.name} '
+                      f'{time.time() - t0}')
+            sequence_cache = self.sequence_cache
+            # The following makes sure that the sequence cache is empty if
+            # the compilation crashes or gets interrupted.
+            self.reset_sequence_cache()
+            # first, we check whether programming the whole AWG is mandatory due
+            # to changed AWG settings or due to changed metadata
+            awgs_to_program = []
+            settings_to_check = ['{}_use_placeholder_waves']
+            settings = {}
+            metadata = {}
+            for awg, seq in awg_sequences.items():
+                settings[awg] = {
+                    s.format(awg): (
+                        self.get(s.format(awg))
+                        if s.format(awg) in self.parameters else None)
+                    for s in settings_to_check}
+                metadata[awg] = {
+                    elname: (
+                        el.get('metadata', {}) if el is not None else None)
+                    for elname, el in seq.items()}
+                if awg not in awgs_to_program:
+                    try:
+                        np.testing.assert_equal(
+                            sequence_cache['settings'].get(awg, {}),
+                            settings[awg])
+                        np.testing.assert_equal(
+                            sequence_cache['metadata'].get(awg, {}),
+                            metadata[awg])
+                    except AssertionError:  # settings or metadata change
+                        awgs_to_program.append(awg)
+            for awg in awgs_to_program:
+                # update the settings and metadata cache
+                sequence_cache['settings'][awg] = settings[awg]
+                sequence_cache['metadata'][awg] = metadata[awg]
+            # Check for which channels some relevant setting or some hash has
+            # changed, in which case the group of channels should be uploaded.
+            settings_to_check = ['{}_internal_modulation']
+            awgs_with_channels_to_upload = []
+            channels_to_upload = []
+            channels_to_program = []
+            for ch, hashes in channel_hashes.items():
+                ch_awg = self.get(f'{ch}_awg')
+                settings[ch] = {
+                    s.format(ch): (
+                        self.get(s.format(ch))
+                        if s.format(ch) in self.parameters else None)
+                    for s in settings_to_check}
+                if ch in channels_to_upload or ch_awg in awgs_to_program:
+                    continue
+                changed_settings = True
+                try:
+                    np.testing.assert_equal(
+                        sequence_cache['settings'].get(ch, {}),
+                        settings[ch])
+                    changed_settings = False
+                    np.testing.assert_equal(
+                        sequence_cache['hashes'].get(ch, {}), hashes)
+                except AssertionError:
+                    # changed setting, sequence structure, or hash
+                    if ch_awg not in awgs_with_channels_to_upload:
+                        awgs_with_channels_to_upload.append(ch_awg)
+                    for c in self.channel_groups[ch]:
+                        channels_to_upload.append(c)
+                        if changed_settings:
+                            channels_to_program.append(c)
+            # update the settings cache and hashes cache
+            for ch in channels_to_upload:
+                sequence_cache['settings'][ch] = settings.get(ch, {})
+                sequence_cache['hashes'][ch] = channel_hashes.get(ch, {})
+            # generate the waveforms that we need for uploading
+            log.debug(f'Start of waveform generation sequence {sequence.name} '
+                     f'{time.time() - t0}')
+            waveforms, _ = sequence.generate_waveforms_sequences(
+                awgs_to_program + awgs_with_channels_to_upload,
+                resolve_segments=False)
+            log.debug(f'End of waveform generation sequence {sequence.name} '
+                     f'{time.time() - t0}')
+            # Check for which channels the sequence structure, or some element
+            # length has changed.
+            # If placeholder waveforms are used, only those channels (and
+            # channels in the same group) will be re-programmed, while other
+            # channels can be re-uploaded by replacing the existing waveforms.
+            ch_length = {}
+            for ch, hashes in channel_hashes.items():
+                ch_awg = self.get(f'{ch}_awg')
+                if ch_awg in awgs_to_program + awgs_with_channels_to_upload:
+                    ch_length[ch] = {
+                        elname: {cw: len(waveforms[h]) for cw, h in el.items()}
+                        for elname, el in hashes.items()}
+                # Checking whether programming is done only for channels that
+                # are marked to be uploaded but not yet marked to be programmed
+                if ch not in channels_to_upload or ch in channels_to_program \
+                        or ch_awg in awgs_to_program:
+                    continue
+                try:
+                    np.testing.assert_equal(
+                        sequence_cache['length'].get(ch, {}),
+                        ch_length[ch])
+                except AssertionError:  # changed length or sequence structure
+                    for c in self.channel_groups[ch]:
+                        channels_to_program.append(c)
+            # update the length cache
+            for ch in channels_to_program:
+                sequence_cache['length'][ch] = ch_length.get(ch, {})
+            # Update the cache for channels that are on an AWG marked for
+            # complete re-programming (these channels might have been skipped
+            # above).
+            for ch in self.channels:
+                if self.get(f'{ch}_awg') in awgs_to_program:
+                    sequence_cache['settings'][ch] = settings.get(ch, {})
+                    sequence_cache['hashes'][ch] = channel_hashes.get(
+                        ch, {})
+                    sequence_cache['length'][ch] = ch_length.get(ch, {})
+            log.debug(f'awgs_to_program = {repr(awgs_to_program)}\n'
+                      f'awgs_with_channels_to_upload = '
+                      f'{repr(awgs_with_channels_to_upload)}\n'
+                      f'channels_to_upload = {repr(channels_to_upload)}\n'
+                      f'channels_to_program = {repr(channels_to_program)}'
+                      )
+        else:
+            waveforms, awg_sequences = sequence.generate_waveforms_sequences()
+            awgs_to_program = list(awg_sequences.keys())
+            awgs_with_channels_to_upload = []
         log.info(f'Finished compilation of sequence {sequence.name} in '
                  f'{time.time() - t0}')
-
 
         channels_used = self._channels_in_awg_sequences(awg_sequences)
         repeat_dict = self._generate_awg_repeat_dict(sequence.repeat_patterns,
@@ -1383,22 +1771,43 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self._zi_waves_cleared = False
         self._hash_to_wavename_table = {}
 
-        for awg in awgs:
+        for awg in awg_sequences.keys():
+            if awg not in awgs_to_program + awgs_with_channels_to_upload:
+                # The AWG does not need to be re-programmed, but we have to add
+                # it to the set of AWGs with waveforms (which is otherwise
+                # done after programming it).
+                self.awgs_with_waveforms(awg)
+                continue
             log.info(f'Started programming {awg}')
             t0 = time.time()
+            if awg in awgs_to_program:
+                ch_upl, ch_prg = 'all', 'all'
+            else:
+                ch_upl = [self.get(f'{ch}_id') for ch in channels_to_upload
+                          if self.get(f'{ch}_awg') == awg]
+                ch_prg = [self.get(f'{ch}_id') for ch in channels_to_program
+                          if self.get(f'{ch}_awg') == awg]
             if awg in repeat_dict.keys():
                 self._program_awg(self.AWG_obj(awg=awg),
                                   awg_sequences.get(awg, {}), waveforms,
-                                  repeat_pattern=repeat_dict[awg])
+                                  repeat_pattern=repeat_dict[awg],
+                                  channels_to_upload=ch_upl,
+                                  channels_to_program=ch_prg)
             else:
                 self._program_awg(self.AWG_obj(awg=awg),
-                                  awg_sequences.get(awg, {}), waveforms)
+                                  awg_sequences.get(awg, {}), waveforms,
+                                  channels_to_upload=ch_upl,
+                                  channels_to_program=ch_prg)
             log.info(f'Finished programming {awg} in {time.time() - t0}')
-        
+
+        if self.use_sequence_cache():
+            # Compilation finished sucessfully. Store sequence cache.
+            self.sequence_cache = sequence_cache
         self.num_seg = len(sequence.segments)
         self.AWGs_prequeried(False)
 
-    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None):
+    def _program_awg(self, obj, awg_sequence, waveforms, repeat_pattern=None,
+                     **kw):
         """
         Program the AWG with a sequence of segments.
 
@@ -1421,9 +1830,9 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         #                     .format(obj.name, type(obj)) + str(fail))
         if repeat_pattern is not None:
             super()._program_awg(obj, awg_sequence, waveforms,
-                                 repeat_pattern=repeat_pattern)
+                                 repeat_pattern=repeat_pattern, **kw)
         else:
-            super()._program_awg(obj, awg_sequence, waveforms)
+            super()._program_awg(obj, awg_sequence, waveforms, **kw)
 
     def _hash_to_wavename(self, h):
         alphabet = 'abcdefghijklmnopqrstuvwxyz'
@@ -1437,34 +1846,60 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             self._hash_to_wavename_table[h] = wname
         return self._hash_to_wavename_table[h]
 
-    def _zi_wave_definition(self, wave, defined_waves=None):
+    def _zi_wave_definition(self, wave, defined_waves=None,
+                            placeholder_wave_length=None,
+                            placeholder_wave_index=None):
         if defined_waves is None:
-            defined_waves = set()
+            if placeholder_wave_length is None:
+                defined_waves = set()
+            else:
+                defined_waves = dict()
         wave_definition = []
         w1, w2 = self._zi_waves_to_wavenames(wave)
-        for analog, marker, wc in [(wave[0], wave[1], w1), 
-                                   (wave[2], wave[3], w2)]:
-            if analog is not None:
-                wa = self._hash_to_wavename(analog)
-                if wa not in defined_waves:
-                    wave_definition.append(f'wave {wa} = "{wa}";')
-                    defined_waves.add(wa)
-            if marker is not None:        
-                wm = self._hash_to_wavename(marker)
-                if wm not in defined_waves:
-                    wave_definition.append(f'wave {wm} = "{wm}";')
-                    defined_waves.add(wm)
-            if analog is not None and marker is not None:
-                if wc not in defined_waves:
-                    wave_definition.append(f'wave {wc} = {wa} + {wm};')
-                    defined_waves.add(wc)
+        if placeholder_wave_length is None:
+            # don't use placeholder waves
+            for analog, marker, wc in [(wave[0], wave[1], w1),
+                                       (wave[2], wave[3], w2)]:
+                if analog is not None:
+                    wa = self._hash_to_wavename(analog)
+                    if wa not in defined_waves:
+                        wave_definition.append(f'wave {wa} = "{wa}";')
+                        defined_waves.add(wa)
+                if marker is not None:
+                    wm = self._hash_to_wavename(marker)
+                    if wm not in defined_waves:
+                        wave_definition.append(f'wave {wm} = "{wm}";')
+                        defined_waves.add(wm)
+                if analog is not None and marker is not None:
+                    if wc not in defined_waves:
+                        wave_definition.append(f'wave {wc} = {wa} + {wm};')
+                        defined_waves.add(wc)
+        else:
+            # use placeholder waves
+            n = placeholder_wave_length
+            for wc, marker in [(w1, wave[1]), (w2, wave[3])]:
+                if wc is not None:
+                    wave_definition.append(
+                        f'wave {wc} = placeholder({n}' +
+                        ('' if marker is None else ', true') +
+                        ');')
+            wave_definition.append(
+                f'assignWaveIndex({_zi_wavename_pair_to_argument(w1, w2)},'
+                f' {placeholder_wave_index});'
+            )
+            defined_waves[placeholder_wave_index] = wave
         return wave_definition
 
     def _zi_playback_string(self, name, device, wave, acq=False, codeword=False,
-                            append_zeros=0):
+                            append_zeros=0, placeholder_wave=False,
+                            allow_filter=False):
         playback_string = []
+        if allow_filter:
+            playback_string.append(
+                'if (i_seg >= first_seg && i_seg <= last_seg) {')
         w1, w2 = self._zi_waves_to_wavenames(wave)
 
+        use_hack = not placeholder_wave
         trig_source = self.get('{}_trigger_source'.format(name))
         if trig_source == 'Dig1':
             playback_string.append(
@@ -1483,11 +1918,11 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         if codeword and not (w1 is None and w2 is None):
             playback_string.append('playWaveDIO();')
         else:
-            if w1 is None and w2 is not None:
+            if w1 is None and w2 is not None and use_hack:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(f'playWave(marker(1,0)*0*{w2}, {w2});')
-            elif w1 is not None and w2 is None:
+            elif w1 is not None and w2 is None and use_hack:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(f'playWave({w1}, marker(1,0)*0*{w1});')
@@ -1499,6 +1934,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             playback_string.append('setTrigger(WINT_EN);')
         if append_zeros:
             playback_string.append(f'playZero({append_zeros});')
+        if allow_filter:
+            playback_string.append('}')
         return playback_string
 
     def _zi_interleaved_playback_string(self, name, device, counter, 
@@ -1540,9 +1977,36 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             playback_string.append('setTrigger(WINT_EN);')
         return playback_string, interleaves
 
-    def _zi_codeword_table_entry(self, codeword, wave):
+    @staticmethod
+    def _zi_playback_string_loop_start(metadata, channels):
+        loop_len = metadata.get('loop', False)
+        if not loop_len:
+            return []
+        playback_string = []
+        sweep_params = metadata.get('sweep_params', {})
+        for k, v in sweep_params.items():
+            for ch in channels:
+                if k.startswith(f'{ch}_'):
+                    playback_string.append(
+                        f"wave {k} = vect({','.join([f'{a}' for a in v])})")
+        playback_string.append(
+            f"for (cvar i_sweep = 0; i_sweep < {loop_len}; i_sweep += 1) {{")
+        for k, v in sweep_params.items():
+            for ch in channels:
+                if k.startswith(f'{ch}_'):
+                    node = k[len(f'{ch}_'):].replace('_', '/')
+                    playback_string.append(
+                        f'setDouble("{node}", {k}[i_sweep]);')
+        return playback_string
+
+    @staticmethod
+    def _zi_playback_string_loop_end(metadata):
+        return ['}'] if metadata.get('end_loop', False) else []
+
+    def _zi_codeword_table_entry(self, codeword, wave, placeholder_wave=False):
         w1, w2 = self._zi_waves_to_wavenames(wave)
-        if w1 is None and w2 is not None:
+        use_hack = not placeholder_wave
+        if w1 is None and w2 is not None and use_hack:
             # This hack is needed due to a bug on the HDAWG. 
             # Remove this if case once the bug is fixed.
             return [f'setWaveDIO({codeword}, zeros(1) + marker(1, 0), {w2});']
@@ -1569,6 +2033,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         wave_dir = _zi_wave_dir()
         for h, wf in waveforms.items():
             filename = os.path.join(wave_dir, self._hash_to_wavename(h)+'.csv')
+            if os.path.exists(filename):
+                continue
             fmt = '%.18e' if wf.dtype == np.float else '%d'
             np.savetxt(filename, wf, delimiter=",", fmt=fmt)
 
@@ -1603,6 +2069,31 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 max_spacing = max(max_spacing, self.get(
                     '{}_inter_element_deadtime'.format(awg)))
             return max_spacing
+
+    def _set_filter_segments(self, val, awgs='with_waveforms'):
+        if val is None:
+            val = (0, 32767)
+        self._filter_segments = val
+        if awgs == 'with_waveforms':
+            awgs = self.awgs_with_waveforms()
+        elif awgs == 'all':
+            awgs = self.awgs
+        for AWG_name in awgs:
+            AWG = self.AWG_obj(awg=AWG_name)
+            for regs in self._get_segment_filter_userregs(AWG):
+                AWG.set(regs[0], val[0])
+                AWG.set(regs[1], val[1])
+
+    def _get_filter_segments(self):
+        return self._filter_segments
+        # vals = []
+        # for AWG in self.awgs.values():
+        #     for regs in self._get_segment_filter_userregs(AWG):
+        #         vals.append((AWG.get(regs[0]), AWG.get(regs[1])))
+        # if len(np.unique(vals, axis=0)) > 1:
+        #     log.warning(f'Filter segment settings not consistent. Returning '
+        #                 f'first value found in {self.awgs[0].name}.')
+        # return vals[0]
 
     def AWGs_prequeried(self, status=None):
         if status is None:

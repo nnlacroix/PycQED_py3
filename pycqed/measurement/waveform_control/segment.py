@@ -45,6 +45,8 @@ class Segment:
         self.element_start_end = {}
         self.elements_on_awg = {}
         self.distortion_dicts = {}
+        self.sweep_params = {}
+        self.allow_filter = False
         self.trigger_pars = {
             'pulse_length': self.trigger_pulse_length,
             'amplitude': self.trigger_pulse_amplitude,
@@ -457,6 +459,11 @@ class Segment:
             el_start = self.get_element_start(el, awg)
             new_end = t_end + length_comp
             new_samples = self.time2sample(new_end - el_start, awg=awg)
+            # make sure that element length is multiple of
+            # sample granularity
+            gran = self.pulsar.get('{}_granularity'.format(awg))
+            if new_samples % gran != 0:
+                new_samples += gran - new_samples % gran
             self.element_start_end[el][awg][1] = new_samples
 
     def gen_refpoint_dict(self):
@@ -1027,17 +1034,23 @@ class Segment:
 
     def calculate_hash(self, elname, codeword, channel):
         if not self.pulsar.reuse_waveforms():
-            return (self.name, elname, codeword, channel)
+            # these hash entries avoid that the waveform is reused on another
+            # channel or in another element/codeword
+            hashlist = [self.name, elname, codeword, channel]
+            if not self.pulsar.use_sequence_cache():
+                return tuple(hashlist)
+            # when sequence cache is used, we still need to add the other
+            # hashables to allow pulsar to detect when a re-upload is required
+        else:
+            hashlist = []
 
         awg = self.pulsar.get(f'{channel}_awg')
         tstart, length = self.element_start_end[elname][awg]
-        hashlist = []
         hashlist.append(length)  # element length in samples
         if self.pulsar.get(f'{channel}_type') == 'analog' and \
                 self.pulsar.get(f'{channel}_distortion') == 'precalculate':
-            # don't compare the kernels, just assume that all channels'
-            # distortion kernels are different
-            hashlist.append(channel)
+            hashlist.append(repr(self.pulsar.get(
+                f'{channel}_distortion_dict')))
         else:
             hashlist.append(self.pulsar.clock(channel=channel))  # clock rate
             for par in ['type', 'amp', 'internal_modulation']:
@@ -1045,6 +1058,12 @@ class Segment:
                     hashlist.append(self.pulsar.get(f'{channel}_{par}'))
                 except KeyError:
                     hashlist.append(False)
+        if self.pulsar.get(f'{channel}_type') == 'analog' and \
+                self.pulsar.get(f'{channel}_charge_buildup_compensation'):
+            for par in ['compensation_pulse_delay',
+                        'compensation_pulse_gaussian_filter_sigma',
+                        'compensation_pulse_scale']:
+                hashlist.append(self.pulsar.get(f'{channel}_{par}'))
 
         for pulse in self.elements[elname]:
             if pulse.codeword in {'no_codeword', codeword}:
