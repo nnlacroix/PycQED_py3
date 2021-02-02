@@ -190,8 +190,11 @@ def Qubit_dac_to_freq_res(dac_voltage, Ej_max, E_c, asymmetry, coupling, fr,
     V_per_phi0 (V): volt per phi0 (convert voltage to flux)
     phi_park
     '''
+    return_float = False
     if np.ndim(dac_voltage) == 0:
         dac_voltage = np.array([dac_voltage])
+        return_float = True
+
     if V_per_phi0 is None and dac_flux_coefficient is None:
         raise ValueError('Please specify "V_per_phi0".')
     if dac_flux_coefficient is not None:
@@ -214,7 +217,7 @@ def Qubit_dac_to_freq_res(dac_voltage, Ej_max, E_c, asymmetry, coupling, fr,
                                                              ))[0]
                      for ej in Ej]
     qubit_freq = np.array(freqs)
-    return qubit_freq
+    return qubit_freq[0] if return_float else qubit_freq
 
 def Qubit_freq_to_dac_res(frequency, Ej_max, E_c, asymmetry, coupling, fr,
                               dac_sweet_spot=0.0, V_per_phi0=None,
