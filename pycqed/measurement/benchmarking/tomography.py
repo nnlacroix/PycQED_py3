@@ -36,7 +36,8 @@ class Tomography(CalibBuilder):
                     preparation pulses (e.g. preselection). See the docstring
                     of `Tomography.block_from_anything` for allowed formats.
                     Default: None
-            Any item not specified in the task will be taken from the keyword
+            The default value for any item not specified in the task, except
+            for `prepended_pulses` or `qubits`, will be taken from the keyword
             arguments of the init of the class, if provided.
         cal_all_combinations: Generate all combinations of multi-qubit
             calibration states, e.g. 00, 01, 10, 11 for two qubits, instead of
@@ -45,29 +46,19 @@ class Tomography(CalibBuilder):
         optimize_identity: Implement the identity operation by zero-duration
             virtual pulses if True. Idle for the duration of a pi-pulse if
             False. Default: False
-
     """
 
     kw_for_task_keys = ('pulses',
                         'init_rots_basis',
                         'final_rots_basis',
                         'init_all_rots',
-                        'final_all_rots',
-                        'prepend_pulses')
+                        'final_all_rots')
 
-    def __init__(self, task_list=None, pulses=None, init_rots_basis=('I',),
+    def __init__(self, task_list, pulses=None, init_rots_basis=('I',),
                  final_rots_basis=tomo_analysis.DEFAULT_BASIS_ROTS,
-                 prepend_pulses=None, init_all_rots=True, final_all_rots=True,
+                 init_all_rots=True, final_all_rots=True,
                  cal_all_combinations=True, optimize_identity=False, **kw):
         try:
-            self.experiment_name = 'Tomography'
-
-            if task_list is None:
-                if 'qubits' not in kw:
-                    raise ValueError('Either a task_list or qubits need to be'
-                                     'specified')
-                task_list = [{'qubits': kw['qubits']}]
-
             for task in task_list:
                 # convert qubit objects to qubit names
                 task['qubits'] = [q if isinstance(q, str) else q.name
@@ -93,12 +84,19 @@ class Tomography(CalibBuilder):
                              pulses=pulses,
                              init_rots_basis=init_rots_basis,
                              final_rots_basis=final_rots_basis,
-                             prepend_pulses=prepend_pulses,
                              init_all_rots=init_all_rots,
                              final_all_rots=final_all_rots,
                              cal_all_combinations=cal_all_combinations,
                              optimize_identity=optimize_identity,
                              **kw)
+
+            # update measurement object to only read out tomography qubits
+            self.meas_obj_names = []
+            for task in self.task_list:
+                for qbn in task['qubits']:
+                    if qbn not in self.meas_obj_names:
+                        self.meas_obj_names.append(qbn)
+            self.meas_objs, _ = self.get_qubits(self.meas_obj_names)
 
             self.optimize_identity = optimize_identity
             self.global_prepend_block = None
@@ -110,7 +108,6 @@ class Tomography(CalibBuilder):
                 pulses=pulses,
                 init_rots_basis=init_rots_basis,
                 final_rots_basis=final_rots_basis,
-                prepend_pulses=prepend_pulses,
                 init_all_rots=init_all_rots,
                 final_all_rots=final_all_rots,
                 cal_all_combinations=cal_all_combinations,
@@ -130,9 +127,9 @@ class Tomography(CalibBuilder):
             traceback.print_exc()
 
     def preprocess_task_list(self, **kw):
-        preprocessed_task_list = super().preprocess_task_list(**kw)
+        self.preprocessed_task_list = super().preprocess_task_list(**kw)
         return self.preprocess_task_list_tomography(
-            preprocessed_task_list=preprocessed_task_list)
+            preprocessed_task_list=self.preprocessed_task_list)
 
     def preprocess_task_list_tomography(self, preprocessed_task_list):
         prepend_block_list = []
@@ -165,7 +162,7 @@ class Tomography(CalibBuilder):
             if task['prepend_pulses'] is not None:
                 prepend_block_list.append(self.block_from_anything(
                     task['prepend_pulses'], 'PrependPulses'))
-        for qb in self.qb_names:
+        for qb in self.meas_obj_names:
             if qb not in initializations_map:
                 initializations_map[qb] = []
             if qb not in finalizations_map:
@@ -179,12 +176,12 @@ class Tomography(CalibBuilder):
         self.global_initializations = []
         for i in range(nr_inits):
             self.global_initializations += [[]]
-            for qb in self.qb_names:
+            for qb in self.meas_obj_names:
                 self.global_initializations[-1] += [initializations_map[qb][i]]
         self.global_finalizations = []
         for i in range(nr_finals):
             self.global_finalizations += [[]]
-            for qb in self.qb_names:
+            for qb in self.meas_obj_names:
                 self.global_finalizations[-1] += [finalizations_map[qb][i]]
         if len(prepend_block_list) > 0:
             self.global_prepend_block = self.simultaneous_blocks(
