@@ -232,33 +232,45 @@ def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
                           epd, add_param_method='append')
                 continue
 
-            group_name = '/'.join(file_par.split('.')[:-1])
-            par_name = file_par.split('.')[-1]
-            if group_name == '':
-                group = data_file
-                attrs = []
-            else:
-                group = data_file[group_name]
-                attrs = list(group.attrs)
-
-            if group_name in data_file or group_name == '':
-                if par_name in attrs:
-                    add_param(all_keys[-1],
-                              get_hdf_param_value(group,
-                                                  par_name),
-                              epd, add_param_method=add_param_method)
-                elif par_name in list(group.keys()) or file_par == '':
-                    par = group[par_name] if par_name != '' else group
-                    if isinstance(par,
-                                  h5py._hl.dataset.Dataset):
-                        add_param(all_keys[-1],
-                                  np.array(par),
-                                  epd, add_param_method=add_param_method)
+            success = False
+            # The following loop is needed to deal with cases where the
+            # parameter name contains one or multiple "." characters.
+            for i in range(len(file_par.split('.')) - 1)[::-1]:
+                try:
+                    group_name = '/'.join(file_par.split('.')[:i+1])
+                    par_name = '.'.join(file_par.split('.')[i+1:])
+                    if group_name == '':
+                        group = data_file
+                        attrs = []
                     else:
-                        add_param(all_keys[-1],
-                                  read_dict_from_hdf5(
-                                      {}, par),
-                                  epd, add_param_method=add_param_method)
+                        group = data_file[group_name]
+                        attrs = list(group.attrs)
+
+                    if group_name in data_file or group_name == '':
+                        if par_name in attrs:
+                            add_param(
+                                all_keys[-1],
+                                get_hdf_param_value(group, par_name),
+                                epd, add_param_method=add_param_method)
+                        elif par_name in list(group.keys()) or file_par == '':
+                            par = group[par_name] if par_name != '' else group
+                            if isinstance(par,
+                                          h5py._hl.dataset.Dataset):
+                                add_param(
+                                    all_keys[-1],
+                                    np.array(par),
+                                    epd, add_param_method=add_param_method)
+                            else:
+                                add_param(
+                                    all_keys[-1],
+                                    read_dict_from_hdf5({}, par),
+                                    epd, add_param_method=add_param_method)
+                    success = True
+                    break
+                except:
+                    pass
+            if not success:
+                raise KeyError(f'{file_par} not found in HDF file.')
 
             if all_keys[-1] not in epd:
                 # search through the attributes of all groups
