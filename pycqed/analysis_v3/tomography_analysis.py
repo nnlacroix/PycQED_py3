@@ -189,9 +189,6 @@ def state_tomography_analysis(data_dict, keys_in,
         cov_matrix_meas_obs = hlp_mod.get_param('cov_matrix_meas_obs',
                                                 data_dict, **params)
         if cov_matrix_meas_obs is None:
-            meas_obj_names = hlp_mod.get_measurement_properties(
-                data_dict, props_to_extract=['mobjn'],
-                enforce_one_meas_obj=False, **params)
             hlp_mod.add_param('cov_matrix_meas_obs',
                               np.diag(np.ones(len(meas_obj_names)**2)),
                               data_dict, **params)
