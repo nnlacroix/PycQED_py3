@@ -5,7 +5,6 @@ from collections import OrderedDict
 from matplotlib.transforms import blended_transform_factory
 from pycqed.measurement.hdf5_data import write_dict_to_hdf5
 import matplotlib.pyplot as plt
-from pycqed.analysis_v3 import plot_mod
 import matplotlib.dates as mdates
 import functools
 
@@ -330,6 +329,7 @@ class Timer(OrderedDict):
         Returns:
 
         """
+        from pycqed.analysis_v3 import plotting as plot_mod
         unit_to_t_factor = dict(us=1e-6, ms=1e-3, s=1, min=60, h=3600,
                                 day=3600 * 24, week=3600 * 24 * 7)
         all_start_and_durations = self.get_ckpt_fragments(checkpoints)
