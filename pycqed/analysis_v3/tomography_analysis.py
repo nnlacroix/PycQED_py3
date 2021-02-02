@@ -114,6 +114,23 @@ def state_tomography_analysis(data_dict, keys_in,
     Assumptions:
         - the data indicated by keys_in is assumed to be thresholded shots
     """
+    # ensure correct order of meas_obj_names
+    meas_obj_names = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+        **params)
+
+    mobj_names = None
+    legacy_channel_map = hlp_mod.get_param('channel_map', data_dict, **params)
+    task_list = hlp_mod.get_param('task_list', data_dict, **params)
+    if legacy_channel_map is not None:
+        mobj_names = list(legacy_channel_map)
+    elif task_list is not None:
+        mobj_names = hlp_mod.get_param('qubits', task_list[0])
+    if mobj_names != meas_obj_names:
+        hlp_mod.add_param('meas_obj_names', mobj_names, data_dict,
+                          add_param_method='replace')
+        params.pop('meas_obj_names', None)
+
     hlp_mod.pop_param('keys_out', data_dict, node_params=params)
 
     cp = hlp_mod.get_measurement_properties(data_dict, props_to_extract=['cp'],
