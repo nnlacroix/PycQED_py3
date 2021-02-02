@@ -171,6 +171,49 @@ def classify_gm(data_dict, keys_out, keys_in, **params):
     # return data_dict
 
 
+def do_postselection_f_level(data_dict, keys_in, keys_out=None, **params):
+    """
+    Postselects on qubit being in f-level by setting the preselection bit to 1.
+    This function was intended to  be used before a function that does
+    preselection which will then filter out both preselection RO being in e
+    and qubit being in f either in the preselection or in the actual measurement
+    shots.
+    :param data_dict: OrderedDict containing data to be processed and where
+        processed data is to be stored
+    :param keys_in: key names or dictionary keys paths in data_dict for shots
+        (with preselection) classified into pg, pe, pf
+    :param keys_out: list of key names or dictionary keys paths in
+        data_dict for the processed data to be saved into
+    :param params: keyword arguments
+    :return:
+
+    Assumptions:
+     - one meas object
+     - measurement must have been done with preselection
+    """
+    if len(keys_in) != 3:
+        raise ValueError('keys_in must have length 3.')
+    if len(keys_out) != 1:
+        raise ValueError('keys_out must have length 1.')
+
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+    pg, pe, pf = list(data_to_proc_dict.values())
+
+    mpre = np.logical_not(np.arange(pe.size) % 2)
+    mmeas = (np.arange(pe.size) % 2).astype(np.bool)
+
+    ro = pe.copy().astype(np.bool)
+
+    # make sure segments where preselection readout is not g are filtered out
+    ro[mpre] = np.logical_not(pg[mpre])
+
+    # make sure segments where main readout is f are filtered out
+    ro[mpre] = np.logical_or(ro[mpre], pf[mmeas])
+
+    # write output
+    hlp_mod.add_param(keys_out[0], ro, data_dict, **params)
+
+
 def do_standard_preselection(data_dict, keys_in, keys_out=None,
                              joint_processing=False, **params):
     """
@@ -1033,3 +1076,155 @@ def count_states(data_dict, keys_in, keys_out, states=None, n_meas_objs=None,
         np.count_nonzero(np.all(shots.transpose() == state, axis=1))
         for state in states])
     hlp_mod.add_param(keys_out[0], state_counts, data_dict, **params)
+
+
+def data_from_analysis_v2(data_dict, class_name, class_params,
+                          keys_in=None, keys_out=None, **params):
+    """
+    Instantiates an analysis class with name class_name and input parameters
+    class_params from either timedomain_analysis.py or readout_analysis.py.
+    :param data_dict: OrderedDict where the data from the analysis class will
+        be stored.
+    :param class_name: string specifying the name of the analysis class to run
+    :param class_params: keyword input parameters to the analysis class
+    :param keys_in: list of paths inside the __dict__ of the analysis instance
+        pointing to the parameters that should be extracted and stored in
+        data_dict
+    :param keys_out: list of paths inside data_dict where the value of the
+        parameters corresponding to keys_in are to be stored.
+    :param params: keyword arguments passed to hlp_mod.add_param
+    """
+    from pycqed.analysis_v2 import timedomain_analysis as tda
+    from pycqed.analysis_v2 import readout_analysis as ra
+    try:
+        ana = getattr(tda, class_name)
+    except AttributeError:
+        try:
+            ana = getattr(ra, class_name)
+        except AttributeError:
+            raise AttributeError(
+                f'{class_name} was not found in either '
+                f'timedomain_analysis.py or readout_analysis.py.')
+
+    # run analysis
+    options_dict = class_params.get('options_dict', {})
+    options_dict['delegate_plotting'] = options_dict.get('delegate_plotting',
+                                                         False)
+    class_params['options_dict'] = options_dict
+    ana = ana(**class_params)
+
+    if keys_in is None:
+        keys_in = ['proc_data_dict']
+        if keys_out is None:
+            keys_out = [f'proc_data_dict_{class_name}']
+
+    if keys_out is None:
+        keys_out = [f'{keyi}_{class_name}' for keyi in keys_in]
+
+    params['add_param_method'] = params.get('add_param_method', 'replace')
+    for keyi, keyo in zip(keys_in, keys_out):
+        data = hlp_mod.get_param(keyi, ana.__dict__)
+        if data is None:
+            log.warning(f'{keyi} was not found in {class_name} instance.')
+            continue
+        hlp_mod.add_param(keyo, data, data_dict, **params)
+
+
+def extract_leakage_classified_shots(data_dict, keys_in, keys_out=None,
+                                     state_prob_mtxs=None, **params):
+    """
+    Extracts leakage from classified shots with preselection when either of the
+    qubits was in f and when all qubits were in f.
+    :param data_dict: OrderedDict containing data to be processed and where
+        processed data is to be stored
+    :param keys_in: key names or dictionary keys paths in data_dict for shots
+        (with preselection) classified into pg, pe, pf
+    :param keys_out: list of key names or dictionary keys paths in
+        data_dict for the processed data to be saved into
+    :param state_prob_mtxs: dict with keys meas_obj_names and values specifying
+        the readout correction matrix.
+    :param params: keyword arguments
+    """
+    meas_obj_names = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+        **params)
+
+    if len(keys_in) != 3*len(meas_obj_names):
+        raise ValueError(f'keys_in must have length 3*len(meas_obj_names) = '
+                         f'{3*len(meas_obj_names)}.')
+    if keys_out is not None and len(keys_out) != 1:
+        raise ValueError('keys_out must have length 1.')
+
+    data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
+
+    if state_prob_mtxs is None:
+        state_prob_mtxs = {}
+
+    # extract probabilities for the transmon states: pg, pe, pf for each qubit
+    ps = {}
+    for mobjn in meas_obj_names:
+        ps[mobjn] = np.array(
+            [v for k, v in data_to_proc_dict.items() if mobjn in k])
+
+    nr_shots = ps[meas_obj_names[0]][0].size//2
+
+    # distinguish between measurement and preselection segments
+    presel_segs = np.logical_not(np.arange(2*nr_shots) % 2)
+
+    # calculate preselection mask: True when the shots are to be kept
+    presel_mask = np.ones(nr_shots)
+    for mobjn in meas_obj_names:
+        presel_mask = np.logical_and(presel_mask, ps[mobjn][0][presel_segs])
+
+    # Calculate flat multiqubit shots,
+    # e.g. [pgg, pge, pgf, peg, pee, pef, pfg, pfe, pff] for two qubits
+    ps_flat = []
+    for i in range(nr_shots):
+        if not presel_mask[i]:
+            continue
+        res = [1]
+        for mobjn in meas_obj_names:
+            res = np.kron(res, ps[mobjn].T[2*i+1])
+        ps_flat.append(res)
+
+    # find mean population
+    ps_mean = np.array(ps_flat).mean(axis=0)
+
+    # invert with the state assign. matrix
+    state_assign_matrix = [[1]]
+    for mobjn in meas_obj_names:
+        state_prob_mtx = state_prob_mtxs.get(mobjn, None)
+        if state_prob_mtx is None:
+            state_prob_mtx = hlp_mod.get_param(f'{mobjn}.state_prox_mtx',
+                                               data_dict, **params)
+            if state_prob_mtx is None:
+                log.warning(f'state_prob_mtx was not found for {mobjn}. Setting '
+                            f'it to identity.')
+                state_prob_mtx = np.identity(3)
+        state_assign_matrix = np.kron(state_assign_matrix, state_prob_mtx)
+
+    ps_mean_corr = np.linalg.inv(state_assign_matrix.T) @ ps_mean
+
+    # extract leakage probabilities for individual qubits
+    masks_f = {}
+    for mobjn in meas_obj_names:
+        res = [1]
+        for mobjn2 in meas_obj_names:
+            res = np.kron(res, [0, 0, 1] if mobjn == mobjn2 else [1, 1, 1])
+        masks_f[mobjn] = res
+    proba_f = {qbn: (ps_mean_corr*masks_f[qbn]).sum() for qbn in meas_obj_names}
+
+    # extract probability of any qubit leaked
+    proba_f['all'] = (ps_mean_corr*(np.sum(
+        list(masks_f.values()), axis=0) > 0)).sum()
+
+    if keys_out is None:
+        for mobjn in meas_obj_names:
+            hlp_mod.add_param(
+                f'extract_leakage_classified_shots.{mobjn}_leaked',
+                proba_f[mobjn], data_dict, **params)
+
+        hlp_mod.add_param(f'extract_leakage_classified_shots.all_leaked',
+                          proba_f['all'], data_dict, **params)
+    else:
+        hlp_mod.add_param(keys_out[0], proba_f, data_dict, **params)
