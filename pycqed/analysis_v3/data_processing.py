@@ -1215,7 +1215,7 @@ def extract_leakage_classified_shots(data_dict, keys_in, keys_out=None,
     proba_f = {qbn: (ps_mean_corr*masks_f[qbn]).sum() for qbn in meas_obj_names}
 
     # extract probability of any qubit leaked
-    proba_f['all'] = (ps_mean_corr*(np.sum(
+    proba_f['any'] = (ps_mean_corr*(np.sum(
         list(masks_f.values()), axis=0) > 0)).sum()
 
     if keys_out is None:
@@ -1225,6 +1225,6 @@ def extract_leakage_classified_shots(data_dict, keys_in, keys_out=None,
                 proba_f[mobjn], data_dict, **params)
 
         hlp_mod.add_param(f'extract_leakage_classified_shots.all_leaked',
-                          proba_f['all'], data_dict, **params)
+                          proba_f['any'], data_dict, **params)
     else:
         hlp_mod.add_param(keys_out[0], proba_f, data_dict, **params)

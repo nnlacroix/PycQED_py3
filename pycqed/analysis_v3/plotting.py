@@ -1198,10 +1198,18 @@ def plot_bar(pdict, axs, tight_fig=True):
         axs.set_title(plot_title)
 
     if do_legend:
-        legend_ncol = pdict.get('legend_ncol', 1)
-        legend_title = pdict.get('legend_title', None)
-        legend_pos = pdict.get('legend_pos', 'best')
-        axs.legend(title=legend_title, loc=legend_pos, ncol=legend_ncol)
+        legend_kws = {'loc': pdict.get('legend_pos', 'best'),
+                      'ncol': pdict.get('legend_ncol', 1),
+                      'title': pdict.get('legend_title', None)}
+        legend_kws.update(pdict.get('legend_kws', {}))
+
+        legend_entries = pdict.get('legend_entries', [])
+        legend_artists = [entry[0] for entry in legend_entries]
+        legend_labels = [entry[1] for entry in legend_entries]
+        handles, labels = axs.get_legend_handles_labels()
+        handles += legend_artists
+        labels += legend_labels
+        axs.legend(handles, labels, **legend_kws)
 
     if plot_touching:
         axs.figure.subplots_adjust(wspace=0, hspace=0)
