@@ -6,7 +6,7 @@ import itertools
 import matplotlib as mpl
 from collections import OrderedDict, defaultdict
 
-from pycqed.utilities.timer import Timer
+from pycqed.utilities import timer as tm_mod
 from sklearn.mixture import GaussianMixture as GM
 from sklearn.tree import DecisionTreeClassifier as DTC
 
@@ -28,7 +28,7 @@ import logging
 from pycqed.utilities import math
 from pycqed.utilities.general import find_symmetry_index
 import pycqed.measurement.waveform_control.segment as seg_mod
-
+import datetime as dt
 log = logging.getLogger(__name__)
 try:
     import qutip as qtp
@@ -8038,8 +8038,12 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     'linestyle': '-',
                     'marker': 'x'}
 
-class RunTimeAnalysis(ba.BaseDataAnalysis):
 
+class RunTimeAnalysis(ba.BaseDataAnalysis):
+    """
+    Provides elementary analysis of Run time by plotting all timers
+    saved in the hdf5 file of a measurement.
+    """
     def __init__(self,
                  label: str = '',
                  t_start: str = None, t_stop: str = None, data_file_path: str = None,
@@ -8052,7 +8056,7 @@ class RunTimeAnalysis(ba.BaseDataAnalysis):
                          options_dict=options_dict,
                          extract_only=extract_only,
                          do_fitting=do_fitting, **kwargs)
-
+        self.timers = {}
 
         if not hasattr(self, "job"):
             self.create_job(t_start=t_start, t_stop=t_stop,
@@ -8060,13 +8064,86 @@ class RunTimeAnalysis(ba.BaseDataAnalysis):
                             do_fitting=do_fitting, options_dict=options_dict,
                             extract_only=extract_only, params_dict=params_dict,
                             numeric_params=numeric_params, **kwargs)
-        self.params_dict = {f"{Timer.HDF_GRP_NAME}": f"{Timer.HDF_GRP_NAME}",
-                            "repetition_rate": "Instrument settings/TriggerDevice.pulse_period",
+        self.params_dict = {f"{tm_mod.Timer.HDF_GRP_NAME}":
+                                f"{tm_mod.Timer.HDF_GRP_NAME}",
+                            "repetition_rate":
+                                "Instrument settings/TriggerDevice.pulse_period",
                             }
 
 
         if auto:
             self.run_analysis()
 
+    def extract_data(self):
+        super().extract_data()
+        timers_dicts = self.raw_data_dict.get('Timers', {})
+        for t, v in timers_dicts.items():
+            self.timers[t] = tm_mod.Timer(name=t, **v)
+
+        # Extract and build raw measurement timer
+        self.timers['BareMeasurement'] = self.bare_measurement_timer(
+            ref_time=self.get_param_value("ref_time")
+        )
+
     def process_data(self):
         pass
+
+    def plot(self, **kwargs):
+        plot_kws = self.get_param_value('plot_kwargs', {})
+        for t in self.timers.values():
+            try:
+                self.figs["timer_" + t.name] = t.plot(**plot_kws)
+            except Exception as e:
+                log.error(f'Could not plot Timer: {t.name}: {e}')
+
+        if self.get_param_value('combined_timer', True):
+            self.figs['timer_all'] = tm_mod.multi_plot(self.timers.values(),
+                                                       **plot_kws)
+
+    def bare_measurement_timer(self, ref_time=None):
+        bmtime = self.bare_measurement_time()
+        bmtimer = tm_mod.Timer('BareMeasurement', auto_start=False)
+        if ref_time is None:
+            try:
+                ts = [t.find_earliest() for t in self.timers.values()]
+                ts = [t[-1] for t in ts if len(t)]
+                arg_sorted = sorted(range(len(ts)),
+                                    key=list(ts).__getitem__)
+                ref_time = ts[arg_sorted[0]]
+            except Exception as e:
+                log.error('Failed to extract reference time for bare'
+                          f'Measurement timer. Please fix the error'
+                          f'or pass in a reference time manually.')
+                raise e
+
+        # TODO add more options of how to distribute the bm time in the timer
+        #  (not only start stop but e.g. distribute it)
+        bmtimer.checkpoint("BareMeasurement.bare_measurement.start",
+                           values=[ref_time], log_init=False)
+        bmtimer.checkpoint("BareMeasurement.bare_measurement.end",
+                           values=[ ref_time + dt.timedelta(seconds=bmtime)],
+                           log_init=False)
+
+        return bmtimer
+
+    def bare_measurement_time(self):
+        det_metadata = self.metadata.get("Detector Metadata", None)
+        nr_averages = None
+        if det_metadata is not None:
+            # multi detector function: look for child "detectors"
+            # assumes at least 1 child and that all children have the same
+            # number of averages
+            det = list(det_metadata.get('detectors', {}).values())[0]
+            nr_averages = det.get('nr_averages', det.get('nr_shots', None))
+        if nr_averages is None:
+            raise ValueError('Could not extract nr_averages/nr_shots from hdf file.'
+                             'Please specify "nr_averages" in options_dict.')
+        n_hsp = len(self.raw_data_dict['hard_sweep_points'])
+        n_ssp = len(self.raw_data_dict.get('soft_sweep_points', [0]))
+
+        return self._bare_measurement_time(n_ssp, n_hsp,
+                                          self.raw_data_dict["repetition_rate"],
+                                    nr_averages)
+    @staticmethod
+    def _bare_measurement_time(n_ssp, n_hsp, repetition_rate, nr_averages):
+        return n_ssp * n_hsp * repetition_rate * nr_averages
