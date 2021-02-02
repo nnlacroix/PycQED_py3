@@ -534,6 +534,7 @@ def prepare_prob_table_plot(data_dict, exclude_preselection=False, **params):
     plot_dicts[f'{figures_prefix}counts_table_{"".join(meas_obj_names)}'] = {
         'axid': "ptable",
         'plotfn': 'plot_colorx',
+        'plotsize': [6.4, 4.8],
         'xvals': np.arange(len(observables))[obs_filter],
         'yvals': np.array(len(observables)*[ylist]),
         'zvals': plt_data,
@@ -687,7 +688,7 @@ def prepare_density_matrix_plot(data_dict, estimation_type='least_squares',
         'title': title,
         'do_legend': len(legend_entries),
         'legend_entries': legend_entries,
-        'legend_kws': dict(loc='upper right', bbox_to_anchor=(1, 0),
+        'legend_kws': dict(loc='upper center', bbox_to_anchor=(0.5, -0.05),
                            ncol=2, frameon=False),
         'set_edgecolor': True
     }
@@ -763,6 +764,7 @@ def prepare_pauli_basis_plot(data_dict, estimation_type='least_squares',
                   f'pauli_basis_{estimation_type}_{"".join(meas_obj_names)}'
     plot_dicts[figure_name] = {
         'plotfn': 'plot_bar',
+        'plotsize': (4.5, 3),
         'xcenters': np.arange(len(order)),
         'xwidth': 0.4,
         'xrange': (-1, len(order)),
@@ -844,7 +846,9 @@ def get_legend_artists_labels(data_dict, estimation_type='least_squares',
     if leakage is None:
         keys_in_leakage = hlp_mod.get_param('keys_in_leakage', data_dict,
                                             **params)
-        leakage = hlp_mod.get_param(keys_in_leakage[0], data_dict)
+        if keys_in_leakage is not None:
+            leakage = hlp_mod.get_param(keys_in_leakage[0], data_dict)
+
         if leakage is not None:
             legend_entries += [
                 (empty_artist, f'Leakage, $L_{{{key}}} = {100*leak:.2f}\%$')
