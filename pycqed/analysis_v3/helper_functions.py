@@ -743,15 +743,19 @@ def get_observables(data_dict, keys_out=None, preselection_shift=-1,
     task_list = get_param('task_list', data_dict, **params)
     if legacy_channel_map is not None:
         mobj_names = list(legacy_channel_map)
-    elif task_list is not None:
-        mobj_names = get_param('qubits', task_list[0])
-
-    if mobj_names is None:
-        # make sure the qubits are in the correct order here when we take a
-        # tomo measurement in new framework
+    else:
         mobj_names = get_measurement_properties(
             data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
             **params)
+    # elif task_list is not None:
+    #     mobj_names = get_param('qubits', task_list[0])
+
+    # if mobj_names is None:
+    #     # make sure the qubits are in the correct order here when we take a
+    #     # tomo measurement in new framework
+    #     mobj_names = get_measurement_properties(
+    #         data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+    #         **params)
 
     combination_list = list(itertools.product([False, True],
                                               repeat=len(mobj_names)))
