@@ -16,6 +16,7 @@ from pycqed.instrument_drivers.meta_instrument.qubit_objects.QuDev_transmon \
     import QuDev_transmon
 from pycqed.measurement import multi_qubit_module as mqm
 import logging
+import qcodes
 log = logging.getLogger(__name__)
 
 # TODO: docstrings (list all kw at the highest level with reference to where
@@ -151,7 +152,12 @@ class MultiTaskingExperiment(QuantumExperiment):
             'data_to_fit': self.data_to_fit,
         })
         if self.task_list is not None:
-            self.exp_metadata.update({'task_list': self.task_list})
+            tl = [copy(t) for t in self.task_list]
+            for t in tl:
+                for k, v in t.items():
+                    if isinstance(v, qcodes.Parameter):
+                        t[k] = repr(v)
+            self.exp_metadata.update({'task_list': tl})
 
         super().run_measurement(**kw)
 
@@ -632,7 +638,7 @@ class CalibBuilder(MultiTaskingExperiment):
                 max_length = max(p.pulse_obj.length, max_length)
         return max_length
 
-    def prepend_pulses_block(self, prepend_pulse_dicts):
+    def prepend_pulses_block(self, prepend_pulse_dicts, block_name='prepend'):
         """
         Generates a list of prepended pulses to run a calibration under the
         influence of previous operations (e.g.,  charge in the fluxlines).
@@ -653,7 +659,7 @@ class CalibBuilder(MultiTaskingExperiment):
                 # pulse parameters that overwrite the default values
                 prepend_pulse.update(pp)
                 prepend_pulses += [prepend_pulse]
-        return Block('prepend', prepend_pulses)
+        return Block(block_name, prepend_pulses)
 
     @staticmethod
     def add_default_ramsey_sweep_points(sweep_points, tile=2,

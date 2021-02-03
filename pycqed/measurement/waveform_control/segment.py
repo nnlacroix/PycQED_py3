@@ -45,6 +45,8 @@ class Segment:
         self.element_start_end = {}
         self.elements_on_awg = {}
         self.distortion_dicts = {}
+        self.sweep_params = {}
+        self.allow_filter = False
         self.trigger_pars = {
             'pulse_length': self.trigger_pulse_length,
             'amplitude': self.trigger_pulse_amplitude,
@@ -469,6 +471,11 @@ class Segment:
             el_start = self.get_element_start(el, awg)
             new_end = t_end + length_comp
             new_samples = self.time2sample(new_end - el_start, awg=awg)
+            # make sure that element length is multiple of
+            # sample granularity
+            gran = self.pulsar.get('{}_granularity'.format(awg))
+            if new_samples % gran != 0:
+                new_samples += gran - new_samples % gran
             self.element_start_end[el][awg][1] = new_samples
 
     def gen_refpoint_dict(self):
@@ -1039,17 +1046,23 @@ class Segment:
 
     def calculate_hash(self, elname, codeword, channel):
         if not self.pulsar.reuse_waveforms():
-            return (self.name, elname, codeword, channel)
+            # these hash entries avoid that the waveform is reused on another
+            # channel or in another element/codeword
+            hashlist = [self.name, elname, codeword, channel]
+            if not self.pulsar.use_sequence_cache():
+                return tuple(hashlist)
+            # when sequence cache is used, we still need to add the other
+            # hashables to allow pulsar to detect when a re-upload is required
+        else:
+            hashlist = []
 
         awg = self.pulsar.get(f'{channel}_awg')
         tstart, length = self.element_start_end[elname][awg]
-        hashlist = []
         hashlist.append(length)  # element length in samples
         if self.pulsar.get(f'{channel}_type') == 'analog' and \
                 self.pulsar.get(f'{channel}_distortion') == 'precalculate':
-            # don't compare the kernels, just assume that all channels'
-            # distortion kernels are different
-            hashlist.append(channel)
+            hashlist.append(repr(self.pulsar.get(
+                f'{channel}_distortion_dict')))
         else:
             hashlist.append(self.pulsar.clock(channel=channel))  # clock rate
             for par in ['type', 'amp', 'internal_modulation']:
@@ -1057,6 +1070,12 @@ class Segment:
                     hashlist.append(self.pulsar.get(f'{channel}_{par}'))
                 except KeyError:
                     hashlist.append(False)
+        if self.pulsar.get(f'{channel}_type') == 'analog' and \
+                self.pulsar.get(f'{channel}_charge_buildup_compensation'):
+            for par in ['compensation_pulse_delay',
+                        'compensation_pulse_gaussian_filter_sigma',
+                        'compensation_pulse_scale']:
+                hashlist.append(self.pulsar.get(f'{channel}_{par}'))
 
         for pulse in self.elements[elname]:
             if pulse.codeword in {'no_codeword', codeword}:
@@ -1144,7 +1163,7 @@ class Segment:
     def plot(self, instruments=None, channels=None, legend=True,
              delays=None, savefig=False, prop_cycle=None, frameon=True,
              channel_map=None, plot_kwargs=None, axes=None, demodulate=False,
-             show_and_close=True, col_ind=0):
+             show_and_close=True, col_ind=0, normalized_amplitudes=True):
         """
         Plots a segment. Can only be done if the segment can be resolved.
         :param instruments (list): instruments for which pulses have to be
@@ -1170,6 +1189,9 @@ class Segment:
         :param col_ind: (int) when passed together with axes, this specifies
             in which column of subfigures the plots should be added
             (default: 0)
+        :param normalized_amplitudes: (bool) whether amplitudes
+            should be normalized to the voltage range of the channel
+            (default: True)
         :return: The figure and axes objects if show_and_close is False,
             otherwise no return value.
         """
@@ -1215,6 +1237,8 @@ class Segment:
                         sorted_chans = sorted(wf_per_ch.keys())
                         for n_wf, ch in enumerate(sorted_chans):
                             wf = wf_per_ch[ch]
+                            if not normalized_amplitudes:
+                                wf = wf * self.pulsar.get(f'{instr}_{ch}_amp')
                             if channels is None or \
                                     ch in channels.get(instr, []):
                                 tvals = \
@@ -1260,7 +1284,10 @@ class Segment:
                 a.spines["left"].set_visible(frameon.get("left", True))
                 if legend:
                     a.legend(loc=[1.02, 0], prop={'size': 8})
-                a.set_ylabel('Voltage (V)')
+                if normalized_amplitudes:
+                    a.set_ylabel('Amplitude (norm.)')
+                else:
+                    a.set_ylabel('Voltage (V)')
             ax[-1, col_ind].set_xlabel('time ($\mu$s)')
             fig.suptitle(f'{self.name}', y=1.01)
             plt.tight_layout()

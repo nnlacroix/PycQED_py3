@@ -1198,10 +1198,18 @@ def plot_bar(pdict, axs, tight_fig=True):
         axs.set_title(plot_title)
 
     if do_legend:
-        legend_ncol = pdict.get('legend_ncol', 1)
-        legend_title = pdict.get('legend_title', None)
-        legend_pos = pdict.get('legend_pos', 'best')
-        axs.legend(title=legend_title, loc=legend_pos, ncol=legend_ncol)
+        legend_kws = {'loc': pdict.get('legend_pos', 'best'),
+                      'ncol': pdict.get('legend_ncol', 1),
+                      'title': pdict.get('legend_title', None)}
+        legend_kws.update(pdict.get('legend_kws', {}))
+
+        legend_entries = pdict.get('legend_entries', [])
+        legend_artists = [entry[0] for entry in legend_entries]
+        legend_labels = [entry[1] for entry in legend_entries]
+        handles, labels = axs.get_legend_handles_labels()
+        handles += legend_artists
+        labels += legend_labels
+        axs.legend(handles, labels, **legend_kws)
 
     if plot_touching:
         axs.figure.subplots_adjust(wspace=0, hspace=0)
@@ -1826,6 +1834,9 @@ def plot_fit(pdict, axs):
     """
     Plots an lmfit fit result object using the plot_line function.
     """
+    xvals, yvals = 'xvals', 'yvals'
+    if pdict.get('swap_xy', False):
+        xvals, yvals = yvals, xvals
     model = pdict['fit_res'].model
     plot_data = pdict.get('plot_data', False)  # plot the data
     plot_data_params = pdict.get('plot_data_params', {})
@@ -1841,17 +1852,19 @@ def plot_fit(pdict, axs):
                          ' has one independent variable.')
 
     x_arr = pdict['fit_res'].userkws[independent_var]
-    pdict['xvals'] = np.linspace(np.min(x_arr), np.max(x_arr),
+    pdict[xvals] = np.linspace(np.min(x_arr), np.max(x_arr),
                                  plot_numpoints)
-    pdict['yvals'] = model.eval(pdict['fit_res'].params,
-                                **{independent_var: pdict['xvals']})
-    if not hasattr(pdict['yvals'], '__iter__'):
-        pdict['yvals'] = np.array([pdict['yvals']])
-    if isinstance(pdict['yvals'], list) or isinstance(pdict['yvals'], tuple):
-        pdict['xvals'] = len(pdict['yvals'])*[pdict['xvals']]
+    pdict[yvals] = model.eval(pdict['fit_res'].params,
+                                **{independent_var: pdict[xvals]})
+    if not hasattr(pdict[yvals], '__iter__'):
+        pdict[yvals] = np.array([pdict[yvals]])
+    if isinstance(pdict[yvals], list) or isinstance(pdict[yvals], tuple):
+        pdict[xvals] = len(pdict[yvals])*[pdict[xvals]]
     if 'zorder' not in pdict:
         pdict['zorder'] = 0
     plot_line(pdict, axs)
+    if 'setlabel' not in pdict:
+        pdict['setlabel'] = ''
 
     if plot_data:
         # The data
@@ -1863,12 +1876,13 @@ def plot_fit(pdict, axs):
             pdict_data['marker'] = 'o'
         fit_color = pdict.get('color', '')
         data_color = pdict_data.get('color', '')
-        pdict_data['color'] = data_color if data_color != fit_color else 'C0'
+        pdict_data['color'] = data_color
         if pdict_data['zorder'] == 0:
             pdict_data['zorder'] = 1
-        pdict_data['xvals'] = pdict['fit_res'].userkws[independent_var]
-        pdict_data['yvals'] = pdict['fit_res'].userargs[0]
-        pdict_data['setlabel'] += ' data'
+        pdict_data[xvals] = pdict['fit_res'].userkws[independent_var]
+        pdict_data[yvals] = pdict['fit_res'].userargs[0]
+        if pdict_data['setlabel'] == pdict['setlabel']:
+            pdict_data['setlabel'] += ' data'
         plot_line(pdict_data, axs)
 
     if plot_init:
@@ -1879,9 +1893,9 @@ def plot_fit(pdict, axs):
             pdict_init['linestyle'] = '--'
         if pdict_init['zorder'] == 0:
             pdict_init['zorder'] = 3
-        pdict_init['yvals'] = model.eval(
+        pdict_init[yvals] = model.eval(
             **pdict['fit_res'].init_values,
-            **{independent_var: pdict['xvals']})
+            **{independent_var: pdict[xvals]})
         pdict_init['setlabel'] += ' init'
         plot_line(pdict_init, axs)
 

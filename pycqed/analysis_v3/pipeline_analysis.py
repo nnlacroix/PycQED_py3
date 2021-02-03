@@ -60,7 +60,7 @@ def process_pipeline(data_dict, processing_pipeline=None, append_pipeline=False,
             if node is None:
                 raise KeyError(f'Node function "{node_params["node_name"]}" '
                                f'not recognized')
-            node(data_dict, **node_params)
+            node(data_dict=data_dict, **node_params)
         except Exception:
             log.warning(
                 f'Unhandled error during node {node_params["node_name"]}!')
