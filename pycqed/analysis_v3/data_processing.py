@@ -1188,7 +1188,7 @@ def extract_leakage_classified_shots(data_dict, keys_in, keys_out=None,
     for mobjn in meas_obj_names:
         state_prob_mtx = state_prob_mtxs.get(mobjn, None)
         if state_prob_mtx is None:
-            state_prob_mtx = hlp_mod.get_param(f'{mobjn}.state_prox_mtx',
+            state_prob_mtx = hlp_mod.get_param(f'{mobjn}.state_prob_mtx',
                                                data_dict, **params)
             if state_prob_mtx is None:
                 log.warning(f'state_prob_mtx was not found for {mobjn}. Setting '
