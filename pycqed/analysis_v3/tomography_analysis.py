@@ -1292,9 +1292,9 @@ def get_tomo_data_subset(data_dict, keys_in, preselection=True, **params):
         data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
         **params)
     n = len(meas_obj_names)
-    init_rots_basis = hlp_mod.get_param('init_rots_basis', data_dict)
+    init_rots_basis = hlp_mod.get_param('init_rots_basis', data_dict, **params)
     prep_pulses_list = list(itertools.product(init_rots_basis, repeat=n))
-    final_rots_basis = hlp_mod.get_param('final_rots_basis', data_dict)
+    final_rots_basis = hlp_mod.get_param('final_rots_basis', data_dict, **params)
     cal_points = hlp_mod.get_measurement_properties(data_dict,
                                                     props_to_extract=['cp'])
     total_nr_segments = (len(final_rots_basis)**n + len(cal_points.states)) * \
