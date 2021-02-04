@@ -757,12 +757,14 @@ class HDAWG8Pulsar:
             next_wave_idx = 0
             wave_idx_lookup = {}
             current_segment = 'no_segment'
+            first_element_of_segment = True
             for element in awg_sequence:
                 awg_sequence_element = deepcopy(awg_sequence[element])
                 if awg_sequence_element is None:
                     current_segment = element
                     playback_strings.append(f'// Segment {current_segment}')
                     playback_strings.append('i_seg += 1;')
+                    first_element_of_segment = True
                     continue
                 wave_idx_lookup[element] = {}
                 playback_strings.append(f'// Element {element}')
@@ -837,8 +839,9 @@ class HDAWG8Pulsar:
                     if not internal_mod:
                         playback_strings += self._zi_playback_string(
                             name=obj.name, device='hdawg', wave=wave,
-                            codeword=(nr_cw != 0), 
-                            append_zeros=self.append_zeros(),
+                            codeword=(nr_cw != 0),
+                            prepend_zeros=\
+                                first_element_of_segment*self.prepend_zeros(),
                             placeholder_wave=use_placeholder_waves,
                             allow_filter=metadata.get('allow_filter', False))
                     elif not use_placeholder_waves:
@@ -853,6 +856,7 @@ class HDAWG8Pulsar:
                         raise NotImplementedError("Placeholder waves in "
                                                   "combination with internal "
                                                   "modulation not implemented.")
+                    first_element_of_segment = False
 
                 playback_strings += self._zi_playback_string_loop_end(metadata)
 
@@ -1394,8 +1398,12 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self.add_parameter('use_sequence_cache', initial_value=False,
                            parameter_class=ManualParameter, vals=vals.Bool(),
                            set_parser=self._use_sequence_cache_parser)
-        self.add_parameter('append_zeros', initial_value=0, vals=vals.Ints(),
+        self.add_parameter('prepend_zeros', initial_value=0, vals=vals.Ints(),
                            parameter_class=ManualParameter)
+        # keep old parameter name for backwards compatibility
+        self.add_parameter('append_zeros', initial_value=0, vals=vals.Ints(),
+                           set_cmd=(lambda v, self=self: self.prepend_zeros(v)),
+                           get_cmd=(lambda self=self: self.prepend_zeros()))
         self.add_parameter('flux_crosstalk_cancellation', initial_value=False,
                            parameter_class=ManualParameter, vals=vals.Bool())
         self.add_parameter('flux_channels', initial_value=[],
@@ -1891,14 +1899,15 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         return wave_definition
 
     def _zi_playback_string(self, name, device, wave, acq=False, codeword=False,
-                            append_zeros=0, placeholder_wave=False,
+                            prepend_zeros=0, placeholder_wave=False,
                             allow_filter=False):
         playback_string = []
         if allow_filter:
             playback_string.append(
                 'if (i_seg >= first_seg && i_seg <= last_seg) {')
+        if prepend_zeros:
+            playback_string.append(f'playZero({prepend_zeros});')
         w1, w2 = self._zi_waves_to_wavenames(wave)
-
         use_hack = not placeholder_wave
         trig_source = self.get('{}_trigger_source'.format(name))
         if trig_source == 'Dig1':
@@ -1932,8 +1941,6 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         if acq:
             playback_string.append('setTrigger(RO_TRIG);')
             playback_string.append('setTrigger(WINT_EN);')
-        if append_zeros:
-            playback_string.append(f'playZero({append_zeros});')
         if allow_filter:
             playback_string.append('}')
         return playback_string
