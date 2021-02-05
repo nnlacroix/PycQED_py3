@@ -930,11 +930,9 @@ class NZMartinisGellarPulse(pulse.Pulse):
         return self.wave_generation_func(tvals, params_dict)
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         hashlist += [self.pulse_length, self.theta_f, self.qbc_freq]
         hashlist += [self.qbt_freq, self.anharmonicity, self.J, self.dv_dphi]
         hashlist += [self.loop_asym, self.lambda_2, self.alpha]
@@ -1006,11 +1004,9 @@ class GaussFilteredCosIQPulse(pulse.Pulse):
             return Q_mod
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         hashlist += [channel == self.I_channel, self.amplitude]
         hashlist += [self.mod_frequency, self.gaussian_filter_sigma]
         hashlist += [self.nr_sigma, self.pulse_length]
@@ -1110,11 +1106,9 @@ class GaussFilteredCosIQPulseMultiChromatic(pulse.Pulse):
             return Q_mods
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         hashlist += [channel == self.I_channel]
         hashlist += list(self.amplitude)
         hashlist += self.mod_frequency
@@ -1185,11 +1179,9 @@ class SquarePulse(pulse.Pulse):
         return np.ones(len(tvals)) * self.amplitude
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         hashlist += [self.amplitude, self.length]
         return hashlist
 
@@ -1223,11 +1215,9 @@ class CosPulse(pulse.Pulse):
                                         self.phase / 360.))
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         hashlist += [self.amplitude, self.length, self.frequency]
         hashlist += [(self.phase + self.frequency * tstart * 360) % 360.]
         return hashlist
