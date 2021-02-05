@@ -566,7 +566,6 @@ def submsmt_data_from_interleaved_msmt(data_dict, keys_in, msmt_name,
             keyo, selected_data, data_dict, **params)
 
 
-# run ramsey analysis
 def rb_analysis(data_dict, keys_in, sweep_type=None, **params):
     """
     Does single qubit RB analysis. Prepares fits and plots, and extracts
@@ -609,7 +608,7 @@ def rb_analysis(data_dict, keys_in, sweep_type=None, **params):
     # prepare fitting
     if prep_fit_dicts:
         prepare_rb_fitting(data_dict, data_to_proc_dict, cliffords, nr_seeds,
-                           **params)
+                        **params)
 
         if do_fitting:
             getattr(fit_mod, 'run_fitting')(data_dict, keys_in=list(
