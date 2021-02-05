@@ -280,10 +280,10 @@ def pipeline_interleaved_rb_irb_classif(meas_obj_names, mospm, sweep_points,
 
 
 def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
-                              dim_hilbert, cal_points=None, ro_thresholds=None,
+                              dim_hilbert, ro_thresholds=None,
                               nreps=1, interleaved_irb=False, sweep_type=None,
                               plot_all_shots=False, processing_pipeline=None,
-                              **params):
+                              compression_factor=1, **params):
 
     """
     Wrapper to create the standard processing pipeline for an interleaved RB/RIB
@@ -314,6 +314,7 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
         0 or 1 and specifies whether the measurement was run with seeds in the
         fast dimension (0) and cliffords in the slow dimensino (1), or the other
         way around.
+    :param compression_factor: sequence compression factor
     :param processing_pipeline: ProcessingPipeline instance to which this
         function will append.
     :return: the unresolved ProcessingPipeline
@@ -322,27 +323,11 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
         sweep_type = {'cliffords': 0, 'seeds': 1}
     slow_cliffords = sweep_type['cliffords'] == 1
 
-    sweep_points = sp_mod.SweepPoints(sweep_points)
-    if cal_points is None:
-        num_cal_states = 0
-    else:
-        if isinstance(cal_points, str):
-            cal_points = cp_mod.CalibrationPoints.from_string(cal_points)
-        num_cal_states = len(cal_points.states)
-    if slow_cliffords:
-        # n_segments = nr_seeds + nr_cal_segments
-        n_segments = nreps*(sweep_points.length(sweep_type['seeds']) +
-                            num_cal_states)
-        # n_sequences = nr_cliffords
-        n_sequences = sweep_points.length(sweep_type['cliffords'])
-    else:
-        # n_segments = nr_cliffords + nr_cal_segments
-        n_segments = nreps*(sweep_points.length(sweep_type['cliffords']) +
-                            num_cal_states)
-        # n_sequences = nr_seeds
-        n_sequences = sweep_points.length(sweep_type['seeds'])
-    if interleaved_irb:
-        n_sequences_all = 2*n_sequences
+    nr_swpts0 = sweep_points.length(0)
+    nr_swpts1 = sweep_points.length(1)
+    n_segments = nr_swpts0 * compression_factor
+    n_sequences = (nr_swpts1 * (interleaved_irb + 1)) // compression_factor
+
 
     if processing_pipeline is None:
         processing_pipeline = pp_mod.ProcessingPipeline()
@@ -359,9 +344,7 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
                                  ro_thresholds=ro_thresholds,
                                  meas_obj_names=meas_obj_names)
     processing_pipeline.add_node('average_data',
-                                 shape=(n_sequences_all, n_shots, n_segments) if
-                                 interleaved_irb else
-                                 (n_sequences, n_shots, n_segments),
+                                 shape=(n_sequences, n_shots, n_segments),
                                  averaging_axis=1,
                                  keys_in='previous threshold_data',
                                  meas_obj_names=meas_obj_names)
@@ -395,9 +378,7 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
                                      keys_out_container='correlation_object',
                                      add_mobjn_container=False)
         processing_pipeline.add_node('average_data',
-                                     shape=(n_sequences_all, n_shots,
-                                            n_segments) if interleaved_irb
-                                        else (n_sequences, n_shots, n_segments),
+                                     shape=(n_sequences, n_shots, n_segments),
                                      averaging_axis=1,
                                      keys_in='previous correlate_qubits',
                                      meas_obj_names=['correlation_object'])
@@ -416,12 +397,12 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
                         meas_obj_names=meas_obj_names)
             keys_in_0 = f'previous {label}.submsmt_data_from_interleaved_msmt'
         pp.add_node('average_data',
-                    shape=(n_sequences, n_segments),
+                    shape=(nr_swpts1, nr_swpts0),
                     averaging_axis=-1 if slow_cliffords else 0,
                     keys_in=keys_in_0,
                     meas_obj_names=meas_obj_names)
         pp.add_node('get_std_deviation',
-                    shape=(n_sequences, n_segments),
+                    shape=(nr_swpts1, nr_swpts0),
                     averaging_axis=-1 if slow_cliffords else 0,
                     keys_in=keys_in_0,
                     meas_obj_names=meas_obj_names)
@@ -437,8 +418,8 @@ def pipeline_ssro_measurement(meas_obj_names, mospm, sweep_points, n_shots,
         for mobjn in meas_obj_names:
             cliffords = sweep_points.get_sweep_params_property(
                 'values', sweep_type['cliffords'], mospm[mobjn])[0]
-            xvals = np.repeat(cliffords, n_segments) if slow_cliffords else \
-                np.tile(cliffords, n_sequences)
+            xvals = np.repeat(cliffords, nr_swpts0) if slow_cliffords else \
+                np.tile(cliffords, nr_swpts1)
             pp.add_node('prepare_1d_raw_data_plot_dicts',
                         sp_name=mospm[mobjn][-1],
                         xvals=xvals,
