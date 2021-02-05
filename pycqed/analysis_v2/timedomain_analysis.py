@@ -8319,6 +8319,10 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                                 freqs = freqs[reduction_arr]
                                 data_slice = data_slice[reduction_arr]
 
+                    reduction_arr = np.invert(np.isnan(data_slice))
+                    freqs = freqs[reduction_arr]
+                    data_slice = data_slice[reduction_arr]
+
                     self.freqs_for_fit[qbn].append(freqs)
                     self.delays_for_fit[qbn] = np.append(
                         self.delays_for_fit[qbn], delay)
