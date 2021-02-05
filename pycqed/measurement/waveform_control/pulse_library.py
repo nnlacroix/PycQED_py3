@@ -105,11 +105,9 @@ class SSB_DRAG_pulse(pulse.Pulse):
             return np.zeros_like(tvals)
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         hashlist += [channel == self.I_channel, self.amplitude, self.sigma]
         hashlist += [self.nr_sigma, self.motzoi, self.mod_frequency]
         phase = self.phase
@@ -205,12 +203,12 @@ class SSB_DRAG_pulse_with_cancellation(SSB_DRAG_pulse):
     def hashables(self, tstart, channel):
         if channel in [self.I_channel, self.Q_channel]:
             return super().hashables(tstart, channel)
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         for (i, q), cpars in self.cancellation_params.items():
             if channel != i and channel != q:
                 continue
-            hashlist = [type(self), self.algorithm_time() - tstart]
             hashlist += [channel == i]
             hashlist += [self.amplitude*cpars.get('amplitude', 1.0)]
             hashlist += [self.sigma]
@@ -306,11 +304,9 @@ class GaussianFilteredPiecewiseConstPulse(pulse.Pulse):
         return wave
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         idx = self.channels.index(channel)
         chan_lens = self.lengths[idx]
         chan_amps = self.amplitudes[idx]
@@ -441,11 +437,9 @@ class BufferedSquarePulse(pulse.Pulse):
             return wave
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         hashlist += [self.amplitude, self.pulse_length]
         hashlist += [self.buffer_length_start, self.buffer_length_end]
         hashlist += [self.gaussian_filter_sigma]
@@ -520,12 +514,9 @@ class BufferedCZPulse(pulse.Pulse):
         return wave
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
-
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         amp = self.amplitude
         buffer_start = self.buffer_length_start
         buffer_end = self.buffer_length_end
@@ -617,12 +608,9 @@ class NZBufferedCZPulse(pulse.Pulse):
         return wave
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
-
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         amp = self.amplitude
         buffer_start = self.buffer_length_start
         buffer_end = self.buffer_length_end
@@ -750,12 +738,9 @@ class BufferedNZFLIPPulse(pulse.Pulse):
         return wave
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
-
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         amp = self.amps[channel]
         buffer_start = self.buffer_length_start[channel]
         buffer_end = self.buffer_length_end[channel]
@@ -847,12 +832,9 @@ class BufferedFLIPPulse(pulse.Pulse):
         return wave
 
     def hashables(self, tstart, channel):
-        if channel not in self.channels:
-            return []
-        if self.pulse_off:
-            return ['Offpulse', self.algorithm_time() - tstart, self.length]
-        hashlist = [type(self), self.algorithm_time() - tstart]
-
+        hashlist = self.common_hashables(tstart, channel)
+        if channel not in self.channels or self.pulse_off:
+            return hashlist
         amp = self.amps[channel]
         buffer_start = self.buffer_length_start[channel]
         buffer_end = self.buffer_length_end[channel]
