@@ -234,7 +234,7 @@ class QuantumExperiment(CircuitBuilder):
         if len(self.mc_points) == 1:
             self.mc_points = [self.mc_points[0], []]
 
-        e = None
+        exception = None
         with temporary_value(*self.temporary_values):
             # Perpare all involved qubits. If not available, prepare
             # all measure objects.
@@ -258,12 +258,12 @@ class QuantumExperiment(CircuitBuilder):
                 self.MC.run(name=self.label, exp_metadata=self.exp_metadata,
                             mode=mode)
             except (Exception, KeyboardInterrupt) as e:
-                pass  # exception will be raised below
+                exception = e  # exception will be raised below
         self.extract_timestamp()
         if save_timers:
             self.save_timers()
-        if e is not None:
-            raise e
+        if exception is not None:
+            raise exception
 
     def update_metadata(self):
         # make sure that all metadata params are up to date
