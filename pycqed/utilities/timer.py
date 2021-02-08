@@ -453,6 +453,7 @@ class Timer(OrderedDict):
         d = dict(days=tdelta.days)
         d['hrs'], rem = divmod(tdelta.seconds, 3600)
         d['min'], d['sec'] = divmod(rem, 60)
+        d['sec'] += int(np.round(tdelta.microseconds * 1e-6))
 
         if d['days'] != 0:
             fmt = '{days} day(s) {hrs:02}:{min:02}:{sec:02}'
