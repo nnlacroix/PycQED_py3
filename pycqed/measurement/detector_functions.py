@@ -562,7 +562,7 @@ class UHFQC_Base(Hard_Detector):
             UHF.set('qas_0_result_enable', 1)
 
         if self.AWG is not None:
-            self.AWG.start()
+            self.AWG.start(stop_first=False)
             self.timer.checkpoint("UHFQC_Base.poll_data.AWG_restart.end")
 
         acq_paths = {UHF.name: UHF._acquisition_nodes for UHF in self.UHFs}
