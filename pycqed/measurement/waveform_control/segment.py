@@ -9,6 +9,7 @@ import numpy as np
 import math
 import logging
 
+import datetime
 from pycqed.utilities.timer import Timer
 
 log = logging.getLogger(__name__)
@@ -150,6 +151,12 @@ class Segment:
         self.add_flux_crosstalk_cancellation_channels()
         self.gen_trigger_el()
         self.add_charge_compensation()
+        # FIXME: we currently store 1e9*length because datetime does not
+        #  support nanoseconds. Find a cleaner solution.
+        self.timer.checkpoint(
+            'length.dt', log_init=False,
+            values=[datetime.datetime.fromtimestamp(
+                -1e9*np.diff(self.get_segment_start_end()))])
 
     def enforce_single_element(self):
         self.resolved_pulses = []
@@ -697,6 +704,15 @@ class Segment:
         This method returns the start of an element on an AWG in algorithm_time 
         """
         return self.element_start_end[element][awg][0]
+
+    def get_segment_start_end(self):
+        """
+        Returns the start and end of the segment in algorithm_time
+        """
+        start_end_times = np.array(
+            [[self.get_element_start(el, awg), self.get_element_end(el, awg)]
+             for awg, v in self.elements_on_awg.items() for el in v])
+        return np.max(start_end_times[:, 0]), np.min(start_end_times[:, 0])
 
     def _test_overlap(self):
         """
