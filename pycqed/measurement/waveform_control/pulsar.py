@@ -1526,12 +1526,15 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             self._awgs_with_waveforms.add(awg)
             self._set_filter_segments(self._filter_segments, [awg])
 
-    def start(self, exclude=None):
+    def start(self, exclude=None, stop_first=True):
         """
         Start the active AWGs. If multiple AWGs are used in a setup where the
         slave AWGs are triggered by the master AWG, then the slave AWGs must be
         running and waiting for trigger when the master AWG is started to
         ensure synchronous playback.
+        :param exclude: (list of str) names of AWGs to exclude
+        :param stop_first: (bool, default: True) whether all used AWGs
+            should be stopped before starting the AWGs.
         """
         if exclude is None:
             exclude = []
@@ -1541,8 +1544,9 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         awgs_with_waveforms = self.awgs_with_waveforms()
         used_awgs = set(self.active_awgs()) & awgs_with_waveforms
         
-        for awg in used_awgs:
-            self._stop_awg(awg)
+        if stop_first:
+            for awg in used_awgs:
+                self._stop_awg(awg)
 
         if self.master_awg() is None:
             for awg in used_awgs:
