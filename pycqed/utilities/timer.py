@@ -86,6 +86,8 @@ class Timer(OrderedDict):
     def checkpoint(self, name, values=(), log_every_x=1, log_init=True):
         if name not in self:
             self[name] = Checkpoint(name, values=values, fmt=self.fmt, log_every_x=log_every_x, log_init=log_init)
+        elif len(values) != 0:
+            self[name].extend(values)
         else:
             self[name].log_time()
 
