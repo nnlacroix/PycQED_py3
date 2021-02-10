@@ -141,12 +141,17 @@ class Segment:
         self.add_flux_crosstalk_cancellation_channels()
         self.gen_trigger_el()
         self.add_charge_compensation()
-        # FIXME: we currently store 1e9*length because datetime does not
-        #  support nanoseconds. Find a cleaner solution.
-        self.timer.checkpoint(
-            'length.dt', log_init=False,
-            values=[datetime.datetime.fromtimestamp(
-                -1e9*np.diff(self.get_segment_start_end()))])
+        try:
+            # FIXME: we currently store 1e9*length because datetime does not
+            #  support nanoseconds. Find a cleaner solution.
+            self.timer.checkpoint(
+                'length.dt', log_init=False,
+                values=[datetime.datetime.fromtimestamp(
+                    -1e9*np.diff(self.get_segment_start_end()))])
+        except Exception as e:
+            # storing segment length is not crucial for the measurement
+            log.warning(f"Could not store segment length timer: {e}")
+
 
     def enforce_single_element(self):
         self.resolved_pulses = []
