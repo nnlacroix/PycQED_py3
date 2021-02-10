@@ -5365,7 +5365,7 @@ class RabiFrequencySweepAnalysis(RabiAnalysis):
             ampls = deepcopy(self.proc_data_dict['analysis_params_dict'][
                 'amplitudes'][qbn])
             if len(excl_idxs):
-                mask = np.arange(len(freqs)) == excl_idxs
+                mask = np.array([i in excl_idxs for i in np.arange(len(freqs))])
                 ampls = ampls[np.logical_not(mask)]
                 freqs = freqs[np.logical_not(mask)]
 
@@ -8770,8 +8770,9 @@ class RunTimeAnalysis(ba.BaseDataAnalysis):
             self.figs['timer_all'] = tm_mod.multi_plot(self.timers.values(),
                                                        **plot_kws)
 
-    def bare_measurement_timer(self, ref_time=None):
-        bmtime = self.bare_measurement_time()
+    def bare_measurement_timer(self, ref_time=None,
+                               checkpoint='bare_measurement', **kw):
+        bmtime = self.bare_measurement_time(**kw)
         bmtimer = tm_mod.Timer('BareMeasurement', auto_start=False)
         if ref_time is None:
             try:
@@ -8788,32 +8789,43 @@ class RunTimeAnalysis(ba.BaseDataAnalysis):
 
         # TODO add more options of how to distribute the bm time in the timer
         #  (not only start stop but e.g. distribute it)
-        bmtimer.checkpoint("BareMeasurement.bare_measurement.start",
+        bmtimer.checkpoint(f"BareMeasurement.{checkpoint}.start",
                            values=[ref_time], log_init=False)
-        bmtimer.checkpoint("BareMeasurement.bare_measurement.end",
+        bmtimer.checkpoint(f"BareMeasurement.{checkpoint}.end",
                            values=[ ref_time + dt.timedelta(seconds=bmtime)],
                            log_init=False)
 
         return bmtimer
 
-    def bare_measurement_time(self):
+    def bare_measurement_time(self, nr_averages=None, repetition_rate=None,
+                              count_nan_measurements=False):
         det_metadata = self.metadata.get("Detector Metadata", None)
-        nr_averages = None
         if det_metadata is not None:
             # multi detector function: look for child "detectors"
             # assumes at least 1 child and that all children have the same
             # number of averages
             det = list(det_metadata.get('detectors', {}).values())[0]
-            nr_averages = det.get('nr_averages', det.get('nr_shots', None))
+            if nr_averages is None:
+                nr_averages = det.get('nr_averages', det.get('nr_shots', None))
         if nr_averages is None:
             raise ValueError('Could not extract nr_averages/nr_shots from hdf file.'
                              'Please specify "nr_averages" in options_dict.')
         n_hsp = len(self.raw_data_dict['hard_sweep_points'])
         n_ssp = len(self.raw_data_dict.get('soft_sweep_points', [0]))
+        if repetition_rate is None:
+            repetition_rate = self.raw_data_dict["repetition_rate"]
+        if count_nan_measurements:
+            perc_meas = 1
+        else:
+            # When sweep points are skipped, data is missing in all columns
+            # Thus, we can simply check in the first column.
+            vals = list(self.raw_data_dict['measured_data'].values())[0]
+            perc_meas = 1 - np.sum(np.isnan(vals)) / np.prod(vals.shape)
+        return self._bare_measurement_time(n_ssp, n_hsp, repetition_rate,
+                                           nr_averages, perc_meas)
 
-        return self._bare_measurement_time(n_ssp, n_hsp,
-                                          self.raw_data_dict["repetition_rate"],
-                                    nr_averages)
     @staticmethod
-    def _bare_measurement_time(n_ssp, n_hsp, repetition_rate, nr_averages):
-        return n_ssp * n_hsp * repetition_rate * nr_averages
+    def _bare_measurement_time(n_ssp, n_hsp, repetition_rate, nr_averages,
+                               percentage_measured):
+        return n_ssp * n_hsp * repetition_rate * nr_averages \
+               * percentage_measured

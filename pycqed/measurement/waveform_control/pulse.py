@@ -208,6 +208,15 @@ class Pulse:
         raise NotImplementedError('hashables() not implemented for {}'
                                   .format(str(type(self))[1:-1]))
 
+    def common_hashables(self, tstart, channel):
+        if channel not in self.channels:
+            return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
+        return [type(self), self.algorithm_time() - tstart,
+                self.truncation_length, self.truncation_decay_length,
+                self.truncation_decay_const]
+
     def chan_wf(self, channel, tvals):
         """Abstract base method for generating the pulse waveforms.
 
