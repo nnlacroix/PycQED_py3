@@ -70,6 +70,7 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
             self.sweep_type = sweep_type
             if self.sweep_type is None:
                 self.sweep_type = {'cliffords': 0, 'seeds': 1}
+            self.kw_for_sweep_points = deepcopy(self.kw_for_sweep_points)
             self.kw_for_sweep_points['nr_seeds,nr_m']['dimension'] = \
                 self.sweep_type['seeds']
             self.kw_for_sweep_points['cliffords']['dimension'] = \
