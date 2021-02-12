@@ -8089,8 +8089,6 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                     'xrange': [min(xvals*1e6), max(xvals*1e6)],
                     'no_label_units': True,
                     'no_label': True,
-                    'title': (self.raw_data_dict['timestamp'] + ' ' +
-                              self.measurement_strings[qbn]),
                     'clabel': 'Strongest principal component (arb.)' if \
                         'pca' in self.rotation_type.lower() else \
                         '{} state population'.format(
@@ -8104,6 +8102,8 @@ class FluxPulseScopeAnalysis(MultiQubit_TimeDomain_Analysis):
                         f'fitted_freqs_{qbn}']['val']/1e9,
                     'yerr': self.proc_data_dict['analysis_params_dict'][
                         f'fitted_freqs_{qbn}']['stderr']/1e9,
+                    'title': (self.raw_data_dict['timestamp'] + ' ' +
+                              self.measurement_strings[qbn]),
                     'color': 'r',
                     'linestyle': '-',
                     'marker': 'x'}
