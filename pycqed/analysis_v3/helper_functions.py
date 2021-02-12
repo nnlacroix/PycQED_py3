@@ -387,7 +387,6 @@ def pop_param(param, data_dict, default_value=None,
     :param params: keyword args where parameter is to be sough
     :return: the value of the parameter
     """
-
     if node_params is None:
         node_params = OrderedDict()
 
@@ -783,6 +782,73 @@ def get_observables(data_dict, keys_out=None, preselection_shift=-1,
         raise ValueError(f'keys_out must have length one. {len(keys_out)} '
                          f'entries were given.')
     add_param(keys_out[0], observables, data_dict, **params)
+
+
+def select_data_from_nd_array(data_dict, keys_in, keys_out, **params):
+    """
+    Select subset of data from an n-d array along any of the axes.
+    :param data_dict: OrderedDict containing data to be processed and where
+        processed data is to be stored
+    :param keys_in: key names or dictionary keys paths in data_dict for shots
+        (with preselection) classified into pg, pe, pf
+    :param keys_out: list of key names or dictionary keys paths in
+        data_dict for the processed data to be saved into
+    :param params: keyword arguments
+        - selection_map (dict, default: must be provided): dict of the form
+            {axis: index_list} where axis is any axis in the original data array.
+            index_list is a list of tuples specifying indices or ranges as:
+            - [2, 3, 4]: array[2] and array[3] and array[4]
+            - [(n, m)]: array[n:m]
+            - [(n, 'end')]: array[n:]
+            - [(n, m, k)]: array[n:m:k]
+            - can also be [2, (n, end), (m, k, l)] etc.
+
+    A new entry in data_dict is added for each keyi in keys_in, under
+    keyo in keys_out.
+
+    Assumptions:
+        - len(keys_in) == len(keys_out)
+        - if len(keys_in) > 1, the same selection_map is used for all
+    """
+    if len(keys_out) != len(keys_in):
+        raise ValueError('keys_out and keys_in do not have '
+                         'the same length.')
+
+    data_to_proc_dict = get_data_to_process(data_dict, keys_in)
+    selection_map = get_param('selection_map', data_dict, raise_error=True,
+                              **params)
+
+    for keyi, keyo in zip(keys_in, keys_out):
+        selected_data = deepcopy(data_to_proc_dict[keyi])
+        for axis, sel_info in selection_map.items():
+            indices = np.array([], dtype=int)
+            arange_axis = np.arange(selected_data.shape[axis])
+            for sl in sel_info:
+                if hasattr(sl, '__iter__'):
+                    if len(sl) == 2:
+                        if sl[1] == 'end':
+                            indices = np.append(indices, arange_axis[sl[0]:])
+                        else:
+                            indices = np.append(indices,
+                                                arange_axis[sl[0]:sl[1]])
+                    elif len(sl) == 3:
+                        if sl[1] == 'end':
+                            indices = np.append(indices,
+                                                arange_axis[sl[0]::sl[2]])
+                        else:
+                            indices = np.append(indices,
+                                                arange_axis[sl[0]:sl[1]:sl[2]])
+                else:
+                    # sl is a number
+                    indices = np.append(indices, sl)
+
+            if len(indices):
+                indices = np.sort(indices)
+                selected_data = np.take(selected_data, indices, axis=axis)
+            else:
+                log.warning('No data selected in select_data_from_nd_array.')
+
+        add_param(keyo, selected_data, data_dict, **params)
 
 
 ### functions that do NOT have the ana_v3 format for input parameters ###
