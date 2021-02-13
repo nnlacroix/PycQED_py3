@@ -125,7 +125,7 @@ class Segment:
             self.add(p)
 
     @Timer()
-    def resolve_segment(self):
+    def resolve_segment(self, store_segment_length_timer=True):
         """
         Top layer method of Segment class. After having addded all pulses,
             * pulse elements are updated to enforce single element per segment
@@ -141,17 +141,18 @@ class Segment:
         self.add_flux_crosstalk_cancellation_channels()
         self.gen_trigger_el()
         self.add_charge_compensation()
-        try:
-            # FIXME: we currently store 1e9*length because datetime does not
-            #  support nanoseconds. Find a cleaner solution.
-            self.timer.checkpoint(
-                'length.dt', log_init=False,
-                values=[datetime.datetime.fromtimestamp(
-                    -1e9*np.diff(self.get_segment_start_end()))])
-        except Exception as e:
-            # storing segment length is not crucial for the measurement
-            log.warning(f"Could not store segment length timer: {e}")
-
+        if store_segment_length_timer:
+            try:
+                # FIXME: we currently store 1e3*length because datetime
+                #  does not support nanoseconds. Find a cleaner solution.
+                self.timer.checkpoint(
+                    'length.dt', log_init=False, values=[
+                        datetime.datetime.utcfromtimestamp(0)
+                        + datetime.timedelta(microseconds=1e9*np.diff(
+                                self.get_segment_start_end())[0])])
+            except Exception as e:
+                # storing segment length is not crucial for the measurement
+                log.warning(f"Could not store segment length timer: {e}")
 
     def enforce_single_element(self):
         self.resolved_pulses = []
@@ -699,10 +700,20 @@ class Segment:
         """
         Returns the start and end of the segment in algorithm_time
         """
-        start_end_times = np.array(
-            [[self.get_element_start(el, awg), self.get_element_end(el, awg)]
-             for awg, v in self.elements_on_awg.items() for el in v])
-        return np.max(start_end_times[:, 0]), np.min(start_end_times[:, 0])
+        for i in range(2):
+            start_end_times = np.array(
+                [[self.get_element_start(el, awg),
+                  self.get_element_end(el, awg)]
+                 for awg, v in self.elements_on_awg.items() for el in v])
+            if len(start_end_times) > 0:
+                # the segment has been resolved before
+                break
+            # Resolve the segment and retry. We set store_segment_length_timer
+            # to False to avoid that resolve_segment calls
+            # get_segment_start_end, which might cause an infinite loop in
+            # some pathological cases.
+            self.resolve_segment(store_segment_length_timer=False)
+        return np.min(start_end_times[:, 0]), np.max(start_end_times[:, 1])
 
     def _test_overlap(self):
         """
