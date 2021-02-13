@@ -395,11 +395,10 @@ class QuantumExperiment(CircuitBuilder):
 
         """
 
+        if sequence_kwargs is None:
+            sequence_kwargs = {}
         if sequence_function is not None:
             # build sequence from function
-            if sequence_kwargs is None:
-                sequence_kwargs = {}
-
             seq_info = sequence_function(**sequence_kwargs)
 
             if isinstance(seq_info, list):
@@ -420,7 +419,8 @@ class QuantumExperiment(CircuitBuilder):
             if np.ndim(self.sequences) == 0:
                 self.sequences = [self.sequences]
         elif sequences is not None:
-            self.sequences = sequences
+            extra_seqs = sequence_kwargs.get('extra_sequences', [])
+            self.sequences = sequences + extra_seqs
 
         # check sequence
         assert len(self.sequences) != 0, "No sequence found."
