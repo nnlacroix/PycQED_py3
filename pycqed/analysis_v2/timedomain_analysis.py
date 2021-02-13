@@ -1158,6 +1158,73 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
 
         return shots_per_qb
 
+    def _get_preselection_masks(self, presel_shots_per_qb, preselection_qbs=None,
+                                predict_proba=True,
+                                classifier_params=None,
+                                preselection_state_int=0):
+        """
+        Prepares preselection masks for each qubit considered in the keys of
+        "preselection_qbs" using the preslection readouts of presel_shots_per_qb
+        Args:
+            presel_shots_per_qb (dict): {qb_name: preselection_shot_readouts}
+            preselection_qbs (dict): keys are the qubits for which the masks have to be
+                computed and values are list of qubit to consider jointly for preselection.
+                e.g. {"qb1": ["qb1", "qb2"], "qb2": ["qb2"]}. In this case shots of qb1 will
+                only be kept if both qb1 and qb2 are in the state specified by
+                preselection_state_int (usually, the ground state), while qb2 is preselected
+                independently of qb1.
+                 Defaults to None: in this case each qubit is preselected independently from others
+            predict_proba (bool): whether or not to consider input as raw voltages shots.
+                Should be false if input shots are already probabilities, e.g. when using
+                classified readout.
+
+            classifier_params (dict): classifier params
+            preselection_state_int (int): integer corresponding to the state of the classifier
+                on which preselection should be performed. Defaults to 0 (i.e. ground state
+                in most cases).
+
+        Returns:
+            preselection_masks (dict): dictionary of boolean arrays of shots to keep
+            (indicated with True) for each qubit
+
+        """
+        presel_mask_single_qb = {}
+        for qbn, presel_shots in presel_shots_per_qb.items():
+            if not predict_proba:
+                # shots were obtained with classifier detector and
+                # are already probas
+                presel_proba = presel_shots_per_qb[qbn]
+            else:
+                # use classifier calibrated to classify preselection readouts
+                presel_proba = a_tools.predict_gm_proba_from_clf(
+                    presel_shots_per_qb[qbn], classifier_params[qbn])
+            presel_classified = np.argmax(presel_proba, axis=1)
+            # create boolean array of shots to keep.
+            # each time ro is the ground state --> true otherwise false
+            presel_mask_single_qb[qbn] = presel_classified == preselection_state_int
+
+            if np.sum(presel_mask_single_qb[qbn]) == 0:
+                # FIXME: Nathan should probably not be error but just continue
+                #  without preselection ?
+                raise ValueError(f"{qbn}: No data left after preselection!")
+
+        # compute final mask taking into account all qubits in presel_qubits for each qubit
+        presel_mask = {}
+
+        if preselection_qbs is None:
+            # default is each qubit preselected individually
+            # note that the list includes the qubit name twice as the minimal
+            # number of arguments in logical_and.reduce() is 2.
+            preselection_qbs = {qbn: [qbn] for qbn in presel_shots_per_qb}
+
+        for qbn, presel_qbs in preselection_qbs.items():
+            if len(presel_qbs) == 1:
+                presel_qbs = [presel_qbs[0], presel_qbs[0]]
+            presel_mask[qbn] = np.logical_and.reduce(
+                [presel_mask_single_qb[qb] for qb in presel_qbs])
+
+        return presel_mask
+
     def process_single_shots(self, predict_proba=True,
                              classifier_params=None,
                              states_map=None):
@@ -1197,6 +1264,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 such that acq_shots found in the hdf5 file might be different than
                 the actual number of shots used for the experiment.
                 it is therefore safer to pass the number of shots in the metadata.
+            TwoD (bool): Whether data comes from a 2D sweep, i.e. several concatenated
+                sequences. Used for proper reshaping when using preselection
         Returns:
 
         """
@@ -1215,7 +1284,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         # where n_soft_sp is the inner most loop i.e. the first dim is ordered as
         # (shot0_ssp0, shot0_ssp1, ... , shot1_ssp0, shot1_ssp1, ...)
         shots_per_qb = self._get_single_shots_per_qb()
-
 
         # determine number of shots
         n_shots = self.get_param_value("n_shots")
@@ -1236,14 +1304,6 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
         # does not count preselection readout
         n_readouts = list(shots_per_qb.values())[0].shape[0] // (n_shots * n_seqs)
 
-        if preselection:
-            # get preselection readouts
-            preselection_ro_mask = np.tile([True]*n_seqs + [False]*n_seqs,
-                                           n_shots*n_readouts )
-            presel_shots_per_qb = \
-                {qbn: presel_shots[preselection_ro_mask] for qbn, presel_shots in
-                 self._get_single_shots_per_qb(raw=True).items()}
-
         # get classification parameters
         if classifier_params is None:
             classifier_params = {}
@@ -1251,6 +1311,30 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             for qbn in self.qb_names:
                 classifier_params[qbn] =  eval(self.get_hdf_param_value(
                 f'Instrument settings/{qbn}', "acq_classifier_params"))
+
+        # prepare preselection mask
+        if preselection:
+            # get preselection readouts
+            preselection_ro_mask = np.tile([True]*n_seqs + [False]*n_seqs,
+                                           n_shots*n_readouts )
+            presel_shots_per_qb = \
+                {qbn: presel_shots[preselection_ro_mask] for qbn, presel_shots in
+                 self._get_single_shots_per_qb(raw=True).items()}
+            # create boolean array of shots to keep.
+            # each time ro is the ground state --> true otherwise false
+            g_state_int = [k for k, v in states_map.items() if v == "g"][0]
+            preselection_masks = self._get_preselection_masks(
+                presel_shots_per_qb,
+                preselection_qbs=self.get_param_value("preselection_qbs"),
+                predict_proba= not self.get_param_value('classified_ro', False),
+                classifier_params=classifier_params,
+                preselection_state_int=g_state_int)
+            self.proc_data_dict['percent_data_after_presel'] = {} #initialize
+        else:
+            # keep all shots
+            preselection_masks = {qbn: np.ones(len(shots), dtype=bool)
+                                  for qbn, shots in shots_per_qb.items()}
+        self.proc_data_dict['preselection_masks'] = preselection_masks
 
         # process single shots per qubit
         for qbn, shots in shots_per_qb.items():
@@ -1270,38 +1354,19 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     self.proc_data_dict['meas_results_per_qb_probs'] = {}
                 self.proc_data_dict['meas_results_per_qb_probs'][qbn] = shots
 
-            if preselection:
-                if self.get_param_value('classified_ro', False):
-                    # shots were obtained with classifier detector and
-                    # are already probas
-                    presel_proba = presel_shots_per_qb[qbn]
-                else:
-                    # use classifier calibrated to classify preselection readouts
-                    presel_proba = a_tools.predict_gm_proba_from_clf(
-                        presel_shots_per_qb[qbn], classifier_params[qbn])
-                presel_classified = np.argmax(presel_proba, axis=1)
-                # create boolean array of shots to keep.
-                # each time ro is the ground state --> true otherwise false
-                g_state_int = [k for k, v in states_map.items() if v == "g"][0]
-                presel_filter = presel_classified == g_state_int
-
-                if np.sum(presel_filter) == 0:
-                    # FIXME: Nathan should probably not be error but just continue
-                    #  without preselection ?
-                    raise ValueError(f"{qbn}: No data left after preselection!")
-            else:
-                # keep all shots
-                presel_filter = np.ones(len(shots), dtype=bool)
 
             # TODO: Nathan: if predict_proba is activated then we should
             #  first classify, then do a count table and thereby estimate
             #  average proba
             averaged_shots = [] # either raw voltage shots or probas
+            preselection_percentages = []
             for ro in range(n_readouts*n_seqs):
                 shots_single_ro = shots[ro::n_readouts*n_seqs]
-                presel_filter_single_ro = presel_filter[ro::n_readouts*n_seqs]
+                presel_mask_single_ro = preselection_masks[qbn][ro::n_readouts*n_seqs]
+                preselection_percentages.append(100*np.sum(presel_mask_single_ro)/
+                                                len(presel_mask_single_ro))
                 averaged_shots.append(
-                    np.mean(shots_single_ro[presel_filter_single_ro], axis=0))
+                    np.mean(shots_single_ro[presel_mask_single_ro], axis=0))
             if self.get_param_value("TwoD", False):
                 averaged_shots = np.reshape(averaged_shots, (n_readouts, n_seqs, -1))
                 averaged_shots = np.swapaxes(averaged_shots, 0, 1) # return to original 2D shape
@@ -1309,6 +1374,10 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             # or (n_prob or n_ch or 1, n_readouts, n_ssp) if 2d
             averaged_shots = np.array(averaged_shots).T
 
+            if preselection:
+                self.proc_data_dict['percent_data_after_presel'][qbn] = \
+                    f"{np.mean(preselection_percentages):.2f} $\\pm$ " \
+                    f"{np.std(preselection_percentages):.2f}%"
             if predict_proba:
                 # value names are different from what was previously in
                 # meas_results_per_qb and therefore "artificial" values
@@ -4133,7 +4202,7 @@ class T1FrequencySweepAnalysis(MultiQubit_TimeDomain_Analysis):
                         'legend_bbox_to_anchor': (1, 1),
                         'legend_pos': 'upper left',
                         }
-    
+
                     label = f'freq_scatter_{qb}_{i}'
                     self.plot_dicts[label] = {
                         'fig_id': f'T1_fits_{qb}',
@@ -6439,8 +6508,8 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
         self.legend_label_func = lambda qbn, row: ''
         super().__init__(*args, **kwargs)
 
-    def process_data(self):
-        super().process_data()
+    def extract_data(self):
+        super().extract_data()
 
         # Find leakage and ramsey qubit names
         self.leakage_qbnames = self.get_param_value('leakage_qbnames',
@@ -6448,15 +6517,21 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
         self.ramsey_qbnames = self.get_param_value('ramsey_qbnames',
                                                    default_value=[])
         self.gates_list = self.get_param_value('gates_list', default_value=[])
+
+        # FIXME: Nathan @Author of the next 4 lines: this code seems to be
+        #  a bit hacky and should at least be commented.
         if not len(self.gates_list):
             leakage_qbnames_temp = len(self.ramsey_qbnames) * ['']
             self.gates_list = [(qbl, qbr) for qbl, qbr in
                                zip(leakage_qbnames_temp, self.ramsey_qbnames)]
 
+    def process_data(self):
+        super().process_data()
+
         # TODO: Steph 15.09.2020
         # This is a hack. It should be done in MultiQubit_TimeDomain_Analysis
         # but would break every analysis inheriting from it but we just needed
-        # it to work for this analysis :) 
+        # it to work for this analysis :)
         self.data_to_fit = self.get_param_value('data_to_fit', {})
         for qbn in self.data_to_fit:
             # make values of data_to_fit be lists
@@ -6596,6 +6671,20 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 'legend_ncol': legend_ncol,
                 'legend_bbox_to_anchor': legend_bbox_to_anchor,
                 'legend_pos': legend_pos}
+            if self.proc_data_dict.get('percent_data_after_presel',
+                                       False):
+                textstr = "Preselection {} = \n {}".format(qbn,
+                    self.proc_data_dict.get('percent_data_after_presel')[qbn])
+                self.plot_dicts['text_msg_{}_{}_{}'.format(
+                row, qbn, prob_label)] = {
+                    'fig_id': figure_name,
+                    'ypos': -0.2,
+                    'xpos': -0.1,
+                    'horizontalalignment': 'left',
+                    'verticalalignment': 'top',
+                    'box_props': None,
+                    'plotfn': self.plot_text,
+                    'text_string': textstr}
 
             if self.do_fitting and 'projected' not in figure_name:
                 if qbn in self.leakage_qbnames and self.get_param_value(
@@ -6828,7 +6917,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                           f'{self.phase_key}_{qbn}'][
                                           'stderr'][0] * 180 / np.pi) + \
                                   r'$^{\circ}$'
-                        textstr += '\n\nContrast loss = \n' + \
+                        textstr += '\nContrast loss = \n' + \
                                    '{:.3f} $\\pm$ {:.3f}'.format(
                                        self.proc_data_dict[
                                            'analysis_params_dict'][
@@ -6837,6 +6926,11 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                            'analysis_params_dict'][
                                            f'population_loss_{qbn}'][
                                            'stderr'][0])
+                        if self.proc_data_dict.get('percent_data_after_presel',
+                                                   False):
+                            textstr += "\nPreselection = \n {}".format(
+                                self.proc_data_dict.get('percent_data_after_presel'))
+
                         self.plot_dicts['cphase_text_msg_' + qbn] = {
                             'fig_id': figure_name,
                             'ypos': -0.2,
@@ -6972,9 +7066,8 @@ class CPhaseLeakageAnalysis(MultiCZgate_Calib_Analysis):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def process_data(self):
-        super().process_data()
-
+    def extract_data(self):
+        super().extract_data()
         # Find leakage and ramsey qubit names
         # first try the legacy code
         leakage_qbname = self.get_param_value('leakage_qbname')
@@ -7002,6 +7095,21 @@ class CPhaseLeakageAnalysis(MultiCZgate_Calib_Analysis):
                                    qbn not in self.ramsey_qbnames]
             if len(self.leakage_qbnames) == 0:
                 self.leakage_qbnames = None
+
+        # prepare list of qubits on which must be considered simultaneously
+        # for preselection. Default: preselect on all qubits in the gate = ground
+        default_preselection_qbs = defaultdict(list)
+        for qbn in self.qb_names:
+            for gate_qbs in self.gates_list:
+                if qbn in gate_qbs:
+                    default_preselection_qbs[qbn].extend(gate_qbs)
+        preselection_qbs = self.get_param_value("preselection_qbs",
+                                                default_preselection_qbs)
+        self.options_dict.update({"preselection_qbs": preselection_qbs})
+
+    def process_data(self):
+        super().process_data()
+
 
         self.phase_key = 'cphase'
         if len(self.leakage_qbnames) > 0:
@@ -7162,7 +7270,7 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
             tvals_meas: time-values for the measured qubit frequencies
             freqs_meas: measured qubit frequencies
             freq_errs_meas: errors of measured qubit frequencies
-            volt_freq_conv: dictionary of fit params for frequency-voltage 
+            volt_freq_conv: dictionary of fit params for frequency-voltage
                 conversion
         """
         if qbn is None:
