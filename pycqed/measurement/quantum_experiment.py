@@ -386,6 +386,12 @@ class QuantumExperiment(CircuitBuilder):
         elif sequences is not None:
             extra_seqs = sequence_kwargs.get('extra_sequences', [])
             self.sequences = sequences + extra_seqs
+            if len(self.mc_points) > 1 and len(self.mc_points[1]):
+                # mc_points are set and won't be generated automatically.
+                # We have to add additional points for the extra sequences.
+                self.mc_points[1] = np.concatenate([
+                    self.mc_points[1],
+                    np.arange(len(extra_seqs)) + self.mc_points[1][-1] + 1])
 
         # check sequence
         assert len(self.sequences) != 0, "No sequence found."
