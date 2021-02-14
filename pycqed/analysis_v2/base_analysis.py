@@ -454,6 +454,7 @@ class BaseDataAnalysis(object):
         Returns: raw_data_dict with the key measured_data updated.
 
         """
+        n_shots = 1
         if 'measured_data' in raw_data_dict and \
                 'value_names' in raw_data_dict:
             measured_data = raw_data_dict.pop('measured_data')
@@ -476,7 +477,8 @@ class BaseDataAnalysis(object):
                 ssp, counts = np.unique(mc_points[1:], return_counts=True)
                 if counts[0] != len(hsp):
                     # ssro data
-                    hsp = np.tile(hsp, counts[0] // len(hsp))
+                    n_shots = counts[0] // len(hsp)
+                    hsp = np.tile(hsp, n_shots)
                 # if needed, decompress the data (assumes hsp and ssp are indices)
                 if compression_factor != 1:
                     hsp = hsp[:int(len(hsp) / compression_factor)]
@@ -531,6 +533,22 @@ class BaseDataAnalysis(object):
                                                      (num_cal_segments, ssl))
                             measured_data = np.concatenate([measured_data,
                                                             cal_pts_arr])
+                    elif compression_factor != 1 and n_shots != 1:
+                        tmp_data = np.zeros_like(data[i])
+                        meas_hsl = hsl * compression_factor
+                        for i_seq in range(ssl // compression_factor):
+                            data_seq = data[i][
+                                i_seq * meas_hsl:(i_seq+1) * meas_hsl]
+                            data_seq = np.reshape(
+                                [list(np.reshape(
+                                    data_seq, [n_shots * compression_factor,
+                                               hsl // n_shots]))[
+                                 i::compression_factor]
+                                 for i in range(compression_factor)],
+                                [meas_hsl])
+                            tmp_data[i_seq * meas_hsl
+                                    :(i_seq + 1) * meas_hsl] = data_seq
+                        measured_data = np.reshape(tmp_data, (ssl, hsl)).T
                     else:
                         measured_data = np.reshape(data[i], (ssl, hsl)).T
                 else:
