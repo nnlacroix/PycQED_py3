@@ -1296,6 +1296,8 @@ def get_tomo_data_subset(data_dict, keys_in, preselection=True, **params):
         data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
         **params)
     n = len(meas_obj_names)
+    ignore_extra_seqs = hlp_mod.get_param(
+        'ignore_extra_sequences', data_dict, **params, default_value=False)
     init_rots_basis = hlp_mod.get_param('init_rots_basis', data_dict, **params)
     prep_pulses_list = list(itertools.product(init_rots_basis, repeat=n))
     final_rots_basis = hlp_mod.get_param('final_rots_basis', data_dict, **params)
@@ -1314,6 +1316,8 @@ def get_tomo_data_subset(data_dict, keys_in, preselection=True, **params):
 
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     for keyi, data in data_to_proc_dict.items():
+        if ignore_extra_seqs:
+            data = data[:len(init_rots_basis)**n * nr_shots*total_nr_segments]
         data_reshaped = data.reshape((
             len(init_rots_basis)**n, nr_shots*total_nr_segments))
         if len(prep_pulses_list) != data_reshaped.shape[0]:
