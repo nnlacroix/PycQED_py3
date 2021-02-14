@@ -6,6 +6,7 @@ from pycqed.measurement.waveform_control.circuit_builder import CircuitBuilder
 import pycqed.measurement.awg_sweep_functions as awg_swf
 from pycqed.measurement import multi_qubit_module as mqm
 import pycqed.analysis_v2.base_analysis as ba
+from copy import deepcopy
 import logging
 log = logging.getLogger(__name__)
 
@@ -384,7 +385,9 @@ class QuantumExperiment(CircuitBuilder):
             if np.ndim(self.sequences) == 0:
                 self.sequences = [self.sequences]
         elif sequences is not None:
-            extra_seqs = sequence_kwargs.get('extra_sequences', [])
+            extra_seqs = deepcopy(sequence_kwargs.get('extra_sequences', []))
+            for seq in extra_seqs:
+                seq.name = 'Extra' + seq.name
             self.sequences = sequences + extra_seqs
             if len(self.mc_points) > 1 and len(self.mc_points[1]):
                 # mc_points are set and won't be generated automatically.
