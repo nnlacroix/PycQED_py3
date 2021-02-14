@@ -31,6 +31,8 @@ def standard_qubit_pulses_to_rotations(pulse_list):
     """
     standard_pulses = {
         'I': qtp.qeye(2),
+        'X0': qtp.qeye(2),
+        'Z0': qtp.qeye(2),
         'X180': qtp.sigmax(),
         'mX180': qtp.rotation(qtp.sigmax(), -np.pi),
         'Y180': qtp.sigmay(),
