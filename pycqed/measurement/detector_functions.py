@@ -1348,8 +1348,10 @@ class UHFQC_classifier_detector(UHFQC_integration_logging_det):
         self.name = '{}_UHFQC_classifier_det'.format(self.result_logging_mode)
 
         self.state_labels = ['pg', 'pe', 'pf'] if self.qutrit else ['pg', 'pe']
-        self.n_meas_objs = len(self.get_values_function_kwargs.get(
-            'classifier_params', None))
+        classifier_params = self.get_values_function_kwargs.get(
+            'classifier_params', [])
+        self.n_meas_objs = 1 if not len(classifier_params) else \
+                len(classifier_params)
         k = len(self.channels) // self.n_meas_objs
         self.channel_str_mobj = [str(ch) for ch in self.channels]
         self.channel_str_mobj = [''.join(self.channel_str_mobj[k*j: k*j+k])
