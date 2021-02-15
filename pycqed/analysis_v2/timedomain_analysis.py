@@ -6275,20 +6275,6 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                 'legend_ncol': legend_ncol,
                 'legend_bbox_to_anchor': legend_bbox_to_anchor,
                 'legend_pos': legend_pos}
-            if self.proc_data_dict.get('percent_data_after_presel',
-                                       False):
-                textstr = "Preselection {} = \n {}".format(qbn,
-                    self.proc_data_dict.get('percent_data_after_presel')[qbn])
-                self.plot_dicts['text_msg_{}_{}_{}'.format(
-                row, qbn, prob_label)] = {
-                    'fig_id': figure_name,
-                    'ypos': -0.2,
-                    'xpos': -0.1,
-                    'horizontalalignment': 'left',
-                    'verticalalignment': 'top',
-                    'box_props': None,
-                    'plotfn': self.plot_text,
-                    'text_string': textstr}
 
             if self.do_fitting and 'projected' not in figure_name:
                 if qbn in self.leakage_qbnames and self.get_param_value(
@@ -6525,10 +6511,12 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                            'analysis_params_dict'][
                                            f'population_loss_{qbn}'][
                                            'stderr'][0])
-                        if self.proc_data_dict.get('percent_data_after_presel',
-                                                   False):
-                            textstr += "\nPreselection = \n {}".format(
-                                self.proc_data_dict.get('percent_data_after_presel'))
+                        pdap = self.proc_data_dict.get(
+                            'percent_data_after_presel', False)
+                        if pdap:
+                            textstr += "\nPreselection = \n {" + ', '.join(
+                                f"{qbn}: {v}" for qbn, v in pdap.items()) + '}'
+
                         self.plot_dicts['cphase_text_msg_' + qbn] = {
                             'fig_id': figure_name,
                             'ypos': -0.2,
