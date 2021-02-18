@@ -312,10 +312,18 @@ class MeasurementControl(Instrument):
                         self.timer.checkpoint("MeasurementControl.measure.prepare.start")
                         sweep_function.set_parameter(val)
                         self.timer.checkpoint("MeasurementControl.measure.prepare.end")
-                    self.detector_function.prepare(
-                        sweep_points=sweep_points[
-                            start_idx:start_idx+self.xlen, 0])
-                    self.measure_hard()
+                    filtered_sweep = getattr(self.sweep_functions[1],
+                                             'filtered_sweep', None)
+                    if filtered_sweep is None:
+                        self.detector_function.prepare(
+                            sweep_points=sweep_points[
+                                start_idx:start_idx+self.xlen, 0])
+                    else:
+                        self.detector_function.prepare(
+                            sweep_points=sweep_points[
+                                         start_idx:start_idx + self.xlen,
+                                         0][filtered_sweep])
+                    self.measure_hard(filtered_sweep)
         else:
             raise Exception('Sweep and Detector functions not '
                             + 'of the same type. \nAborting measurement')
@@ -386,8 +394,20 @@ class MeasurementControl(Instrument):
         return
 
     @Timer()
-    def measure_hard(self):
+    def measure_hard(self, filtered_sweep=None):
+        self.detector_function.progress_callback = self.print_progress
         new_data = np.array(self.detector_function.get_values()).T
+        self.detector_function.progress_callback = None
+
+        if filtered_sweep is not None:
+            shape = list(new_data.shape)
+            shape[0] = len(filtered_sweep)
+            new_data_full = np.zeros(shape) * np.nan
+            if len(shape) > 1:
+                new_data_full[filtered_sweep, :] = new_data
+            else:
+                new_data_full[filtered_sweep] = new_data
+            new_data = new_data_full
 
         ###########################
         # Shape determining block #
@@ -447,7 +467,7 @@ class MeasurementControl(Instrument):
         if self.mode == '2D':
             self.update_plotmon_2D_hard()
         self.iteration += 1
-        self.print_progress(stop_idx)
+        self.print_progress()
         return new_data
 
     def measurement_function(self, x):
@@ -528,7 +548,7 @@ class MeasurementControl(Instrument):
             self.update_plotmon_adaptive()
         self.iteration += 1
         if self.mode != 'adaptive':
-            self.print_progress(stop_idx)
+            self.print_progress()
         return vals
 
     def optimization_function(self, x):
@@ -1674,21 +1694,23 @@ class MeasurementControl(Instrument):
                 log.error(f"Could not save timer for object: {obj}.")
                 traceback.print_exc()
 
-    def get_percdone(self):
-        percdone = self.total_nr_acquired_values / (
+    def get_percdone(self, current_acq=0):
+        percdone = (self.total_nr_acquired_values + current_acq) / (
             np.shape(self.get_sweep_points())[0] * self.soft_avg()) * 100
         return percdone
 
-    def print_progress(self, stop_idx=None):
+    def print_progress(self, current_acq=0):
         if self.verbose():
             acquired_points = self.dset.shape[0]
             total_nr_pts = len(self.get_sweep_points())
-            percdone = self.get_percdone()
+            percdone = self.get_percdone(current_acq=current_acq)
             elapsed_time = time.time() - self.begintime
             # The trailing spaces are to overwrite some characters in case the
             # previous progress message was longer.
-            progress_message = "\r {percdone}% completed \telapsed time: "\
-                "{t_elapsed}s \ttime left: {t_left}s     ".format(
+            progress_message = (
+                "\r{timestamp}\t{percdone}% completed \telapsed time: "
+                "{t_elapsed}s \ttime left: {t_left}s     ").format(
+                    timestamp=time.strftime('%H:%M:%S', time.localtime()),
                     percdone=int(percdone),
                     t_elapsed=round(elapsed_time, 1),
                     t_left=round((100.-percdone)/(percdone) *

@@ -9,6 +9,7 @@ import numpy as np
 import math
 import logging
 
+import datetime
 from pycqed.utilities.timer import Timer
 
 log = logging.getLogger(__name__)
@@ -45,6 +46,8 @@ class Segment:
         self.element_start_end = {}
         self.elements_on_awg = {}
         self.distortion_dicts = {}
+        self.sweep_params = {}
+        self.allow_filter = False
         self.trigger_pars = {
             'pulse_length': self.trigger_pulse_length,
             'amplitude': self.trigger_pulse_amplitude,
@@ -131,7 +134,7 @@ class Segment:
             self.add(p)
 
     @Timer()
-    def resolve_segment(self):
+    def resolve_segment(self, store_segment_length_timer=True):
         """
         Top layer method of Segment class. After having addded all pulses,
             * pulse elements are updated to enforce single element per segment
@@ -148,6 +151,18 @@ class Segment:
         self.add_flux_crosstalk_cancellation_channels()
         self.gen_trigger_el()
         self.add_charge_compensation()
+        if store_segment_length_timer:
+            try:
+                # FIXME: we currently store 1e3*length because datetime
+                #  does not support nanoseconds. Find a cleaner solution.
+                self.timer.checkpoint(
+                    'length.dt', log_init=False, values=[
+                        datetime.datetime.utcfromtimestamp(0)
+                        + datetime.timedelta(microseconds=1e9*np.diff(
+                                self.get_segment_start_end())[0])])
+            except Exception as e:
+                # storing segment length is not crucial for the measurement
+                log.warning(f"Could not store segment length timer: {e}")
 
     def enforce_single_element(self):
         self.resolved_pulses = []
@@ -457,6 +472,11 @@ class Segment:
             el_start = self.get_element_start(el, awg)
             new_end = t_end + length_comp
             new_samples = self.time2sample(new_end - el_start, awg=awg)
+            # make sure that element length is multiple of
+            # sample granularity
+            gran = self.pulsar.get('{}_granularity'.format(awg))
+            if new_samples % gran != 0:
+                new_samples += gran - new_samples % gran
             self.element_start_end[el][awg][1] = new_samples
 
     def gen_refpoint_dict(self):
@@ -690,6 +710,25 @@ class Segment:
         This method returns the start of an element on an AWG in algorithm_time 
         """
         return self.element_start_end[element][awg][0]
+
+    def get_segment_start_end(self):
+        """
+        Returns the start and end of the segment in algorithm_time
+        """
+        for i in range(2):
+            start_end_times = np.array(
+                [[self.get_element_start(el, awg),
+                  self.get_element_end(el, awg)]
+                 for awg, v in self.elements_on_awg.items() for el in v])
+            if len(start_end_times) > 0:
+                # the segment has been resolved before
+                break
+            # Resolve the segment and retry. We set store_segment_length_timer
+            # to False to avoid that resolve_segment calls
+            # get_segment_start_end, which might cause an infinite loop in
+            # some pathological cases.
+            self.resolve_segment(store_segment_length_timer=False)
+        return np.min(start_end_times[:, 0]), np.max(start_end_times[:, 1])
 
     def _test_overlap(self):
         """
@@ -1027,17 +1066,23 @@ class Segment:
 
     def calculate_hash(self, elname, codeword, channel):
         if not self.pulsar.reuse_waveforms():
-            return (self.name, elname, codeword, channel)
+            # these hash entries avoid that the waveform is reused on another
+            # channel or in another element/codeword
+            hashlist = [self.name, elname, codeword, channel]
+            if not self.pulsar.use_sequence_cache():
+                return tuple(hashlist)
+            # when sequence cache is used, we still need to add the other
+            # hashables to allow pulsar to detect when a re-upload is required
+        else:
+            hashlist = []
 
         awg = self.pulsar.get(f'{channel}_awg')
         tstart, length = self.element_start_end[elname][awg]
-        hashlist = []
         hashlist.append(length)  # element length in samples
         if self.pulsar.get(f'{channel}_type') == 'analog' and \
                 self.pulsar.get(f'{channel}_distortion') == 'precalculate':
-            # don't compare the kernels, just assume that all channels'
-            # distortion kernels are different
-            hashlist.append(channel)
+            hashlist.append(repr(self.pulsar.get(
+                f'{channel}_distortion_dict')))
         else:
             hashlist.append(self.pulsar.clock(channel=channel))  # clock rate
             for par in ['type', 'amp', 'internal_modulation']:
@@ -1045,6 +1090,12 @@ class Segment:
                     hashlist.append(self.pulsar.get(f'{channel}_{par}'))
                 except KeyError:
                     hashlist.append(False)
+        if self.pulsar.get(f'{channel}_type') == 'analog' and \
+                self.pulsar.get(f'{channel}_charge_buildup_compensation'):
+            for par in ['compensation_pulse_delay',
+                        'compensation_pulse_gaussian_filter_sigma',
+                        'compensation_pulse_scale']:
+                hashlist.append(self.pulsar.get(f'{channel}_{par}'))
 
         for pulse in self.elements[elname]:
             if pulse.codeword in {'no_codeword', codeword}:
@@ -1395,6 +1446,9 @@ class Segment:
                             f'current element name when renaming '
                             f'the segment.')
         self.acquisition_elements = new_acq_elements
+        # enforce that start and end times get recalculated using the new
+        # element names
+        self.element_start_end = {}
 
         # rename segment name
         self.name = new_name

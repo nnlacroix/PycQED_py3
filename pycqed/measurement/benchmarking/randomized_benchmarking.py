@@ -70,6 +70,7 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
             self.sweep_type = sweep_type
             if self.sweep_type is None:
                 self.sweep_type = {'cliffords': 0, 'seeds': 1}
+            self.kw_for_sweep_points = deepcopy(self.kw_for_sweep_points)
             self.kw_for_sweep_points['nr_seeds,nr_m']['dimension'] = \
                 self.sweep_type['seeds']
             self.kw_for_sweep_points['cliffords']['dimension'] = \
@@ -164,20 +165,22 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
         """
         Creates and adds the analysis processing pipeline to exp_metadata.
         """
-        if 'dim_hilbert' not in kw:
-            raise ValueError('Please specify the dimension of the Hilbert '
-                             'space "dim_hilbert" for this measurement.')
-        if 'log' in self.df_name:
-            pp = rb_ana.pipeline_ssro_measurement(
-                self.meas_obj_names, self.exp_metadata[
-                    'meas_obj_sweep_points_map'], self.sweep_points,
-                n_shots=max(qb.acq_shots() for qb in self.meas_objs),
-                cal_points=self.cal_points, sweep_type=self.sweep_type,
-                interleaved_irb=self.interleaved_gate is not None, **kw)
-            # self.exp_metadata.update({'processing_pipeline': pp})
-        else:
-            log.debug(f'There is no support for automatic pipeline creation '
-                      f'for the detector type {self.df_name}')
+        # TODO: needs upgrade
+        pass
+        # if 'dim_hilbert' not in kw:
+        #     raise ValueError('Please specify the dimension of the Hilbert '
+        #                      'space "dim_hilbert" for this measurement.')
+        # if 'log' in self.df_name:
+        #     pp = rb_ana.pipeline_ssro_measurement(
+        #         self.meas_obj_names, self.exp_metadata[
+        #             'meas_obj_sweep_points_map'], self.sweep_points,
+        #         n_shots=max(qb.acq_shots() for qb in self.meas_objs),
+        #         cal_points=self.cal_points, sweep_type=self.sweep_type,
+        #         interleaved_irb=self.interleaved_gate is not None, **kw)
+        #     self.exp_metadata.update({'processing_pipeline': pp})
+        # else:
+        #     log.debug(f'There is no support for automatic pipeline creation '
+        #               f'for the detector type {self.df_name}')
 
     def run_analysis(self, **kw):
         """
@@ -212,7 +215,7 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
                            f'Instrument settings.{qbn}.acq_classifier_params'
                        for qbn in self.meas_obj_names}
         pp.add_node('extract_data_hdf', params_dict=params_dict, at_idx=0)
-        self.exp_metadata.update({'processing_pipeline': pp})
+        # self.exp_metadata.update({'processing_pipeline': pp})
         self.analysis = pp
 
         data_dict = {'plot_T1_lim': True, 'do_simple_fit': False}
@@ -337,6 +340,7 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
             seq_blocks = []
             single_qb_gates = {qb_1: [], qb_2: []}
             for k, idx in enumerate(cl_seq):
+                self.timer.checkpoint("rb_block.seq.iteration.start")
                 pulse_tuples_list = tqc.TwoQubitClifford(idx).gate_decomposition
                 for j, pulse_tuple in enumerate(pulse_tuples_list):
                     if isinstance(pulse_tuple[1], list):
@@ -354,6 +358,7 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
                         pulse_name = pulse_tuple[0]
                         single_qb_gates[qb_name].append(
                             pulse_name + ' ' + qb_name)
+                self.timer.checkpoint("rb_block.seq.iteration.end")
 
             seq_blocks.append(
                 self.simultaneous_blocks(

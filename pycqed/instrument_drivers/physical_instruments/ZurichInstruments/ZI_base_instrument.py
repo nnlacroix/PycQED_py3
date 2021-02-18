@@ -327,7 +327,7 @@ class MockDAQServer():
             self.nodes[f'/{self.device}/raw/error/blinkforever'] = {'type': 'Integer', 'value': 0}
             self.nodes[f'/{self.device}/dios/0/extclk'] = {'type': 'Integer', 'value': 0}
             for awg_nr in range(4):
-                for i in range(32):
+                for i in range(2048):
                     self.nodes[f'/{self.device}/awgs/{awg_nr}/waveform/waves/{i}'] = {
                         'type': 'ZIVectorData', 'value': np.array([])}
                     self.nodes[f'/{self.device}/awgs/{awg_nr}/waveform/waves/{i}'] = {
@@ -1349,7 +1349,11 @@ class ZI_base_instrument(Instrument):
     # Public methods
     ##########################################################################
 
-    def start(self):
+    def start(self, **kw):
+        """ Start the sequencer
+        :param kw: currently ignored, added for compatibilty with other
+            instruments that accept kwargs in start().
+        """
         log.info(f"{self.devname}: Starting '{self.name}'")
         self.check_errors()
 

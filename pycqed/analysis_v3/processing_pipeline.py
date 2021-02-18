@@ -242,7 +242,8 @@ Final pipeline:
 class ProcessingPipeline(list):
 
     global_node_param_defaults = {'keys_out_container': '',
-                                  'meas_obj_names': None}
+                                  'meas_obj_names': None,
+                                  'add_param_method': None}
 
     def __init__(self, pipeline=None, **kw):
         """
@@ -492,7 +493,6 @@ class ProcessingPipeline(list):
                         for mobjn in mobj_name.split(','):
                             keys_in_suffix = ' '.join(keys_in_split[1:])
                             keys_in_suffix = f'{mobjn}.{keys_in_suffix}'
-                            # keys_in += [keys_in_suffix]
                             keys_in0 = \
                                 hlp_mod.get_sublst_with_all_strings_of_list(
                                     lst_to_search=hlp_mod.flatten_list(
@@ -509,18 +509,19 @@ class ProcessingPipeline(list):
                             raise KeyError(f'The previous node '
                                            f'{self[node_idx-1]["node_name"]} '
                                            f'does not have the key "keys_out".')
-                        keys_in += hlp_mod.get_sublst_with_all_strings_of_list(
-                            lst_to_search=self[node_idx-1]['keys_out'],
-                            lst_to_match=mobj_value_names)
+                        keys_in += self[node_idx-1]['keys_out']
+                        # keys_in += hlp_mod.get_sublst_with_all_strings_of_list(
+                        #     lst_to_search=self[node_idx-1]['keys_out'],
+                        #     lst_to_match=mobj_value_names)
                 else:
                     raise ValueError('The first node in the pipeline cannot '
                                      'have "keys_in" = "previous".')
 
-        if keys_in != keys_in_temp:
-            try:
-                keys_in.sort()
-            except AttributeError:
-                pass
+        # if keys_in != keys_in_temp:
+        #     try:
+        #         keys_in.sort()
+        #     except AttributeError:
+        #         pass
 
         if len(keys_in) == 0 or keys_in is None:
             raise ValueError(f'No "keys_in" could be determined '
@@ -549,12 +550,6 @@ class ProcessingPipeline(list):
         """
         if keys_out is None:
             return keys_out
-
-        prev_keys_out = []
-        for d in self:
-            if 'keys_out' in d:
-                if d['keys_out'] is not None:
-                    prev_keys_out += d['keys_out']
 
         if len(keys_out) == 0:
             prev_keys_out = []
@@ -624,6 +619,11 @@ class ProcessingPipeline(list):
                                f'{",".join(meas_obj_value_names_map[mobj_name])}'
                 keys_out += [keyo]
 
+            keyo_suff = node_params.get('keys_out_suffixes', [])
+            if len(keyo_suff):
+                keys_out_temp = keys_out
+                keys_out = [f'{keyo}_{suff}' for suff in keyo_suff
+                            for keyo in keys_out_temp]
         return keys_out
 
     def run(self, data_dict=None, **params):

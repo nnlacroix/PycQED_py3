@@ -567,7 +567,7 @@ class FluxPulseScope(ParallelLOSweepExperiment):
 
             def rfp_delay(x, fp_delay=fp_delay, fp_length=fp_length_function,\
                 fp_bl_start=bl_start, fp_bl_end=bl_end):
-                return -(fp_length(x)+fp_bl_start+fp_bl_end+fp_delay(x))
+                return -(fp_length(x)+fp_bl_end+fp_delay(x))
 
             def rfp_amp(x, fp_delay=fp_delay, rfp_delay=rfp_delay, tau=tau,
                 fp_amp=fp['amplitude'], o=fp_during_ro_buffer-bl_start):
