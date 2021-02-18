@@ -1222,6 +1222,8 @@ class Rabi(SingleQubitGateCalib):
             if 'n' not in kw:
                 kw['n'] = 1
             self.experiment_name = 'Rabi'
+            if kw['n'] > 1:
+                self.experiment_name += f'-n{kw["n"]}'
             super().__init__(task_list, qubits=qubits,
                              sweep_points=sweep_points,
                              amps=amps, **kw)
@@ -1264,7 +1266,7 @@ class Rabi(SingleQubitGateCalib):
 
         if self.update:
             for task in self.preprocessed_task_list:
-                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']]
+                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']][0]
                 amp180 = self.analysis.proc_data_dict['analysis_params_dict'][
                     qubit.name]['piPulse']
                 qubit.set(f'{task["transition_name_input"]}_amp180', amp180)
@@ -1350,7 +1352,7 @@ class Ramsey(SingleQubitGateCalib):
 
         if self.update:
             for task in self.preprocessed_task_list:
-                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']]
+                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']][0]
                 if self.echo:
                     T2_echo = self.analysis.proc_data_dict[
                         'analysis_params_dict'][qubit.name]['T2_echo']
@@ -1411,7 +1413,7 @@ class T1(SingleQubitGateCalib):
 
         if self.update:
             for task in self.preprocessed_task_list:
-                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']]
+                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']][0]
                 T1 = self.analysis.proc_data_dict['analysis_params_dict'][
                     qubit.name]['T1']
                 qubit.set(f'T1{task["transition_name"]}', T1)
@@ -1474,7 +1476,7 @@ class QScale(SingleQubitGateCalib):
 
         if self.update:
             for task in self.preprocessed_task_list:
-                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']]
+                qubit = [qb for qb in self.meas_objs if qb.name == task['qb']][0]
                 qscale = self.analysis.proc_data_dict['analysis_params_dict'][
                     qubit.name]['qscale']
                 qubit.set(f'{task["transition_name_input"]}_motzoi', qscale)
