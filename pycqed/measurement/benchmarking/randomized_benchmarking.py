@@ -491,7 +491,7 @@ class SingleQubitXEB(MultiTaskingExperiment):
                 'values', self.sweep_type['seqs'], 'z_rots')[seq_idx][nrcyc_idx]
             l = [['Y90', f'Z{zang}'] for zang in z_angles]
             # flatten l, prepend init pulse Y90, append to pulse_op_codes_list
-            pulse_op_codes_list += [['Y90'] + [e1 for e2 in l for e1 in e2]]
+            pulse_op_codes_list += [['X90'] + [e1 for e2 in l for e1 in e2]]
 
         rb_block_list = [self.block_from_ops(
             f"rb_{task['qb']}", [f"{p} {task['qb']}" for p in
