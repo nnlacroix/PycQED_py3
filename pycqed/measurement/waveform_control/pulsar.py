@@ -11,6 +11,7 @@ from qcodes.instrument.base import Instrument
 from qcodes.instrument.parameter import (
     ManualParameter, InstrumentRefParameter)
 import qcodes.utils.validators as vals
+import pycqed.utilities.general as gen
 import time
 from copy import deepcopy
 
@@ -1364,6 +1365,26 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self.sequence_cache['hashes'] = {}
         self.sequence_cache['length'] = {}
 
+    def check_for_other_pulsar(self):
+        """
+        Checks whether another pulsar has programmed the AWGs and resets the
+        sequence cache if this is the case. To make this check possible,
+        the pulsar object ID is written to a file in the pycqed app data dir.
+        """
+        filename = os.path.join(gen.get_pycqed_dir(), 'pulsar_id')
+        current_id = f"{id(self)}"
+        try:
+            with open(filename, 'r') as f:
+                stored_id = f.read()
+        except:
+            stored_id = None
+        if stored_id != current_id:
+            log.debug('Another pulsar instance has programmed the AWGs. '
+                      'Resetting sequence cache.')
+            self.reset_sequence_cache()
+        with open(filename, 'w') as f:
+            f.write(current_id)
+
     # channel handling
     def define_awg_channels(self, awg, channel_name_map=None):
         """
@@ -1556,6 +1577,10 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         log.info(f'Starting compilation of sequence {sequence.name}')
         t0 = time.time()
         if self.use_sequence_cache():
+            # reset the sequence cache if another pulsar instance has
+            # programmed the AWGs
+            self.check_for_other_pulsar()
+            # get hashes and information about the sequence structure
             channel_hashes, awg_sequences = \
                 sequence.generate_waveforms_sequences(get_channel_hashes=True)
             log.debug(f'End of waveform hashing sequence {sequence.name} '
