@@ -280,6 +280,7 @@ class UHFQCPulsar:
             return playback_strings, wave_definitions
 
         calc_repeat = ''
+        self._filter_segment_functions[obj.name] = None
         if repeat_pattern is None:
             for element in awg_sequence:
                 playback_strings, wave_definitions = play_element(element,
@@ -312,21 +313,16 @@ class UHFQCPulsar:
                         'requires the same number elements in all segments '
                         'that can be filtered.')
 
-                def filter_count_loop_start(n_tot, allow_filter):
-                    s = []
-                    s.append(f"var n_tot = {n_tot};")
+                def filter_count(first_seg, last_seg, n_tot=repeat_pattern[0],
+                                 allow_filter=allow_filter):
                     for i, cnt in enumerate(allow_filter.values()):
                         if cnt == 0:
                             continue
-                        s.append(
-                            f"if ({i} < first_seg || {i} > last_seg) {{")
-                        s.append(f"n_tot -= {cnt};")
-                        s.append("}")
-                    return s
-
-                calc_repeat = '\n'.join(filter_count_loop_start(
-                    repeat_pattern[0], allow_filter))
-                repeat_pattern = ('n_tot', 1)
+                        if i < first_seg or i > last_seg:
+                            n_tot -= cnt
+                    return n_tot
+                self._filter_segment_functions[obj.name] = filter_count
+                repeat_pattern = ('last_seg', 1)
 
             def repeat_func(n, el_played, index, playback_strings,
                             wave_definitions):
@@ -1464,6 +1460,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self._zi_waves_cleared = False
         self._hash_to_wavename_table = {}
         self._filter_segments = None
+        self._filter_segment_functions = {}
 
         self.num_seg = 0
 
@@ -2148,9 +2145,15 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             awgs = self.awgs
         for AWG_name in awgs:
             AWG = self.AWG_obj(awg=AWG_name)
-            for regs in self._get_segment_filter_userregs(AWG):
-                AWG.set(regs[0], val[0])
-                AWG.set(regs[1], val[1])
+            fnc = self._filter_segment_functions.get(AWG_name, None)
+            if fnc is None:
+                for regs in self._get_segment_filter_userregs(AWG):
+                    AWG.set(regs[0], val[0])
+                    AWG.set(regs[1], val[1])
+            else:
+                # used in case of a repeat pattern
+                for regs in self._get_segment_filter_userregs(AWG):
+                    AWG.set(regs[1], fnc(val[0], val[1]))
 
     def _get_filter_segments(self):
         return self._filter_segments
