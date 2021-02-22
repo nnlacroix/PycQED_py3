@@ -6796,31 +6796,35 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                         'val': phases, 'stderr': phases_errs}
 
                     # compute phase diffs
-                    phase_diffs = phases[0::2] - phases[1::2]
-                    phase_diffs %= (2*np.pi)
-                    phase_diffs_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
-                                                           phases_errs[1::2]**2,
-                                                           dtype=np.float64))
-                    self.proc_data_dict['analysis_params_dict'][
-                        f'{self.phase_key}_{qbn}'] = {
-                        'val': phase_diffs, 'stderr': phase_diffs_stderrs}
+                    if len(phases[0::2]) == len(phases[1::2]):
+                        # this can be false for Cyroscope with
+                        # estimation_window == None and odd nr of trunc lengths
+                        phase_diffs = phases[0::2] - phases[1::2]
+                        phase_diffs %= (2*np.pi)
+                        phase_diffs_stderrs = np.sqrt(
+                            np.array(phases_errs[0::2]**2 +
+                                     phases_errs[1::2]**2, dtype=np.float64))
+                        self.proc_data_dict['analysis_params_dict'][
+                            f'{self.phase_key}_{qbn}'] = {
+                            'val': phase_diffs, 'stderr': phase_diffs_stderrs}
 
-                    # population_loss = (cos_amp_g - cos_amp_e)/ cos_amp_g
-                    population_loss = (amps[1::2] - amps[0::2])/amps[1::2]
-                    x   = amps[1::2] - amps[0::2]
-                    x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
-                                     dtype=np.float64)
-                    y = amps[1::2]
-                    y_err = amps_errs[1::2]
-                    try:
-                        population_loss_stderrs = np.sqrt(np.array(
-                            ((y * x_err) ** 2 + (x * y_err) ** 2) / (y ** 4),
-                            dtype=np.float64))
-                    except:
-                        population_loss_stderrs = float("nan")
-                    self.proc_data_dict['analysis_params_dict'][
-                        f'population_loss_{qbn}'] = \
-                        {'val': population_loss, 'stderr': population_loss_stderrs}
+                        # population_loss = (cos_amp_g - cos_amp_e)/ cos_amp_g
+                        population_loss = (amps[1::2] - amps[0::2])/amps[1::2]
+                        x = amps[1::2] - amps[0::2]
+                        x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
+                                         dtype=np.float64)
+                        y = amps[1::2]
+                        y_err = amps_errs[1::2]
+                        try:
+                            population_loss_stderrs = np.sqrt(np.array(
+                                ((y * x_err) ** 2 + (x * y_err) ** 2) / (y ** 4),
+                                dtype=np.float64))
+                        except:
+                            population_loss_stderrs = float("nan")
+                        self.proc_data_dict['analysis_params_dict'][
+                            f'population_loss_{qbn}'] = \
+                            {'val': population_loss,
+                             'stderr': population_loss_stderrs}
                 else:
                     self.proc_data_dict['analysis_params_dict'][
                         f'amps_{qbn}'] = {
@@ -7190,13 +7194,14 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                     ((xvals[1:] + xvals[:-1]) / 2)[m]
 
                 self.proc_data_dict['analysis_params_dict'][
-                    f'{self.phase_key}_{qbn}']['stderr'] = delta_phases_errs
+                    f'{self.phase_key}_{qbn}'] = {
+                    'val': delta_phases_vals, 'stderr': delta_phases_errs}
 
                 # remove the entries in analysis_params_dict that are not
                 # relevant for Cryoscope (pop_loss), since
                 # these will cause a problem with plotting in this case.
-                del self.proc_data_dict['analysis_params_dict'][
-                    f'population_loss_{qbn}']
+                self.proc_data_dict['analysis_params_dict'].pop(
+                    f'population_loss_{qbn}', None)
             else:
                 delta_phases = self.proc_data_dict['analysis_params_dict'][
                     f'{self.phase_key}_{qbn}']
