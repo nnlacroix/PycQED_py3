@@ -243,8 +243,6 @@ def prepare_cal_states_plot_dicts(data_dict, figure_name=None,
     # get figure name
     if figure_name is None:
         figure_name = 'cal_states'
-    if mobjn not in figure_name:
-        figure_name += '_' + mobjn
 
     # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
@@ -368,7 +366,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
     xlabel = sp.get_sweep_params_property('label', 'all', sp_name)
     xunit = sp.get_sweep_params_property('unit', 'all', sp_name)
     xerr_key = params.get('xerr_key', '')
-    xerr = hlp_mod.get_param(xerr_key, data_dict)
+    xerr = hlp_mod.get_param(xerr_key, data_dict)  if len(xerr_key) else None
 
     # get y-axis information
     ylabel = params.get('ylabel', None)
@@ -378,7 +376,7 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
                      r'$|e\rangle$ state population'
     yunit = params.get('yunit', '')
     yerr_key = params.get('yerr_key', '')
-    yerr = hlp_mod.get_param(yerr_key, data_dict)
+    yerr = hlp_mod.get_param(yerr_key, data_dict) if len(yerr_key) else None
 
     # get more plotting aspect information
     data_labels = params.get('data_labels', ['data']*len(data_to_proc_dict))
@@ -395,10 +393,6 @@ def prepare_1d_plot_dicts(data_dict, figure_name, keys_in, **params):
     axids = np.arange(ncols*nrows)
     if len(axids) == 1:
         axids = [None]*len(data_to_proc_dict)
-
-    # get figure name
-    if mobjn not in figure_name:
-        figure_name += mobjn
 
     # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
@@ -533,10 +527,6 @@ def prepare_2d_plot_dicts(data_dict, figure_name, keys_in, **params):
     if len(axids) == 1:
         axids = [None]*len(data_to_proc_dict)
 
-    # get figure name
-    if mobjn not in figure_name:
-        figure_name += mobjn
-
     # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
     plot_dict_names = []
@@ -668,8 +658,6 @@ def prepare_1d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
         figure_name = 'raw_data'
     figure_name += '_' + hlp_mod.get_param(
         'figname_suffix', data_dict, default_value='', **params)
-    if mobjn not in figure_name:
-        figure_name += '_' + mobjn
 
     data_transform_func = hlp_mod.get_param('data_transform_func',
                                             data_dict,
@@ -818,8 +806,6 @@ def prepare_2d_raw_data_plot_dicts(data_dict, keys_in=None, figure_name=None,
     # get figure name
     if figure_name is None:
         figure_name = 'raw_data'
-    if mobjn not in figure_name:
-        figure_name += mobjn
 
     # start to iterate over data_to_proc_dict
     plot_dicts = OrderedDict()
@@ -902,12 +888,7 @@ def prepare_fit_plot_dicts(data_dict, figure_name, fit_names='all', **params):
         - fit_dicts exists in fit_dicts
         - meas_obj_names exists in either params, data_dict, or exp_metadata
     """
-    mobjn = hlp_mod.get_measurement_properties(
-        data_dict, props_to_extract=['mobjn'], **params)
-
     fit_dicts = hlp_mod.get_param('fit_dicts', data_dict, raise_error=True)
-    if mobjn not in figure_name:
-        figure_name += '_' + mobjn
     plot_dicts = {}
     if fit_names == 'all':
         fit_names = list(fit_dicts)
@@ -1120,7 +1101,7 @@ def format_datetime_xaxes(data_dict, key_list, axs):
     for key in key_list:
         pdict = data_dict['plot_dicts'][key]
         # this check is needed as not all plots have xvals e.g., plot_text
-        if 'xvals' in pdict.keys():
+        if 'xvals' in pdict.keys() and len(pdict['xvals']):
             if (type(pdict['xvals'][0]) is datetime.datetime and
                     key in axs.keys()):
                 axs[key].figure.autofmt_xdate()
@@ -1389,15 +1370,17 @@ def plot_line(pdict, axs, tight_fig=True):
     dataset_label = pdict.get('setlabel', default_labels)
     do_legend = pdict.get('do_legend', False)
 
-    # Detect if two arrays/lists of x and yvals are passed or a list
-    # of x-arrays and a list of y-arrays
-    if (isinstance(plot_xvals[0], numbers.Number) or
-            isinstance(plot_xvals[0], datetime.datetime)):
-        plot_multiple = False
-    else:
-        plot_multiple = True
-        assert (len(plot_xvals) == len(plot_yvals))
-        assert (len(plot_xvals[0]) == len(plot_yvals[0]))
+    plot_multiple = False
+    if len(plot_xvals):
+        # Detect if two arrays/lists of x and yvals are passed or a list
+        # of x-arrays and a list of y-arrays
+        if (isinstance(plot_xvals[0], numbers.Number) or
+                isinstance(plot_xvals[0], datetime.datetime)):
+            plot_multiple = False
+        else:
+            plot_multiple = True
+            assert (len(plot_xvals) == len(plot_yvals))
+            assert (len(plot_xvals[0]) == len(plot_yvals[0]))
 
     alpha_errorbars = plot_linekws.pop('alpha_errorbars', 1)
     if plot_multiple:

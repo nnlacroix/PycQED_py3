@@ -31,6 +31,8 @@ def standard_qubit_pulses_to_rotations(pulse_list):
     """
     standard_pulses = {
         'I': qtp.qeye(2),
+        'X0': qtp.qeye(2),
+        'Z0': qtp.qeye(2),
         'X180': qtp.sigmax(),
         'mX180': qtp.rotation(qtp.sigmax(), -np.pi),
         'Y180': qtp.sigmay(),
@@ -114,22 +116,23 @@ def state_tomography_analysis(data_dict, keys_in,
     Assumptions:
         - the data indicated by keys_in is assumed to be thresholded shots
     """
-    # ensure correct order of meas_obj_names
-    meas_obj_names = hlp_mod.get_measurement_properties(
-        data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
-        **params)
+    # # ensure correct order of meas_obj_names
+    # meas_obj_names = hlp_mod.get_measurement_properties(
+    #     data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+    #     **params)
 
-    mobj_names = None
-    legacy_channel_map = hlp_mod.get_param('channel_map', data_dict, **params)
-    task_list = hlp_mod.get_param('task_list', data_dict, **params)
-    if legacy_channel_map is not None:
-        mobj_names = list(legacy_channel_map)
-    elif task_list is not None:
-        mobj_names = hlp_mod.get_param('qubits', task_list[0])
-    if mobj_names != meas_obj_names:
-        hlp_mod.add_param('meas_obj_names', mobj_names, data_dict,
-                          add_param_method='replace')
-        params.pop('meas_obj_names', None)
+    # mobj_names = None
+    # legacy_channel_map = hlp_mod.get_param('channel_map', data_dict, **params)
+    # task_list = hlp_mod.get_param('task_list', data_dict, **params)
+    # if legacy_channel_map is not None:
+    #     mobj_names = list(legacy_channel_map)
+    # elif task_list is not None:
+    #     mobj_names = hlp_mod.get_param('qubits', task_list[0])
+    # if mobj_names != meas_obj_names:
+    #     hlp_mod.add_param('meas_obj_names', mobj_names, data_dict,
+    #                       add_param_method='replace')
+    #     params.pop('meas_obj_names', None)
+    #     meas_obj_names = mobj_names
 
     hlp_mod.pop_param('keys_out', data_dict, node_params=params)
 
@@ -189,6 +192,9 @@ def state_tomography_analysis(data_dict, keys_in,
         cov_matrix_meas_obs = hlp_mod.get_param('cov_matrix_meas_obs',
                                                 data_dict, **params)
         if cov_matrix_meas_obs is None:
+            meas_obj_names = hlp_mod.get_measurement_properties(
+                data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+                **params)
             hlp_mod.add_param('cov_matrix_meas_obs',
                               np.diag(np.ones(len(meas_obj_names)**2)),
                               data_dict, **params)
@@ -974,8 +980,6 @@ def process_tomography_analysis(data_dict, gate_name='CZ', Uideal=None,
             preped_rhos_flatten[i] = rho_target.full().flatten()
 
         preped_rhos_flatten = np.asarray(preped_rhos_flatten)
-        print(measured_rhos.shape)
-        print(preped_rhos_flatten.shape)
         lambda_array = np.dot(measured_rhos, np.linalg.inv(preped_rhos_flatten))
 
         # get beta array
@@ -1292,9 +1296,11 @@ def get_tomo_data_subset(data_dict, keys_in, preselection=True, **params):
         data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
         **params)
     n = len(meas_obj_names)
-    init_rots_basis = hlp_mod.get_param('init_rots_basis', data_dict)
+    ignore_extra_seqs = hlp_mod.get_param(
+        'ignore_extra_sequences', data_dict, **params, default_value=False)
+    init_rots_basis = hlp_mod.get_param('init_rots_basis', data_dict, **params)
     prep_pulses_list = list(itertools.product(init_rots_basis, repeat=n))
-    final_rots_basis = hlp_mod.get_param('final_rots_basis', data_dict)
+    final_rots_basis = hlp_mod.get_param('final_rots_basis', data_dict, **params)
     cal_points = hlp_mod.get_measurement_properties(data_dict,
                                                     props_to_extract=['cp'])
     total_nr_segments = (len(final_rots_basis)**n + len(cal_points.states)) * \
@@ -1310,6 +1316,8 @@ def get_tomo_data_subset(data_dict, keys_in, preselection=True, **params):
 
     data_to_proc_dict = hlp_mod.get_data_to_process(data_dict, keys_in)
     for keyi, data in data_to_proc_dict.items():
+        if ignore_extra_seqs:
+            data = data[:len(init_rots_basis)**n * nr_shots*total_nr_segments]
         data_reshaped = data.reshape((
             len(init_rots_basis)**n, nr_shots*total_nr_segments))
         if len(prep_pulses_list) != data_reshaped.shape[0]:

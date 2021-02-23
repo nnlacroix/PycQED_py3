@@ -86,6 +86,8 @@ class Timer(OrderedDict):
     def checkpoint(self, name, values=(), log_every_x=1, log_init=True):
         if name not in self:
             self[name] = Checkpoint(name, values=values, fmt=self.fmt, log_every_x=log_every_x, log_init=log_init)
+        elif len(values) != 0:
+            self[name].extend(values)
         else:
             self[name].log_time()
 
@@ -451,6 +453,7 @@ class Timer(OrderedDict):
         d = dict(days=tdelta.days)
         d['hrs'], rem = divmod(tdelta.seconds, 3600)
         d['min'], d['sec'] = divmod(rem, 60)
+        d['sec'] += int(np.round(tdelta.microseconds * 1e-6))
 
         if d['days'] != 0:
             fmt = '{days} day(s) {hrs:02}:{min:02}:{sec:02}'

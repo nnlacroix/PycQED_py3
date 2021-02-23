@@ -7,9 +7,11 @@ from pycqed.measurement.waveform_control.sequence import Sequence
 from pycqed.utilities.general import temporary_value
 from pycqed.utilities.timer import Timer, Checkpoint
 from pycqed.measurement.waveform_control.circuit_builder import CircuitBuilder
+from pycqed.measurement import sweep_functions as swf
 import pycqed.measurement.awg_sweep_functions as awg_swf
 from pycqed.measurement import multi_qubit_module as mqm
 import pycqed.analysis_v2.base_analysis as ba
+from copy import deepcopy
 import logging
 log = logging.getLogger(__name__)
 
@@ -33,8 +35,8 @@ class QuantumExperiment(CircuitBuilder):
                  meas_objs=None, classified=False, MC=None,
                  label=None, exp_metadata=None, upload=True, measure=True,
                  analyze=True, temporary_values=(), drive="timedomain",
-                 sequences=(), sequence_function=None,
-                 sequence_kwargs=None, df_kwargs=None, df_name=None,
+                 sequences=(), sequence_function=None, sequence_kwargs=None,
+                 filter_segments_mask=None, df_kwargs=None, df_name=None,
                  timer_kwargs=None,
                  mc_points=None, sweep_functions=(awg_swf.SegmentHardSweep,
                                                   awg_swf.SegmentSoftSweep),
@@ -75,6 +77,9 @@ class QuantumExperiment(CircuitBuilder):
                 run_measurement if sequences is None
             sequence_kwargs (dict): keyword arguments passed to the sequence_function.
                 see self._prepare_sequences()
+            filter_segments_mask (array of bool): An array with dimension
+                n_0 x n_1, where n_i is the number of sweep points in
+                dimension i, indicating which segments need to be measured.
             df_kwargs (dict): detector function keyword arguments.
             timer_kwargs (dict): keyword arguments for timer. See pycqed.utilities.timer.
                 Timer.
@@ -148,6 +153,7 @@ class QuantumExperiment(CircuitBuilder):
         self.sequences = list(sequences)
         self.sequence_function = sequence_function
         self.sequence_kwargs = {} if sequence_kwargs is None else sequence_kwargs
+        self.filter_segments_mask = filter_segments_mask
         self.sweep_points = self.sequence_kwargs.get("sweep_points", None)
         self.mc_points = mc_points if mc_points is not None else [[], []]
         self.sweep_functions = sweep_functions
@@ -220,12 +226,15 @@ class QuantumExperiment(CircuitBuilder):
                     setattr(self, param_name, param_value)
 
     @Timer()
-    def run_measurement(self, **kw):
+    def run_measurement(self, save_timers=True, **kw):
         """
         Runs a measurement. Any keyword argument passes to this function that
         is also an attribute of the QuantumExperiment class will be updated
         before starting the experiment
 
+        Args:
+            save_timers (bool): whether timers should be saved to the hdf
+            file at the end of the measurement (default: True).
         Returns:
 
         """
@@ -235,6 +244,7 @@ class QuantumExperiment(CircuitBuilder):
         if len(self.mc_points) == 1:
             self.mc_points = [self.mc_points[0], []]
 
+        exception = None
         with temporary_value(*self.temporary_values):
             # Perpare all involved qubits. If not available, prepare
             # all measure objects.
@@ -258,9 +268,12 @@ class QuantumExperiment(CircuitBuilder):
                 self.MC.run(name=self.label, exp_metadata=self.exp_metadata,
                             mode=mode)
             except (Exception, KeyboardInterrupt) as e:
-                self.extract_timestamp()
-                raise e
+                exception = e  # exception will be raised below
         self.extract_timestamp()
+        if save_timers:
+            self.save_timers()
+        if exception is not None:
+            raise exception
 
     def update_metadata(self):
         # make sure that all metadata params are up to date
@@ -330,8 +343,13 @@ class QuantumExperiment(CircuitBuilder):
 
     def autorun(self, **kw):
         if self.measure:
-            self.prepare_measurement(**kw)
-            self.run_measurement(**kw)
+            try:
+                self.prepare_measurement(**kw)
+                # Do not save timers here since they will be saved below.
+                self.run_measurement(save_timers=False, **kw)
+            except (Exception, KeyboardInterrupt) as e:
+                self.save_timers()
+                raise e
         if self.analyze:
             self.run_analysis(**kw)
         if self.callback is not None and self.callback_condition():
@@ -379,11 +397,10 @@ class QuantumExperiment(CircuitBuilder):
 
         """
 
+        if sequence_kwargs is None:
+            sequence_kwargs = {}
         if sequence_function is not None:
             # build sequence from function
-            if sequence_kwargs is None:
-                sequence_kwargs = {}
-
             seq_info = sequence_function(**sequence_kwargs)
 
             if isinstance(seq_info, list):
@@ -404,7 +421,16 @@ class QuantumExperiment(CircuitBuilder):
             if np.ndim(self.sequences) == 0:
                 self.sequences = [self.sequences]
         elif sequences is not None:
-            self.sequences = sequences
+            extra_seqs = deepcopy(sequence_kwargs.get('extra_sequences', []))
+            for seq in extra_seqs:
+                seq.name = 'Extra' + seq.name
+            self.sequences = sequences + extra_seqs
+            if len(self.mc_points) > 1 and len(self.mc_points[1]):
+                # mc_points are set and won't be generated automatically.
+                # We have to add additional points for the extra sequences.
+                self.mc_points[1] = np.concatenate([
+                    self.mc_points[1],
+                    np.arange(len(extra_seqs)) + self.mc_points[1][-1] + 1])
 
         # check sequence
         assert len(self.sequences) != 0, "No sequence found."
@@ -506,16 +532,45 @@ class QuantumExperiment(CircuitBuilder):
             if len(self.channels_to_upload) == 0:
                 self.channels_to_upload = "all"
             if self.sweep_functions[1] == awg_swf.SegmentSoftSweep:
-                self.MC.set_sweep_function_2D(self.sweep_functions[1](
+                sweep_func_2nd_dim = self.sweep_functions[1](
                     sweep_func_1st_dim, self.sequences, sweep_param_name, unit,
-                    self.channels_to_upload))
+                    self.channels_to_upload)
             else:
                 # In case of an unknown sweep function type, it is assumed
                 # that self.sweep_functions[1] has already been initialized
                 # with all required parameters and can be directly passed to
                 # MC.
-                self.MC.set_sweep_function_2D(self.sweep_functions[1])
+                sweep_func_2nd_dim = self.sweep_functions[1]
 
+            if self.filter_segments_mask is not None and \
+                    self.compression_seg_lim is not None:
+                log.warning("Combining compression_seg_lim and "
+                            "filter_segments_mask is not supported. Ignoring "
+                            "filter_segments_mask.")
+            elif self.filter_segments_mask is not None:
+                mask = np.array(self.filter_segments_mask)
+                for seq in self.sequences:
+                    for i, seg in enumerate(seq.segments.values()):
+                        if i < mask.shape[0]:
+                            seg.allow_filter = True
+                lookup = {}
+                for i, sp in enumerate(self.mc_points[1]):
+                    if i >= mask.shape[1]:
+                        # measure everything
+                        lookup[sp] = (0, 32767)
+                    elif True in mask[:, i]:
+                        # measure from the first True up to the last True
+                        lookup[sp] = (
+                            list(mask[:, i]).index(True),
+                            mask.shape[0] - list(mask[:, i])[::-1].index(
+                                True) - 1)
+                    else:
+                        # measure nothing (by setting last < first)
+                        lookup[sp] = (1, 0)
+                sweep_func_2nd_dim = swf.FilteredSweep(
+                        self.sequences[0], lookup, [sweep_func_2nd_dim])
+
+            self.MC.set_sweep_function_2D(sweep_func_2nd_dim)
             self.MC.set_sweep_points_2D(self.mc_points[1])
 
         # check whether there is at least one measure object

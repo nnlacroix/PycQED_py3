@@ -7,6 +7,7 @@ log = logging.getLogger(__name__)
 import time
 from copy import deepcopy
 import traceback
+import requests
 
 import numpy as np
 import numbers
@@ -136,6 +137,9 @@ class MeasurementControl(Instrument):
         self.exp_metadata = {}
         self._plotmon_axes_info = None
         self._persist_plotmon_axes_info = None
+        self._last_percdone_value = 0
+        self._last_percdone_change_time = 0
+        self._last_percdone_log_time = 0
 
     ##############################################
     # Functions used to control the measurements #
@@ -189,6 +193,9 @@ class MeasurementControl(Instrument):
         '''
 
         self.timer = Timer("MeasurementControl")
+        self._last_percdone_value = 0
+        self._last_percdone_change_time = time.time()
+        self._last_percdone_log_time = self._last_percdone_change_time
         # Setting to zero at the start of every run, used in soft avg
         self.soft_iteration = 0
         self.set_measurement_name(name)
@@ -395,7 +402,9 @@ class MeasurementControl(Instrument):
 
     @Timer()
     def measure_hard(self, filtered_sweep=None):
+        self.detector_function.progress_callback = self.print_progress
         new_data = np.array(self.detector_function.get_values()).T
+        self.detector_function.progress_callback = None
 
         if filtered_sweep is not None:
             shape = list(new_data.shape)
@@ -465,7 +474,7 @@ class MeasurementControl(Instrument):
         if self.mode == '2D':
             self.update_plotmon_2D_hard()
         self.iteration += 1
-        self.print_progress(stop_idx)
+        self.print_progress()
         return new_data
 
     def measurement_function(self, x):
@@ -546,7 +555,7 @@ class MeasurementControl(Instrument):
             self.update_plotmon_adaptive()
         self.iteration += 1
         if self.mode != 'adaptive':
-            self.print_progress(stop_idx)
+            self.print_progress()
         return vals
 
     def optimization_function(self, x):
@@ -1692,21 +1701,41 @@ class MeasurementControl(Instrument):
                 log.error(f"Could not save timer for object: {obj}.")
                 traceback.print_exc()
 
-    def get_percdone(self):
-        percdone = self.total_nr_acquired_values / (
+    def get_percdone(self, current_acq=0):
+        percdone = (self.total_nr_acquired_values + current_acq) / (
             np.shape(self.get_sweep_points())[0] * self.soft_avg()) * 100
+        try:
+            if percdone != self._last_percdone_value:
+                self._last_percdone_value = percdone
+                self._last_percdone_change_time = time.time()
+                log.debug(f'MC: percdone = {self._last_percdone_value} at '
+                          f'{self._last_percdone_change_time}')
+            else:
+                now = time.time()
+                no_prog_inter = getattr(self, 'no_progess_interval', 600)
+                if now - self._last_percdone_change_time > no_prog_inter \
+                        and now - self._last_percdone_log_time > no_prog_inter:
+                    no_prog_min = (now - self._last_percdone_change_time) / 60
+                    self.log_to_slack(f'The current measurement has not made '
+                                      f'any progress for '
+                                      f'{no_prog_min: .01f} minutes.')
+                    self._last_percdone_log_time = now
+        except Exception as e:
+            log.debug(f'MC: error while checking progress: {repr(e)}')
         return percdone
 
-    def print_progress(self, stop_idx=None):
+    def print_progress(self, current_acq=0):
         if self.verbose():
             acquired_points = self.dset.shape[0]
             total_nr_pts = len(self.get_sweep_points())
-            percdone = self.get_percdone()
+            percdone = self.get_percdone(current_acq=current_acq)
             elapsed_time = time.time() - self.begintime
             # The trailing spaces are to overwrite some characters in case the
             # previous progress message was longer.
-            progress_message = "\r {percdone}% completed \telapsed time: "\
-                "{t_elapsed}s \ttime left: {t_left}s     ".format(
+            progress_message = (
+                "\r{timestamp}\t{percdone}% completed \telapsed time: "
+                "{t_elapsed}s \ttime left: {t_left}s     ").format(
+                    timestamp=time.strftime('%H:%M:%S', time.localtime()),
                     percdone=int(percdone),
                     t_elapsed=round(elapsed_time, 1),
                     t_left=round((100.-percdone)/(percdone) *
@@ -1986,6 +2015,37 @@ class MeasurementControl(Instrument):
 
     def analysis_display(self, ad):
         self._analysis_display = ad
+
+    def log_to_slack(self, message):
+        """
+        Send a message to Slack. If self.slack_webhook is not set,
+        the message is only logged in the logger with loglevel INFO.
+        If self.slack_channel is not set, the default channel of the webhook
+        is used.
+
+        :param message: The message that should be logged to slack.
+
+        Note: The webhook and the channel are properties and not parameters,
+        to avoid that they get stored in the instruments settings snapshot.
+        """
+        # The webhook and the channel are properties and not parameters,
+        # to avoid that they get stored in the instruments settings snapshot.
+        # If no channel is provided, the default channel of the webhook is used
+        log.info(f'MC: {message}')
+        if not hasattr(self, 'slack_webhook'):
+            log.info(f'MC: Not logging to slack because slack_webhook is not '
+                     f'defined.')
+            return
+        try:
+            payload = {"text": message}
+            if hasattr(self, 'slack_channel'):
+                payload["channel"] = self.slack_channel
+            res = requests.post(self.slack_webhook, json=payload)
+            res_text = res.text
+        except Exception as e:
+            res_text = repr(e)
+        if res_text != 'ok':
+            log.warning(f'MC: Error while logging to slack: {res_text}')
 
 
 class KeyboardFinish(KeyboardInterrupt):

@@ -798,3 +798,14 @@ def find_symmetry_index(data):
         data_filtered = data[np.int(iflip-span):np.int(iflip+span+1)]
         corr.append((data_filtered*data_filtered[::-1]).sum())
     return np.argmax(corr), corr
+
+def get_pycqed_dir():
+    """
+    Returns the path to the pycqed application data dir.
+    """
+    if os.name == 'nt':
+        path = os.path.expandvars(r'%LOCALAPPDATA%\pycqed')
+    else:
+        path = os.path.expanduser('~/.pycqed')
+    os.makedirs(path, exist_ok=True)
+    return path
