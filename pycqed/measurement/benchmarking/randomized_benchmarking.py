@@ -1,6 +1,7 @@
 import numpy as np
 import traceback
 from copy import deepcopy
+import random
 from pycqed.analysis_v3.processing_pipeline import ProcessingPipeline
 from pycqed.measurement.calibration.two_qubit_gates import MultiTaskingExperiment
 from pycqed.measurement.sweep_points import SweepPoints
@@ -341,7 +342,8 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
             single_qb_gates = {qb_1: [], qb_2: []}
             for k, idx in enumerate(cl_seq):
                 self.timer.checkpoint("rb_block.seq.iteration.start")
-                pulse_tuples_list = tqc.TwoQubitClifford(idx).gate_decomposition
+                pulse_tuples_list = tqc.TwoQubitClifford(
+                    idx).gate_decomposition
                 for j, pulse_tuple in enumerate(pulse_tuples_list):
                     if isinstance(pulse_tuple[1], list):
                         seq_blocks.append(
@@ -365,7 +367,8 @@ class TwoQubitRandomizedBenchmarking(RandomizedBenchmarking):
                     f'blk{i}', [
                         self.block_from_ops(f'blk{i}{qbn}', gates)
                         for qbn, gates in single_qb_gates.items()]))
-            rb_block_list += [self.sequential_blocks(f'rb_block{i}', seq_blocks)]
+            rb_block_list += [self.sequential_blocks(
+                f'rb_block{i}', seq_blocks)]
 
         return self.simultaneous_blocks(
             f'sim_rb_{sp2d_idx}_{sp1d_idx}', rb_block_list, block_align='end')
@@ -379,8 +382,8 @@ class SingleQubitXEB(MultiTaskingExperiment):
                           dimension=0),
         'nr_seqs,cycles': dict(param_name='z_rots', unit='',
                               label='$R_z$ angles, $\\phi$', dimension=1,
-                              values_func=lambda ns, cycles:[[
-                                  list(np.random.uniform(0, 2, nc)*180)
+                              values_func=lambda ns, cycles: [[
+                                  list(np.random.uniform(0, 2, nc) * 180)
                                   for nc in cycles] for _ in range(ns)]),
     }
 
@@ -445,7 +448,7 @@ class SingleQubitXEB(MultiTaskingExperiment):
                     if 'cycles' not in task:
                         raise KeyError('Please specify "cycles" either in '
                                        'the task_list or as input '
-                                       'parameter to class init.' )
+                                       'parameter to class init.')
                     cycles_list[i] = task['cycles']
                 if np.unique(cycles_list, axis=0).shape[0] > 1:
                     # different qubits have different nr cycles; cannot be if
@@ -502,6 +505,193 @@ class SingleQubitXEB(MultiTaskingExperiment):
         return self.simultaneous_blocks(f'sim_rb_{sp1d_idx}{sp1d_idx}',
                                         rb_block_list, block_align='end')
 
+    def add_processing_pipeline(self, **kw):
+        """
+        Creates and adds the analysis processing pipeline to exp_metadata.
+        """
+        pass
+
+    def run_analysis(self, **kw):
+        """
+        Runs analysis and stores analysis instance in self.analysis.
+        :param kw: keyword_arguments passed to analysis functions;
+            see docstrings there
+        """
+        pass
+
+
+class TwoQubitXEB(MultiTaskingExperiment):
+    kw_for_sweep_points = {'cycles': dict(param_name='cycles', unit='',
+                                          label='Nr. Cycles', dimension=0),
+                           'nr_seqs,cycles': dict(param_name='gateschoice', unit='',
+                                                  label='two single gates and CZ', dimension=1,
+                                                  values_func='paulis_gen_func')
+                           }
+
+    def __init__(self, task_list, sweep_points=None, qubits=None,
+                 nr_seqs=None, cycles=None, sweep_type=None, **kw):
+        """
+        Class to run cross-entropy benchmarking experiment on
+        one or several qubits in parallel.
+        The experiment consists of applying
+        [[Ry - Rz(theta)] * nr_cycles for nr_cycles in cycles] nr_seqs times,
+        with random values of theta each time.
+        :param task_list: list of dicts; see CalibBuilder docstring
+        :param sweep_points: SweepPoints class instance
+        :param qubits: list of QuDev_transmon class instances
+        :param nr_seqs: int specifying the number of times to apply a random
+            iteration of a sequence consisting of nr_cycles cycles.
+            If nr_seqs is specified and it does not exist in the task_list,
+            THEN ALL QUBITS WILL RECEIVE THE SAME PULSES provided they have the
+            same cycles array.
+        :param cycles: list or array of integers specifying the number of
+            [Ry - Rz(theta)] cycles to apply.
+        :param sweep_type: dict of the form {'cycles': 0/1, 'seqs': 1/0}, where
+            the integers specify which parameter should correspond to the inner
+            sweep (0), and which to the outer sweep (1).
+        :param kw: keyword arguments
+            passed to CalibBuilder; see docstring there
+        Assumptions:
+         - assumes there is one task for each qubit. If task_list is None, it
+          will internally create it.
+        """
+        try:
+
+            self.sweep_type = sweep_type
+            if self.sweep_type is None:
+                self.sweep_type = {'cycles': 0, 'seqs': 1}
+            self.kw_for_sweep_points['nr_seqs,cycles']['dimension'] = \
+                self.sweep_type['seqs']
+            self.kw_for_sweep_points['cycles']['dimension'] = \
+                self.sweep_type['cycles']
+            kw['cal_states'] = kw.get('cal_states', '')
+
+            for task in task_list:
+                for k in ['qb_1', 'qb_2']:
+                    if k not in task:
+                        raise ValueError('Please specify "{k}" in each task in '
+                                         '"task_list."')
+                    if not isinstance(task[k], str):
+                        task[k] = task[k].name
+                if 'prefix' not in task:
+                    task['prefix'] = f"{task['qb_1']}{task['qb_2']}_"
+
+            # if cycles are not added to each task,
+            # self.preprocess_task_list(**kw) will fail because
+            # kw_for_sweep_points['nr_seqs,cycles'] requires cycles
+            if cycles is not None:
+                for task in task_list:
+                    task['cycles'] = cycles
+
+            if nr_seqs is not None:  # identical pulses on all qubits
+                cycles_list = [''] * len(task_list)
+                for i, task in enumerate(task_list):
+                    if 'cycles' not in task:
+                        raise KeyError('Please specify "cycles" either in '
+                                       'the task_list or as input '
+                                       'parameter to class init.')
+                    cycles_list[i] = task['cycles']
+                if np.unique(cycles_list, axis=0).shape[0] > 1:
+                    # different qubits have different nr cycles; cannot be if
+                    # user wants identical pulses on all qubits
+                    raise ValueError('Identical pulses on all qubits requires '
+                                     'identical cycles arrays. '
+                                     'To use non-identical pulses, '
+                                     'move nr_seeds from keyword arguments '
+                                     'into the tasks.')
+                else:
+                    cycles = cycles_list[0]
+
+            super().__init__(task_list, qubits=qubits,
+                             sweep_points=sweep_points,
+                             nr_seqs=nr_seqs, cycles=cycles, **kw)
+            if self.experiment_name is None:
+                self.experiment_name = f'TwoQubitXEB'
+            self.identical_pulses = nr_seqs is not None and all([
+                task.get('nr_seqs', None) is None for task in task_list])
+            self.preprocessed_task_list = self.preprocess_task_list(**kw)
+            self.sequences, self.mc_points = self.sweep_n_dim(
+                self.sweep_points, body_block=None,
+                body_block_func=self.xeb_block, cal_points=self.cal_points,
+                ro_qubits=self.meas_obj_names, **kw)
+
+            self.exp_metadata['identical_pulses'] = self.identical_pulses
+
+            self.add_processing_pipeline(**kw)
+            self.autorun(**kw)
+
+        except Exception as x:
+            self.exception = x
+            traceback.print_exc()
+
+    def paulis_gen_func(self, nr_seqs, cycles):
+        def gen_random(cycles):
+            s_gates = ["X90 ", "Y90 ", "Z45 "]
+            lis = []
+            for length in cycles:
+                i = 0
+                gates = []
+                gates.append(s_gates[1] + "qb_1")
+                gates.append(s_gates[1][0:3] + 's ' + "qb_2")
+                gates.append(s_gates[2] + "qb_1")
+                gates.append(s_gates[2][0:3] + 's ' + "qb_2")
+                gates.append("CZ " + "qb_1 qb_2")
+                while i < length:
+                    last_1_gate1 = gates[-3][0:4]
+
+                    choice1 = []
+                    for gate in s_gates:
+                        choice1.append(gate)
+                    choice1.remove(last_1_gate1)
+                    gate1 = random.choice(choice1)
+                    gates.append(gate1 + 'qb_1')
+
+                    last_1_gate2 = gates[-3][0:3] + ' '
+                    choice2 = []
+                    for gate in s_gates:
+                        choice2.append(gate)
+                    choice2.remove(last_1_gate2)
+                    gate2 = random.choice(choice2)
+                    gates.append(gate2[:3] + 's ' + 'qb_2')
+                    gates.append("CZ " + 'qb_1 qb_2')
+                    i += 1
+                lis.append(gates)
+            return lis
+        return [gen_random(cycles) for _ in range(nr_seqs)]
+
+    def xeb_block(self, sp1d_idx, sp2d_idx, **kw):
+            pulse_op_codes_list = []
+            tl = [self.preprocessed_task_list[0]] if self.identical_pulses else \
+                self.preprocessed_task_list
+
+            for i, task in enumerate(tl):
+                seq_idx = sp1d_idx if self.sweep_type['seqs'] == 0 else sp2d_idx
+                nrcyc_idx = sp1d_idx if self.sweep_type['cycles'] == 0 else sp2d_idx
+                gates_qb_info = task['sweep_points'].get_sweep_params_property(
+                    'values', self.sweep_type['seqs'], 'gateschoice')[seq_idx][nrcyc_idx]
+                l = [gate_qb for gate_qb in gates_qb_info]
+                sub_list = []
+                for ope in l:
+                    if len(ope) < 11:
+                        op = ope[0:-4] + task[ope[-4::]]
+                        op_info = op.split(" ")
+                        #print(op_info[1])
+
+                    else:
+                        op = 'CZ ' + task[ope[3:7]] + ' ' +  task[ope[8::]]
+                        op_info = op.split(" ")
+                        print(op_info[1])
+                    sub_list.append(op)
+                    #print(sub_list)
+                pulse_op_codes_list += [sub_list]
+                #print(type(pulse_op_codes_list[0][0]))
+
+            rb_block_list = [self.block_from_ops(f"rb_{task['qb_1']}{task['qb_2']}", [op_list for op_list in
+                                 pulse_op_codes_list[0 if
+                                 self.identical_pulses else i]]) for i, task in enumerate(self.preprocessed_task_list)]
+
+            return self.simultaneous_blocks(f'sim_rb_{sp1d_idx}{sp1d_idx}',
+                                            rb_block_list, block_align='end')
     def add_processing_pipeline(self, **kw):
         """
         Creates and adds the analysis processing pipeline to exp_metadata.
