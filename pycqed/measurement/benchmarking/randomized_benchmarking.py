@@ -624,7 +624,8 @@ class TwoQubitXEB(MultiTaskingExperiment):
             self.exception = x
             traceback.print_exc()
 
-    def paulis_gen_func(self, nr_seqs, cycles):
+    @staticmethod
+    def paulis_gen_func(nr_seqs, cycles):
         def gen_random(cycles):
             s_gates = ["X90 ", "Y90 ", "Z45 "]
             lis = []
@@ -660,38 +661,35 @@ class TwoQubitXEB(MultiTaskingExperiment):
         return [gen_random(cycles) for _ in range(nr_seqs)]
 
     def xeb_block(self, sp1d_idx, sp2d_idx, **kw):
-            pulse_op_codes_list = []
-            tl = [self.preprocessed_task_list[0]] if self.identical_pulses else \
-                self.preprocessed_task_list
+        pulse_op_codes_list = []
+        tl = [self.preprocessed_task_list[0]] if self.identical_pulses else \
+            self.preprocessed_task_list
 
-            for i, task in enumerate(tl):
-                seq_idx = sp1d_idx if self.sweep_type['seqs'] == 0 else sp2d_idx
-                nrcyc_idx = sp1d_idx if self.sweep_type['cycles'] == 0 else sp2d_idx
-                gates_qb_info = task['sweep_points'].get_sweep_params_property(
-                    'values', self.sweep_type['seqs'], 'gateschoice')[seq_idx][nrcyc_idx]
-                l = [gate_qb for gate_qb in gates_qb_info]
-                sub_list = []
-                for ope in l:
-                    if len(ope) < 11:
-                        op = ope[0:-4] + task[ope[-4::]]
-                        op_info = op.split(" ")
-                        #print(op_info[1])
+        for i, task in enumerate(tl):
+            seq_idx = sp1d_idx if self.sweep_type['seqs'] == 0 else sp2d_idx
+            nrcyc_idx = sp1d_idx if self.sweep_type['cycles'] == 0 else sp2d_idx
+            gates_qb_info = task['sweep_points'].get_sweep_params_property(
+                'values', self.sweep_type['seqs'], 'gateschoice')[seq_idx][nrcyc_idx]
+            l = [gate_qb for gate_qb in gates_qb_info]
+            sub_list = []
+            for ope in l:
+                if len(ope) < 11:
+                    op = ope[0:-4] + task[ope[-4::]]
+                else:
+                    op = 'CZ ' + task[ope[3:7]] + ' ' +  task[ope[8::]]
+                sub_list.append(op)
+            pulse_op_codes_list += [sub_list]
 
-                    else:
-                        op = 'CZ ' + task[ope[3:7]] + ' ' +  task[ope[8::]]
-                        op_info = op.split(" ")
-                        print(op_info[1])
-                    sub_list.append(op)
-                    #print(sub_list)
-                pulse_op_codes_list += [sub_list]
-                #print(type(pulse_op_codes_list[0][0]))
+        rb_block_list = [
+            self.block_from_ops(
+                f"rb_{task['qb_1']}{task['qb_2']}",
+                [op_list for op_list in pulse_op_codes_list[0 if
+                self.identical_pulses else i]])
+            for i, task in enumerate(self.preprocessed_task_list)]
 
-            rb_block_list = [self.block_from_ops(f"rb_{task['qb_1']}{task['qb_2']}", [op_list for op_list in
-                                 pulse_op_codes_list[0 if
-                                 self.identical_pulses else i]]) for i, task in enumerate(self.preprocessed_task_list)]
+        return self.simultaneous_blocks(f'sim_rb_{sp1d_idx}{sp1d_idx}',
+                                        rb_block_list, block_align='end')
 
-            return self.simultaneous_blocks(f'sim_rb_{sp1d_idx}{sp1d_idx}',
-                                            rb_block_list, block_align='end')
     def add_processing_pipeline(self, **kw):
         """
         Creates and adds the analysis processing pipeline to exp_metadata.
