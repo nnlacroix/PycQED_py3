@@ -1128,17 +1128,20 @@ class SingleQubitGateCalib(CalibBuilder):
 
     def __init__(self, task_list=None, sweep_points=None, qubits=None, **kw):
         try:
-            if 'transition_name' not in kw:
-                kw['transition_name'] = 'ge'
             if task_list is None:
                 if qubits is None:
                     raise ValueError('Please provide either "qubits" or '
                                      '"task_list"')
                 task_list = [{'qb': qb.name} for qb in qubits]
-            else:
-                for task in task_list:
-                    if 'qb' in task and not isinstance(task['qb'], str):
-                        task['qb'] = task['qb'].name
+
+            for task in task_list:
+                if 'qb' in task and not isinstance(task['qb'], str):
+                    task['qb'] = task['qb'].name
+                if 'transition_name' not in task:
+                    task['transition_name'] = kw.get('transition_name', 'ge')
+
+            if 'force_2D_sweep' not in kw:
+                kw['force_2D_sweep'] = True
 
             super().__init__(task_list, qubits=qubits,
                              sweep_points=sweep_points, **kw)
@@ -1149,6 +1152,7 @@ class SingleQubitGateCalib(CalibBuilder):
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.update_preproc_tasks()
             self.define_data_to_fit()
+            self.define_cal_states_rotations()
             transition_names = [task['transition_name_input'] for task in
                                 self.preprocessed_task_list]
             states = ''.join(set([s for s in ''.join(transition_names)]))
@@ -1172,8 +1176,8 @@ class SingleQubitGateCalib(CalibBuilder):
                 self.sequences, self.mc_points = self.parallel_sweep(
                     self.preprocessed_task_list, self.sweep_block,
                     block_align='end', **kw)
-            if not kw.get('force_2D_sweep', False):
-                self.mc_points = [self.mc_points[0], []]
+            # force 1D sweep
+            self.mc_points = [self.mc_points[0], []]
             self.autorun(store_preprocessed_task_list=True, **kw)
 
         except Exception as x:
@@ -1185,6 +1189,21 @@ class SingleQubitGateCalib(CalibBuilder):
             qb_name = task['qb']
             transition_name = task['transition_name_input']
             self.data_to_fit[qb_name] = f'p{transition_name[-1]}'
+
+    def define_cal_states_rotations(self):
+        cal_states_rotations = {}
+        for task in self.preprocessed_task_list:
+            qb_name = task['qb']
+            if 'cal_states_rotations' in task:
+                cal_states_rotations.update(task['cal_states_rotations'])
+            else:
+                transition_name = task['transition_name_input']
+                rots = [(tn, self.cal_states.index(tn))
+                        for tn in transition_name]
+                rots.sort(key=lambda t: t[1])
+                cal_states_rotations[qb_name] = {t[0]: i for i, t in
+                                                 enumerate(rots)}
+        self.exp_metadata.update({'cal_states_rotations': cal_states_rotations})
 
     def update_preproc_tasks(self):
         pass
@@ -1342,7 +1361,8 @@ class Ramsey(SingleQubitGateCalib):
             analysis_kwargs = {}
         options_dict = analysis_kwargs.pop('options_dict', {})
         options_dict.update(dict(
-            fit_gaussian_decay=kw.pop('fit_gaussian_decay', True)))
+            fit_gaussian_decay=kw.pop('fit_gaussian_decay', True),
+            artificial_detuning=kw.pop('artificial_detuning', None)))
         self.analysis = tda.EchoAnalysis if self.echo else tda.RamseyAnalysis
         self.analysis = self.analysis(
             qb_names=self.meas_obj_names, t_start=self.timestamp,
