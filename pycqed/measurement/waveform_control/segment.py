@@ -195,6 +195,7 @@ class Segment:
                 p1.basis_rotation = {}
                 p1.delay = 0
                 p1.pulse_obj.name += '_ese'
+                p1.is_ese_copy = True
                 if p1.pulse_obj.codeword == "no_codeword":
                    self.resolved_pulses.append(p1)
                 else:
@@ -798,9 +799,10 @@ class Segment:
         """
         op_counts = {}
         for p in self.resolved_pulses:
-            if p.op_code not in op_counts:
-                op_counts[p.op_code] = 0
-            op_counts[p.op_code] += 1
+            pulse_category = (p.op_code, getattr(p, "is_ese_copy", False))
+            if pulse_category not in op_counts:
+                op_counts[pulse_category] = 0
+            op_counts[pulse_category] += 1
             pattern = getattr(p.pulse_obj, 'mirror_pattern', None)
             if pattern is None or pattern == 'none':
                 continue
@@ -808,9 +810,9 @@ class Segment:
                 if pattern == pa1:
                     pattern = pa2
             pattern = deepcopy(pattern)
-            while len(pattern) < op_counts[p.op_code]:
+            while len(pattern) < op_counts[pulse_category]:
                 pattern += pattern
-            if not pattern[op_counts[p.op_code] - 1]:
+            if not pattern[op_counts[pulse_category] - 1]:
                 continue
             # use mirror pulse
             mirror_correction = getattr(p.pulse_obj, 'mirror_correction', None)
