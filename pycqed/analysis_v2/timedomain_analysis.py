@@ -6808,31 +6808,46 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                         'val': phases, 'stderr': phases_errs}
 
                     # compute phase diffs
-                    phase_diffs = phases[0::2] - phases[1::2]
-                    phase_diffs %= (2*np.pi)
-                    phase_diffs_stderrs = np.sqrt(np.array(phases_errs[0::2]**2 +
-                                                           phases_errs[1::2]**2,
-                                                           dtype=np.float64))
-                    self.proc_data_dict['analysis_params_dict'][
-                        f'{self.phase_key}_{qbn}'] = {
-                        'val': phase_diffs, 'stderr': phase_diffs_stderrs}
+                    if getattr(self, 'delta_tau', 0) is not None:
+                        # this can be false for Cyroscope with
+                        # estimation_window == None and odd nr of trunc lengths
+                        phase_diffs = phases[0::2] - phases[1::2]
+                        phase_diffs %= (2*np.pi)
+                        phase_diffs_stderrs = np.sqrt(
+                            np.array(phases_errs[0::2]**2 +
+                                     phases_errs[1::2]**2, dtype=np.float64))
+                        self.proc_data_dict['analysis_params_dict'][
+                            f'{self.phase_key}_{qbn}'] = {
+                            'val': phase_diffs, 'stderr': phase_diffs_stderrs}
 
-                    # population_loss = (cos_amp_g - cos_amp_e)/ cos_amp_g
-                    population_loss = (amps[1::2] - amps[0::2])/amps[1::2]
-                    x   = amps[1::2] - amps[0::2]
-                    x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
-                                     dtype=np.float64)
-                    y = amps[1::2]
-                    y_err = amps_errs[1::2]
-                    try:
-                        population_loss_stderrs = np.sqrt(np.array(
-                            ((y * x_err) ** 2 + (x * y_err) ** 2) / (y ** 4),
-                            dtype=np.float64))
-                    except:
-                        population_loss_stderrs = float("nan")
-                    self.proc_data_dict['analysis_params_dict'][
-                        f'population_loss_{qbn}'] = \
-                        {'val': population_loss, 'stderr': population_loss_stderrs}
+                        # contrast = (cos_amp_g + cos_amp_e)/ 2
+                        contrast = (amps[1::2] + amps[0::2])/2
+                        contrast_stderr = 0.5*np.sqrt(
+                            np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
+                                     dtype=np.float64))
+
+                        self.proc_data_dict['analysis_params_dict'][
+                            f'mean_contrast_{qbn}'] = {
+                            'val': contrast, 'stderr': contrast_stderr}
+
+                        # contrast_loss = (cos_amp_g - cos_amp_e)/ cos_amp_g
+                        population_loss = (amps[1::2] - amps[0::2])/amps[1::2]
+                        x = amps[1::2] - amps[0::2]
+                        x_err = np.array(amps_errs[0::2]**2 + amps_errs[1::2]**2,
+                                         dtype=np.float64)
+                        y = amps[1::2]
+                        y_err = amps_errs[1::2]
+                        try:
+                            population_loss_stderrs = np.sqrt(np.array(
+                                ((y * x_err) ** 2 + (x * y_err) ** 2) / (y ** 4),
+                                dtype=np.float64))
+                        except:
+                            population_loss_stderrs = float("nan")
+                        self.proc_data_dict['analysis_params_dict'][
+                            f'population_loss_{qbn}'] = \
+                            {'val': population_loss,
+                             'stderr': population_loss_stderrs}
+
                 else:
                     self.proc_data_dict['analysis_params_dict'][
                         f'amps_{qbn}'] = {
@@ -6915,6 +6930,15 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                           f'{self.phase_key}_{qbn}'][
                                           'stderr'][0] * 180 / np.pi) + \
                                   r'$^{\circ}$'
+                        textstr += '\nMean contrast = \n' + \
+                                   '{:.3f} $\\pm$ {:.3f}'.format(
+                                       self.proc_data_dict[
+                                           'analysis_params_dict'][
+                                           f'mean_contrast_{qbn}']['val'][0],
+                                       self.proc_data_dict[
+                                           'analysis_params_dict'][
+                                           f'mean_contrast_{qbn}'][
+                                           'stderr'][0])
                         textstr += '\nContrast loss = \n' + \
                                    '{:.3f} $\\pm$ {:.3f}'.format(
                                        self.proc_data_dict[
@@ -7043,6 +7067,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                 yunit = 'Hz'
                             else:
                                 yunit = ''
+
                             self.plot_dicts[plot_name] = {
                                 'plotfn': self.plot_line,
                                 'xvals': np.repeat(xvals_to_use, reps),
@@ -7165,9 +7190,6 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
         self.phase_key = 'delta_phase'
 
     def analyze_fit_results(self):
-        super().analyze_fit_results()
-        self.proc_data_dict['tvals'] = OrderedDict()
-
         global_delta_tau = self.get_param_value('estimation_window')
         task_list = self.get_param_value('task_list')
         for qbn in self.qb_names:
@@ -7182,7 +7204,12 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                     if not len(task):
                         raise ValueError(f'{qbn} not found in task_list.')
                     delta_tau = task[0].get('estimation_window', None)
+        self.delta_tau = delta_tau
 
+        super().analyze_fit_results()
+        self.proc_data_dict['tvals'] = OrderedDict()
+
+        for qbn in self.qb_names:
             if delta_tau is None:
                 trunc_lengths = self.sp.get_sweep_params_property(
                     'values', 1, f'{qbn}_truncation_length')
@@ -7202,13 +7229,14 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                     ((xvals[1:] + xvals[:-1]) / 2)[m]
 
                 self.proc_data_dict['analysis_params_dict'][
-                    f'{self.phase_key}_{qbn}']['stderr'] = delta_phases_errs
+                    f'{self.phase_key}_{qbn}'] = {
+                    'val': delta_phases_vals, 'stderr': delta_phases_errs}
 
                 # remove the entries in analysis_params_dict that are not
                 # relevant for Cryoscope (pop_loss), since
                 # these will cause a problem with plotting in this case.
-                del self.proc_data_dict['analysis_params_dict'][
-                    f'population_loss_{qbn}']
+                self.proc_data_dict['analysis_params_dict'].pop(
+                    f'population_loss_{qbn}', None)
             else:
                 delta_phases = self.proc_data_dict['analysis_params_dict'][
                     f'{self.phase_key}_{qbn}']
