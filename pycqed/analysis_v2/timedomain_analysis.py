@@ -6796,7 +6796,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                         'val': phases, 'stderr': phases_errs}
 
                     # compute phase diffs
-                    if len(phases[0::2]) == len(phases[1::2]):
+                    if getattr(self, 'delta_tau', 0) is not None:
                         # this can be false for Cyroscope with
                         # estimation_window == None and odd nr of trunc lengths
                         phase_diffs = phases[0::2] - phases[1::2]
@@ -7055,6 +7055,7 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                                 yunit = 'Hz'
                             else:
                                 yunit = ''
+
                             self.plot_dicts[plot_name] = {
                                 'plotfn': self.plot_line,
                                 'xvals': np.repeat(xvals_to_use, reps),
@@ -7177,9 +7178,6 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
         self.phase_key = 'delta_phase'
 
     def analyze_fit_results(self):
-        super().analyze_fit_results()
-        self.proc_data_dict['tvals'] = OrderedDict()
-
         global_delta_tau = self.get_param_value('estimation_window')
         task_list = self.get_param_value('task_list')
         for qbn in self.qb_names:
@@ -7194,7 +7192,12 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                     if not len(task):
                         raise ValueError(f'{qbn} not found in task_list.')
                     delta_tau = task[0].get('estimation_window', None)
+        self.delta_tau = delta_tau
 
+        super().analyze_fit_results()
+        self.proc_data_dict['tvals'] = OrderedDict()
+
+        for qbn in self.qb_names:
             if delta_tau is None:
                 trunc_lengths = self.sp.get_sweep_params_property(
                     'values', 1, f'{qbn}_truncation_length')
