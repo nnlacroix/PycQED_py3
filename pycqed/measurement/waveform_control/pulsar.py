@@ -11,6 +11,7 @@ from qcodes.instrument.base import Instrument
 from qcodes.instrument.parameter import (
     ManualParameter, InstrumentRefParameter)
 import qcodes.utils.validators as vals
+import pycqed.utilities.general as gen
 import time
 from copy import deepcopy
 
@@ -407,6 +408,13 @@ class UHFQCPulsar:
             return super()._get_segment_filter_userregs(obj)
         return [(f'awgs_0_userregs_{UHFQC.USER_REG_FIRST_SEGMENT}',
                  f'awgs_0_userregs_{UHFQC.USER_REG_LAST_SEGMENT}')]
+
+    def sigout_on(self, ch, on=True):
+        awg = self.find_instrument(self.get(ch + '_awg'))
+        if not isinstance(awg, UHFQCPulsar._supportedAWGtypes):
+            return super().sigout_on(ch, on)
+        awg.set('sigouts_{}_on'.format(int(ch[-1]) - 1), on)
+
 
 class HDAWG8Pulsar:
     """
@@ -927,8 +935,9 @@ class HDAWG8Pulsar:
                     self._hdawg_update_waveforms(obj, awg_nr, idx,
                                                  wave_hashes, waveforms)
 
-        for ch in range(8):
-            obj.set('sigouts_{}_on'.format(ch), True)
+        if self.sigouts_on_after_programming():
+            for ch in range(8):
+                obj.set('sigouts_{}_on'.format(ch), True)
 
         if any(ch_has_waveforms.values()):
             self.awgs_with_waveforms(obj.name)
@@ -995,6 +1004,12 @@ class HDAWG8Pulsar:
         return [(f'awgs_{i}_userregs_{ZI_HDAWG8.USER_REG_FIRST_SEGMENT}',
                  f'awgs_{i}_userregs_{ZI_HDAWG8.USER_REG_LAST_SEGMENT}')
                 for i in range(4) if obj._awg_program[i] is not None]
+
+    def sigout_on(self, ch, on=True):
+        awg = self.find_instrument(self.get(ch + '_awg'))
+        if not isinstance(awg, HDAWG8Pulsar._supportedAWGtypes):
+            return super().sigout_on(ch, on)
+        awg.set('sigouts_{}_on'.format(int(ch[-1]) - 1), on)
 
 class AWG5014Pulsar:
     """
@@ -1369,6 +1384,13 @@ class AWG5014Pulsar:
             return super()._get_segment_filter_userregs(obj)
         return []
 
+    def sigout_on(self, ch, on=True):
+        awg = self.find_instrument(self.get(ch + '_awg'))
+        if not isinstance(awg, AWG5014Pulsar._supportedAWGtypes):
+            return super().sigout_on(ch, on)
+        # not implemented for AWG5014Pulsar
+        return
+
 class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
     """
     A meta-instrument responsible for all communication with the AWGs.
@@ -1419,7 +1441,14 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                            set_cmd=self._set_filter_segments,
                            get_cmd=self._get_filter_segments,
                            initial_value=None)
-
+        self.add_parameter('sigouts_on_after_programming', initial_value=True,
+                           parameter_class=ManualParameter, vals=vals.Bool(),
+                           docstring='Whether signal outputs should be '
+                                     'switched off automatically after '
+                                     'programming a AWGs. Can be set to '
+                                     'False to save time if it is ensured '
+                                     'that the channels are switched on '
+                                     'somewhere else.')
         self._inter_element_spacing = 'auto'
         self.channels = set() # channel names
         self.awgs = set() # AWG names
@@ -1453,6 +1482,26 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self.sequence_cache['metadata'] = {}
         self.sequence_cache['hashes'] = {}
         self.sequence_cache['length'] = {}
+
+    def check_for_other_pulsar(self):
+        """
+        Checks whether another pulsar has programmed the AWGs and resets the
+        sequence cache if this is the case. To make this check possible,
+        the pulsar object ID is written to a file in the pycqed app data dir.
+        """
+        filename = os.path.join(gen.get_pycqed_dir(), 'pulsar_id')
+        current_id = f"{id(self)}"
+        try:
+            with open(filename, 'r') as f:
+                stored_id = f.read()
+        except:
+            stored_id = None
+        if stored_id != current_id:
+            log.debug('Another pulsar instance has programmed the AWGs. '
+                      'Resetting sequence cache.')
+            self.reset_sequence_cache()
+        with open(filename, 'w') as f:
+            f.write(current_id)
 
     # channel handling
     def define_awg_channels(self, awg, channel_name_map=None):
@@ -1650,6 +1699,10 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         log.info(f'Starting compilation of sequence {sequence.name}')
         t0 = time.time()
         if self.use_sequence_cache():
+            # reset the sequence cache if another pulsar instance has
+            # programmed the AWGs
+            self.check_for_other_pulsar()
+            # get hashes and information about the sequence structure
             channel_hashes, awg_sequences = \
                 sequence.generate_waveforms_sequences(get_channel_hashes=True)
             log.debug(f'End of waveform hashing sequence {sequence.name} '
