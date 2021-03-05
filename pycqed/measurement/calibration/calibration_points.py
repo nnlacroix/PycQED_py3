@@ -323,6 +323,7 @@ class CalibrationPoints:
         :return: tuple of calibration states or cal_states from the user
         """
         if cal_states == "auto":
+            state_order = ['g', 'e', 'f', 'h']
             if isinstance(transition_names, str):
                 transition_names = [transition_names]
             cal_states_temp = [s for s in ''.join(transition_names)]
@@ -334,6 +335,8 @@ class CalibrationPoints:
                 if cs not in unique_cs:
                     cal_states += [cs]
                 unique_cs.add(cs)
+            cal_states = [s for so in state_order for s in list(cal_states)
+                          if s[0] == so]
             cal_states = tuple(cal_states)
         return cal_states
 
