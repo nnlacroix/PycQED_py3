@@ -1126,8 +1126,7 @@ class SingleQubitGateCalib(CalibBuilder):
     """
     kw_for_task_keys = ['transition_name']
 
-    def __init__(self, task_list=None, sweep_points=None, qubits=None,
-                 TwoD_msmt=False, **kw):
+    def __init__(self, task_list=None, sweep_points=None, qubits=None, **kw):
         try:
             if 'transition_name' not in kw:
                 kw['transition_name'] = 'ge'
@@ -1146,7 +1145,6 @@ class SingleQubitGateCalib(CalibBuilder):
             if self.experiment_name is None:
                 self.experiment_name = 'SingleQubiGateCalib'
             self.transition_order = ('', '_ef', '_fh')
-            self.TwoD_msmt = TwoD_msmt
 
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.update_preproc_tasks()
@@ -1174,7 +1172,7 @@ class SingleQubitGateCalib(CalibBuilder):
                 self.sequences, self.mc_points = self.parallel_sweep(
                     self.preprocessed_task_list, self.sweep_block,
                     block_align='end', **kw)
-            if not TwoD_msmt:
+            if not kw.get('force_2D_sweep', False):
                 self.mc_points = [self.mc_points[0], []]
             self.autorun(store_preprocessed_task_list=True, **kw)
 
