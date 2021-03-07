@@ -502,11 +502,11 @@ class QuDev_transmon(Qubit):
         if model in ['transmon', 'transmon_res']:
             vfc = self.fit_ge_freq_from_dc_offset()
             if flux is not None:
-                bias = vfc['dac_sweet_spot'] + vfc['V_per_phi0'] * flux
+                bias = self.calculate_voltage_from_flux(flux, model)
         else:
             vfc = self.fit_ge_freq_from_flux_pulse_amp()
             if flux is not None:
-                amplitude = vfc['dac_sweet_spot'] + vfc['V_per_phi0'] * flux
+                amplitude = self.calculate_voltage_from_flux(flux, model)
 
         if model == 'approx':
             ge_freq = fit_mods.Qubit_dac_to_freq(
@@ -531,21 +531,42 @@ class QuDev_transmon(Qubit):
             self.ge_freq(ge_freq)
         return ge_freq
 
-    def calc_flux_amplitude_bias_ratio(self, bias, amplitude, ge_freq,
-                                       update=False):
+    def calculate_voltage_from_flux(self, flux, model='transmon_res'):
+        """
+        Calculates the DC bias for a given target flux.
+
+        :param flux: (float) flux in units of phi_0
+        :param model: (str, default: 'transmon_res') the model to use,
+            see calculate_frequency.
+        :return: calculated DC bias if model is transmon or transmon_res,
+            calculated flux pulse amplitude otherwise
+        """
+        if model in ['transmon', 'transmon_res']:
+            vfc = self.fit_ge_freq_from_dc_offset()
+        else:
+            vfc = self.fit_ge_freq_from_flux_pulse_amp()
+        return vfc['dac_sweet_spot'] + vfc['V_per_phi0'] * flux
+
+    def calc_flux_amplitude_bias_ratio(self, amplitude, ge_freq, bias=None,
+                                       flux=None, update=False):
         """
         Calculates the conversion factor between flux pulse amplitudes and bias
         voltage changes that lead to the same qubit detuning. The calculation is
         done based on the model Qubit_freq_to_dac_res and the parameters stored
         in the qubit parameter fit_ge_freq_from_dc_offset.
 
-        :param bias: (float) DC bias, i.e., voltage of the DC source.
         :param amplitude: (float) flux pulse amplitude
         :param ge_freq: (float) measured ge transition frequency
+        :param bias: (float) DC bias, i.e., voltage of the DC source.
+        :param flux: (float) if this is not None, the value of the bias
+            is overwritten with the voltage corresponding to the given flux
+            (in units of phi_0).
         :param update: (bool, default False) whether the result should be
             stored as flux_amplitude_bias_ratio parameter of the qubit object.
         :return: calculated conversion factor
         """
+        if flux is not None:
+            bias = self.calculate_voltage_from_flux(flux)
         v = fit_mods.Qubit_freq_to_dac_res(
             ge_freq, **self.fit_ge_freq_from_dc_offset())
         flux_amplitude_bias_ratio = amplitude / (v - bias)
