@@ -1716,7 +1716,8 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             # first, we check whether programming the whole AWG is mandatory due
             # to changed AWG settings or due to changed metadata
             awgs_to_program = []
-            settings_to_check = ['{}_use_placeholder_waves']
+            settings_to_check = ['{}_use_placeholder_waves',
+                                 'prepend_zeros']
             settings = {}
             metadata = {}
             for awg, seq in awg_sequences.items():
