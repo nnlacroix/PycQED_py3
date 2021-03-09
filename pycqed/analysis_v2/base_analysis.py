@@ -317,7 +317,7 @@ class BaseDataAnalysis(object):
             s = s.decode('utf-8')
         # If it is an array of value decodes individual entries
         if type(s) == np.ndarray:
-            s = [s.decode('utf-8') for s in s]
+            s = [s.decode('utf-8') if isinstance(s, bytes) else s for s in s]
         try:
             return eval(s)
         except Exception:
