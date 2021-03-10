@@ -501,6 +501,11 @@ class HDAWG8Pulsar:
                                       the AWG should wait, before playing \
                                       the next waveform. Allowed values \
                                       are: "Dig1", "DIO", "ZSync"')
+        self.add_parameter('{}_prepend_zeros'.format(awg.name),
+                           initial_value=None,
+                           vals=vals.MultiType(vals.Enum(None), vals.Ints(),
+                                               vals.Lists(vals.Ints())),
+                           parameter_class=ManualParameter)
 
         group = []
         for ch_nr in range(8):
@@ -758,11 +763,19 @@ class HDAWG8Pulsar:
                         ch_has_waveforms[ch2mid] |= wave[3] is not None
 
                     if not internal_mod:
+                        if first_element_of_segment:
+                            prepend_zeros = self.parameters[
+                                f'{obj.name}_prepend_zeros']()
+                            if prepend_zeros is None:
+                                prepend_zeros = self.prepend_zeros()
+                            elif isinstance(prepend_zeros, list):
+                                prepend_zeros = prepend_zeros[awg_nr]
+                        else:
+                            prepend_zeros = 0
                         playback_strings += self._zi_playback_string(
                             name=obj.name, device='hdawg', wave=wave,
                             codeword=(nr_cw != 0),
-                            prepend_zeros=\
-                                first_element_of_segment*self.prepend_zeros(),
+                            prepend_zeros=prepend_zeros,
                             placeholder_wave=use_placeholder_waves,
                             allow_filter=metadata.get('allow_filter', False))
                     elif not use_placeholder_waves:
@@ -1605,6 +1618,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             # to changed AWG settings or due to changed metadata
             awgs_to_program = []
             settings_to_check = ['{}_use_placeholder_waves',
+                                 '{}_prepend_zeros',
                                  'prepend_zeros']
             settings = {}
             metadata = {}
