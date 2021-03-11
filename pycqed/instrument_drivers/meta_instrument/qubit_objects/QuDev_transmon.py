@@ -574,6 +574,31 @@ class QuDev_transmon(Qubit):
             self.flux_amplitude_bias_ratio(flux_amplitude_bias_ratio)
         return flux_amplitude_bias_ratio
 
+    def generate_scaled_volt_freq_conv(self, scaling=None, flux=0, bias=None):
+        """
+        Generates a scaled and shifted version of the voltage frequency
+        conversion dictionary (self.fit_ge_freq_from_dc_offset). This can,
+        e.g., be used to calculate flux pulse amplitude to ge frequency
+        conversion using fit_mods.Qubit_dac_to_freq_res. This shift is done
+        relative to obtain a model that is relative to a flux offset (
+        parking position) indicated by either flux or bias.
+        :param scaling: the scaling factor. Default: use
+            self.flux_amplitude_bias_ratio()
+        :param flux: parking position in unit of Phi_0. Default: 0 (upper
+            sweet spot).
+        :param bias: If not None, overwrite flux with the flux resulting from
+            the given DC voltage.
+        :return: the scaled and shifed voltage frequency conversion dictionary
+        """
+        vfc = deepcopy(self.fit_ge_freq_from_dc_offset())
+        if scaling is None:
+            scaling = self.flux_amplitude_bias_ratio()
+        if bias is not None:
+            flux = (bias - vfc['dac_sweet_spot']) / vfc['V_per_phi0']
+        vfc['V_per_phi0'] *= scaling
+        vfc['dac_sweet_spot'] = -flux * vfc['V_per_phi0']
+        return vfc
+
     def update_detector_functions(self):
         if self.acq_Q_channel() is None or \
            self.acq_weights_type() not in ['SSB', 'DSB', 'optimal_qutrit']:
