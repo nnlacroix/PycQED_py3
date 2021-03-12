@@ -5116,13 +5116,13 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def prepare_fitting(self):
         self.fit_dicts = OrderedDict()
-        def add_fit_dict(qbn, data, key):
+        def add_fit_dict(qbn, data, key, scalex=1):
             if self.num_cal_points != 0:
                 data = data[:-self.num_cal_points]
             reduction_arr = np.invert(np.isnan(data))
             data = data[reduction_arr]
             sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
-                'msmt_sweep_points'][reduction_arr]
+                'msmt_sweep_points'][reduction_arr] * scalex
             cos_mod = lmfit.Model(fit_mods.CosFunc)
             guess_pars = fit_mods.Cos_guess(
                 model=cos_mod, t=sweep_points, data=data)
@@ -5142,9 +5142,12 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
         for qbn in self.qb_names:
             all_data = self.proc_data_dict['data_to_fit'][qbn]
             if self.get_param_value('TwoD'):
+                daa = self.metadata.get('drive_amp_adaptation', {}).get(
+                    qbn, None)
                 for i, data in enumerate(all_data):
                     key = f'cos_fit_{qbn}_{i}'
-                    add_fit_dict(qbn, data, key)
+                    add_fit_dict(qbn, data, key,
+                                 scalex=1 if daa is None else daa[i])
             else:
                 add_fit_dict(qbn, all_data, 'cos_fit_' + qbn)
 
@@ -5283,12 +5286,18 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
 
                 k = k.replace('cos_fit_', '')
                 qbn, i = (k + '_').split('_')[:2]
+                sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
+                        'sweep_points']
                 if len(i):
                     label, unit, vals = self.get_first_sweep_param(
                         qbn, dimension=1)
                     title_suffix = (f'{i}: {label} = ' + ' '.join(
                         SI_val_to_msg_str(vals[int(i)], unit,
                                           return_type=lambda x : f'{x:0.4f}')))
+                    daa = self.metadata.get('drive_amp_adaptation', {}).get(
+                        qbn, None)
+                    if daa is not None:
+                        sweep_points = sweep_points * daa[int(i)]
                 else:
                     title_suffix = ''
                 fit_res = fit_dict['fit_res']
@@ -5297,6 +5306,7 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
                 self.prepare_projected_data_plot(
                     fig_name=base_plot_name,
                     data=dtf[int(i)] if i != '' else dtf,
+                    sweep_points=sweep_points,
                     plot_name_suffix=qbn+'fit',
                     qb_name=qbn, TwoD=False,
                     title_suffix=title_suffix
@@ -5337,10 +5347,8 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
                     'y': [fit_res.model.func(
                         rabi_amplitudes[k]['piPulse'],
                         **fit_res.best_values)],
-                    'xmin': self.proc_data_dict['sweep_points_dict'][qbn][
-                        'sweep_points'][0],
-                    'xmax': self.proc_data_dict['sweep_points_dict'][qbn][
-                        'sweep_points'][-1],
+                    'xmin': sweep_points[0],
+                    'xmax': sweep_points[-1],
                     'colors': 'gray'}
 
                 self.plot_dicts['pihalfamp_marker_' + k] = {
@@ -5366,10 +5374,8 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
                     'y': [fit_res.model.func(
                         rabi_amplitudes[k]['piHalfPulse'],
                         **fit_res.best_values)],
-                    'xmin': self.proc_data_dict['sweep_points_dict'][qbn][
-                        'sweep_points'][0],
-                    'xmax': self.proc_data_dict['sweep_points_dict'][qbn][
-                        'sweep_points'][-1],
+                    'xmin': sweep_points[0],
+                    'xmax': sweep_points[-1],
                     'colors': 'gray'}
 
                 trans_name = 'ef' if 'f' in self.data_to_fit[qbn] else 'ge'
