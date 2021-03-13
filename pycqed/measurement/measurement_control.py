@@ -268,9 +268,8 @@ class MeasurementControl(Instrument):
                     raise e
                 self.save_exp_metadata({'percentage_done': percentage_done},
                                        self.data_object)
-                logging.warning('Caught a KeyboardInterrupt and there is '
-                                'unsaved data. Trying clean exit to save '
-                                'data.')
+                log.warning('Caught a KeyboardInterrupt and there is '
+                            'unsaved data. Trying clean exit to save data.')
             except Exception as e:
                 exception = e
                 formatted_exc = traceback.format_exc()
@@ -491,10 +490,10 @@ class MeasurementControl(Instrument):
             except Exception:
                 # There are some cases where the sweep points are not
                 # specified that you don't want to crash (e.g. on -off seq)
-                logging.warning('You are in the exception case in '
-                                'MC.measure_hard() DATA STORING BLOCK section. '
-                                'Something might have gone wrong with your '
-                                'measurement.')
+                log.warning('You are in the exception case in '
+                            'MC.measure_hard() DATA STORING BLOCK section. '
+                            'Something might have gone wrong with your '
+                            'measurement.')
                 log.warning(traceback.format_exc())
 
         self.check_keyboard_interrupt()
