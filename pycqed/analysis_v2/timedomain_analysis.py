@@ -7196,7 +7196,8 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                     delta_tau = task[0].get('estimation_window', None)
         self.delta_tau = delta_tau
 
-        super().analyze_fit_results()
+        if self.get_param_value('analyze_fit_results_super', True):
+            super().analyze_fit_results()
         self.proc_data_dict['tvals'] = OrderedDict()
 
         for qbn in self.qb_names:
