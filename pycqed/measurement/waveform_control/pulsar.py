@@ -280,6 +280,7 @@ class UHFQCPulsar:
             return playback_strings, wave_definitions
 
         calc_repeat = ''
+        self._filter_segment_functions[obj.name] = None
         if repeat_pattern is None:
             for element in awg_sequence:
                 playback_strings, wave_definitions = play_element(element,
@@ -312,21 +313,16 @@ class UHFQCPulsar:
                         'requires the same number elements in all segments '
                         'that can be filtered.')
 
-                def filter_count_loop_start(n_tot, allow_filter):
-                    s = []
-                    s.append(f"var n_tot = {n_tot};")
+                def filter_count(first_seg, last_seg, n_tot=repeat_pattern[0],
+                                 allow_filter=allow_filter):
                     for i, cnt in enumerate(allow_filter.values()):
                         if cnt == 0:
                             continue
-                        s.append(
-                            f"if ({i} < first_seg || {i} > last_seg) {{")
-                        s.append(f"n_tot -= {cnt};")
-                        s.append("}")
-                    return s
-
-                calc_repeat = '\n'.join(filter_count_loop_start(
-                    repeat_pattern[0], allow_filter))
-                repeat_pattern = ('n_tot', 1)
+                        if i < first_seg or i > last_seg:
+                            n_tot -= cnt
+                    return n_tot
+                self._filter_segment_functions[obj.name] = filter_count
+                repeat_pattern = ('last_seg', 1)
 
             def repeat_func(n, el_played, index, playback_strings,
                             wave_definitions):
@@ -514,19 +510,6 @@ class HDAWG8Pulsar:
                                                vals.Lists(vals.Ints())),
                            parameter_class=ManualParameter)
 
-        for awg_nr in range(4):
-            param_name = f'{awg.name}_awgs_{awg_nr}_mod_freq'
-            self.add_parameter(param_name,
-                               unit='Hz',
-                               initial_value=None,
-                               set_cmd=self._hdawg_mod_setter(awg, awg_nr),
-                               get_cmd=self._hdawg_mod_getter(awg, awg_nr),
-                               )
-            # qcodes will not set the initial value if it is None, so we set it
-            # manually here to ensure that internal modulation gets switched off
-            # in the init.
-            self.set(f'{awg.name}_awgs_{awg_nr}_mod_freq', None)
-
         group = []
         for ch_nr in range(8):
             id = 'ch{}'.format(ch_nr + 1)
@@ -588,10 +571,20 @@ class HDAWG8Pulsar:
         self.add_parameter('{}_internal_modulation'.format(name), 
                            initial_value=False, vals=vals.Bool(),
                            parameter_class=ManualParameter)
-        cmd = self.parameters[
-            f'{awg.name}_awgs_{int((int(id[2:]) - 1) / 2)}_mod_freq']
-        self.add_parameter('{}_mod_freq'.format(name),
-                           unit='Hz', set_cmd=cmd, get_cmd=cmd)
+        if (int(id[2:]) - 1) % 2  == 0:  # first channel of a pair
+            awg_nr = int((int(id[2:]) - 1) / 2)
+            param_name = '{}_mod_freq'.format(name)
+            self.add_parameter(param_name,
+                               unit='Hz',
+                               initial_value=None,
+                               set_cmd=self._hdawg_mod_setter(awg, awg_nr),
+                               get_cmd=self._hdawg_mod_getter(awg, awg_nr),
+                               )
+            # qcodes will not set the initial value if it is None, so we set
+            # it manually here to ensure that internal modulation gets
+            # switched off in the init.
+            self.set(param_name, None)
+
 
     def _hdawg_create_marker_channel_parameters(self, id, name, awg):
         self.add_parameter('{}_id'.format(name), get_cmd=lambda _=id: _)
@@ -1479,6 +1472,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self._zi_waves_cleared = False
         self._hash_to_wavename_table = {}
         self._filter_segments = None
+        self._filter_segment_functions = {}
 
         self.num_seg = 0
 
@@ -2165,9 +2159,15 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             awgs = self.awgs
         for AWG_name in awgs:
             AWG = self.AWG_obj(awg=AWG_name)
-            for regs in self._get_segment_filter_userregs(AWG):
-                AWG.set(regs[0], val[0])
-                AWG.set(regs[1], val[1])
+            fnc = self._filter_segment_functions.get(AWG_name, None)
+            if fnc is None:
+                for regs in self._get_segment_filter_userregs(AWG):
+                    AWG.set(regs[0], val[0])
+                    AWG.set(regs[1], val[1])
+            else:
+                # used in case of a repeat pattern
+                for regs in self._get_segment_filter_userregs(AWG):
+                    AWG.set(regs[1], fnc(val[0], val[1]))
 
     def _get_filter_segments(self):
         return self._filter_segments
