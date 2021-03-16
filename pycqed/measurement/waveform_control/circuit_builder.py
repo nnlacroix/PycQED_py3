@@ -103,6 +103,8 @@ class CircuitBuilder:
             qb_names = [qb_names]
 
         # test if qubit objects have been provided instead of names
+        # FIXME CH 2021-03-16 does this crash qb indices? Maybe just move it
+        #  below the test for qb indeces?
         qb_names = [qb if isinstance(qb, str) else qb.name for qb in qb_names]
         # test if qubit indices have been provided instead of names
         try:
