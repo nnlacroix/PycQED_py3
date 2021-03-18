@@ -881,7 +881,7 @@ class HDAWG8Pulsar:
         n = max([len(w) for w in [a1, m1, a2, m2] if w is not None])
         if m1 is not None and a1 is None:
             a1 = np.zeros(n)
-        if m1 is None and a1 is None and m2 is not None:
+        if m1 is None and a1 is None and (m2 is not None or a2 is not None):
             # Hack needed to work around an HDAWG bug where programming only
             # m2 channel does not work. Remove once bug is fixed.
             a1 = np.zeros(n)
@@ -1847,7 +1847,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         else:
             # use placeholder waves
             n = placeholder_wave_length
-            if w1 is None and wave[3] is not None:
+            if w1 is None and w2 is not None:
                 w1 = f'{w2}_but_zero'
             for wc, marker in [(w1, wave[1]), (w2, wave[3])]:
                 if wc is not None and wc not in defined_waves[0]:
@@ -1890,7 +1890,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(f'playWave(marker(1,0)*0*{w2}, {w2});')
-            elif w1 is None and wave[3] is not None and use_hack and placeholder_wave:
+            elif w1 is None and w2 is not None and use_hack and placeholder_wave:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(f'playWave({w2}_but_zero, {w2});')
@@ -1976,7 +1976,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             # This hack is needed due to a bug on the HDAWG. 
             # Remove this if case once the bug is fixed.
             return [f'setWaveDIO({codeword}, zeros(1) + marker(1, 0), {w2});']
-        elif w1 is None and wave[3] is not None and use_hack and placeholder_wave:
+        elif w1 is None and w2 is not None and use_hack and placeholder_wave:
             return [f'setWaveDIO({codeword}, {w2}_but_zero, {w2});']
         elif not (w1 is None and w2 is None):
             return ['setWaveDIO({}, {});'.format(codeword, 
