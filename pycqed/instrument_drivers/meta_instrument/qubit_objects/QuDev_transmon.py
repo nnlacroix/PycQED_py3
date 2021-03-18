@@ -429,6 +429,11 @@ class QuDev_transmon(Qubit):
         self.add_parameter('dc_flux_parameter', initial_value=None,
                            label='QCoDeS parameter to sweep the dc flux',
                            parameter_class=ManualParameter)
+        self.add_parameter('flux_parking', initial_value=0,
+                           label='Flux (in units of phi0) at the parking '
+                                 'position.',
+                           vals=vals.Numbers(),
+                           parameter_class=ManualParameter)
 
         # ac flux parameters
         self.add_parameter('flux_distortion', parameter_class=ManualParameter,
@@ -524,7 +529,9 @@ class QuDev_transmon(Qubit):
         :param flux: (float, default None) if this is not None, the frequency
             is calculated for the given flux (in units of phi_0) instead of
             for the given bias (for models 'transmon' and 'transmon_res') or
-            instead of the given amplitude (for model 'approx')
+            instead of the given amplitude (for model 'approx'). If both bias
+            and flux are None and the model is 'transmon' or 'transmon_res',
+            the flux value from self.flux_parking() is used.
         :param update: (bool, default False) whether the result should be
             stored as ge_freq parameter of the qubit object.
         :return: calculated ge transition frequency
@@ -542,6 +549,8 @@ class QuDev_transmon(Qubit):
 
         if model in ['transmon', 'transmon_res']:
             vfc = self.fit_ge_freq_from_dc_offset()
+            if bias is None and flux is None:
+                flux = self.flux_parking()
             if flux is not None:
                 bias = self.calculate_voltage_from_flux(flux, model)
         else:
@@ -694,11 +703,14 @@ class QuDev_transmon(Qubit):
         :param bias: (float) DC bias, i.e., voltage of the DC source.
         :param flux: (float) if this is not None, the value of the bias
             is overwritten with the voltage corresponding to the given flux
-            (in units of phi_0).
+            (in units of phi_0). If both bias and flux are None, the flux
+            value from self.flux_parking() is used.
         :param update: (bool, default False) whether the result should be
             stored as flux_amplitude_bias_ratio parameter of the qubit object.
         :return: calculated conversion factor
         """
+        if bias is None and flux is None:
+            flux = self.flux_parking()
         if flux is not None:
             bias = self.calculate_voltage_from_flux(flux)
         v = fit_mods.Qubit_freq_to_dac_res(
@@ -708,7 +720,8 @@ class QuDev_transmon(Qubit):
             self.flux_amplitude_bias_ratio(flux_amplitude_bias_ratio)
         return flux_amplitude_bias_ratio
 
-    def generate_scaled_volt_freq_conv(self, scaling=None, flux=0, bias=None):
+    def generate_scaled_volt_freq_conv(self, scaling=None, flux=None,
+                                       bias=None):
         """
         Generates a scaled and shifted version of the voltage frequency
         conversion dictionary (self.fit_ge_freq_from_dc_offset). This can,
@@ -718,8 +731,8 @@ class QuDev_transmon(Qubit):
         parking position) indicated by either flux or bias.
         :param scaling: the scaling factor. Default: use
             self.flux_amplitude_bias_ratio()
-        :param flux: parking position in unit of Phi_0. Default: 0 (upper
-            sweet spot).
+        :param flux: parking position in unit of Phi_0. If both bias and flux
+            are None, the flux value from self.flux_parking() is used.
         :param bias: If not None, overwrite flux with the flux resulting from
             the given DC voltage.
         :return: the scaled and shifed voltage frequency conversion dictionary
@@ -729,6 +742,8 @@ class QuDev_transmon(Qubit):
             scaling = self.flux_amplitude_bias_ratio()
         if bias is not None:
             flux = (bias - vfc['dac_sweet_spot']) / vfc['V_per_phi0']
+        elif flux is None:
+            flux = self.flux_parking()
         vfc['V_per_phi0'] *= scaling
         vfc['dac_sweet_spot'] = -flux * vfc['V_per_phi0']
         return vfc
