@@ -7396,6 +7396,8 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                               f'fit_ge_freq_from_flux_pulse_amp',
             'flux_channel': f'Instrument settings.{qbn}.'
                             f'flux_pulse_channel',
+            'instr_pulsar': f'Instrument settings.{qbn}.'
+                            f'instr_pulsar',
             **op_dict
         }
 
@@ -7408,7 +7410,8 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
         pulse.algorithm_time(0)
 
         if tvals_gen is None:
-            tvals_gen = np.arange(0, pulse.length, 1 / 2.4e9)
+            clk = self.clock(channel=dd['channel'], pulsar=dd['instr_pulsar'])
+            tvals_gen = np.arange(0, pulse.length, 1 / clk)
         volts_gen = pulse.chan_wf(dd['flux_channel'], tvals_gen)
         volt_freq_conv = dd['volt_freq_conv']
 
