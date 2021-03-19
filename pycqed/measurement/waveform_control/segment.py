@@ -203,7 +203,6 @@ class Segment:
                     log.warning('enforce_single_element cannot use codewords, '
                                 f'ignoring {p.pulse_obj.name} on channels '
                                 f'{", ".join(ese_chs)}')
-
             else:
                 p = deepcopy(p)
                 self.resolved_pulses.append(p)

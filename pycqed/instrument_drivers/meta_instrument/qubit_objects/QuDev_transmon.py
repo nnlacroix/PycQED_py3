@@ -290,6 +290,11 @@ class QuDev_transmon(Qubit):
                                  'calculate a pi pulse amplitude for a given '
                                  'ge transition frequency.',
                            initial_value=None, parameter_class=ManualParameter)
+        self.add_parameter('fit_ro_freq_over_ge_freq',
+                           label='String representation of function to '
+                                 'calculate a RO frequency for a given '
+                                 'ge transition frequency.',
+                           initial_value=None, parameter_class=ManualParameter)
         self.add_parameter('flux_amplitude_bias_ratio',
                            label='Ratio between a flux pulse amplitude '
                                  'and a DC offset change that lead to '
@@ -431,6 +436,11 @@ class QuDev_transmon(Qubit):
         self.add_parameter('dc_flux_parameter', initial_value=None,
                            label='QCoDeS parameter to sweep the dc flux',
                            parameter_class=ManualParameter)
+        self.add_parameter('flux_parking', initial_value=0,
+                           label='Flux (in units of phi0) at the parking '
+                                 'position.',
+                           vals=vals.Numbers(),
+                           parameter_class=ManualParameter)
 
         # ac flux parameters
         self.add_parameter('flux_distortion', parameter_class=ManualParameter,
@@ -480,6 +490,23 @@ class QuDev_transmon(Qubit):
             return None
         return eval(amp_func)(ge_freq)
 
+    def get_ro_freq_from_ge_freq(self, ge_freq):
+        """
+        Calculates the RO frequency required for a given ge transition
+        frequency using the function stored in the parameter
+        fit_ro_freq_over_ge_freq. If this parameter is None, the method
+        returns None.
+
+        :param ge_freq: ge transition frequency or an array of frequencies
+        :return: RO frequency or an array of frequencies (or None)
+        """
+        freq_func = self.fit_ro_freq_over_ge_freq()
+        if freq_func is None:
+            log.warning(f'Cannot calculate RO freq for {self.name} since '
+                        f'fit_ro_freq_over_ge_freq is None.')
+            return None
+        return eval(freq_func)(ge_freq)
+
     def calculate_frequency(self, bias=None, amplitude=0, transition='ge',
                             model='transmon_res', flux=None, update=False):
         """
@@ -509,7 +536,9 @@ class QuDev_transmon(Qubit):
         :param flux: (float, default None) if this is not None, the frequency
             is calculated for the given flux (in units of phi_0) instead of
             for the given bias (for models 'transmon' and 'transmon_res') or
-            instead of the given amplitude (for model 'approx')
+            instead of the given amplitude (for model 'approx'). If both bias
+            and flux are None and the model is 'transmon' or 'transmon_res',
+            the flux value from self.flux_parking() is used.
         :param update: (bool, default False) whether the result should be
             stored as ge_freq parameter of the qubit object.
         :return: calculated ge transition frequency
@@ -527,6 +556,8 @@ class QuDev_transmon(Qubit):
 
         if model in ['transmon', 'transmon_res']:
             vfc = self.fit_ge_freq_from_dc_offset()
+            if bias is None and flux is None:
+                flux = self.flux_parking()
             if flux is not None:
                 bias = self.calculate_voltage_from_flux(flux, model)
         else:
@@ -679,11 +710,14 @@ class QuDev_transmon(Qubit):
         :param bias: (float) DC bias, i.e., voltage of the DC source.
         :param flux: (float) if this is not None, the value of the bias
             is overwritten with the voltage corresponding to the given flux
-            (in units of phi_0).
+            (in units of phi_0). If both bias and flux are None, the flux
+            value from self.flux_parking() is used.
         :param update: (bool, default False) whether the result should be
             stored as flux_amplitude_bias_ratio parameter of the qubit object.
         :return: calculated conversion factor
         """
+        if bias is None and flux is None:
+            flux = self.flux_parking()
         if flux is not None:
             bias = self.calculate_voltage_from_flux(flux)
         v = fit_mods.Qubit_freq_to_dac_res(
@@ -693,7 +727,8 @@ class QuDev_transmon(Qubit):
             self.flux_amplitude_bias_ratio(flux_amplitude_bias_ratio)
         return flux_amplitude_bias_ratio
 
-    def generate_scaled_volt_freq_conv(self, scaling=None, flux=0, bias=None):
+    def generate_scaled_volt_freq_conv(self, scaling=None, flux=None,
+                                       bias=None):
         """
         Generates a scaled and shifted version of the voltage frequency
         conversion dictionary (self.fit_ge_freq_from_dc_offset). This can,
@@ -703,8 +738,8 @@ class QuDev_transmon(Qubit):
         parking position) indicated by either flux or bias.
         :param scaling: the scaling factor. Default: use
             self.flux_amplitude_bias_ratio()
-        :param flux: parking position in unit of Phi_0. Default: 0 (upper
-            sweet spot).
+        :param flux: parking position in unit of Phi_0. If both bias and flux
+            are None, the flux value from self.flux_parking() is used.
         :param bias: If not None, overwrite flux with the flux resulting from
             the given DC voltage.
         :return: the scaled and shifed voltage frequency conversion dictionary
@@ -714,6 +749,8 @@ class QuDev_transmon(Qubit):
             scaling = self.flux_amplitude_bias_ratio()
         if bias is not None:
             flux = (bias - vfc['dac_sweet_spot']) / vfc['V_per_phi0']
+        elif flux is None:
+            flux = self.flux_parking()
         vfc['V_per_phi0'] *= scaling
         vfc['dac_sweet_spot'] = -flux * vfc['V_per_phi0']
         return vfc

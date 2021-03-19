@@ -2001,6 +2001,40 @@ class BaseDataAnalysis(object):
                         pass
             axs.axvline(x=x, **d)
 
+    def clock(self, awg=None, channel=None, pulsar=None):
+        """
+        Returns the clock frequency of an AWG from the instrument settings,
+        or tries to determine it based on the instrument type if it is not
+        stored in the settings.
+        :param awg: (str) AWG name (can be None if channel and pulsar are
+            provided instead)
+        :param channel: (str) channel name (is ignored if awg is given)
+        :param pulsar: (str) name of the pulsar object (only needed if
+            channel is given instead of awg)
+        :return: clock frequency
+        """
+        if awg is None:
+            assert pulsar is not None and channel is not None, \
+                'If awg is not provided, channel and pulsar must be provided.'
+            pulsar_dd = self.get_data_from_timestamp_list({
+                'awg': f'Instrument settings.{pulsar}.{channel}_awg'})
+            awg = pulsar_dd['awg']
+
+        awg_dd = self.get_data_from_timestamp_list({
+            'clock_freq': f'Instrument settings.{awg}.clock_freq',
+            'IDN': f'Instrument settings.{awg}.IDN'})
+        if awg_dd['clock_freq']:
+            return awg_dd['clock_freq']
+        model = awg_dd['IDN'].get('model', None)
+        if model == 'HDAWG8':
+            return 2.4e9
+        elif model == 'UHFQA':
+            return 1.8e9
+        elif model == 'AWG5014C':
+            return 1.2e9
+        else:
+            raise NotImplementedError(f"Unknown AWG type: {model}.")
+
 
 def plot_scatter_errorbar(self, ax_id, xdata, ydata, xerr=None, yerr=None, pdict=None):
     pdict = pdict or {}
