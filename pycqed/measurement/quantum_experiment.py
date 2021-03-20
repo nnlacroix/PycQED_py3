@@ -421,9 +421,6 @@ class QuantumExperiment(CircuitBuilder):
         # check sequence
         assert len(self.sequences) != 0, "No sequence found."
 
-        if self.harmonize_element_lengths:
-            self.sequences[0].harmonize_element_lengths(self.sequences)
-
     def _configure_mc(self, MC=None):
         """
         Configure the measurement control (self.MC) for the measurement.
@@ -487,6 +484,9 @@ class QuantumExperiment(CircuitBuilder):
                                 "mc_points and do the appropriate reshaping. Feel"
                                 "free to make a pull request ;). Skipping compression"
                                 "for now.")
+
+        if self.harmonize_element_lengths:
+            self.sequences[0].harmonize_element_lengths(self.sequences)
 
         try:
             sweep_param_name = list(self.sweep_points[0])[0]
