@@ -1693,6 +1693,15 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             self._stop_awg(awg)
     
     def program_awgs(self, sequence, awgs='all'):
+        try:
+            self._program_awgs(sequence, awgs)
+        except Exception as e:
+            log.warning(f'Pulsar: Exception {repr(e)} while programming AWGs. '
+                        f'Retrying after resetting the sequence cache.')
+            self.reset_sequence_cache()
+            self._program_awgs(sequence, awgs)
+
+    def _program_awgs(self, sequence, awgs='all'):
 
         # Stores the last uploaded sequence for easy access and plotting
         self.last_sequence = sequence
