@@ -1693,6 +1693,15 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             self._stop_awg(awg)
     
     def program_awgs(self, sequence, awgs='all'):
+        try:
+            self._program_awgs(sequence, awgs)
+        except Exception as e:
+            log.warning(f'Pulsar: Exception {repr(e)} while programming AWGs. '
+                        f'Retrying after resetting the sequence cache.')
+            self.reset_sequence_cache()
+            self._program_awgs(sequence, awgs)
+
+    def _program_awgs(self, sequence, awgs='all'):
 
         # Stores the last uploaded sequence for easy access and plotting
         self.last_sequence = sequence
@@ -1722,6 +1731,13 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             # The following makes sure that the sequence cache is empty if
             # the compilation crashes or gets interrupted.
             self.reset_sequence_cache()
+            # Add an empty hash for previously active but now inactive channels
+            # on active AWGs. This is to make sure that the change (switching
+            # them off) is detected correctly below.
+            channel_hashes.update({
+                k: {} for k, v in sequence_cache['hashes'].items()
+                if k not in channel_hashes and len(v)
+                and self.get(f'{k}_awg') in awg_sequences.keys()})
             # first, we check whether programming the whole AWG is mandatory due
             # to changed AWG settings or due to changed metadata
             awgs_to_program = []

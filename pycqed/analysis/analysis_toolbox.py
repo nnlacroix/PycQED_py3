@@ -1779,7 +1779,7 @@ def copy_data(timestamp, source_dir=None, target_dir=None,
         return
     if target_dir is None:
         target_dir = datadir
-    f_src = data_from_time(timestamp, folder=source_dir)
+    f_src = data_from_time(timestamp, folder=source_dir, auto_fetch=False)
     daystamp, tstamp = verify_timestamp(timestamp)
     daydir = os.path.join(target_dir, daystamp)
     if not os.path.isdir(daydir):
