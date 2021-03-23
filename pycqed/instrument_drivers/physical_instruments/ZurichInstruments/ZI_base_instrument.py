@@ -243,7 +243,7 @@ class MockDAQServer():
     just entries in a 'dict') based on the device name that is used when
     connecting to a device. These nodes differ depending on the instrument
     type, which is determined by the number in the device name: dev2XXX are
-    UHFQA instruments, dev8XXX are HDAWG8 instruments and dev0XXX are PQSC
+    UHFQA instruments, dev8XXX are HDAWG8 instruments, dev10XXX are PQSC
     instruments.
     """
 
@@ -280,8 +280,7 @@ class MockDAQServer():
             self.devtype = 'UHFQA'
         elif self.device.lower().startswith('dev8'):
             self.devtype = 'HDAWG8'
-        #FIXME: Change to correct device identifier
-        elif self.device.lower().startswith('dev0'):
+        elif self.device.lower().startswith('dev10'):
             self.devtype = 'PQSC'
 
         # Add paths
@@ -344,6 +343,13 @@ class MockDAQServer():
             self.nodes[f'/{self.device}/dios/0/drive'] = {'type': 'Integer', 'value': 0}
             for dio_nr in range(32):
                 self.nodes[f'/{self.device}/raw/dios/0/delays/{dio_nr}/value'] = {'type': 'Integer', 'value': 0}
+            self.nodes[f'/{self.device}/raw/error/clear'] = {
+                'type': 'Integer', 'value': 0}
+        elif self.devtype == 'PQSC':
+            self.nodes[f'/{self.device}/raw/error/json/errors'] = {
+                'type': 'String', 'value': '{"sequence_nr" : 0, "new_errors" : 0, "first_timestamp" : 0, "timestamp" : 0, "timestamp_utc" : "2019-08-07 17 : 33 : 55", "messages" : []}'}
+            self.nodes[f'/{self.device}/raw/error/clear'] = {
+                'type': 'Integer', 'value': 0}
 
     def listNodesJSON(self, path):
         pass
@@ -621,7 +627,8 @@ class ZI_base_instrument(Instrument):
                  port: int= 8004,
                  apilevel: int= 5,
                  num_codewords: int= 0,
-                 logfile:str = None,
+                 awg_module: bool=True,
+                 logfile: str = None,
                  **kw) -> None:
         """
         Input arguments:
@@ -631,6 +638,7 @@ class ZI_base_instrument(Instrument):
             server          (str) the host where the ziDataServer is running
             port            (int) the port to connect to for the ziDataServer (don't change)
             apilevel        (int) the API version level to use (don't change unless you know what you're doing)
+            awg_module      (bool) create an awgModule
             num_codewords   (int) the number of codeword-based waveforms to prepare
             logfile         (str) file name where all commands should be logged
         """
@@ -685,10 +693,9 @@ class ZI_base_instrument(Instrument):
             # Should never happen as we just created the file above
             log.error(f"{self.devname}: parameter file for data parameters {filename} not found")
             raise
-        
-        # FIXME: get rid of if clause write separate AWG module
-        if self.devtype != 'PQSC':
-            # Create modules
+
+        # Create modules
+        if awg_module:
             self._awgModule = self.daq.awgModule()
             self._awgModule.set('awgModule/device', device)
             self._awgModule.execute()
@@ -706,6 +713,8 @@ class ZI_base_instrument(Instrument):
             # should save time in the init script. Please let me know if you
             # experience any issues with the init of HDAWG/UHF.
             # self._add_codeword_waveform_parameters(num_codewords)
+        else:
+            self._awgModule = None
 
         # Create other neat parameters
         self._add_extra_parameters()
@@ -785,15 +794,6 @@ class ZI_base_instrument(Instrument):
             initial_value=30,
             parameter_class=ManualParameter,
             vals=validators.Ints())
-
-        #FIXME: get rid of if clause
-        if self.devtype != 'PQSC':
-            for i in range(self._num_channels()//2):
-                self.add_parameter(
-                    'awgs_{}_sequencer_program_crc32_hash'.format(i),
-                    parameter_class=ManualParameter,
-                    initial_value=0, 
-                    vals=validators.Ints())
 
     ##########################################################################
     # Private methods
@@ -1340,6 +1340,8 @@ class ZI_base_instrument(Instrument):
             self.daq.unsubscribe(full_path)
 
     def poll(self, poll_time=0.1):
+        # The timeout of 1ms (second argument) is smaller than in the Delft
+        # driver version (500ms) to allow fast spectroscopy.
         return self.daq.poll(poll_time, 1, 4, True)
 
     def sync(self) -> None:
@@ -1356,10 +1358,6 @@ class ZI_base_instrument(Instrument):
         """
         log.info(f"{self.devname}: Starting '{self.name}'")
         self.check_errors()
-
-        if self.devtype == 'PQSC':
-            self.set('execution_enable', 1)
-            return
 
         # Loop through each AWG and check whether to reconfigure it
         for awg_nr in range(self._num_channels()//2):
@@ -1396,12 +1394,8 @@ class ZI_base_instrument(Instrument):
     def stop(self):
         log.info('Stopping {}'.format(self.name))
         # Stop all AWG's
-        # FIXME: make this if clause nicer
-        if self.devtype != 'PQSC':
-            for awg_nr in range(self._num_channels()//2):
-                self.set('awgs_{}_enable'.format(awg_nr), 0)
-        else:
-            self.set('execution_enable', 0)
+        for awg_nr in range(self._num_channels()//2):
+            self.set('awgs_{}_enable'.format(awg_nr), 0)
 
         self.check_errors()
 
@@ -1470,8 +1464,9 @@ class ZI_base_instrument(Instrument):
 
         # This check (and while loop) is added as a workaround for #9
         while not success_and_ready:
-            log.info(f'{self.devname}: Configuring AWG {awg_nr}...')
-            self.compiler_statusstring += f'{self.devname}: Configuring AWG {awg_nr}...'
+            new_statusstring = f'{self.devname}: Configuring AWG {awg_nr}...'
+            log.info(new_statusstring)
+            self.compiler_statusstring += new_statusstring
 
             self._awgModule.set('awgModule/index', awg_nr)
             self._write_cmd_to_logfile(f"_awgModule.set('awgModule/index', {awg_nr})")
@@ -1519,9 +1514,11 @@ class ZI_base_instrument(Instrument):
                     break
 
         t1 = time.time()
-        self.compiler_statusstring += (self._awgModule.get(
+        new_statusstring = (self._awgModule.get(
             'awgModule/compiler/statusstring')
               ['compiler']['statusstring'][0] + ' in {:.2f}s'.format(t1-t0))
+        log.info(new_statusstring)
+        self.compiler_statusstring += new_statusstring
 
         # Check status
         if self.get('awgs_{}_waveform_memoryusage'.format(awg_nr)) > 1.0:
