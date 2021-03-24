@@ -32,6 +32,7 @@ from qcodes.instrument.parameter import ManualParameter
 from qcodes.utils import validators as vals
 from qcodes.plots.colors import color_cycle
 
+from pycqed.utilities.errors import NoProgressError
 
 try:
     import msvcrt  # used on windows to catch keyboard input
@@ -103,6 +104,10 @@ class MeasurementControl(Instrument):
                            vals=vals.Bool(),
                            parameter_class=ManualParameter,
                            initial_value=False)
+        self.add_parameter('max_attempts',
+                           vals=vals.Ints(),
+                           parameter_class=ManualParameter,
+                           initial_value=1)
 
         self.add_parameter(
             'cfg_clipping_mode', vals=vals.Bool(),
@@ -166,7 +171,8 @@ class MeasurementControl(Instrument):
                                           self.acq_data_len_scaling))
     @Timer()
     def run(self, name: str=None, exp_metadata: dict=None,
-            mode: str='1D', disable_snapshot_metadata: bool=False, **kw):
+            mode: str='1D', disable_snapshot_metadata: bool=False,
+            previous_attempts=0, **kw):
         '''
         Core of the Measurement control.
 
@@ -194,8 +200,7 @@ class MeasurementControl(Instrument):
 
         self.timer = Timer("MeasurementControl")
         self._last_percdone_value = 0
-        self._last_percdone_change_time = time.time()
-        self._last_percdone_log_time = self._last_percdone_change_time
+        self._last_percdone_change_time = 0
         # Setting to zero at the start of every run, used in soft avg
         self.soft_iteration = 0
         self.set_measurement_name(name)
@@ -231,6 +236,7 @@ class MeasurementControl(Instrument):
             det_metadata = self.detector_function.generate_metadata()
             self.exp_metadata.update(det_metadata)
             self.save_exp_metadata(self.exp_metadata, self.data_object)
+            exception = None
             try:
                 self.check_keyboard_interrupt()
                 self.get_measurement_begintime()
@@ -262,9 +268,11 @@ class MeasurementControl(Instrument):
                     raise e
                 self.save_exp_metadata({'percentage_done': percentage_done},
                                        self.data_object)
-                logging.warning('Caught a KeyboardInterrupt and there is '
-                                'unsaved data. Trying clean exit to save '
-                                'data.')
+                log.warning('Caught a KeyboardInterrupt and there is '
+                            'unsaved data. Trying clean exit to save data.')
+            except Exception as e:
+                exception = e
+                formatted_exc = traceback.format_exc()
             result = self.dset[()]
             self.get_measurement_endtime()
             self.save_MC_metadata(self.data_object)  # timing labels etc
@@ -277,6 +285,26 @@ class MeasurementControl(Instrument):
             #  saved.
             self.save_timers(self.data_object)
             return_dict = self.create_experiment_result_dict()
+            if exception is not None:
+                if previous_attempts + 1 < self.max_attempts():
+                    msg = f'MC: Error during measurement (attempt ' \
+                          f'{previous_attempts + 1} of {self.max_attempts()}' \
+                          f'). Retrying.'
+                    self.log_to_slack(msg)
+                    log.error(msg)
+                    log.error(formatted_exc)
+                    [fnc() for fnc in getattr(
+                        self, 'retry_cleanup_functions', [])]
+                    # sweep points should be extracted again from the sweep
+                    # function to avoid tiling them multiple times (in every
+                    # attempt)
+                    del self.sweep_points
+                    return_dict = self.run(
+                        name=name, exp_metadata=exp_metadata, mode=mode,
+                        disable_snapshot_metadata=disable_snapshot_metadata,
+                        previous_attempts=previous_attempts + 1, **kw)
+                else:
+                    raise exception
 
         self.finish(result)
         return return_dict
@@ -462,10 +490,10 @@ class MeasurementControl(Instrument):
             except Exception:
                 # There are some cases where the sweep points are not
                 # specified that you don't want to crash (e.g. on -off seq)
-                logging.warning('You are in the exception case in '
-                                'MC.measure_hard() DATA STORING BLOCK section. '
-                                'Something might have gone wrong with your '
-                                'measurement.')
+                log.warning('You are in the exception case in '
+                            'MC.measure_hard() DATA STORING BLOCK section. '
+                            'Something might have gone wrong with your '
+                            'measurement.')
                 log.warning(traceback.format_exc())
 
         self.check_keyboard_interrupt()
@@ -1705,21 +1733,34 @@ class MeasurementControl(Instrument):
         percdone = (self.total_nr_acquired_values + current_acq) / (
             np.shape(self.get_sweep_points())[0] * self.soft_avg()) * 100
         try:
+            now = time.time()
             if percdone != self._last_percdone_value:
                 self._last_percdone_value = percdone
-                self._last_percdone_change_time = time.time()
+                self._last_percdone_change_time = now
                 log.debug(f'MC: percdone = {self._last_percdone_value} at '
                           f'{self._last_percdone_change_time}')
+            elif self._last_percdone_change_time == 0:
+                # first progress check: initialize _last_percdone_change_time
+                self._last_percdone_change_time = now
+                self._last_percdone_log_time = self._last_percdone_change_time
             else:
-                now = time.time()
-                no_prog_inter = getattr(self, 'no_progess_interval', 600)
+                no_prog_inter = getattr(self, 'no_progress_interval', 600)
+                no_prog_inter2 = getattr(self, 'no_progress_kill_interval',
+                                         np.inf)
+                no_prog_min = (now - self._last_percdone_change_time) / 60
+                log.debug(f'MC: no_prog_min = {no_prog_min}, '
+                          f'percdone = {percdone}')
+                msg = f'The current measurement has not made any progress ' \
+                      f'for {no_prog_min: .01f} minutes.'
                 if now - self._last_percdone_change_time > no_prog_inter \
                         and now - self._last_percdone_log_time > no_prog_inter:
-                    no_prog_min = (now - self._last_percdone_change_time) / 60
-                    self.log_to_slack(f'The current measurement has not made'
-                                      f'any progress for '
-                                      f'{no_prog_min: .01f} minutes.')
+                    self.log_to_slack(msg)
                     self._last_percdone_log_time = now
+                if now - self._last_percdone_change_time > no_prog_inter2:
+                    log.debug(f'MC: raising NoProgressError')
+                    raise NoProgressError(msg)
+        except NoProgressError:
+            raise
         except Exception as e:
             log.debug(f'MC: error while checking progress: {repr(e)}')
         return percdone
@@ -2054,3 +2095,4 @@ class KeyboardFinish(KeyboardInterrupt):
     Used to finish the experiment without raising an exception.
     """
     pass
+

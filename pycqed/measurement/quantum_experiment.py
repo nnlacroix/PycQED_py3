@@ -349,12 +349,12 @@ class QuantumExperiment(CircuitBuilder):
             except (Exception, KeyboardInterrupt) as e:
                 self.save_timers()
                 raise e
-        if self.analyze:
-            self.run_analysis(**kw)
-        if self.callback is not None and self.callback_condition():
-            self.callback(**kw)
-        if self.measure: # for now store timers only if creating new file
-            self.save_timers()
+            # analyze and call callback only when measuring
+            if self.analyze:
+                self.run_analysis(**kw)
+            if self.callback is not None and self.callback_condition():
+                self.callback(**kw)
+            self.save_timers()  # for now store timers only if creating new file
         return self
 
     def serialize(self, omitted_attrs=('MC', 'device', 'qubits')):
@@ -434,9 +434,6 @@ class QuantumExperiment(CircuitBuilder):
         # check sequence
         assert len(self.sequences) != 0, "No sequence found."
 
-        if self.harmonize_element_lengths:
-            self.sequences[0].harmonize_element_lengths(self.sequences)
-
     @Timer()
     def _configure_mc(self, MC=None):
         """
@@ -501,6 +498,9 @@ class QuantumExperiment(CircuitBuilder):
                                 "mc_points and do the appropriate reshaping. Feel"
                                 "free to make a pull request ;). Skipping compression"
                                 "for now.")
+
+        if self.harmonize_element_lengths:
+            self.sequences[0].harmonize_element_lengths(self.sequences)
 
         try:
             sweep_param_name = list(self.sweep_points[0])[0]
