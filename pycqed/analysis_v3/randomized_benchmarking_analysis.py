@@ -1350,16 +1350,16 @@ def irb_gate_error(data_dict, **params):
 
     for mobjn in meas_obj_names:
         prb = hlp_mod.get_param(
-            f'{mobjn}.rb.depolarization parameter value', data_dict,
+            f'{mobjn}.RB.depolarization parameter value', data_dict,
             raise_error=True, **params)
         prb_err = hlp_mod.get_param(
-            f'{mobjn}.rb.depolarization parameter stderr', data_dict,
+            f'{mobjn}.RB.depolarization parameter stderr', data_dict,
             raise_error=True, **params)
         pirb = hlp_mod.get_param(
-            f'{mobjn}.irb.depolarization parameter value', data_dict,
+            f'{mobjn}.IRB.depolarization parameter value', data_dict,
             raise_error=True, **params)
         pirb_err = hlp_mod.get_param(
-            f'{mobjn}.irb.depolarization parameter stderr', data_dict,
+            f'{mobjn}.IRB.depolarization parameter stderr', data_dict,
             raise_error=True, **params)
         hlp_mod.add_param(f'{mobjn}.average_gate_error_{interleaved_gate} value',
                           ((d-1)/d)*(1 - pirb/prb),
