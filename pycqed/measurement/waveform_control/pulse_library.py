@@ -505,11 +505,11 @@ class BufferedCZPulse(pulse.Pulse):
 
         if self.gaussian_filter_sigma == 0:
             wave = np.ones_like(tvals) * amp
-            wave *= (tvals >= tvals[0] + buffer_start)
-            wave *= (tvals < tvals[0] + buffer_start + pulse_length)
+            wave *= (tvals >= self.algorithm_time() + buffer_start)
+            wave *= (tvals < self.algorithm_time() + buffer_start + pulse_length)
         else:
-            tstart = tvals[0] + buffer_start
-            tend = tvals[0] + buffer_start + pulse_length
+            tstart = self.algorithm_time() + buffer_start
+            tend = tstart + pulse_length
             scaling = 1 / np.sqrt(2) / self.gaussian_filter_sigma
             wave = 0.5 * (sp.special.erf(
                 (tvals - tstart) * scaling) - sp.special.erf(
