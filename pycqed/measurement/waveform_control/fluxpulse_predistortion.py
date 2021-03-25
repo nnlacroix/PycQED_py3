@@ -92,8 +92,17 @@ def gaussian_filter_kernel(sigma,nr_sigma,dt):
     return np.array(gauss_kernel)
 
 
+def scale_and_negate_IIR(filter_coeffs, scale):
+    for i in range(len(filter_coeffs[0])):
+        filter_coeffs[0][i][1] *= -1
+    filter_coeffs[1][0] /= scale
 
 
-
-
-
+def combine_FIR_filters(kernels):
+    if hasattr(kernels[0], '__iter__'):
+        kernel_combined = kernels[0]
+        for kernel in kernels[1:]:
+            kernel_combined = np.convolve(kernel, kernel_combined)
+        return kernel_combined
+    else:
+        return kernels

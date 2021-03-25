@@ -2,9 +2,12 @@ import logging
 log = logging.getLogger(__name__)
 
 import os
+import sys
 import h5py
 import lmfit
+import traceback
 import numpy as np
+import qutip as qtp
 from copy import deepcopy
 import matplotlib.pyplot as plt
 from collections import OrderedDict
@@ -20,79 +23,105 @@ class Save:
     data_dict['folders'].
     The new file will contain everything in data_dict execept values
     corresponding to the keys "plot_dicts", "axes", "figures", "data_files."
+
+    WARNING: this function will probably not work if data_dict contains
+        more than one level of nested data_dicts.
+        Ex: data_dict = {key: data_dict0} will work.
+            But if data_dict0 = {key: data_dict1}, then it will not work.
     """
     def __init__(self, data_dict, savedir=None, save_processed_data=True,
-                 save_figures=True, filename=None, **save_figs_params):
-        self.data_dict = data_dict
-        if savedir is None:
-            savedir = hlp_mod.get_param('folders', data_dict, raise_error=True)
-            savedir = savedir[-1]
-        self.savedir = savedir
-        if filename is None:
-            filename = 'AnalysisResults'
-        filename = data_dict['folders'][-1].split('\\')[-1] + \
-                   f'_{filename}.hdf'
-        self.filepath = self.savedir + '\\' + filename
-        if save_processed_data:
-            self.save_data_dict()
-        if save_figures:
-            self.save_figures(**save_figs_params)
+                 save_figures=True, filename=None, extension='hdf5',
+                 filter_keys=None, **save_figs_params):
+
+        opt = np.get_printoptions()
+        np.set_printoptions(threshold=sys.maxsize)
+        try:
+            self.data_dict = data_dict
+            if filter_keys is None:
+                filter_keys = []
+            self.filter_keys = filter_keys + ['fit_dicts', 'plot_dicts', 'axes',
+                                              'figures', 'data_files']
+            if savedir is None:
+                savedir = hlp_mod.get_param('folders', data_dict)
+                if savedir is None:
+                    savedir = hlp_mod.get_param(
+                        'timestamps', data_dict, raise_error=True,
+                        error_message='Either folders or timestamps must be '
+                                      'in data_dict is save_dir is not '
+                                      'specified.')
+                    savedir = a_tools.get_folder(savedir[-1])
+                else:
+                    savedir = savedir[-1]
+            self.savedir = savedir
+
+            if filename is None:
+                filename = 'AnalysisResults'
+            filename = self.savedir.split('\\')[-1] + f'_{filename}.{extension}'
+            self.filepath = self.savedir + '\\' + filename
+            if save_processed_data:
+                self.save_data_dict()
+            if save_figures:
+                self.save_figures(**save_figs_params)
+
+            np.set_printoptions(**opt)
+        except Exception:
+            np.set_printoptions(**opt)
+            log.warning("Unhandled error during init of analysis!")
+            log.warning(traceback.format_exc())
 
     def save_data_dict(self):
         """
         Saves to the HDF5 file AnalysisResults.hdf everything in data_dict
-        execept values corresponding to the keys "plot_dicts", "axes",
+        except values corresponding to the keys "plot_dicts", "axes",
         "figures", "data_files"
-        :return:
         """
         with h5py.File(self.filepath, 'a') as analysis_file:
-            if 'fit_dicts' in self.data_dict:
-                self.save_fit_results(analysis_file)
+            self.dump_to_file(self.data_dict, analysis_file)
 
-            # Iterate over all the fit result dicts as not to overwrite
-            # old/other analysis
-            for key, value in self.data_dict.items():
-                if key not in ['fit_dicts', 'plot_dicts', 'axes', 'figures',
-                               'data_files']:
-                    if isinstance(value, np.ndarray):
-                        group_name = 'Raw Data'
-                        try:
-                            group = analysis_file.create_group(group_name)
-                        except ValueError:
-                            group = analysis_file[group_name]
-                        try:
-                            group.create_dataset(key, data=value)
-                        except RuntimeError:
-                            del group[key]
-                            group.create_dataset(key, data=value)
+    def dump_to_file(self, data_dict, entry_point):
+        if 'fit_dicts' in data_dict:
+            self.dump_fit_results(entry_point)
+
+        # Iterate over all the fit result dicts as not to overwrite
+        # old/other analysis
+        for key, value in data_dict.items():
+            if key not in self.filter_keys:
+                try:
+                    group = entry_point.create_group(key)
+                except ValueError:
+                    del entry_point[key]
+                    group = entry_point.create_group(key)
+
+                if isinstance(value, dict):
+                    if value.get('is_data_dict', False):
+                        self.dump_to_file(value, group)
                     else:
-                        try:
-                            group = analysis_file.create_group(key)
-                        except ValueError:
-                            del analysis_file[key]
-                            group = analysis_file.create_group(key)
+                        value_to_save = {k: v for k, v in value.items() if
+                                         k not in self.filter_keys}
+                        h5d.write_dict_to_hdf5(value_to_save,
+                                               entry_point=group)
+                elif isinstance(value, np.ndarray):
+                    group.create_dataset(key, data=value)
+                elif isinstance(value, qtp.qobj.Qobj):
+                    group.create_dataset(key, data=value.full())
+                else:
+                    try:
+                        val = repr(value)
+                    except KeyError:
+                        val = ''
+                    group.attrs[key] = val
 
-                        if isinstance(value, dict):
-                            h5d.write_dict_to_hdf5(value, entry_point=group)
-                        elif isinstance(value, np.ndarray):
-                            group.create_dataset(key, data=value)
-                        else:
-                            try:
-                                val = repr(value)
-                            except KeyError:
-                                val = ''
-                            group.attrs[key] = val
-
-    def save_fit_results(self, analysis_file):
+    def dump_fit_results(self, entry_point):
         """
         Saves the fit results from data_dict['fit_dicts']
-        :param analysis_file: HDF5 file object to save to
+        :param entry_point: HDF5 file object to save to or a group within
+            this file
         """
         try:
-            group = analysis_file.create_group('Fit Results')
+            group = entry_point.create_group('Fit Results')
         except ValueError:
             # If the analysis group already exists.
-            group = analysis_file['Fit Results']
+            group = entry_point['Fit Results']
 
         # Iterate over all the fit result dicts as not to overwrite
         # old/other analysis
