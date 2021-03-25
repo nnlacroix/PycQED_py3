@@ -9,6 +9,7 @@ log = logging.getLogger(__name__)
 from pycqed.analysis import analysis_toolbox as a_tools
 from pycqed.analysis_v3 import helper_functions as hlp_mod
 from pycqed.analysis_v3 import processing_pipeline as pp_mod
+from pycqed.measurement import sweep_points as sp_mod
 
 import sys
 pp_mod.search_modules.add(sys.modules[__name__])
@@ -210,10 +211,16 @@ def add_measured_data_hdf(data_dict, folder=None, append_data=False,
 
 def add_measured_data_dict(data_dict, **params):
     metadata = hlp_mod.get_param('exp_metadata', data_dict, raise_error=True)
+    TwoD = hlp_mod.get_param('TwoD', data_dict, default_value=False,
+                             **params)
+    compression_factor = hlp_mod.get_param('compression_factor',
+                                           data_dict, default_value=1,
+                                           **params)
     if 'measured_data' in data_dict and 'value_names' in metadata:
         value_names = metadata['value_names']
-        rev_movnm = hlp_mod.get_measurement_properties(
-            data_dict, props_to_extract=['rev_movnm'])
+        sp, rev_movnm = hlp_mod.get_measurement_properties(
+            data_dict, props_to_extract=['sp', 'rev_movnm'])
+
         if rev_movnm is not None:
             data_key = lambda ro_ch, rev_movnm=rev_movnm: f'{rev_movnm[ro_ch]}.{ro_ch}'
         else:
@@ -230,24 +237,20 @@ def add_measured_data_dict(data_dict, **params):
             if data.shape[0] != len(value_names):
                 raise ValueError('Shape mismatch between data and ro channels.')
 
-            TwoD = hlp_mod.get_param('TwoD', data_dict, default_value=False,
-                                     **params)
-            compression_factor = hlp_mod.get_param('compression_factor',
-                                                   data_dict, default_value=1,
-                                                   **params)
             mc_points = meas_data[:-len(value_names)]
+            hsp = np.unique(mc_points[0])
+            if mc_points.shape[0] > 1:
+                ssp, counts = np.unique(mc_points[1:], return_counts=True)
+                if counts[0] != len(hsp):
+                    # ssro data
+                    hsp = np.tile(hsp, counts[0]//len(hsp))
+                # if needed, decompress the data
+                # (assumes hsp and ssp are indices)
+                if compression_factor != 1:
+                    hsp = hsp[:int(len(hsp) / compression_factor)]
+                    ssp = np.arange(len(ssp) * compression_factor)
             for i, ro_ch in enumerate(value_names):
-                if mc_points.shape[0] > 1 and TwoD:
-                    hsp = np.unique(mc_points[0])
-                    ssp, counts = np.unique(mc_points[1:], return_counts=True)
-                    if counts[0] != len(hsp):
-                        # ssro data
-                        hsp = np.tile(hsp, counts[0]//len(hsp))
-                    # if needed, decompress the data
-                    # (assumes hsp and ssp are indices)
-                    if compression_factor != 1:
-                        hsp = hsp[:int(len(hsp) / compression_factor)]
-                        ssp = np.arange(len(ssp) * compression_factor)
+                if TwoD:
                     meas_data = np.reshape(data[i], (len(ssp), len(hsp))).T
                 else:
                     meas_data = data[i]
@@ -260,6 +263,21 @@ def add_measured_data_dict(data_dict, **params):
                 hlp_mod.add_param(data_key(ro_ch), data[0], data_dict)
             else:
                 hlp_mod.add_param(data_key(ro_ch), np.array(data), data_dict)
+
+        # check for and deal with interrupted measurements
+        perc_done = hlp_mod.get_param('percentage_done', data_dict,
+                                      default_value=100, **params)
+        if perc_done < 100 and mc_points.shape[0] > 1:
+            sp = hlp_mod.get_measurement_properties(data_dict,
+                                                    props_to_extract=['sp'])
+            sp_new = sp_mod.SweepPoints([sp.get_sweep_dimension(0)])
+            sp_new.add_sweep_dimension()
+            for param_name, props_tup in sp.get_sweep_dimension(1).items():
+                sp_new.add_sweep_parameter(param_name, props_tup[0][:len(ssp)],
+                                           props_tup[1], props_tup[2])
+            hlp_mod.add_param('sweep_points', sp_new, data_dict, **params)
     else:
-        raise ValueError('"measured_data" was not added.')
+        raise ValueError('Either "measured_data" was not found in data_dict '
+                         'or "value_names" was not found in metadata. '
+                         '"measured_data" was not added.')
     return data_dict
