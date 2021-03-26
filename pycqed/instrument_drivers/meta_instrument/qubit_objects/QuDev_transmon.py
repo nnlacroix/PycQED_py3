@@ -1121,7 +1121,7 @@ class QuDev_transmon(Qubit):
     def measure_rabi(self, amps, analyze=True, upload=True, label=None, n=1,
                      last_ge_pulse=False, n_cal_points_per_state=2,
                      cal_states='auto', for_ef=False, classified_ro=False,
-                     prep_params=None, exp_metadata=None, **kw):
+                     prep_params=None, exp_metadata=None):
 
         """
         Varies the amplitude of the qubit drive pulse and measures the readout
@@ -1188,9 +1188,7 @@ class QuDev_transmon(Qubit):
 
         # Create a MeasurementAnalysis object for this measurement
         if analyze:
-            tda.MultiQubit_TimeDomain_Analysis(
-                qb_names=[self.name], options_dict=dict(
-                    delegate_plotting=kw.get('delegate_plotting', False)))
+            tda.MultiQubit_TimeDomain_Analysis(qb_names=[self.name])
 
     def measure_rabi_amp90(self, scales=np.linspace(0.3, 0.7, 31), n=1,
                            MC=None, analyze=True, close_fig=True, upload=True):
