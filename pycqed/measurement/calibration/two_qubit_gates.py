@@ -1135,8 +1135,8 @@ class DynamicPhase(CalibBuilder):
             prepend_pulses_block
         :param num_cz_gates: number of sequential CZ gates, default: 1
         :param init_for_swap: (bool) When the flux pulse is off, initialize the
-            qubits that are not part of qubits_to_drive (experimental feature
-            for swap gate characterization)
+            qubits that are not part of qubits_to_drive (for swap gate
+            characterization)
         :param kw: keyword arguments passed to get_cz_operation_name
             cz_pulse_name: task-specific prefix of CZ gates (overwrites
                 global choice passed to the class init)
