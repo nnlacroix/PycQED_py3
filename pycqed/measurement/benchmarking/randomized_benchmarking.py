@@ -523,9 +523,10 @@ class SingleQubitXEB(MultiTaskingExperiment):
 class TwoQubitXEB(MultiTaskingExperiment):
     kw_for_sweep_points = {'cycles': dict(param_name='cycles', unit='',
                                           label='Nr. Cycles', dimension=0),
-                           'nr_seqs,cycles': dict(param_name='gateschoice', unit='',
-                                                  label='two single gates and CZ', dimension=1,
-                                                  values_func='paulis_gen_func')
+                           'nr_seqs,cycles': dict(
+                               param_name='gateschoice', unit='',
+                               label='cycles gates', dimension=1,
+                               values_func='paulis_gen_func')
                            }
 
     def __init__(self, task_list, sweep_points=None, qubits=None,
@@ -633,9 +634,11 @@ class TwoQubitXEB(MultiTaskingExperiment):
                 i = 0
                 gates = []
                 gates.append(s_gates[1] + "qb_1")
-                gates.append(s_gates[1][0:3] + 's ' + "qb_2")
+                sim_str = ' ' if 'Z' in s_gates[1][0:3] else 's '
+                gates.append(s_gates[1][0:3] + sim_str + "qb_2")
                 gates.append(s_gates[2] + "qb_1")
-                gates.append(s_gates[2][0:3] + 's ' + "qb_2")
+                sim_str = ' ' if 'Z' in s_gates[2][0:3] else 's '
+                gates.append(s_gates[2][0:3] + sim_str + "qb_2")
                 gates.append("CZ " + "qb_1 qb_2")
                 while i < length:
                     last_1_gate1 = gates[-3][0:4]
@@ -653,7 +656,8 @@ class TwoQubitXEB(MultiTaskingExperiment):
                         choice2.append(gate)
                     choice2.remove(last_1_gate2)
                     gate2 = random.choice(choice2)
-                    gates.append(gate2[:3] + 's ' + 'qb_2')
+                    sim_str = ' ' if 'Z' in gate2[:3] else 's '
+                    gates.append(gate2[:3] + sim_str + 'qb_2')
                     gates.append("CZ " + 'qb_1 qb_2')
                     i += 1
                 lis.append(gates)
