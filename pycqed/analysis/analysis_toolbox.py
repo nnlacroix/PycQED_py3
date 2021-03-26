@@ -24,6 +24,7 @@ latest_data_match_whole_words = False
 datadir = get_default_datadir()
 print('Data directory set to:', datadir)
 fetch_data_dir = None
+ignore_delegate_plotting = False
 
 
 ######################################################################
@@ -1779,7 +1780,7 @@ def copy_data(timestamp, source_dir=None, target_dir=None,
         return
     if target_dir is None:
         target_dir = datadir
-    f_src = data_from_time(timestamp, folder=source_dir)
+    f_src = data_from_time(timestamp, folder=source_dir, auto_fetch=False)
     daystamp, tstamp = verify_timestamp(timestamp)
     daydir = os.path.join(target_dir, daystamp)
     if not os.path.isdir(daydir):

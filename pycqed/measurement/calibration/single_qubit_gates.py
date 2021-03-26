@@ -74,7 +74,7 @@ class T1FrequencySweep(CalibBuilder):
             self.data_to_fit = {qb: 'pe' for qb in self.meas_obj_names}
             self.sweep_points = SweepPoints(
                 [{}, {}] if self.sweep_points is None else self.sweep_points)
-            self.add_amplitude_sweep_points()
+            self.add_amplitude_sweep_points(**kw)
 
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
             self.sequences, self.mc_points = \
@@ -95,7 +95,7 @@ class T1FrequencySweep(CalibBuilder):
             self.exception = x
             traceback.print_exc()
 
-    def add_amplitude_sweep_points(self, task_list=None):
+    def add_amplitude_sweep_points(self, task_list=None, **kw):
         """
         If flux pulse amplitudes are not in the sweep_points in each task, but
         qubit frequencies are, then amplitudes will be calculated based on
@@ -120,26 +120,35 @@ class T1FrequencySweep(CalibBuilder):
                 qubit_freqs = self.sweep_points[1]['qubit_freqs'][0]
             else:
                 qubit_freqs = None
-            if qubit_freqs is not None:
-                qubits, _ = self.get_qubits(task['qb'])
+            if 'amplitude' in sweep_points[1]:
+                amplitudes = sweep_points[1]['amplitude'][0]
+            elif len(self.sweep_points) >= 2 and \
+                    'amplitude' in self.sweep_points[1]:
+                amplitudes = self.sweep_points[1]['amplitude'][0]
+            else:
+                amplitudes = None
+            qubits, _ = self.get_qubits(task['qb'])
+            if qubit_freqs is None and qubits is not None:
+                qb = qubits[0]
+                qubit_freqs = qb.calculate_frequency(
+                    amplitude=amplitudes,
+                    **kw.get('vfc_kwargs', {})
+                )
+                freq_sweep_points = SweepPoints('qubit_freqs', qubit_freqs,
+                                                'Hz', 'Qubit frequency')
+                sweep_points.update([{}] + freq_sweep_points)
+            if amplitudes is None:
                 if qubits is None:
                     raise KeyError('qubit_freqs specified in sweep_points, '
                                    'but no qubit objects available, so that '
                                    'the corresponding amplitudes cannot be '
                                    'computed.')
-                this_qb = qubits[0]
-                fit_paras = deepcopy(this_qb.fit_ge_freq_from_flux_pulse_amp())
-                if len(fit_paras) == 0:
-                    raise ValueError(
-                        f'fit_ge_freq_from_flux_pulse_amp is empty'
-                        f' for {this_qb.name}. Cannot calculate '
-                        f'amplitudes from qubit frequencies.')
-                amplitudes = np.array(fit_mods.Qubit_freq_to_dac(
-                    qubit_freqs, **fit_paras))
-                if np.any((amplitudes > abs(fit_paras['V_per_phi0']) / 2)):
-                    amplitudes -= fit_paras['V_per_phi0']
-                elif np.any((amplitudes < -abs(fit_paras['V_per_phi0']) / 2)):
-                    amplitudes += fit_paras['V_per_phi0']
+                qb = qubits[0]
+                amplitudes = qb.calculate_flux_voltage(
+                    frequency=qubit_freqs,
+                    flux=qb.flux_parking(),
+                    **kw.get('vfc_kwargs', {})
+                )
                 if np.any(np.isnan(amplitudes)):
                     raise ValueError('Specified frequencies resulted in nan '
                                      'amplitude. Check frequency range!')
@@ -214,7 +223,7 @@ class T1FrequencySweep(CalibBuilder):
 
 class ParallelLOSweepExperiment(CalibBuilder):
     def __init__(self, task_list, sweep_points=None, allowed_lo_freqs=None,
-                 adapt_drive_amp=False, **kw):
+                 adapt_drive_amp=False, adapt_ro_freq=False, **kw):
         for task in task_list:
             if not isinstance(task['qb'], str):
                 task['qb'] = task['qb'].name
@@ -225,14 +234,18 @@ class ParallelLOSweepExperiment(CalibBuilder):
         # needed there) makes sure that they are stored in the metadata.
         super().__init__(task_list, sweep_points=sweep_points,
                          allowed_lo_freqs=allowed_lo_freqs,
-                         adapt_drive_amp=adapt_drive_amp, **kw)
+                         adapt_drive_amp=adapt_drive_amp,
+                         adapt_ro_freq=adapt_ro_freq, **kw)
         self.lo_offsets = {}
         self.lo_qubits = {}
         self.qb_offsets = {}
         self.lo_sweep_points = []
         self.allowed_lo_freqs = allowed_lo_freqs
         self.adapt_drive_amp = adapt_drive_amp
+        self.adapt_ro_freq = adapt_ro_freq
         self.drive_amp_adaptation = {}
+        self.ro_freq_adaptation = {}
+        self.ro_flux_amp_adaptation = {}
         self.analysis = {}
 
         self.preprocessed_task_list = self.preprocess_task_list(**kw)
@@ -252,6 +265,7 @@ class ParallelLOSweepExperiment(CalibBuilder):
             "The steps between frequency sweep points must be the same for " \
             "all qubits."
         self.lo_sweep_points = all_freqs[0] - all_freqs[0][0]
+        self.exp_metadata['lo_sweep_points'] = self.lo_sweep_points
 
         temp_vals = []
         if self.qubits is None:
@@ -283,6 +297,8 @@ class ParallelLOSweepExperiment(CalibBuilder):
                                                   - qb.ge_mod_freq()
                     temp_vals.append(
                         (qb.ge_mod_freq, f_start[qb] - self.lo_offsets[lo]))
+            self.exp_metadata['lo_offsets'] = {
+                k.name: v for k, v in self.lo_offsets.items()}
 
         if self.allowed_lo_freqs is not None:
             for task in self.preprocessed_task_list:
@@ -315,6 +331,60 @@ class ParallelLOSweepExperiment(CalibBuilder):
                         {f'e_X180 {qb.name}*.amplitude': [
                             qb.ge_amp180() / (qb.get_ge_amp180_from_ge_freq(
                                 qb.ge_freq()) / max_amp)]})
+            self.exp_metadata['drive_amp_adaptation'] = {
+                qb.name: fnc(self.lo_sweep_points)
+                for qb, fnc in self.drive_amp_adaptation.items()}
+
+        if self.adapt_ro_freq and self.qubits is None:
+            log.warning('No qubit objects provided. Creating the sequence '
+                        'without adapting RO freq.')
+        elif self.adapt_ro_freq:
+            for task in self.task_list:
+                qb = self.get_qubits(task['qb'])[0][0]
+                if qb.get_ro_freq_from_ge_freq(qb.ge_freq()) is None:
+                    continue
+                ro_mwg = qb.instr_ro_lo.get_instr()
+                if ro_mwg in self.ro_freq_adaptation:
+                    raise NotImplementedError(
+                        f'RO adaptation for {qb.name} with LO {ro_mwg.name}: '
+                        f'Parallel RO frequency adaptation for qubits '
+                        f'sharing an LO is not implemented.')
+                self.ro_freq_adaptation[ro_mwg] = (
+                    lambda x, mwg=ro_mwg, o=self.qb_offsets[qb],
+                           f_mod=qb.ro_mod_freq():
+                    qb.get_ro_freq_from_ge_freq(x + o) - f_mod)
+            self.exp_metadata['ro_freq_adaptation'] = {
+                mwg.name: fnc(self.lo_sweep_points)
+                for mwg, fnc in self.ro_freq_adaptation.items()}
+
+        for task in self.task_list:
+            if 'fp_assisted_ro_calib_flux' in task and 'fluxline' in task:
+                if self.qubits is None:
+                    log.warning('No qubit objects provided. Creating the '
+                                'sequence without RO flux amplitude.')
+                    break
+                qb = self.get_qubits(task['qb'])[0][0]
+                if qb.ro_pulse_type() != 'GaussFilteredCosIQPulseWithFlux':
+                    continue
+                sp = self.exp_metadata['meas_obj_sweep_points_map'][qb.name]
+                freq_sp = [s for s in sp if s.endswith(freq_sp_suffix)][0]
+                f = self.sweep_points.get_sweep_params_property(
+                    'values', 1, freq_sp)
+                ro_fp_amp = lambda x, qb=qb, cal_flux=task[
+                    'fp_assisted_ro_calib_flux'] : qb.ro_flux_amplitude() - (
+                        qb.calculate_flux_voltage(x) -
+                        qb.calculate_voltage_from_flux(cal_flux)) \
+                        * qb.flux_amplitude_bias_ratio()
+                amps = ro_fp_amp(f)
+                max_amp = np.max(np.abs(amps))
+                temp_vals.append((qb.ro_flux_amplitude, max_amp))
+                self.ro_flux_amp_adaptation[qb] = (
+                    lambda x, fnc=ro_fp_amp, s=max_amp, o=self.qb_offsets[qb]:
+                    fnc(x + o) / s)
+                if 'ro_flux_amp_adaptation' not in self.exp_metadata:
+                    self.exp_metadata['ro_flux_amp_adaptation'] = {}
+                self.exp_metadata['ro_flux_amp_adaptation'][qb.name] = \
+                    amps / max_amp
 
         with temporary_value(*temp_vals):
             self.update_operation_dict()
@@ -333,13 +403,16 @@ class ParallelLOSweepExperiment(CalibBuilder):
                     mod_freq = self.get_pulse(f"X180 {qb.name}")[
                         'mod_frequency']
                     pulsar = qb.instr_pulsar.get_instr()
-                    param = pulsar.parameters[f'{qb.ge_I_channel()}_mod_freq']
                     # Pulsar assumes that the first channel in a pair is the
                     # I component. If this is not the case, the following
-                    # workaround swaps the sign of the modulation frequency
-                    # to get the correct sideband.
+                    # workaround finds the correct channel to configure
+                    # and swaps the sign of the modulation frequency to get
+                    # the correct sideband.
                     iq_swapped = (int(qb.ge_I_channel()[-1:])
                                   > int(qb.ge_Q_channel()[-1:]))
+                    param = pulsar.parameters[
+                        f'{qb.ge_Q_channel()}_mod_freq' if iq_swapped else
+                        f'{qb.ge_I_channel()}_mod_freq']
                     # The following temporary value ensures that HDAWG
                     # modulation is set back to its previous state after the end
                     # of the modulation frequency sweep.
@@ -369,6 +442,30 @@ class ParallelLOSweepExperiment(CalibBuilder):
                 # amplitude scaling is set back to its previous state after the
                 # end of the sweep.
                 temp_vals.append((param, 1.0))
+        for mwg, adaptation in self.ro_freq_adaptation.items():
+            adapt_name = f'RO freq adaptation freq {mwg.name}'
+            param = mwg.frequency
+            sweep_functions += [swf.Transformed_Sweep(
+                param, transformation=adaptation,
+                name=adapt_name, parameter_name=adapt_name, unit='Hz')]
+            temp_vals.append((param, param()))
+        for qb, adaptation in self.ro_flux_amp_adaptation.items():
+            adapt_name = f'RO flux amp adaptation freq {qb.name}'
+            pulsar = qb.instr_pulsar.get_instr()
+            ch = qb.get(f'ro_flux_channel')
+            for seg in self.sequences[0].segments.values():
+                for p in seg.unresolved_pulses:
+                    if (ch in p.pulse_obj.channels and
+                        p.pulse_obj.pulse_type
+                            != 'GaussFilteredCosIQPulseWithFlux'):
+                        raise NotImplementedError(
+                            'RO flux amp adaptation cannot be used when the '
+                            'sequence contains other flux pulses.')
+            param = pulsar.parameters[f'{ch}_amplitude_scaling']
+            sweep_functions += [swf.Transformed_Sweep(
+                param, transformation=adaptation,
+                name=adapt_name, parameter_name=adapt_name, unit='Hz')]
+            temp_vals.append((param, param()))
         for task in self.task_list:
             if 'fluxline' not in task:
                 continue

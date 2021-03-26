@@ -136,7 +136,8 @@ class UHFQCPulsar:
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
         self.add_parameter('{}_trigger_source'.format(awg.name), 
-                           initial_value='Dig1', vals=vals.Strings(),
+                           initial_value='Dig1',
+                           vals=vals.Enum('Dig1', 'Dig2', 'DIO'),
                            parameter_class=ManualParameter, 
                            docstring='Defines for which trigger source \
                                       the AWG should wait, before playing \
@@ -279,6 +280,7 @@ class UHFQCPulsar:
             return playback_strings, wave_definitions
 
         calc_repeat = ''
+        self._filter_segment_functions[obj.name] = None
         if repeat_pattern is None:
             for element in awg_sequence:
                 playback_strings, wave_definitions = play_element(element,
@@ -311,21 +313,16 @@ class UHFQCPulsar:
                         'requires the same number elements in all segments '
                         'that can be filtered.')
 
-                def filter_count_loop_start(n_tot, allow_filter):
-                    s = []
-                    s.append(f"var n_tot = {n_tot};")
+                def filter_count(first_seg, last_seg, n_tot=repeat_pattern[0],
+                                 allow_filter=allow_filter):
                     for i, cnt in enumerate(allow_filter.values()):
                         if cnt == 0:
                             continue
-                        s.append(
-                            f"if ({i} < first_seg || {i} > last_seg) {{")
-                        s.append(f"n_tot -= {cnt};")
-                        s.append("}")
-                    return s
-
-                calc_repeat = '\n'.join(filter_count_loop_start(
-                    repeat_pattern[0], allow_filter))
-                repeat_pattern = ('n_tot', 1)
+                        if i < first_seg or i > last_seg:
+                            n_tot -= cnt
+                    return n_tot
+                self._filter_segment_functions[obj.name] = filter_count
+                repeat_pattern = ('last_seg', 1)
 
             def repeat_func(n, el_played, index, playback_strings,
                             wave_definitions):
@@ -500,25 +497,18 @@ class HDAWG8Pulsar:
                            initial_value=0, unit='s',
                            parameter_class=ManualParameter)
         self.add_parameter('{}_trigger_source'.format(awg.name), 
-                           initial_value='Dig1', vals=vals.Strings(),
+                           initial_value='Dig1',
+                           vals=vals.Enum('Dig1', 'DIO', 'ZSync'),
                            parameter_class=ManualParameter, 
                            docstring='Defines for which trigger source \
                                       the AWG should wait, before playing \
                                       the next waveform. Allowed values \
-                                      are: "Dig1", "Dig2", "DIO"')
-
-        for awg_nr in range(4):
-            param_name = f'{awg.name}_awgs_{awg_nr}_mod_freq'
-            self.add_parameter(param_name,
-                               unit='Hz',
-                               initial_value=None,
-                               set_cmd=self._hdawg_mod_setter(awg, awg_nr),
-                               get_cmd=self._hdawg_mod_getter(awg, awg_nr),
-                               )
-            # qcodes will not set the initial value if it is None, so we set it
-            # manually here to ensure that internal modulation gets switched off
-            # in the init.
-            self.set(f'{awg.name}_awgs_{awg_nr}_mod_freq', None)
+                                      are: "Dig1", "DIO", "ZSync"')
+        self.add_parameter('{}_prepend_zeros'.format(awg.name),
+                           initial_value=None,
+                           vals=vals.MultiType(vals.Enum(None), vals.Ints(),
+                                               vals.Lists(vals.Ints())),
+                           parameter_class=ManualParameter)
 
         group = []
         for ch_nr in range(8):
@@ -555,7 +545,7 @@ class HDAWG8Pulsar:
             '{}_amplitude_scaling'.format(name),
             set_cmd=self._hdawg_setter(awg, id, 'amplitude_scaling'),
             get_cmd=self._hdawg_getter(awg, id, 'amplitude_scaling'),
-            vals=vals.Numbers(min_value=0.0, max_value=1.0),
+            vals=vals.Numbers(min_value=-1.0, max_value=1.0),
             initial_value=1.0)
         self.add_parameter('{}_distortion'.format(name),
                             label='{} distortion mode'.format(name),
@@ -581,10 +571,20 @@ class HDAWG8Pulsar:
         self.add_parameter('{}_internal_modulation'.format(name), 
                            initial_value=False, vals=vals.Bool(),
                            parameter_class=ManualParameter)
-        cmd = self.parameters[
-            f'{awg.name}_awgs_{int((int(id[2:]) - 1) / 2)}_mod_freq']
-        self.add_parameter('{}_mod_freq'.format(name),
-                           unit='Hz', set_cmd=cmd, get_cmd=cmd)
+        if (int(id[2:]) - 1) % 2  == 0:  # first channel of a pair
+            awg_nr = int((int(id[2:]) - 1) / 2)
+            param_name = '{}_mod_freq'.format(name)
+            self.add_parameter(param_name,
+                               unit='Hz',
+                               initial_value=None,
+                               set_cmd=self._hdawg_mod_setter(awg, awg_nr),
+                               get_cmd=self._hdawg_mod_getter(awg, awg_nr),
+                               )
+            # qcodes will not set the initial value if it is None, so we set
+            # it manually here to ensure that internal modulation gets
+            # switched off in the init.
+            self.set(param_name, None)
+
 
     def _hdawg_create_marker_channel_parameters(self, id, name, awg):
         self.add_parameter('{}_id'.format(name), get_cmd=lambda _=id: _)
@@ -845,11 +845,19 @@ class HDAWG8Pulsar:
                         ch_has_waveforms[ch2mid] |= wave[3] is not None
 
                     if not internal_mod:
+                        if first_element_of_segment:
+                            prepend_zeros = self.parameters[
+                                f'{obj.name}_prepend_zeros']()
+                            if prepend_zeros is None:
+                                prepend_zeros = self.prepend_zeros()
+                            elif isinstance(prepend_zeros, list):
+                                prepend_zeros = prepend_zeros[awg_nr]
+                        else:
+                            prepend_zeros = 0
                         playback_strings += self._zi_playback_string(
                             name=obj.name, device='hdawg', wave=wave,
                             codeword=(nr_cw != 0),
-                            prepend_zeros=\
-                                first_element_of_segment*self.prepend_zeros(),
+                            prepend_zeros=prepend_zeros,
                             placeholder_wave=use_placeholder_waves,
                             allow_filter=metadata.get('allow_filter', False))
                     elif not use_placeholder_waves:
@@ -960,7 +968,7 @@ class HDAWG8Pulsar:
         n = max([len(w) for w in [a1, m1, a2, m2] if w is not None])
         if m1 is not None and a1 is None:
             a1 = np.zeros(n)
-        if m1 is None and a1 is None and m2 is not None:
+        if m1 is None and a1 is None and (m2 is not None or a2 is not None):
             # Hack needed to work around an HDAWG bug where programming only
             # m2 channel does not work. Remove once bug is fixed.
             a1 = np.zeros(n)
@@ -1076,10 +1084,12 @@ class AWG5014Pulsar:
             name = channel_name_map.get(id, awg.name + '_' + id)
             self._awg5014_create_analog_channel_parameters(id, name, awg)
             self.channels.add(name)
+            group.append(name)
             id = 'ch{}m1'.format(ch_nr + 1)
             name = channel_name_map.get(id, awg.name + '_' + id)
             self._awg5014_create_marker_channel_parameters(id, name, awg)
             self.channels.add(name)
+            group.append(name)
             id = 'ch{}m2'.format(ch_nr + 1)
             name = channel_name_map.get(id, awg.name + '_' + id)
             self._awg5014_create_marker_channel_parameters(id, name, awg)
@@ -1462,6 +1472,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         self._zi_waves_cleared = False
         self._hash_to_wavename_table = {}
         self._filter_segments = None
+        self._filter_segment_functions = {}
 
         self.num_seg = 0
 
@@ -1682,6 +1693,15 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             self._stop_awg(awg)
     
     def program_awgs(self, sequence, awgs='all'):
+        try:
+            self._program_awgs(sequence, awgs)
+        except Exception as e:
+            log.warning(f'Pulsar: Exception {repr(e)} while programming AWGs. '
+                        f'Retrying after resetting the sequence cache.')
+            self.reset_sequence_cache()
+            self._program_awgs(sequence, awgs)
+
+    def _program_awgs(self, sequence, awgs='all'):
 
         # Stores the last uploaded sequence for easy access and plotting
         self.last_sequence = sequence
@@ -1711,10 +1731,19 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             # The following makes sure that the sequence cache is empty if
             # the compilation crashes or gets interrupted.
             self.reset_sequence_cache()
+            # Add an empty hash for previously active but now inactive channels
+            # on active AWGs. This is to make sure that the change (switching
+            # them off) is detected correctly below.
+            channel_hashes.update({
+                k: {} for k, v in sequence_cache['hashes'].items()
+                if k not in channel_hashes and len(v)
+                and self.get(f'{k}_awg') in awg_sequences.keys()})
             # first, we check whether programming the whole AWG is mandatory due
             # to changed AWG settings or due to changed metadata
             awgs_to_program = []
-            settings_to_check = ['{}_use_placeholder_waves']
+            settings_to_check = ['{}_use_placeholder_waves',
+                                 '{}_prepend_zeros',
+                                 'prepend_zeros']
             settings = {}
             metadata = {}
             for awg, seq in awg_sequences.items():
@@ -1945,7 +1974,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         else:
             # use placeholder waves
             n = placeholder_wave_length
-            if w1 is None and wave[3] is not None:
+            if w1 is None and w2 is not None:
                 w1 = f'{w2}_but_zero'
             for wc, marker in [(w1, wave[1]), (w2, wave[3])]:
                 if wc is not None and wc not in defined_waves[0]:
@@ -1977,15 +2006,9 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             playback_string.append(
                 'waitDigTrigger(1{});'.format(', 1' if device == 'uhf' else ''))
         elif trig_source == 'Dig2':
-            if device == 'hdawg':
-                raise ValueError(
-                    'ZI HDAWG does not support having Dig2 as trigger source.')
             playback_string.append('waitDigTrigger(2,1);')
-        elif trig_source == 'DIO':
-            playback_string.append('waitDIOTrigger();')
         else:
-            raise ValueError(
-                'Trigger source for {} has to be "Dig1", "Dig2" or "DIO"!')
+            playback_string.append(f'wait{trig_source}Trigger();')
 
         if codeword and not (w1 is None and w2 is None):
             playback_string.append('playWaveDIO();')
@@ -1994,7 +2017,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(f'playWave(marker(1,0)*0*{w2}, {w2});')
-            elif w1 is None and wave[3] is not None and use_hack and placeholder_wave:
+            elif w1 is None and w2 is not None and use_hack and placeholder_wave:
                 # This hack is needed due to a bug on the HDAWG.
                 # Remove this if case once the bug is fixed.
                 playback_string.append(f'playWave({w2}_but_zero, {w2});')
@@ -2032,14 +2055,10 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             playback_string.append(
                 'waitDigTrigger(1{});'.format(', 1' if device == 'uhf' else ''))
         elif trig_source == 'Dig2':
-            if device == 'hdawg':
-                raise ValueError('ZI HDAWG does not support having Dig2 as trigger source.')
             playback_string.append('waitDigTrigger(2,1);')
-        elif trig_source == 'DIO':
-            playback_string.append('waitDIOTrigger();')
         else:
-            raise ValueError(f'Trigger source for {name} has to be "Dig1", "Dig2" or "DIO"!')
-        
+            playback_string.append(f'wait{trig_source}Trigger();')
+
         if codeword:
             # playback_string.append('playWaveDIO();')
             raise NotImplementedError('Modulation in combination with codeword'
@@ -2084,7 +2103,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             # This hack is needed due to a bug on the HDAWG. 
             # Remove this if case once the bug is fixed.
             return [f'setWaveDIO({codeword}, zeros(1) + marker(1, 0), {w2});']
-        elif w1 is None and wave[3] is not None and use_hack and placeholder_wave:
+        elif w1 is None and w2 is not None and use_hack and placeholder_wave:
             return [f'setWaveDIO({codeword}, {w2}_but_zero, {w2});']
         elif not (w1 is None and w2 is None):
             return ['setWaveDIO({}, {});'.format(codeword, 
@@ -2156,9 +2175,15 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
             awgs = self.awgs
         for AWG_name in awgs:
             AWG = self.AWG_obj(awg=AWG_name)
-            for regs in self._get_segment_filter_userregs(AWG):
-                AWG.set(regs[0], val[0])
-                AWG.set(regs[1], val[1])
+            fnc = self._filter_segment_functions.get(AWG_name, None)
+            if fnc is None:
+                for regs in self._get_segment_filter_userregs(AWG):
+                    AWG.set(regs[0], val[0])
+                    AWG.set(regs[1], val[1])
+            else:
+                # used in case of a repeat pattern
+                for regs in self._get_segment_filter_userregs(AWG):
+                    AWG.set(regs[1], fnc(val[0], val[1]))
 
     def _get_filter_segments(self):
         return self._filter_segments
@@ -2275,8 +2300,11 @@ def _zi_wave_dir():
             log.warning('Could not extract my documents folder')
     else:
         _basedir = os.path.expanduser('~')
-    return os.path.join(_basedir, 'Zurich Instruments', 'LabOne', 
+    wave_dir = os.path.join(_basedir, 'Zurich Instruments', 'LabOne',
         'WebServer', 'awg', 'waves')
+    if not os.path.exists(wave_dir):
+        os.makedirs(wave_dir)
+    return wave_dir
 
 
 def _zi_clear_waves():

@@ -22,11 +22,12 @@ def convert_attribute(attr_val):
         file
     :return: the converted attribute value
     """
-    if type(attr_val) == bytes:
+    if isinstance(attr_val, bytes):
         attr_val = attr_val.decode('utf-8')
     # If it is an array of value decodes individual entries
-    if type(attr_val) == np.ndarray:
-        attr_val = [av.decode('utf-8') for av in attr_val]
+    if isinstance(attr_val, np.ndarray) or isinstance(attr_val, list):
+        attr_val = [av.decode('utf-8') if isinstance(av, bytes)
+                    else av for av in attr_val]
     try:
         return eval(attr_val)
     except Exception:

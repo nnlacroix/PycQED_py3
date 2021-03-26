@@ -1941,6 +1941,7 @@ def measure_drive_cancellation(
         if prep_params is None:
             prep_params = dev.get_prep_params(ramsey_qubits)
 
+        sweep_points = deepcopy(sweep_points)
         sweep_points.add_sweep_dimension()
         sweep_points.add_sweep_parameter('phase', phases, 'deg', 'Ramsey phase')
 

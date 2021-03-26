@@ -1609,8 +1609,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     'fig_id': fig_name,
                     'plotfn': self.plot_line,
                     'plotsize': plotsize,
-                    'xvals': self.proc_data_dict['sweep_points_dict'][qb_name][
-                        'cal_points_sweep_points'][cal_pts_idxs],
+                    'xvals': sweep_points[cal_pts_idxs],
                     'yvals': data[cal_pts_idxs],
                     'setlabel': list(self.cal_states_dict)[i],
                     'do_legend': do_legend_cal_states,
@@ -1625,10 +1624,8 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     'plotsize': plotsize,
                     'plotfn': self.plot_hlines,
                     'y': np.mean(data[cal_pts_idxs]),
-                    'xmin': self.proc_data_dict['sweep_points_dict'][qb_name][
-                        'sweep_points'][0],
-                    'xmax': self.proc_data_dict['sweep_points_dict'][qb_name][
-                        'sweep_points'][-1],
+                    'xmin': sweep_points[0],
+                    'xmax': sweep_points[-1],
                     'colors': 'gray'}
 
         else:
@@ -1703,6 +1700,28 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 for plot_name in plot_names_cal:
                     plot_dict_cal = self.plot_dicts.pop(plot_name)
                     self.plot_dicts[plot_name] = plot_dict_cal
+
+    def get_first_sweep_param(self, qbn=None, dimension=0):
+        """
+        Get properties of the first sweep param in the given dimension
+        (potentially for the given qubit).
+        :param qbn: (str) qubit name. If None, all sweep params are considered.
+        :param dimension: (float, default: 0) sweep dimension to be considered.
+        :return: a 3-tuple of label, unit, and array of values
+        """
+        if qbn is None:
+            param_name = [p for v in self.mospm.values() for p in v
+                          if self.sp.find_parameter(p) == 1][0]
+        else:
+            param_name = [p for p in self.mospm[qbn]
+                          if self.sp.find_parameter(p)][0]
+        label = self.sp.get_sweep_params_property(
+            'label', dimension=dimension, param_names=param_name)
+        unit = self.sp.get_sweep_params_property(
+            'unit', dimension=dimension, param_names=param_name)
+        vals = self.sp.get_sweep_params_property(
+            'values', dimension=dimension, param_names=param_name)
+        return label, unit, vals
 
 
 class Idling_Error_Rate_Analyisis(ba.BaseDataAnalysis):
@@ -5122,11 +5141,13 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
 
     def prepare_fitting(self):
         self.fit_dicts = OrderedDict()
-        def add_fit_dict(qbn, data, key):
-            sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
-                'msmt_sweep_points']
+        def add_fit_dict(qbn, data, key, scalex=1):
             if self.num_cal_points != 0:
                 data = data[:-self.num_cal_points]
+            reduction_arr = np.invert(np.isnan(data))
+            data = data[reduction_arr]
+            sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
+                'msmt_sweep_points'][reduction_arr] * scalex
             cos_mod = lmfit.Model(fit_mods.CosFunc)
             guess_pars = fit_mods.Cos_guess(
                 model=cos_mod, t=sweep_points, data=data)
@@ -5146,9 +5167,12 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
         for qbn in self.qb_names:
             all_data = self.proc_data_dict['data_to_fit'][qbn]
             if self.get_param_value('TwoD'):
+                daa = self.metadata.get('drive_amp_adaptation', {}).get(
+                    qbn, None)
                 for i, data in enumerate(all_data):
                     key = f'cos_fit_{qbn}_{i}'
-                    add_fit_dict(qbn, data, key)
+                    add_fit_dict(qbn, data, key,
+                                 scalex=1 if daa is None else daa[i])
             else:
                 add_fit_dict(qbn, all_data, 'cos_fit_' + qbn)
 
@@ -5287,15 +5311,30 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
 
                 k = k.replace('cos_fit_', '')
                 qbn, i = (k + '_').split('_')[:2]
+                sweep_points = self.proc_data_dict['sweep_points_dict'][qbn][
+                        'sweep_points']
+                if len(i):
+                    label, unit, vals = self.get_first_sweep_param(
+                        qbn, dimension=1)
+                    title_suffix = (f'{i}: {label} = ' + ' '.join(
+                        SI_val_to_msg_str(vals[int(i)], unit,
+                                          return_type=lambda x : f'{x:0.4f}')))
+                    daa = self.metadata.get('drive_amp_adaptation', {}).get(
+                        qbn, None)
+                    if daa is not None:
+                        sweep_points = sweep_points * daa[int(i)]
+                else:
+                    title_suffix = ''
                 fit_res = fit_dict['fit_res']
                 base_plot_name = 'Rabi_' + k
                 dtf = self.proc_data_dict['data_to_fit'][qbn]
                 self.prepare_projected_data_plot(
                     fig_name=base_plot_name,
                     data=dtf[int(i)] if i != '' else dtf,
+                    sweep_points=sweep_points,
                     plot_name_suffix=qbn+'fit',
                     qb_name=qbn, TwoD=False,
-                    title_suffix=i
+                    title_suffix=title_suffix
                 )
 
                 self.plot_dicts['fit_' + k] = {
@@ -5333,10 +5372,8 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
                     'y': [fit_res.model.func(
                         rabi_amplitudes[k]['piPulse'],
                         **fit_res.best_values)],
-                    'xmin': self.proc_data_dict['sweep_points_dict'][qbn][
-                        'sweep_points'][0],
-                    'xmax': self.proc_data_dict['sweep_points_dict'][qbn][
-                        'sweep_points'][-1],
+                    'xmin': sweep_points[0],
+                    'xmax': sweep_points[-1],
                     'colors': 'gray'}
 
                 self.plot_dicts['pihalfamp_marker_' + k] = {
@@ -5362,10 +5399,8 @@ class RabiAnalysis(MultiQubit_TimeDomain_Analysis):
                     'y': [fit_res.model.func(
                         rabi_amplitudes[k]['piHalfPulse'],
                         **fit_res.best_values)],
-                    'xmin': self.proc_data_dict['sweep_points_dict'][qbn][
-                        'sweep_points'][0],
-                    'xmax': self.proc_data_dict['sweep_points_dict'][qbn][
-                        'sweep_points'][-1],
+                    'xmin': sweep_points[0],
+                    'xmax': sweep_points[-1],
                     'colors': 'gray'}
 
                 trans_name = self.get_transition_name(qbn)
@@ -5412,6 +5447,15 @@ class RabiFrequencySweepAnalysis(RabiAnalysis):
                 f'Instrument settings.{qbn}.ge_freq'
         kwargs['params_dict'] = params_dict
         super().__init__(qb_names, *args, **kwargs)
+
+    def extract_data(self):
+        super().extract_data()
+        # Set some default values specific to RabiFrequencySweepAnalysis if the
+        # respective options have not been set by the user or in the metadata.
+        # (We do not do this in the init since we have to wait until
+        # metadata has been extracted.)
+        if self.get_param_value('TwoD', default_value=None) is None:
+            self.options_dict['TwoD'] = True
 
     def analyze_fit_results(self):
         super().analyze_fit_results()
@@ -5523,7 +5567,7 @@ class RabiFrequencySweepAnalysis(RabiAnalysis):
                     'yvals': fit_dict['fit_yvals']['data'],
                     'ylabel': '$\\pi$-pulse amplitude, $A$',
                     'yunit': 'V',
-                    'setlabel': f'LSB, LO at {np.max(lo_freqsX)/1e9:.3f} GHz',
+                    'setlabel': f'USB, LO at {np.min(lo_freqsX)/1e9:.3f} GHz',
                     'title': title,
                     'linestyle': 'none',
                     'do_legend': False,
@@ -5537,14 +5581,14 @@ class RabiFrequencySweepAnalysis(RabiAnalysis):
                     'fig_id': base_plot_name,
                     'plotfn': self.plot_fit,
                     'fit_res': fit_res,
-                    'setlabel': 'LSB quadratic fit',
+                    'setlabel': 'USB quadratic fit',
                     'color': 'C0',
                     'do_legend': True,
                     # 'legend_ncol': 2,
                     'legend_bbox_to_anchor': (1, -0.15),
                     'legend_pos': 'upper right'}
 
-                # plot upper sideband
+                # plot lower sideband
                 fit_dict = self.fit_dicts[f'amplitude_fit_right_{qbn}']
                 fit_res = fit_dict['fit_res']
                 xmax = max(fit_dict['fit_xvals']['x'])
@@ -5557,7 +5601,7 @@ class RabiFrequencySweepAnalysis(RabiAnalysis):
                     'yvals': fit_dict['fit_yvals']['data'],
                     'ylabel': '$\\pi$-pulse amplitude, $A$',
                     'yunit': 'V',
-                    'setlabel': f'USB, LO at {np.min(lo_freqsX)/1e9:.3f} GHz',
+                    'setlabel': f'LSB, LO at {np.max(lo_freqsX)/1e9:.3f} GHz',
                     'title': title,
                     'linestyle': 'none',
                     'do_legend': False,
@@ -5571,7 +5615,7 @@ class RabiFrequencySweepAnalysis(RabiAnalysis):
                     'fig_id': base_plot_name,
                     'plotfn': self.plot_fit,
                     'fit_res': fit_res,
-                    'setlabel': 'USB quadratic fit',
+                    'setlabel': 'LSB quadratic fit',
                     'color': 'C1',
                     'do_legend': True,
                     'legend_ncol': 2,
@@ -7208,7 +7252,8 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                     delta_tau = task[0].get('estimation_window', None)
         self.delta_tau = delta_tau
 
-        super().analyze_fit_results()
+        if self.get_param_value('analyze_fit_results_super', True):
+            super().analyze_fit_results()
         self.proc_data_dict['tvals'] = OrderedDict()
 
         for qbn in self.qb_names:
@@ -7365,6 +7410,8 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
                               f'fit_ge_freq_from_flux_pulse_amp',
             'flux_channel': f'Instrument settings.{qbn}.'
                             f'flux_pulse_channel',
+            'instr_pulsar': f'Instrument settings.{qbn}.'
+                            f'instr_pulsar',
             **op_dict
         }
 
@@ -7377,7 +7424,8 @@ class CryoscopeAnalysis(DynamicPhaseAnalysis):
         pulse.algorithm_time(0)
 
         if tvals_gen is None:
-            tvals_gen = np.arange(0, pulse.length, 1 / 2.4e9)
+            clk = self.clock(channel=dd['channel'], pulsar=dd['instr_pulsar'])
+            tvals_gen = np.arange(0, pulse.length, 1 / clk)
         volts_gen = pulse.chan_wf(dd['flux_channel'], tvals_gen)
         volt_freq_conv = dd['volt_freq_conv']
 
