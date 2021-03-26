@@ -960,9 +960,6 @@ def prepare_rb_plots(data_dict, keys_in, sweep_type, **params):
                     'yvals': T1_limited_curve,
                     'setlabel': 'coh-lim',
                     'do_legend': True,
-                    # 'legend_ncol': 4,
-                    'legend_bbox_to_anchor': (1, -0.15),
-                    'legend_pos': 'upper right',
                     'linestyle': '--',
                     'line_kws': {'linewidth': lw-0.5},
                     'zorder': 0,
@@ -990,9 +987,11 @@ def prepare_rb_plots(data_dict, keys_in, sweep_type, **params):
                 'text_string': textstr}
 
         plot_dicts[list(plot_dicts)[-2]].update({
+            'legend_bbox_to_anchor': (1.025, -0.15),
+            'legend_pos': 'upper right',
             'legend_labelspacing': llsp-0.25,
             'legend_columnspacing': lcsp-1,
-            'legend_ncol': 2,
+            'legend_ncol': 1 if 'pf' in keyi else 2,
             'yrange': hlp_mod.get_param('yrange', data_dict, **params)
         })
     hlp_mod.add_param('plot_dicts', plot_dicts, data_dict,
@@ -1309,14 +1308,11 @@ def get_rb_textbox_properties(data_dict, fit_res, epc_T1=None,
         if len(textstr) == 0:
             raise NotImplementedError(f'The textstring style {textstr_style} '
                                       f'has not been implemented yet.')
-    ha = params.pop('ha', 'right')
-    hp = 0.975
-    if ha == 'left':
-        hp = 0.025
-    va = params.pop('va', 'top')
-    vp = 0.95
-    if va == 'bottom':
-        vp = 0.035
+
+    va = 'top'
+    vp = -0.15
+    ha = 'left'
+    hp = -0.12
 
     return textstr, ha, hp, va, vp
 
