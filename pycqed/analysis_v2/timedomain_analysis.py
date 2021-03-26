@@ -419,7 +419,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                 states_map=self.get_param_value("states_map"))
             # ensure rotation is removed when single shots yield probabilities
             if self.get_param_value("classified_ro", False) or predict_proba:
-                rotate = False
+                self.rotate = False
         try:
             self.cp = CalibrationPoints.from_string(cal_points)
             # for now assuming the same for all qubits.
