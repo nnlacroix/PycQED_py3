@@ -1435,7 +1435,11 @@ def predict_gm_proba_from_clf(X, clf_params):
     gm = GM(covariance_type=clf_params.pop('covariance_type'))
     for param_name, param_value in clf_params.items():
         setattr(gm, param_name, param_value)
-    probas = gm.predict_proba(X)
+
+    X_to_use = deepcopy(X)
+    if X.ndim == 1:
+        X_to_use = X.reshape(1, -1) if len(X) == 1 else X.reshape(-1, 1)
+    probas = gm.predict_proba(X_to_use)
     return probas
 
 
@@ -1775,7 +1779,7 @@ def copy_data(timestamp, source_dir=None, target_dir=None,
         return
     if target_dir is None:
         target_dir = datadir
-    f_src = data_from_time(timestamp, folder=source_dir)
+    f_src = data_from_time(timestamp, folder=source_dir, auto_fetch=False)
     daystamp, tstamp = verify_timestamp(timestamp)
     daydir = os.path.join(target_dir, daystamp)
     if not os.path.isdir(daydir):

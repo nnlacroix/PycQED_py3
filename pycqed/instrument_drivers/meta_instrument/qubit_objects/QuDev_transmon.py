@@ -442,8 +442,8 @@ class QuDev_transmon(Qubit):
             channels=channels, nr_shots=self.acq_averages(),
             integration_length=self.acq_length(),
             get_values_function_kwargs={
-                'classifier_params': self.acq_classifier_params(),
-                'state_prob_mtx': self.acq_state_prob_mtx()
+                'classifier_params': [self.acq_classifier_params()],
+                'state_prob_mtx': [self.acq_state_prob_mtx()]
             })
 
         self.int_avg_det = det.UHFQC_integrated_average_detector(
@@ -2666,6 +2666,7 @@ class QuDev_transmon(Qubit):
                 if for_ef:
                     try:
                         self.ef_freq(new_qubit_freq)
+                        self.anharmonicity(self.ef_freq() - self.ge_freq())
                     except AttributeError as e:
                         log.warning('%s. This parameter will not be '
                                         'updated.'%e)
