@@ -289,6 +289,8 @@ class BaseDataAnalysis(object):
         Returns:
 
         """
+        if a_tools.ignore_delegate_plotting:
+            return False
         if self.get_param_value("delegate_plotting", False):
             if len(self.timestamps) == 1:
                 f = self.raw_data_dict['folder']
@@ -313,11 +315,11 @@ class BaseDataAnalysis(object):
         '''
         s = group.attrs[param_name]
         # converts byte type to string because of h5py datasaving
-        if type(s) == bytes:
+        if isinstance(s, bytes):
             s = s.decode('utf-8')
         # If it is an array of value decodes individual entries
-        if type(s) == np.ndarray:
-            s = [s.decode('utf-8') for s in s]
+        if isinstance(s, np.ndarray) or isinstance(s, list):
+            s = [s.decode('utf-8') if isinstance(s, bytes) else s for s in s]
         try:
             return eval(s)
         except Exception:
@@ -394,6 +396,11 @@ class BaseDataAnalysis(object):
                                 raw_data_dict_ts[save_par] = \
                                     self.get_hdf_datafile_param_value(
                                         data_file[group_name], par_name)
+                            elif par_name in list(data_file[group_name].keys()) or\
+                                    (par_name == "Timers" and group_name == "Timers"):
+                                raw_data_dict_ts[save_par] = \
+                                    read_dict_from_hdf5({}, data_file[
+                                        group_name])
                     else:
                         group_name = '/'.join(file_par.split('.')[:-1])
                         par_name = file_par.split('.')[-1]
@@ -411,7 +418,7 @@ class BaseDataAnalysis(object):
                         raw_data_dict_ts[save_par] = \
                             raw_data_dict_ts[save_par][0]
                 for par_name in raw_data_dict_ts:
-                    if par_name in self.numeric_params:
+                    if par_name in numeric_params:
                         raw_data_dict_ts[par_name] = \
                             np.double(raw_data_dict_ts[par_name])
             except Exception as e:
@@ -425,7 +432,8 @@ class BaseDataAnalysis(object):
 
     @staticmethod
     def add_measured_data(raw_data_dict, compression_factor=1,
-                          sweep_points=None, cal_points=None, prep_params=None):
+                          sweep_points=None, cal_points=None,
+                          prep_params=None, soft_sweep_mask=None):
         """
         Formats measured data based on the raw data dictionary and the
         soft and hard sweep points.
@@ -455,6 +463,7 @@ class BaseDataAnalysis(object):
         Returns: raw_data_dict with the key measured_data updated.
 
         """
+        n_shots = 1
         if 'measured_data' in raw_data_dict and \
                 'value_names' in raw_data_dict:
             measured_data = raw_data_dict.pop('measured_data')
@@ -477,7 +486,8 @@ class BaseDataAnalysis(object):
                 ssp, counts = np.unique(mc_points[1:], return_counts=True)
                 if counts[0] != len(hsp):
                     # ssro data
-                    hsp = np.tile(hsp, counts[0] // len(hsp))
+                    n_shots = counts[0] // len(hsp)
+                    hsp = np.tile(hsp, n_shots)
                 # if needed, decompress the data (assumes hsp and ssp are indices)
                 if compression_factor != 1:
                     hsp = hsp[:int(len(hsp) / compression_factor)]
@@ -532,11 +542,32 @@ class BaseDataAnalysis(object):
                                                      (num_cal_segments, ssl))
                             measured_data = np.concatenate([measured_data,
                                                             cal_pts_arr])
+                    elif compression_factor != 1 and n_shots != 1:
+                        tmp_data = np.zeros_like(data[i])
+                        meas_hsl = hsl * compression_factor
+                        for i_seq in range(ssl // compression_factor):
+                            data_seq = data[i][
+                                i_seq * meas_hsl:(i_seq+1) * meas_hsl]
+                            data_seq = np.reshape(
+                                [list(np.reshape(
+                                    data_seq, [n_shots * compression_factor,
+                                               hsl // n_shots]))[
+                                 i::compression_factor]
+                                 for i in range(compression_factor)],
+                                [meas_hsl])
+                            tmp_data[i_seq * meas_hsl
+                                    :(i_seq + 1) * meas_hsl] = data_seq
+                        measured_data = np.reshape(tmp_data, (ssl, hsl)).T
                     else:
                         measured_data = np.reshape(data[i], (ssl, hsl)).T
+                    if soft_sweep_mask is not None:
+                        measured_data = measured_data[:, soft_sweep_mask]
                 else:
                     measured_data = data[i]
                 raw_data_dict['measured_data'][ro_ch] = measured_data
+        if soft_sweep_mask is not None:
+            raw_data_dict['soft_sweep_points'] = raw_data_dict[
+                'soft_sweep_points'][soft_sweep_mask]
         return raw_data_dict
 
     def extract_data(self):
@@ -586,7 +617,9 @@ class BaseDataAnalysis(object):
                 self.get_param_value('compression_factor', 1),
                 SweepPoints(self.get_param_value('sweep_points')),
                 cp, self.get_param_value('preparation_params',
-                                         default_value=dict()))
+                                         default_value=dict()),
+                soft_sweep_mask=self.get_param_value(
+                    'soft_sweep_mask', None))
         else:
             temp_dict_list = []
             self.metadata = [rd['exp_metadata'] for
@@ -598,7 +631,10 @@ class BaseDataAnalysis(object):
                 temp_dict_list.append(
                     self.add_measured_data(
                         rd_dict,
-                        self.get_param_value('compression_factor', 1, i)))
+                        self.get_param_value('compression_factor', 1, i),
+                        soft_sweep_mask=self.get_param_value(
+                            'soft_sweep_mask', None)
+                    ),)
             self.raw_data_dict = tuple(temp_dict_list)
 
     def process_data(self):
@@ -971,7 +1007,8 @@ class BaseDataAnalysis(object):
         for key in key_list:
             # go over all the plot_dicts
             pdict = self.plot_dicts[key]
-            pdict['no_label'] = no_label
+            if 'no_label' not in pdict:
+                pdict['no_label'] = no_label
             # Use the key of the plot_dict if no ax_id is specified
             pdict['fig_id'] = pdict.get('fig_id', key)
             pdict['ax_id'] = pdict.get('ax_id', None)
@@ -1557,8 +1594,11 @@ class BaseDataAnalysis(object):
         plot_ytick_loc = pdict.get('ytick_loc', None)
         plot_transpose = pdict.get('transpose', False)
         plot_nolabel = pdict.get('no_label', False)
+        plot_nolabel_units = pdict.get('no_label_units', False)
         plot_normalize = pdict.get('normalize', False)
         plot_logzscale = pdict.get('logzscale', False)
+        plot_logxscale = pdict.get('logxscale', False)
+        plot_logyscale = pdict.get('logyscale', False)
         plot_origin = pdict.get('origin', 'lower')
 
         if plot_logzscale:
@@ -1616,6 +1656,11 @@ class BaseDataAnalysis(object):
                             transpose=plot_transpose,
                             normalize=plot_normalize)
 
+        if plot_logxscale:
+            axs.set_xscale('log')
+        if plot_logyscale:
+            axs.set_yscale('log')
+
         if plot_xrange is None:
             if plot_xwidth is not None:
                 xmin, xmax = min([min(xvals) - plot_xwidth[tt] / 2
@@ -1671,10 +1716,17 @@ class BaseDataAnalysis(object):
 
         if not plot_nolabel:
             self.label_color2D(pdict, axs)
+        if plot_nolabel_units:
+            axs.set_xlabel(pdict['xlabel'])
+            axs.set_ylabel(pdict['ylabel'])
 
         axs.cmap = out['cmap']
         if plot_cbar:
-            self.plot_colorbar(axs=axs, pdict=pdict)
+            no_label = plot_nolabel
+            if plot_nolabel and plot_nolabel_units:
+                no_label = False
+            self.plot_colorbar(axs=axs, pdict=pdict,
+                               no_label=no_label)
 
     def label_color2D(self, pdict, axs):
         plot_transpose = pdict.get('transpose', False)
@@ -1698,7 +1750,7 @@ class BaseDataAnalysis(object):
             # axs.set_title(plot_title)
 
     def plot_colorbar(self, cax=None, key=None, pdict=None, axs=None,
-                      orientation='vertical'):
+                      orientation='vertical', no_label=None):
         if key is not None:
             pdict = self.plot_dicts[key]
             axs = self.axs[key]
@@ -1708,6 +1760,9 @@ class BaseDataAnalysis(object):
                     'pdict and axs must be specified'
                     ' when no key is specified.')
         plot_nolabel = pdict.get('no_label', False)
+        if no_label is not None:
+            plot_nolabel = no_label
+
         plot_clabel = pdict.get('clabel', None)
         plot_cbarwidth = pdict.get('cbarwidth', '10%')
         plot_cbarpad = pdict.get('cbarpad', '5%')
@@ -1944,6 +1999,40 @@ class BaseDataAnalysis(object):
                     except:
                         pass
             axs.axvline(x=x, **d)
+
+    def clock(self, awg=None, channel=None, pulsar=None):
+        """
+        Returns the clock frequency of an AWG from the instrument settings,
+        or tries to determine it based on the instrument type if it is not
+        stored in the settings.
+        :param awg: (str) AWG name (can be None if channel and pulsar are
+            provided instead)
+        :param channel: (str) channel name (is ignored if awg is given)
+        :param pulsar: (str) name of the pulsar object (only needed if
+            channel is given instead of awg)
+        :return: clock frequency
+        """
+        if awg is None:
+            assert pulsar is not None and channel is not None, \
+                'If awg is not provided, channel and pulsar must be provided.'
+            pulsar_dd = self.get_data_from_timestamp_list({
+                'awg': f'Instrument settings.{pulsar}.{channel}_awg'})
+            awg = pulsar_dd['awg']
+
+        awg_dd = self.get_data_from_timestamp_list({
+            'clock_freq': f'Instrument settings.{awg}.clock_freq',
+            'IDN': f'Instrument settings.{awg}.IDN'})
+        if awg_dd['clock_freq']:
+            return awg_dd['clock_freq']
+        model = awg_dd['IDN'].get('model', None)
+        if model == 'HDAWG8':
+            return 2.4e9
+        elif model == 'UHFQA':
+            return 1.8e9
+        elif model == 'AWG5014C':
+            return 1.2e9
+        else:
+            raise NotImplementedError(f"Unknown AWG type: {model}.")
 
 
 def plot_scatter_errorbar(self, ax_id, xdata, ydata, xerr=None, yerr=None, pdict=None):

@@ -190,8 +190,11 @@ def Qubit_dac_to_freq_res(dac_voltage, Ej_max, E_c, asymmetry, coupling, fr,
     V_per_phi0 (V): volt per phi0 (convert voltage to flux)
     phi_park
     '''
+    return_float = False
     if np.ndim(dac_voltage) == 0:
         dac_voltage = np.array([dac_voltage])
+        return_float = True
+
     if V_per_phi0 is None and dac_flux_coefficient is None:
         raise ValueError('Please specify "V_per_phi0".')
     if dac_flux_coefficient is not None:
@@ -205,16 +208,16 @@ def Qubit_dac_to_freq_res(dac_voltage, Ej_max, E_c, asymmetry, coupling, fr,
     phi = np.pi / V_per_phi0 * (dac_voltage - dac_sweet_spot)
     Ej =  Ej_max * np.cos(phi) * np.sqrt(1 + asymmetry ** 2 * np.tan(phi) ** 2)
     with Timer('fitmod.loop', verbose=False):
-            freqs = [(transmon.transmon_resonator_levels(E_c,
-                                                         ej,
-                                                         fr,
-                                                         coupling,
-                                                         states=[(1, 0), (2, 0)],
-                                                         dim_charge=dim_charge
-                                                             ))[0]
-                     for ej in Ej]
+        freqs = [(transmon.transmon_resonator_levels(E_c,
+                                                     ej,
+                                                     fr,
+                                                     coupling,
+                                                     states=[(1, 0), (2, 0)],
+                                                     dim_charge=dim_charge
+                                                         ))[0]
+                 for ej in Ej]
     qubit_freq = np.array(freqs)
-    return qubit_freq
+    return qubit_freq[0] if return_float else qubit_freq
 
 def Qubit_freq_to_dac_res(frequency, Ej_max, E_c, asymmetry, coupling, fr,
                               dac_sweet_spot=0.0, V_per_phi0=None,
@@ -1474,7 +1477,16 @@ def sum_int(x,y):
     return np.cumsum(y[:-1]*(x[1:]-x[:-1]))
 
 
-def Gaussian(freq,sigma,mu,ampl,offset):
+def DoubleGaussian(freq, sigma, mu, ampl, sigma0, mu0, ampl0, offset):
+    '''
+    Double Gaussian function
+    '''
+    return ampl/(sigma*np.sqrt(2*np.pi))*np.exp(-0.5*((freq - mu)/sigma)**2) + \
+           ampl0/(sigma0*np.sqrt(2*np.pi))*np.exp(-0.5*((freq - mu0)/sigma0)**2) + \
+           offset
+
+
+def Gaussian(freq, sigma, mu, ampl, offset):
     '''
     Gaussian function
     '''

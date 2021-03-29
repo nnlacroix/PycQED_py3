@@ -326,7 +326,7 @@ class MockDAQServer():
             self.nodes[f'/{self.device}/raw/error/blinkforever'] = {'type': 'Integer', 'value': 0}
             self.nodes[f'/{self.device}/dios/0/extclk'] = {'type': 'Integer', 'value': 0}
             for awg_nr in range(4):
-                for i in range(32):
+                for i in range(2048):
                     self.nodes[f'/{self.device}/awgs/{awg_nr}/waveform/waves/{i}'] = {
                         'type': 'ZIVectorData', 'value': np.array([])}
                     self.nodes[f'/{self.device}/awgs/{awg_nr}/waveform/waves/{i}'] = {
@@ -343,9 +343,13 @@ class MockDAQServer():
             self.nodes[f'/{self.device}/dios/0/drive'] = {'type': 'Integer', 'value': 0}
             for dio_nr in range(32):
                 self.nodes[f'/{self.device}/raw/dios/0/delays/{dio_nr}/value'] = {'type': 'Integer', 'value': 0}
+            self.nodes[f'/{self.device}/raw/error/clear'] = {
+                'type': 'Integer', 'value': 0}
         elif self.devtype == 'PQSC':
             self.nodes[f'/{self.device}/raw/error/json/errors'] = {
                 'type': 'String', 'value': '{"sequence_nr" : 0, "new_errors" : 0, "first_timestamp" : 0, "timestamp" : 0, "timestamp_utc" : "2019-08-07 17 : 33 : 55", "messages" : []}'}
+            self.nodes[f'/{self.device}/raw/error/clear'] = {
+                'type': 'Integer', 'value': 0}
 
     def listNodesJSON(self, path):
         pass
@@ -825,7 +829,7 @@ class ZI_base_instrument(Instrument):
                         docstring=docst)
                     self._params_to_skip_update.append(wf_name)
                     # Make sure the waveform data is up-to-date
-                    self._gen_read_waveform(ch, cw)(loglevel_info=True)
+                    self._gen_read_waveform(ch, cw)()
                 elif cw >= num_codewords:
                     # Delete parameter as it's no longer needed
                     if wf_name in self.parameters:
@@ -1058,7 +1062,7 @@ class ZI_base_instrument(Instrument):
         np.savetxt(filename, waveform, delimiter=",")
 
     def _gen_read_waveform(self, ch, cw):
-        def read_func(loglevel_info=False):
+        def read_func():
             # AWG
             awg_nr = ch//2
 
@@ -1075,7 +1079,7 @@ class ZI_base_instrument(Instrument):
                 log.debug(f"{self.devname}: Flagging awg as requiring recompilation.")
                 self._awg_needs_configuration[awg_nr] = True
                 # It isn't, so try to read the data from CSV
-                waveform = self._read_csv_waveform(ch, cw, wf_name, loglevel_info)
+                waveform = self._read_csv_waveform(ch, cw, wf_name)
                 # Check whether  we got something
                 if waveform is None:
                     log.debug(f"{self.devname}: Waveform CSV does not exist, initializing to zeros.")
@@ -1094,7 +1098,7 @@ class ZI_base_instrument(Instrument):
 
         return read_func
 
-    def _read_csv_waveform(self, ch: int, cw: int, wf_name: str, loglevel_info=False):
+    def _read_csv_waveform(self, ch: int, cw: int, wf_name: str):
         filename = os.path.join(
             self._get_awg_directory(), 'waves',
             self.devname + '_' + wf_name + '.csv')
@@ -1103,10 +1107,7 @@ class ZI_base_instrument(Instrument):
             return np.genfromtxt(filename, delimiter=',')
         except OSError as e:
             # if the waveform does not exist yet dont raise exception
-            if loglevel_info:
-                log.info(e)
-            else:
-                log.warning(e)
+            log.warning(e)
             return None
 
     def _length_match_waveforms(self, awg_nr):
@@ -1347,7 +1348,11 @@ class ZI_base_instrument(Instrument):
     # Public methods
     ##########################################################################
 
-    def start(self):
+    def start(self, **kw):
+        """ Start the sequencer
+        :param kw: currently ignored, added for compatibilty with other
+            instruments that accept kwargs in start().
+        """
         log.info(f"{self.devname}: Starting '{self.name}'")
         self.check_errors()
 
@@ -1456,8 +1461,9 @@ class ZI_base_instrument(Instrument):
 
         # This check (and while loop) is added as a workaround for #9
         while not success_and_ready:
-            log.info(f'{self.devname}: Configuring AWG {awg_nr}...')
-            self.compiler_statusstring += f'{self.devname}: Configuring AWG {awg_nr}...'
+            new_statusstring = f'{self.devname}: Configuring AWG {awg_nr}...'
+            log.info(new_statusstring)
+            self.compiler_statusstring += new_statusstring
 
             self._awgModule.set('awgModule/index', awg_nr)
             self._write_cmd_to_logfile(f"_awgModule.set('awgModule/index', {awg_nr})")
@@ -1505,9 +1511,11 @@ class ZI_base_instrument(Instrument):
                     break
 
         t1 = time.time()
-        self.compiler_statusstring += (self._awgModule.get(
+        new_statusstring = (self._awgModule.get(
             'awgModule/compiler/statusstring')
               ['compiler']['statusstring'][0] + ' in {:.2f}s'.format(t1-t0))
+        log.info(new_statusstring)
+        self.compiler_statusstring += new_statusstring
 
         # Check status
         if self.get('awgs_{}_waveform_memoryusage'.format(awg_nr)) > 1.0:

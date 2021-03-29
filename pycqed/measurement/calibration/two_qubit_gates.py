@@ -532,6 +532,9 @@ class MultiTaskingExperiment(QuantumExperiment):
                 # passed to SweepPoints.add_sweep_parameter
                 v = copy(v)
                 values_func = v.pop('values_func', None)
+                if isinstance(values_func, str):
+                    # assumes the string is the name of a self method
+                    values_func = getattr(self, values_func, None)
 
                 k_list = k.split(',')
                 # if the respective task parameter (or keyword argument) exists
@@ -638,7 +641,7 @@ class CalibBuilder(MultiTaskingExperiment):
                 max_length = max(p.pulse_obj.length, max_length)
         return max_length
 
-    def prepend_pulses_block(self, prepend_pulse_dicts):
+    def prepend_pulses_block(self, prepend_pulse_dicts, block_name='prepend'):
         """
         Generates a list of prepended pulses to run a calibration under the
         influence of previous operations (e.g.,  charge in the fluxlines).
@@ -659,7 +662,7 @@ class CalibBuilder(MultiTaskingExperiment):
                 # pulse parameters that overwrite the default values
                 prepend_pulse.update(pp)
                 prepend_pulses += [prepend_pulse]
-        return Block('prepend', prepend_pulses)
+        return Block(block_name, prepend_pulses)
 
     @staticmethod
     def add_default_ramsey_sweep_points(sweep_points, tile=2,
@@ -1132,8 +1135,8 @@ class DynamicPhase(CalibBuilder):
             prepend_pulses_block
         :param num_cz_gates: number of sequential CZ gates, default: 1
         :param init_for_swap: (bool) When the flux pulse is off, initialize the
-            qubits that are not part of qubits_to_drive (experimental feature
-            for swap gate characterization)
+            qubits that are not part of qubits_to_drive (for swap gate
+            characterization)
         :param kw: keyword arguments passed to get_cz_operation_name
             cz_pulse_name: task-specific prefix of CZ gates (overwrites
                 global choice passed to the class init)
@@ -1314,9 +1317,12 @@ def measure_flux_pulse_timing_between_qubits(task_list, pulse_length,
     pulse_lengths = np.array([pulse_length])
     sweep_points = SweepPoints('pulse_length', pulse_lengths, 's',
                                       dimension=1)
-    Chevron(task_list, sweep_points=sweep_points, analyze=False, label=label, **kw)
+    qe = Chevron(task_list, sweep_points=sweep_points, analyze=False,
+             label=label, **kw)
     if analyze:
-        tda.FluxPulseTimingBetweenQubitsAnalysis(qb_names=[task_list[0]['qbr']])
+        qe.analysis = tda.FluxPulseTimingBetweenQubitsAnalysis(
+            qb_names=[task_list[0]['qbr']])
+    return qe
 
 
 class Chevron(CalibBuilder):

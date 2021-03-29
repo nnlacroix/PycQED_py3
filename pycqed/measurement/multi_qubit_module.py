@@ -535,7 +535,8 @@ def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
                          "preparation_params": prep_params,
                          "all_states_combinations": all_states_combinations,
                          "n_shots": n_shots,
-                         "channel_map": channel_map
+                         "channel_map": channel_map,
+                         "data_to_fit": {}
                          })
     df = get_multiplexed_readout_detector_functions(
             qubits, nr_shots=n_shots)['int_log_det']
@@ -572,6 +573,15 @@ def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
                 'analysis_params']['classifier_params'][qb.name]
             if update:
                 qb.acq_classifier_params(classifier_params)
+                if 'state_prob_mtx_masked' in a.proc_data_dict[
+                        'analysis_params']:
+                    qb.acq_state_prob_mtx(a.proc_data_dict['analysis_params'][
+                        'state_prob_mtx_masked'][qb.name])
+                else:
+                    log.warning('Measurement was not run with preselection. '
+                                'state_prob_matx updated with non-masked one.')
+                    qb.acq_state_prob_mtx(a.proc_data_dict['analysis_params'][
+                        'state_prob_mtx'][qb.name])
         return a
 
 def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
@@ -1931,6 +1941,7 @@ def measure_drive_cancellation(
         if prep_params is None:
             prep_params = dev.get_prep_params(ramsey_qubits)
 
+        sweep_points = deepcopy(sweep_points)
         sweep_points.add_sweep_dimension()
         sweep_points.add_sweep_parameter('phase', phases, 'deg', 'Ramsey phase')
 

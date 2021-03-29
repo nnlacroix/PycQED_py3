@@ -226,7 +226,7 @@ def resonator_hamiltonian(frb: float, dim_resonator: int = 10):
 
 
 def transmon_resonator_levels(ec: float, ej: float, frb: float, gb: float,
-                              ng: float = 0., dim_charge: int = 31,
+                              ng: float = 0., dim_charge: int = 21,
                               dim_resonator: int = 3,
                               states: List[Tuple[int, int]] =
                               ((1, 0), (2, 0), (0, 1), (1, 1))):
