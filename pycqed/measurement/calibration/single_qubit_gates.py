@@ -1211,6 +1211,7 @@ class FluxPulseAmplitudeSweep(ParallelLOSweepExperiment):
             qb.fit_ge_freq_from_flux_pulse_amp(
                 self.analysis.fit_res[f'freq_fit_{qb.name}'].best_values)
 
+
 class RabiFrequencySweep(ParallelLOSweepExperiment):
     kw_for_sweep_points = {
         'freqs': dict(param_name='freq', unit='Hz',
