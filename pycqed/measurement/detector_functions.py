@@ -1136,7 +1136,6 @@ class UHFQC_integrated_average_detector(UHFQC_Base):
     def acquire_data_point(self):
         return self.get_values()
 
-
     def prepare(self, sweep_points=None):
         if self.AWG is not None:
             self.AWG.stop()
@@ -1262,7 +1261,7 @@ class UHFQC_correlation_detector(UHFQC_integrated_average_detector):
         self.set_up_correlation_weights()
 
         self.ro_mode = 'rl'
-        self.UHFQC.qudev_acquisition_initialize(channels=self.channels, 
+        self.UHFQC.qudev_acquisition_initialize(channels=self.channels,
                                           samples=self.nr_sweep_points,
                                           averages=self.nr_averages,
                                           loop_cnt=int(self.nr_averages*self.nr_sweep_points),

@@ -4884,9 +4884,7 @@ class FluxlineCrosstalkAnalysis(MultiQubit_TimeDomain_Analysis):
                              'class instance.')
 
         pdd = self.proc_data_dict
-        # get the ramsey phases as the values of the first sweep parameter
-        # in the 1st sweep dimension.
-        # !!! This assumes all qubits have the same ramsey phases !!!
+
         pdd['ramsey_phases'] = self.sp.get_sweep_params_property('values', 0)
         pdd['target_amps'] = self.sp.get_sweep_params_property('values', 1)
         pdd['target_fluxpulse_length'] = \

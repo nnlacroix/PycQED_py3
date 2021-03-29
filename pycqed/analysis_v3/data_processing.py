@@ -1354,25 +1354,27 @@ def calculate_flat_multiqubit_shots(data_dict, keys_in, keys_out=None,
         presel_mask = np.ones(nr_shots)
         for mobjn in meas_obj_names:
             presel_mask = np.logical_and(presel_mask, ps[mobjn][0][presel_segs])
+    presel_mask = presel_mask.astype(bool)
 
     # Calculate flat multiqubit shots
     # e.g. [pgg, pge, pgf, peg, pee, pef, pfg, pfe, pff] for two qubits
-    ps_flat = []
-    for i in range(nr_shots):
-        if not presel_mask[i]:
-            continue
-        res = [1]
-        idx = 2*i + 1 if do_preselection else i
-        for mobjn in meas_obj_names:
-            res = np.kron(res, ps[mobjn].T[idx])
-        ps_flat.append(res)
+    alphabet = list(map(chr, range(97, 123)))
+    s = ','.join(['n'+alphabet[i] for i in range(len(meas_obj_names))])
+    s += '->n'+''.join([alphabet[i] for i in range(len(meas_obj_names))])
+    if do_preselection:
+        data_arr_list = [ps[mobjn].T[1::2][list(presel_mask)]
+                         for mobjn in meas_obj_names]
+    else:
+        data_arr_list = [ps[mobjn].T[list(presel_mask)]
+                         for mobjn in meas_obj_names]
+    ps_flat = np.einsum(s,*data_arr_list).reshape(data_arr_list[0].shape[0], -1)
 
     if keys_out is None:
         hlp_mod.add_param(
             f'{",".join(meas_obj_names)}.calculate_flat_multiqubit_shots',
-            np.array(ps_flat), data_dict, **params)
+            ps_flat, data_dict, **params)
     else:
         if len(keys_out) != 1:
             raise ValueError(f'keys_out must have length 1 but has '
                              f'length {len(keys_out)}')
-        hlp_mod.add_param(keys_out[0], np.array(ps_flat), data_dict, **params)
+        hlp_mod.add_param(keys_out[0], ps_flat, data_dict, **params)

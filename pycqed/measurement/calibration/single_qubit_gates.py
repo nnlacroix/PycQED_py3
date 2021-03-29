@@ -1658,6 +1658,7 @@ class InPhaseAmpCalib(SingleQubitGateCalib):
                           self.analysis.proc_data_dict['analysis_params_dict'][
                               qubit.name]['corrected_amp'])
 
+
 class RabiFrequencySweep(ParallelLOSweepExperiment):
     kw_for_sweep_points = {
         'freqs': dict(param_name='freq', unit='Hz',
