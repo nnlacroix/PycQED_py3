@@ -1004,9 +1004,9 @@ def calculate_meas_ops_and_covariations(
                                                    raise_error=True, **params)
             state_prob_mtx = state_prob_mtx[:2, :2]
             state_prob_mtx = state_prob_mtx/state_prob_mtx.sum(axis=1, keepdims=True)
-            print(mobjn, state_prob_mtx)
             Fsingle[mobjn] = {
                 None: np.array([[1, 0], [0, 1]]),
+                False: np.diag(state_prob_mtx[:, 0]),
                 True: np.diag(state_prob_mtx[:, 1]),
             }
 
