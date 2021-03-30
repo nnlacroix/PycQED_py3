@@ -6879,7 +6879,6 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                             f'population_loss_{qbn}'] = \
                             {'val': population_loss,
                              'stderr': population_loss_stderrs}
-
                 else:
                     self.proc_data_dict['analysis_params_dict'][
                         f'amps_{qbn}'] = {
