@@ -1238,7 +1238,7 @@ class SingleQubitGateCalib(CalibBuilder):
                     task['transition_name'] = kw.get('transition_name', 'ge')
 
             if 'force_2D_sweep' not in kw:
-                kw['force_2D_sweep'] = True
+                kw['force_2D_sweep'] = False
 
             super().__init__(task_list, qubits=qubits,
                              sweep_points=sweep_points, **kw)
@@ -1637,7 +1637,8 @@ class InPhaseAmpCalib(SingleQubitGateCalib):
     kw_for_sweep_points = {
         'n_pulses': dict(param_name='n_pulses', unit='',
                          label='Nr. $\\pi$-pulses, $N$', dimension=0,
-                         values_func=lambda nr_p: np.arange(nr_p + 1))
+                         values_func=lambda nr_p:
+                         np.arange(nr_p + 1)[::2])
     }
 
     def __init__(self, task_list=None, sweep_points=None, qubits=None,
