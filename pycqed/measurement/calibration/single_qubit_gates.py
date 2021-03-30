@@ -1244,16 +1244,25 @@ class SingleQubitGateCalib(CalibBuilder):
                              sweep_points=sweep_points, **kw)
             if self.experiment_name is None:
                 self.experiment_name = 'SingleQubiGateCalib'
-            self.transition_order = ('', '_ef', '_fh')
-
             self.preprocessed_task_list = self.preprocess_task_list(**kw)
-            self.update_preproc_tasks()
-            self.define_data_to_fit()
-            self.define_cal_states_rotations()
+
+            self.transition_order = ('', '_ef', '_fh')
+            self.state_order = ['g', 'e', 'f', 'h']
+
             transition_names = [task['transition_name_input'] for task in
                                 self.preprocessed_task_list]
             states = ''.join(set([s for s in ''.join(transition_names)]))
             self.experiment_name += f'_{states}'
+
+            if 'cal_states' not in kw:
+                indices = [self.state_order.index(s) for s in states]
+                cal_states = self.state_order[:max(indices)+1]
+                self.create_cal_points(cal_states=cal_states)
+
+            self.update_preproc_tasks()
+            self.define_data_to_fit()
+            if len(self.cal_states) >= 2:
+                self.define_cal_states_rotations()
 
             if 'qscale' in self.experiment_name.lower() or \
                     'inphase_amp_calib' in self.experiment_name.lower():
@@ -1295,11 +1304,37 @@ class SingleQubitGateCalib(CalibBuilder):
                 cal_states_rotations.update(task['cal_states_rotations'])
             else:
                 transition_name = task['transition_name_input']
-                rots = [(tn, self.cal_states.index(tn))
-                        for tn in transition_name]
+                if 'h' in transition_name:
+                    states = transition_name
+                else:
+                    indices = [self.state_order.index(s)
+                               for s in transition_name]
+                    states = self.state_order[:max(indices)+1]
+
+                rots = []
+                for s in states:
+                    try:
+                        rots += [(s, self.cal_states.index(s))]
+                    except ValueError:
+                        log.warning(f'For {qb_name} with transition '
+                                    f'{transition_name}, "{s}" is not in '
+                                    f'cal_states: {self.cal_states}. '
+                                    f'Will add the next lowest cal state.')
+
+                # check if fewer than 2 states were added (happens in the
+                # exception above).
+                if len(rots) == 1:
+                    added_state = rots[0][0]
+                    states = [s for s in self.cal_states if s != added_state]
+                    rots += [(states[-1], self.cal_states.index(states[-1]))]
+                elif len(rots) == 0:
+                    rots += [(self.cal_states[i], i) for i in range(2)]
+
+                # sort by index of cal_state
                 rots.sort(key=lambda t: t[1])
                 cal_states_rotations[qb_name] = {t[0]: i for i, t in
                                                  enumerate(rots)}
+
         self.exp_metadata.update({'cal_states_rotations': cal_states_rotations})
 
     def update_preproc_tasks(self):
