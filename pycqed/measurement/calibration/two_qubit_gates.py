@@ -1339,7 +1339,7 @@ class Chevron(CalibBuilder):
 
     def __init__(self, task_list, sweep_points=None, **kw):
         try:
-            self.experiment_name = 'Chevron'
+            self.experiment_name = kw.get('experiment_name', 'Chevron')
             for task in task_list:
                 # if qbr is not provided, read out qbt
                 if task.get('qbr', None) is None:
