@@ -111,9 +111,8 @@ class CircuitBuilder:
             qb_names = [qb_names]
 
         # test if qubit objects have been provided instead of names
-        # FIXME CH 2021-03-16 does this crash qb indices? Maybe just move it
-        #  below the test for qb indeces?
-        qb_names = [qb if isinstance(qb, str) else qb.name for qb in qb_names]
+        qb_names = [qb if isinstance(qb, str) or isinstance(qb, int)
+                    else qb.name for qb in qb_names]
         # test if qubit indices have been provided instead of names
         try:
             ind = [int(i) for i in qb_names]
@@ -234,7 +233,8 @@ class CircuitBuilder:
             if op_name[0] not in ['X', 'Y', 'Z']:
                 raise KeyError(f'Gate "{op}" not found.')
             angle, qbn = op_name[1:], op_info[1]
-            if angle[-1] == 's':
+            if angle[-1] == 's' and angle[:-1].isnumeric():
+                op_info[0] = 's' + op_info[0]
                 angle = angle[:-1]
             param = None
             if angle[0] == ':':  # angle depends on a parameter

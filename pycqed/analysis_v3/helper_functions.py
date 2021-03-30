@@ -22,11 +22,12 @@ def convert_attribute(attr_val):
         file
     :return: the converted attribute value
     """
-    if type(attr_val) == bytes:
+    if isinstance(attr_val, bytes):
         attr_val = attr_val.decode('utf-8')
     # If it is an array of value decodes individual entries
-    if type(attr_val) == np.ndarray:
-        attr_val = [av.decode('utf-8') for av in attr_val]
+    if isinstance(attr_val, np.ndarray) or isinstance(attr_val, list):
+        attr_val = [av.decode('utf-8') if isinstance(av, bytes)
+                    else av for av in attr_val]
     try:
         return eval(attr_val)
     except Exception:
@@ -141,38 +142,22 @@ def open_hdf_file(timestamp=None, folder=None, filepath=None, mode='r', file_id=
     Opens the hdf5 file with flexible input parameters. If no parameter is given,
     opens the  hdf5 of the last measurement in reading mode.
     Args:
-        timestamp (str): timestamp of which the hdf5 file must be edited.
-        folder (str): folder in which to find hdf5 file. Overwrites timestamp
-        filepath (str): path to hdf5 file. Overwrites timestamp and folder
-        mode (str): mode to open the file ('r' for read), ('r+' for read/write)
-        file_id (str): file id
-
-    Returns:
+        :param timestamp: (str) measurement timestamp of form YYYYMMDD_hhmmsss
+        :param folder: (str) path to file location
+        :param mode filepath: (str) path to hdf5 file. Overwrites timestamp
+            and folder
+        :param mode: (str) mode to open the file ('r' for read),
+            ('r+' for read/write)
+        :param file_id: (str) file id
+    :return: opened HDF5 file
 
     """
     if filepath is None:
         if folder is None:
+            assert timestamp is not None
             folder = a_tools.get_folder(timestamp)
         filepath = a_tools.measurement_filename(folder, file_id=file_id)
     return h5py.File(filepath, mode)
-
-
-def open_data_file_from_timestamp(timestamp=None, folder=None,
-                                  mode='r', file_id=None):
-    """
-    Return the opened HDF5 file specified by timestamp.
-    ! File is not closed !
-    :param timestamp: (str) measurement timestamp of form YYYYMMDD_hhmmsss
-    :param folder: (str) path to file location
-    :param mode: (str) in what mode to open the file
-    :return: open HDF5 file
-    """
-    if folder is None:
-        assert timestamp is not None
-        folder = a_tools.get_folder(timestamp)
-    h5filepath = a_tools.measurement_filename(folder, file_id=file_id)
-    data_file = h5py.File(h5filepath, mode)
-    return data_file
 
 
 def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,

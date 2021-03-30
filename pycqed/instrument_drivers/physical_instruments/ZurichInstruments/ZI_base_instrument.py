@@ -829,7 +829,7 @@ class ZI_base_instrument(Instrument):
                         docstring=docst)
                     self._params_to_skip_update.append(wf_name)
                     # Make sure the waveform data is up-to-date
-                    self._gen_read_waveform(ch, cw)(loglevel_info=True)
+                    self._gen_read_waveform(ch, cw)()
                 elif cw >= num_codewords:
                     # Delete parameter as it's no longer needed
                     if wf_name in self.parameters:
@@ -1062,7 +1062,7 @@ class ZI_base_instrument(Instrument):
         np.savetxt(filename, waveform, delimiter=",")
 
     def _gen_read_waveform(self, ch, cw):
-        def read_func(loglevel_info=False):
+        def read_func():
             # AWG
             awg_nr = ch//2
 
@@ -1079,7 +1079,7 @@ class ZI_base_instrument(Instrument):
                 log.debug(f"{self.devname}: Flagging awg as requiring recompilation.")
                 self._awg_needs_configuration[awg_nr] = True
                 # It isn't, so try to read the data from CSV
-                waveform = self._read_csv_waveform(ch, cw, wf_name, loglevel_info)
+                waveform = self._read_csv_waveform(ch, cw, wf_name)
                 # Check whether  we got something
                 if waveform is None:
                     log.debug(f"{self.devname}: Waveform CSV does not exist, initializing to zeros.")
@@ -1098,7 +1098,7 @@ class ZI_base_instrument(Instrument):
 
         return read_func
 
-    def _read_csv_waveform(self, ch: int, cw: int, wf_name: str, loglevel_info=False):
+    def _read_csv_waveform(self, ch: int, cw: int, wf_name: str):
         filename = os.path.join(
             self._get_awg_directory(), 'waves',
             self.devname + '_' + wf_name + '.csv')
@@ -1107,10 +1107,7 @@ class ZI_base_instrument(Instrument):
             return np.genfromtxt(filename, delimiter=',')
         except OSError as e:
             # if the waveform does not exist yet dont raise exception
-            if loglevel_info:
-                log.info(e)
-            else:
-                log.warning(e)
+            log.warning(e)
             return None
 
     def _length_match_waveforms(self, awg_nr):

@@ -289,6 +289,8 @@ class BaseDataAnalysis(object):
         Returns:
 
         """
+        if a_tools.ignore_delegate_plotting:
+            return False
         if self.get_param_value("delegate_plotting", False):
             if len(self.timestamps) == 1:
                 f = self.raw_data_dict['folder']
@@ -313,10 +315,10 @@ class BaseDataAnalysis(object):
         '''
         s = group.attrs[param_name]
         # converts byte type to string because of h5py datasaving
-        if type(s) == bytes:
+        if isinstance(s, bytes):
             s = s.decode('utf-8')
         # If it is an array of value decodes individual entries
-        if type(s) == np.ndarray:
+        if isinstance(s, np.ndarray) or isinstance(s, list):
             s = [s.decode('utf-8') if isinstance(s, bytes) else s for s in s]
         try:
             return eval(s)
