@@ -116,23 +116,9 @@ def state_tomography_analysis(data_dict, keys_in,
     Assumptions:
         - the data indicated by keys_in is assumed to be thresholded shots
     """
-    # # ensure correct order of meas_obj_names
-    # meas_obj_names = hlp_mod.get_measurement_properties(
-    #     data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
-    #     **params)
-
-    # mobj_names = None
-    # legacy_channel_map = hlp_mod.get_param('channel_map', data_dict, **params)
-    # task_list = hlp_mod.get_param('task_list', data_dict, **params)
-    # if legacy_channel_map is not None:
-    #     mobj_names = list(legacy_channel_map)
-    # elif task_list is not None:
-    #     mobj_names = hlp_mod.get_param('qubits', task_list[0])
-    # if mobj_names != meas_obj_names:
-    #     hlp_mod.add_param('meas_obj_names', mobj_names, data_dict,
-    #                       add_param_method='replace')
-    #     params.pop('meas_obj_names', None)
-    #     meas_obj_names = mobj_names
+    meas_obj_names = hlp_mod.get_measurement_properties(
+        data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+        **params)
 
     hlp_mod.pop_param('keys_out', data_dict, node_params=params)
 
@@ -157,7 +143,8 @@ def state_tomography_analysis(data_dict, keys_in,
     n_readouts = hlp_mod.get_param('n_readouts', data_dict, **params)
     if n_readouts is None:
         n_readouts = (do_preselection + 1) * (
-                len(basis_rots)**2 + (len(cp.states) if cp is not None else 0))
+                len(basis_rots)**len(meas_obj_names) +
+                (len(cp.states) if cp is not None else 0))
         hlp_mod.add_param('n_readouts', n_readouts, data_dict, **params)
 
     # get observables
@@ -168,23 +155,29 @@ def state_tomography_analysis(data_dict, keys_in,
         observables = hlp_mod.get_param('observables', data_dict)
 
     # get probability table
-    dat_proc_mod.calculate_probability_table(data_dict, keys_in=keys_in,
+    keys_in_extra = hlp_mod.get_param('keys_in_extra', data_dict,
+                                      default_value=[], **params)
+    dat_proc_mod.calculate_probability_table(data_dict, keys_in=keys_in+keys_in_extra,
                                              keys_out=['probability_table'],
                                              n_readouts=n_readouts,
                                              observables=observables, **params)
 
     # get measurement_ops and cov_matrix_meas_obs
     measurement_ops = hlp_mod.get_param('measurement_ops', data_dict, **params)
+    correct_readout = hlp_mod.get_param('correct_readout', data_dict, **params)
     if measurement_ops is None:
-        if cp is not None:
+        if cp is not None and (correct_readout or correct_readout is None):
             dat_proc_mod.calculate_meas_ops_and_covariations_cal_points(
                 data_dict, keys_in, n_readouts=n_readouts,
+                meas_obj_names=meas_obj_names,
                 keys_out=['measurement_ops', 'cov_matrix_meas_obs'],
                 observables=observables, **params)
         else:
             dat_proc_mod.calculate_meas_ops_and_covariations(
                 data_dict, keys_out=['measurement_ops', 'cov_matrix_meas_obs'],
-                observables=observables)
+                meas_obj_names=meas_obj_names,
+                observables=observables,
+                correct_readout=correct_readout)
     else:
         if hlp_mod.get_param('measurement_ops', data_dict) is None:
             hlp_mod.add_param('measurement_ops', measurement_ops, data_dict,
@@ -192,9 +185,6 @@ def state_tomography_analysis(data_dict, keys_in,
         cov_matrix_meas_obs = hlp_mod.get_param('cov_matrix_meas_obs',
                                                 data_dict, **params)
         if cov_matrix_meas_obs is None:
-            meas_obj_names = hlp_mod.get_measurement_properties(
-                data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
-                **params)
             hlp_mod.add_param('cov_matrix_meas_obs',
                               np.diag(np.ones(len(meas_obj_names)**2)),
                               data_dict, **params)
