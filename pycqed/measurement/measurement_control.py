@@ -7,6 +7,7 @@ log = logging.getLogger(__name__)
 import time
 from copy import deepcopy
 import traceback
+import requests
 
 import numpy as np
 import numbers
@@ -31,6 +32,7 @@ from qcodes.instrument.parameter import ManualParameter
 from qcodes.utils import validators as vals
 from qcodes.plots.colors import color_cycle
 
+from pycqed.utilities.errors import NoProgressError
 
 try:
     import msvcrt  # used on windows to catch keyboard input
@@ -102,6 +104,10 @@ class MeasurementControl(Instrument):
                            vals=vals.Bool(),
                            parameter_class=ManualParameter,
                            initial_value=False)
+        self.add_parameter('max_attempts',
+                           vals=vals.Ints(),
+                           parameter_class=ManualParameter,
+                           initial_value=1)
 
         self.add_parameter(
             'cfg_clipping_mode', vals=vals.Bool(),
@@ -136,6 +142,9 @@ class MeasurementControl(Instrument):
         self.exp_metadata = {}
         self._plotmon_axes_info = None
         self._persist_plotmon_axes_info = None
+        self._last_percdone_value = 0
+        self._last_percdone_change_time = 0
+        self._last_percdone_log_time = 0
 
     ##############################################
     # Functions used to control the measurements #
@@ -162,7 +171,8 @@ class MeasurementControl(Instrument):
                                           self.acq_data_len_scaling))
     @Timer()
     def run(self, name: str=None, exp_metadata: dict=None,
-            mode: str='1D', disable_snapshot_metadata: bool=False, **kw):
+            mode: str='1D', disable_snapshot_metadata: bool=False,
+            previous_attempts=0, **kw):
         '''
         Core of the Measurement control.
 
@@ -189,6 +199,8 @@ class MeasurementControl(Instrument):
         '''
 
         self.timer = Timer("MeasurementControl")
+        self._last_percdone_value = 0
+        self._last_percdone_change_time = 0
         # Setting to zero at the start of every run, used in soft avg
         self.soft_iteration = 0
         self.set_measurement_name(name)
@@ -224,6 +236,7 @@ class MeasurementControl(Instrument):
             det_metadata = self.detector_function.generate_metadata()
             self.exp_metadata.update(det_metadata)
             self.save_exp_metadata(self.exp_metadata, self.data_object)
+            exception = None
             try:
                 self.check_keyboard_interrupt()
                 self.get_measurement_begintime()
@@ -255,9 +268,11 @@ class MeasurementControl(Instrument):
                     raise e
                 self.save_exp_metadata({'percentage_done': percentage_done},
                                        self.data_object)
-                logging.warning('Caught a KeyboardInterrupt and there is '
-                                'unsaved data. Trying clean exit to save '
-                                'data.')
+                log.warning('Caught a KeyboardInterrupt and there is '
+                            'unsaved data. Trying clean exit to save data.')
+            except Exception as e:
+                exception = e
+                formatted_exc = traceback.format_exc()
             result = self.dset[()]
             self.get_measurement_endtime()
             self.save_MC_metadata(self.data_object)  # timing labels etc
@@ -270,6 +285,26 @@ class MeasurementControl(Instrument):
             #  saved.
             self.save_timers(self.data_object)
             return_dict = self.create_experiment_result_dict()
+            if exception is not None:
+                if previous_attempts + 1 < self.max_attempts():
+                    msg = f'MC: Error during measurement (attempt ' \
+                          f'{previous_attempts + 1} of {self.max_attempts()}' \
+                          f'). Retrying.'
+                    self.log_to_slack(msg)
+                    log.error(msg)
+                    log.error(formatted_exc)
+                    [fnc() for fnc in getattr(
+                        self, 'retry_cleanup_functions', [])]
+                    # sweep points should be extracted again from the sweep
+                    # function to avoid tiling them multiple times (in every
+                    # attempt)
+                    del self.sweep_points
+                    return_dict = self.run(
+                        name=name, exp_metadata=exp_metadata, mode=mode,
+                        disable_snapshot_metadata=disable_snapshot_metadata,
+                        previous_attempts=previous_attempts + 1, **kw)
+                else:
+                    raise exception
 
         self.finish(result)
         return return_dict
@@ -312,10 +347,18 @@ class MeasurementControl(Instrument):
                         self.timer.checkpoint("MeasurementControl.measure.prepare.start")
                         sweep_function.set_parameter(val)
                         self.timer.checkpoint("MeasurementControl.measure.prepare.end")
-                    self.detector_function.prepare(
-                        sweep_points=sweep_points[
-                            start_idx:start_idx+self.xlen, 0])
-                    self.measure_hard()
+                    filtered_sweep = getattr(self.sweep_functions[1],
+                                             'filtered_sweep', None)
+                    if filtered_sweep is None:
+                        self.detector_function.prepare(
+                            sweep_points=sweep_points[
+                                start_idx:start_idx+self.xlen, 0])
+                    else:
+                        self.detector_function.prepare(
+                            sweep_points=sweep_points[
+                                         start_idx:start_idx + self.xlen,
+                                         0][filtered_sweep])
+                    self.measure_hard(filtered_sweep)
         else:
             raise Exception('Sweep and Detector functions not '
                             + 'of the same type. \nAborting measurement')
@@ -386,8 +429,20 @@ class MeasurementControl(Instrument):
         return
 
     @Timer()
-    def measure_hard(self):
+    def measure_hard(self, filtered_sweep=None):
+        self.detector_function.progress_callback = self.print_progress
         new_data = np.array(self.detector_function.get_values()).T
+        self.detector_function.progress_callback = None
+
+        if filtered_sweep is not None:
+            shape = list(new_data.shape)
+            shape[0] = len(filtered_sweep)
+            new_data_full = np.zeros(shape) * np.nan
+            if len(shape) > 1:
+                new_data_full[filtered_sweep, :] = new_data
+            else:
+                new_data_full[filtered_sweep] = new_data
+            new_data = new_data_full
 
         ###########################
         # Shape determining block #
@@ -416,6 +471,7 @@ class MeasurementControl(Instrument):
                       len(self.sweep_functions):] = new_vals
         sweep_len = len(self.get_sweep_points().T) * self.acq_data_len_scaling
 
+
         ######################
         # DATA STORING BLOCK #
         ######################
@@ -434,10 +490,10 @@ class MeasurementControl(Instrument):
             except Exception:
                 # There are some cases where the sweep points are not
                 # specified that you don't want to crash (e.g. on -off seq)
-                logging.warning('You are in the exception case in '
-                                'MC.measure_hard() DATA STORING BLOCK section. '
-                                'Something might have gone wrong with your '
-                                'measurement.')
+                log.warning('You are in the exception case in '
+                            'MC.measure_hard() DATA STORING BLOCK section. '
+                            'Something might have gone wrong with your '
+                            'measurement.')
                 log.warning(traceback.format_exc())
 
         self.check_keyboard_interrupt()
@@ -446,7 +502,7 @@ class MeasurementControl(Instrument):
         if self.mode == '2D':
             self.update_plotmon_2D_hard()
         self.iteration += 1
-        self.print_progress(stop_idx)
+        self.print_progress()
         return new_data
 
     def measurement_function(self, x):
@@ -527,7 +583,7 @@ class MeasurementControl(Instrument):
             self.update_plotmon_adaptive()
         self.iteration += 1
         if self.mode != 'adaptive':
-            self.print_progress(stop_idx)
+            self.print_progress()
         return vals
 
     def optimization_function(self, x):
@@ -1673,26 +1729,63 @@ class MeasurementControl(Instrument):
                 log.error(f"Could not save timer for object: {obj}.")
                 traceback.print_exc()
 
-    def get_percdone(self):
-        percdone = self.total_nr_acquired_values / (
+    def get_percdone(self, current_acq=0):
+        percdone = (self.total_nr_acquired_values + current_acq) / (
             np.shape(self.get_sweep_points())[0] * self.soft_avg()) * 100
+        try:
+            now = time.time()
+            if percdone != self._last_percdone_value:
+                self._last_percdone_value = percdone
+                self._last_percdone_change_time = now
+                log.debug(f'MC: percdone = {self._last_percdone_value} at '
+                          f'{self._last_percdone_change_time}')
+            elif self._last_percdone_change_time == 0:
+                # first progress check: initialize _last_percdone_change_time
+                self._last_percdone_change_time = now
+                self._last_percdone_log_time = self._last_percdone_change_time
+            else:
+                no_prog_inter = getattr(self, 'no_progress_interval', 600)
+                no_prog_inter2 = getattr(self, 'no_progress_kill_interval',
+                                         np.inf)
+                no_prog_min = (now - self._last_percdone_change_time) / 60
+                log.debug(f'MC: no_prog_min = {no_prog_min}, '
+                          f'percdone = {percdone}')
+                msg = f'The current measurement has not made any progress ' \
+                      f'for {no_prog_min: .01f} minutes.'
+                if now - self._last_percdone_change_time > no_prog_inter \
+                        and now - self._last_percdone_log_time > no_prog_inter:
+                    self.log_to_slack(msg)
+                    self._last_percdone_log_time = now
+                if now - self._last_percdone_change_time > no_prog_inter2:
+                    log.debug(f'MC: raising NoProgressError')
+                    raise NoProgressError(msg)
+        except NoProgressError:
+            raise
+        except Exception as e:
+            log.debug(f'MC: error while checking progress: {repr(e)}')
         return percdone
 
-    def print_progress(self, stop_idx=None):
+    def print_progress(self, current_acq=0):
         if self.verbose():
             acquired_points = self.dset.shape[0]
             total_nr_pts = len(self.get_sweep_points())
-            percdone = self.get_percdone()
+            percdone = self.get_percdone(current_acq=current_acq)
             elapsed_time = time.time() - self.begintime
+            t_left = round((100. - percdone) / (percdone) *
+                           elapsed_time, 1) if percdone != 0 else '??'
+            t_end = time.strftime('%H:%M:%S', time.localtime(time.time() +
+                                  + t_left)) if percdone != 0 else '??'
             # The trailing spaces are to overwrite some characters in case the
             # previous progress message was longer.
-            progress_message = "\r {percdone}% completed \telapsed time: "\
-                "{t_elapsed}s \ttime left: {t_left}s     ".format(
+            progress_message = (
+                "\r{timestamp}\t{percdone}% completed \telapsed time: "
+                "{t_elapsed}s \ttime left: {t_left}s\t(until {t_end})     "
+                "").format(
+                    timestamp=time.strftime('%H:%M:%S', time.localtime()),
                     percdone=int(percdone),
                     t_elapsed=round(elapsed_time, 1),
-                    t_left=round((100.-percdone)/(percdone) *
-                                 elapsed_time, 1) if
-                    percdone != 0 else '')
+                    t_left=t_left,
+                    t_end=t_end,)
 
             if percdone != 100:
                 end_char = ''
@@ -1968,6 +2061,37 @@ class MeasurementControl(Instrument):
     def analysis_display(self, ad):
         self._analysis_display = ad
 
+    def log_to_slack(self, message):
+        """
+        Send a message to Slack. If self.slack_webhook is not set,
+        the message is only logged in the logger with loglevel INFO.
+        If self.slack_channel is not set, the default channel of the webhook
+        is used.
+
+        :param message: The message that should be logged to slack.
+
+        Note: The webhook and the channel are properties and not parameters,
+        to avoid that they get stored in the instruments settings snapshot.
+        """
+        # The webhook and the channel are properties and not parameters,
+        # to avoid that they get stored in the instruments settings snapshot.
+        # If no channel is provided, the default channel of the webhook is used
+        log.info(f'MC: {message}')
+        if not hasattr(self, 'slack_webhook'):
+            log.info(f'MC: Not logging to slack because slack_webhook is not '
+                     f'defined.')
+            return
+        try:
+            payload = {"text": message}
+            if hasattr(self, 'slack_channel'):
+                payload["channel"] = self.slack_channel
+            res = requests.post(self.slack_webhook, json=payload)
+            res_text = res.text
+        except Exception as e:
+            res_text = repr(e)
+        if res_text != 'ok':
+            log.warning(f'MC: Error while logging to slack: {res_text}')
+
 
 class KeyboardFinish(KeyboardInterrupt):
     """
@@ -1975,3 +2099,4 @@ class KeyboardFinish(KeyboardInterrupt):
     Used to finish the experiment without raising an exception.
     """
     pass
+

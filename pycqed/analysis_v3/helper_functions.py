@@ -22,11 +22,12 @@ def convert_attribute(attr_val):
         file
     :return: the converted attribute value
     """
-    if type(attr_val) == bytes:
+    if isinstance(attr_val, bytes):
         attr_val = attr_val.decode('utf-8')
     # If it is an array of value decodes individual entries
-    if type(attr_val) == np.ndarray:
-        attr_val = [av.decode('utf-8') for av in attr_val]
+    if isinstance(attr_val, np.ndarray) or isinstance(attr_val, list):
+        attr_val = [av.decode('utf-8') if isinstance(av, bytes)
+                    else av for av in attr_val]
     try:
         return eval(attr_val)
     except Exception:
@@ -141,38 +142,22 @@ def open_hdf_file(timestamp=None, folder=None, filepath=None, mode='r', file_id=
     Opens the hdf5 file with flexible input parameters. If no parameter is given,
     opens the  hdf5 of the last measurement in reading mode.
     Args:
-        timestamp (str): timestamp of which the hdf5 file must be edited.
-        folder (str): folder in which to find hdf5 file. Overwrites timestamp
-        filepath (str): path to hdf5 file. Overwrites timestamp and folder
-        mode (str): mode to open the file ('r' for read), ('r+' for read/write)
-        file_id (str): file id
-
-    Returns:
+        :param timestamp: (str) measurement timestamp of form YYYYMMDD_hhmmsss
+        :param folder: (str) path to file location
+        :param mode filepath: (str) path to hdf5 file. Overwrites timestamp
+            and folder
+        :param mode: (str) mode to open the file ('r' for read),
+            ('r+' for read/write)
+        :param file_id: (str) file id
+    :return: opened HDF5 file
 
     """
     if filepath is None:
         if folder is None:
+            assert timestamp is not None
             folder = a_tools.get_folder(timestamp)
         filepath = a_tools.measurement_filename(folder, file_id=file_id)
     return h5py.File(filepath, mode)
-
-
-def open_data_file_from_timestamp(timestamp=None, folder=None,
-                                  mode='r', file_id=None):
-    """
-    Return the opened HDF5 file specified by timestamp.
-    ! File is not closed !
-    :param timestamp: (str) measurement timestamp of form YYYYMMDD_hhmmsss
-    :param folder: (str) path to file location
-    :param mode: (str) in what mode to open the file
-    :return: open HDF5 file
-    """
-    if folder is None:
-        assert timestamp is not None
-        folder = a_tools.get_folder(timestamp)
-    h5filepath = a_tools.measurement_filename(folder, file_id=file_id)
-    data_file = h5py.File(h5filepath, mode)
-    return data_file
 
 
 def get_params_from_hdf_file(data_dict, params_dict=None, numeric_params=None,
@@ -376,11 +361,17 @@ def get_param(param, data_dict, default_value=None,
                 if all_keys[i] in md:
                     md = md[all_keys[i]]
                 p = p if isinstance(p, dict) else OrderedDict()
-                dd = dd if isinstance(dd, dict) else OrderedDict()
+                if isinstance(dd, list) or isinstance(dd, np.ndarray):
+                    all_keys[i + 1] = int(all_keys[i + 1])
+                else:
+                    dd = dd if isinstance(dd, dict) else OrderedDict()
                 md = md if isinstance(md, dict) else OrderedDict()
-        value = p.get(all_keys[-1],
-                      dd.get(all_keys[-1],
-                             md.get(all_keys[-1], default_value)))
+        if isinstance(dd, list) or isinstance(dd, np.ndarray):
+            value = dd[all_keys[-1]]
+        else:
+            value = p.get(all_keys[-1],
+                          dd.get(all_keys[-1],
+                                 md.get(all_keys[-1], default_value)))
 
     if raise_error and value is None:
         if error_message is None:
@@ -402,7 +393,6 @@ def pop_param(param, data_dict, default_value=None,
     :param params: keyword args where parameter is to be sough
     :return: the value of the parameter
     """
-
     if node_params is None:
         node_params = OrderedDict()
 
@@ -455,8 +445,8 @@ def add_param(name, value, data_dict, add_param_method=None, **params):
     :param name: key of the new parameter in the data_dict
     :param value: value of the new parameter
     :param data_dict: OrderedDict containing data to be processed
-    :param method: str specifying how to add the value if name already exists
-        in data_dict:
+    :param add_param_method: str specifying how to add the value if name
+        already exists in data_dict:
             'skip': skip adding this parameter without raising an error
             'replace': replace the old value corresponding to name with value
             'update': whether to try data_dict[name].update(value).
@@ -475,11 +465,15 @@ def add_param(name, value, data_dict, add_param_method=None, **params):
     all_keys = name.split('.')
     if len(all_keys) > 1:
         for i in range(len(all_keys)-1):
-            if all_keys[i] not in dd:
+            if isinstance(dd, list):
+                all_keys[i] = int(all_keys[i])
+            if not isinstance(dd, list) and all_keys[i] not in dd:
                 dd[all_keys[i]] = OrderedDict()
             dd = dd[all_keys[i]]
 
-    if all_keys[-1] in dd:
+    if isinstance(dd, list) or isinstance(dd, np.ndarray):
+        all_keys[-1] = int(all_keys[-1])
+    if isinstance(dd, list) or all_keys[-1] in dd:
         if add_param_method == 'skip':
             return
         elif add_param_method == 'update':
@@ -487,7 +481,11 @@ def add_param(name, value, data_dict, add_param_method=None, **params):
                 raise ValueError(f'The value corresponding to {all_keys[-1]} '
                                  f'is not a dict. Cannot update_value in '
                                  f'data_dict')
-            dd[all_keys[-1]].update(value)
+            if isinstance(dd[all_keys[-1]], list):
+                for k, v in value.items():
+                    dd[all_keys[-1]][int(k)] = v
+            else:
+                dd[all_keys[-1]].update(value)
         elif add_param_method == 'append':
             v = dd[all_keys[-1]]
             if not isinstance(v, list):
@@ -745,15 +743,25 @@ def get_observables(data_dict, keys_out=None, preselection_shift=-1,
                                   ('qb2', -1): False,
                                   ('qb4', -1): False}}
     """
+    mobj_names = None
     legacy_channel_map = get_param('channel_map', data_dict, **params)
+    task_list = get_param('task_list', data_dict, **params)
     if legacy_channel_map is not None:
         mobj_names = list(legacy_channel_map)
     else:
-        # make sure the qubits are in the correct order here when we take a
-        # tomo measurement in new framework
         mobj_names = get_measurement_properties(
             data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
             **params)
+    # elif task_list is not None:
+    #     mobj_names = get_param('qubits', task_list[0])
+
+    # if mobj_names is None:
+    #     # make sure the qubits are in the correct order here when we take a
+    #     # tomo measurement in new framework
+    #     mobj_names = get_measurement_properties(
+    #         data_dict, props_to_extract=['mobjn'], enforce_one_meas_obj=False,
+    #         **params)
+
     combination_list = list(itertools.product([False, True],
                                               repeat=len(mobj_names)))
     preselection_condition = dict(zip(
@@ -780,6 +788,73 @@ def get_observables(data_dict, keys_out=None, preselection_shift=-1,
         raise ValueError(f'keys_out must have length one. {len(keys_out)} '
                          f'entries were given.')
     add_param(keys_out[0], observables, data_dict, **params)
+
+
+def select_data_from_nd_array(data_dict, keys_in, keys_out, **params):
+    """
+    Select subset of data from an n-d array along any of the axes.
+    :param data_dict: OrderedDict containing data to be processed and where
+        processed data is to be stored
+    :param keys_in: key names or dictionary keys paths in data_dict for shots
+        (with preselection) classified into pg, pe, pf
+    :param keys_out: list of key names or dictionary keys paths in
+        data_dict for the processed data to be saved into
+    :param params: keyword arguments
+        - selection_map (dict, default: must be provided): dict of the form
+            {axis: index_list} where axis is any axis in the original data array.
+            index_list is a list of tuples specifying indices or ranges as:
+            - [2, 3, 4]: array[2] and array[3] and array[4]
+            - [(n, m)]: array[n:m]
+            - [(n, 'end')]: array[n:]
+            - [(n, m, k)]: array[n:m:k]
+            - can also be [2, (n, end), (m, k, l)] etc.
+
+    A new entry in data_dict is added for each keyi in keys_in, under
+    keyo in keys_out.
+
+    Assumptions:
+        - len(keys_in) == len(keys_out)
+        - if len(keys_in) > 1, the same selection_map is used for all
+    """
+    if len(keys_out) != len(keys_in):
+        raise ValueError('keys_out and keys_in do not have '
+                         'the same length.')
+
+    data_to_proc_dict = get_data_to_process(data_dict, keys_in)
+    selection_map = get_param('selection_map', data_dict, raise_error=True,
+                              **params)
+
+    for keyi, keyo in zip(keys_in, keys_out):
+        selected_data = deepcopy(data_to_proc_dict[keyi])
+        for axis, sel_info in selection_map.items():
+            indices = np.array([], dtype=int)
+            arange_axis = np.arange(selected_data.shape[axis])
+            for sl in sel_info:
+                if hasattr(sl, '__iter__'):
+                    if len(sl) == 2:
+                        if sl[1] == 'end':
+                            indices = np.append(indices, arange_axis[sl[0]:])
+                        else:
+                            indices = np.append(indices,
+                                                arange_axis[sl[0]:sl[1]])
+                    elif len(sl) == 3:
+                        if sl[1] == 'end':
+                            indices = np.append(indices,
+                                                arange_axis[sl[0]::sl[2]])
+                        else:
+                            indices = np.append(indices,
+                                                arange_axis[sl[0]:sl[1]:sl[2]])
+                else:
+                    # sl is a number
+                    indices = np.append(indices, sl)
+
+            if len(indices):
+                indices = np.sort(indices)
+                selected_data = np.take(selected_data, indices, axis=axis)
+            else:
+                log.warning('No data selected in select_data_from_nd_array.')
+
+        add_param(keyo, selected_data, data_dict, **params)
 
 
 ### functions that do NOT have the ana_v3 format for input parameters ###

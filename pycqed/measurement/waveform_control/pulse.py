@@ -140,7 +140,11 @@ class Pulse:
             channels = self.channels
         else:
             channels = [ch for m, ch in zip(channel_mask, self.channels) if m]
-        return set(channels) | set(self.crosstalk_cancellation_channels)
+        if any([ch in self.crosstalk_cancellation_channels for ch in
+                channels]):
+            return set(channels) | set(self.crosstalk_cancellation_channels)
+        else:
+            return set(channels)
 
     def pulse_area(self, channel, tvals):
         """
@@ -207,6 +211,15 @@ class Pulse:
         """
         raise NotImplementedError('hashables() not implemented for {}'
                                   .format(str(type(self))[1:-1]))
+
+    def common_hashables(self, tstart, channel):
+        if channel not in self.channels:
+            return []
+        if self.pulse_off:
+            return ['Offpulse', self.algorithm_time() - tstart, self.length]
+        return [type(self), self.algorithm_time() - tstart,
+                self.truncation_length, self.truncation_decay_length,
+                self.truncation_decay_const]
 
     def chan_wf(self, channel, tvals):
         """Abstract base method for generating the pulse waveforms.

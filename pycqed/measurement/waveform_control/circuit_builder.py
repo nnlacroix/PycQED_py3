@@ -103,7 +103,8 @@ class CircuitBuilder:
             qb_names = [qb_names]
 
         # test if qubit objects have been provided instead of names
-        qb_names = [qb if isinstance(qb, str) else qb.name for qb in qb_names]
+        qb_names = [qb if isinstance(qb, str) or isinstance(qb, int)
+                    else qb.name for qb in qb_names]
         # test if qubit indices have been provided instead of names
         try:
             ind = [int(i) for i in qb_names]
@@ -205,7 +206,8 @@ class CircuitBuilder:
         op_name = op_info[0][1:] if op_info[0][0] == 's' else op_info[0]
         op = op_name + ' ' + ' '.join(op_info[1:])
 
-        if op_name.startswith('CZ'):
+        if op_info[0].rstrip('0123456789.') == 'CZ' or \
+                op_info[0].startswith('CZ:'):
             operation = self.get_cz_operation_name(op_info[1], op_info[2])
             p = deepcopy(self.operation_dict[operation])
         elif parse_rotation_gates and op not in self.operation_dict:
@@ -219,6 +221,9 @@ class CircuitBuilder:
             if op_name[0] not in ['X', 'Y', 'Z']:
                 raise KeyError(f'Gate "{op}" not found.')
             angle, qbn = op_name[1:], op_info[1]
+            if angle[-1] == 's' and angle[:-1].isnumeric():
+                op_info[0] = 's' + op_info[0]
+                angle = angle[:-1]
             param = None
             if angle[0] == ':':  # angle depends on a parameter
                 angle = angle[1:]
@@ -292,7 +297,8 @@ class CircuitBuilder:
         self.qb_names[i], self.qb_names[j] = self.qb_names[j], self.qb_names[i]
 
     def initialize(self, init_state='0', qb_names='all', prep_params=None,
-                   simultaneous=True, block_name=None, pulse_modifs=None):
+                   simultaneous=True, block_name=None, pulse_modifs=None,
+                   prepend_block=None):
         """
         Initializes the specified qubits with the corresponding init_state
         :param init_state (String or list): Can be one of the following
@@ -312,6 +318,8 @@ class CircuitBuilder:
             automatically generated block name of the initialization block
         :param pulse_modifs: (dict) Modification of pulses parameters.
             See method block_from_ops.
+        :param prepend_block: (Block, optional) An extra block that will be
+            executed between the preparation and the initialization.
         :return: init block
         """
         if block_name is None:
@@ -344,11 +352,17 @@ class CircuitBuilder:
                 pulses += tmp_block.pulses
         block = Block(block_name, pulses)
         block.set_end_after_all_pulses()
+        blocks = []
         if len(prep_params) != 0:
-            block = self.sequential_blocks(
-                block_name, [self.prepare(qb_names, ref_pulse="start",
-                                          **prep_params), block])
+            blocks.append(self.prepare(qb_names, ref_pulse="start",
+                                       **prep_params))
+        if prepend_block is not None:
+            blocks.append(prepend_block)
+        if len(blocks) > 0:
+            blocks.append(block)
+            block = self.sequential_blocks(block_name, blocks)
         return block
+
 
     def finalize(self, init_state='0', qb_names='all', simultaneous=True,
                  block_name=None, pulse_modifs=None):
@@ -610,7 +624,6 @@ class CircuitBuilder:
             pulse_modifs = {}
         if isinstance(operations, str):
             operations = [operations]
-
         pulses = [self.get_pulse(op_format(op, **fill_values), True)
                   for op in operations]
 
@@ -698,7 +711,8 @@ class CircuitBuilder:
         return seq
 
     def simultaneous_blocks(self, block_name, blocks, block_align='start',
-                            set_end_after_all_pulses=False):
+                            set_end_after_all_pulses=False,
+                            disable_block_counter=False):
         """
         Creates a block with name :block_name: that consists of the parallel
         execution of the given :blocks:. Ensures that any pulse or block
@@ -725,6 +739,8 @@ class CircuitBuilder:
                 blocks should be aligned ('start', 'middle', 'end', or a float
                 between 0.0 and 1.0 that determines the alignment point of each
                 block relative to the duration the block). Default: 'start'
+            disable_block_counter (bool, default False): prevent block.build
+                from appending a counter to the block name.
         """
 
         simultaneous = Block(block_name, [])
@@ -736,7 +752,8 @@ class CircuitBuilder:
             if set_end_after_all_pulses:
                 block.set_end_after_all_pulses()
             simultaneous.extend(block.build(
-                ref_pulse=f"start", block_start=dict(block_align=block_align)))
+                ref_pulse=f"start", block_start=dict(block_align=block_align),
+                name=block.name if disable_block_counter else None))
             simultaneous_end_pulses.append(simultaneous.pulses[-1]['name'])
         # the name of the simultaneous_end_pulse is used in
         # Segment.resolve_timing and should not be changed
@@ -750,7 +767,8 @@ class CircuitBuilder:
         return simultaneous
 
     def sequential_blocks(self, block_name, blocks,
-                          set_end_after_all_pulses=False):
+                          set_end_after_all_pulses=False,
+                          disable_block_counter=False):
         """
         Creates a block with name :block_name: that consists of the serial
         execution of the given :blocks:.
@@ -768,13 +786,16 @@ class CircuitBuilder:
                 to be executed one after another.
             set_end_after_all_pulses (bool, default False): in all
                 blocks, correct the end pulse to happen after the last pulse.
+            disable_block_counter (bool, default False): prevent block.build
+                from appending a counter to the block name.
         """
 
         sequential = Block(block_name, [])
         for block in blocks:
             if set_end_after_all_pulses:
                 block.set_end_after_all_pulses()
-            sequential.extend(block.build())
+            sequential.extend(block.build(
+                name=block.name if disable_block_counter else None))
         return sequential
 
     def sweep_n_dim(self, sweep_points, body_block=None, body_block_func=None,
@@ -886,7 +907,8 @@ class CircuitBuilder:
                         qb_names=all_ro_qubits, **final_kwargs)
 
                 segblock = self.sequential_blocks(
-                        'segblock', [prep, this_body_block, final, ro])
+                    'segblock', [prep, this_body_block, final, ro],
+                    disable_block_counter=True)
                 seg = Segment(f'seg{j}', segblock.build(
                     sweep_dicts_list=sweep_points, sweep_index_list=[j, i]))
                 # apply Segment sweep points

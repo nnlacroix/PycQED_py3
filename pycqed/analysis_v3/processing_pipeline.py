@@ -11,14 +11,6 @@ from numpy import array  # Needed for eval. Do not remove.
 search_modules = set()
 search_modules.add(hlp_mod)
 
-try:
-    import pygraphviz as pgv
-except ModuleNotFoundError:
-    log.warning('Visualizing the pipeline tree requires graphviz '
-                '(http://www.graphviz.org/download/) and '
-                'the module pygraphviz '
-                '(conda install graphviz pygraphviz -c alubbock).')
-
 ###################################################################
 #### This module creates a processing pipeline for analysis_v3 ####
 ###################################################################
@@ -250,7 +242,8 @@ Final pipeline:
 class ProcessingPipeline(list):
 
     global_node_param_defaults = {'keys_out_container': '',
-                                  'meaj_obj_names': None}
+                                  'meas_obj_names': None,
+                                  'add_param_method': None}
 
     def __init__(self, pipeline=None, **kw):
         """
@@ -347,7 +340,7 @@ class ProcessingPipeline(list):
             processing function specified by node_name
         """
         for param, value in self.global_node_param_values.items():
-            if value not in node_params:
+            if param not in node_params:
                 node_params[param] = value
         node_params['node_name'] = node_name
 
@@ -500,7 +493,6 @@ class ProcessingPipeline(list):
                         for mobjn in mobj_name.split(','):
                             keys_in_suffix = ' '.join(keys_in_split[1:])
                             keys_in_suffix = f'{mobjn}.{keys_in_suffix}'
-                            # keys_in += [keys_in_suffix]
                             keys_in0 = \
                                 hlp_mod.get_sublst_with_all_strings_of_list(
                                     lst_to_search=hlp_mod.flatten_list(
@@ -517,18 +509,19 @@ class ProcessingPipeline(list):
                             raise KeyError(f'The previous node '
                                            f'{self[node_idx-1]["node_name"]} '
                                            f'does not have the key "keys_out".')
-                        keys_in += hlp_mod.get_sublst_with_all_strings_of_list(
-                            lst_to_search=self[node_idx-1]['keys_out'],
-                            lst_to_match=mobj_value_names)
+                        keys_in += self[node_idx-1]['keys_out']
+                        # keys_in += hlp_mod.get_sublst_with_all_strings_of_list(
+                        #     lst_to_search=self[node_idx-1]['keys_out'],
+                        #     lst_to_match=mobj_value_names)
                 else:
                     raise ValueError('The first node in the pipeline cannot '
                                      'have "keys_in" = "previous".')
 
-        if keys_in != keys_in_temp:
-            try:
-                keys_in.sort()
-            except AttributeError:
-                pass
+        # if keys_in != keys_in_temp:
+        #     try:
+        #         keys_in.sort()
+        #     except AttributeError:
+        #         pass
 
         if len(keys_in) == 0 or keys_in is None:
             raise ValueError(f'No "keys_in" could be determined '
@@ -557,12 +550,6 @@ class ProcessingPipeline(list):
         """
         if keys_out is None:
             return keys_out
-
-        prev_keys_out = []
-        for d in self:
-            if 'keys_out' in d:
-                if d['keys_out'] is not None:
-                    prev_keys_out += d['keys_out']
 
         if len(keys_out) == 0:
             prev_keys_out = []
@@ -632,6 +619,11 @@ class ProcessingPipeline(list):
                                f'{",".join(meas_obj_value_names_map[mobj_name])}'
                 keys_out += [keyo]
 
+            keyo_suff = node_params.get('keys_out_suffixes', [])
+            if len(keyo_suff):
+                keys_out_temp = keys_out
+                keys_out = [f'{keyo}_{suff}' for suff in keyo_suff
+                            for keyo in keys_out_temp]
         return keys_out
 
     def run(self, data_dict=None, **params):
@@ -655,8 +647,8 @@ class ProcessingPipeline(list):
         self.data_dict.update(data_dict)
         self.data_dict['processing_pipeline'] = repr(self)
 
-        for node_params in self:
-            try:
+        try:
+            for node_params in self:
                 node = None
                 for module in search_modules:
                     try:
@@ -667,11 +659,11 @@ class ProcessingPipeline(list):
                 if node is None:
                     raise KeyError(f'Node function "{node_params["node_name"]}"'
                                    f' not recognized')
-                node(self.data_dict, **node_params)
-            except Exception:
-                log.warning(
-                    f'Unhandled error during node {node_params["node_name"]}!')
-                log.warning(traceback.format_exc())
+                node(data_dict=self.data_dict, **node_params)
+        except Exception:
+            log.warning(
+                f'Unhandled error during node {node_params["node_name"]}!')
+            log.warning(traceback.format_exc())
 
     def save(self, data_dict=None, **params):
         """
@@ -804,6 +796,7 @@ class ProcessingPipeline(list):
         :param fmt: file format (png, pdf)
         :return: a pygraphviz.AGraph instance
         """
+        import pygraphviz as pgv
         pipeline = self
         if not any([node.get('was_resolved', False) for node in pipeline]):
             if meas_obj_value_names_map is None:
