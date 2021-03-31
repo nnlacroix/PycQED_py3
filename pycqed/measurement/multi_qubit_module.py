@@ -535,7 +535,8 @@ def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
                          "preparation_params": prep_params,
                          "all_states_combinations": all_states_combinations,
                          "n_shots": n_shots,
-                         "channel_map": channel_map
+                         "channel_map": channel_map,
+                         "data_to_fit": {}
                          })
     df = get_multiplexed_readout_detector_functions(
             qubits, nr_shots=n_shots)['int_log_det']
@@ -1931,6 +1932,7 @@ def measure_drive_cancellation(
         if prep_params is None:
             prep_params = dev.get_prep_params(ramsey_qubits)
 
+        sweep_points = deepcopy(sweep_points)
         sweep_points.add_sweep_dimension()
         sweep_points.add_sweep_parameter('phase', phases, 'deg', 'Ramsey phase')
 
