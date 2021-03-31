@@ -7045,7 +7045,6 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             if isinstance(basis_labels, dict):
                 # if different basis for qubits, then select the according one
                 basis_labels = basis_labels[qbn]
-            print(basis_labels)
             # check that states from the basis are included in mmnt
             for bs in basis_labels:
                 for qb_s in bs:
