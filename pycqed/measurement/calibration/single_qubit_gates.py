@@ -415,7 +415,6 @@ class FluxPulseScope(ParallelLOSweepExperiment):
             fp_length_function = lambda x, opl=original_fp_length, \
                 o=bl_start + fp_truncation_buffer, trunc=fp_truncation: \
                 max(min((x + o), opl), 0) if (x>np.min(trunc) and x<np.max(trunc)) else opl
-            # TODO: check what happens if buffer_length_start and buffer_length_end are zero.
 
             fp['pulse_length'] = ParametricValue(
                 'delay', func=fp_length_function)
