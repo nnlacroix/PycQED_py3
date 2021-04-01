@@ -180,9 +180,11 @@ def fd_load_qb_params(data_dict, params_dict, timestamp=None, **params):
         timestamp = hlp_mod.get_param('timestamps', data_dict, **params)[0]
     params_dict = {k: f'Instrument settings.{mobjn}.{v}'
                    for k, v in params_dict.items()}
+    if params.get('add_param_method', None) is None:
+        params['add_param_method'] = 'replace'
     hlp_mod.get_params_from_hdf_file(data_dict, params_dict,
                                      folder=a_tools.get_folder(timestamp),
-                                     add_param_method='replace', **params)
+                                     **params)
 
 def fd_load_distortion_dict(data_dict, timestamp=None,
                             key_distortion='distortion_dict', **params):
@@ -208,8 +210,10 @@ def fd_load_distortion_dict(data_dict, timestamp=None,
         params_dict['distortion_dict'] = {}
     elif isinstance(params_dict['distortion_dict'], str):
         params_dict['distortion_dict'] = eval(params_dict['distortion_dict'])
+    if params.get('add_param_method', None) is None:
+        params['add_param_method'] = 'replace'
     hlp_mod.add_param(key_distortion, params_dict['distortion_dict'],
-                      data_dict, add_param_method='replace', **params)
+                      data_dict, **params)
 
 def fd_IIR_from_distortion_dict(data_dict, keys_in, keys_out, separate=False,
                                 **params):
@@ -323,19 +327,17 @@ def fd_extract_volt_freq_conv(data_dict, keys_in=None, **params):
     vfc = hlp_mod.get_param(keys_in[0], data_dict, **params)
     f_sweet_spot = hlp_mod.get_param('ge_freq', data_dict, raise_error=True,
                                      **params)
+    if params.get('add_param_method', None) is None:
+        params['add_param_method'] = 'replace'
     from_lower = ((vfc['f_max'] - f_sweet_spot) / f_sweet_spot > 0.1)
-    hlp_mod.add_param('from_lower_sweet_spot', from_lower, data_dict,
-                      add_param_method='replace', **params)
-    hlp_mod.add_param('asymmetry', vfc['asymmetry'], data_dict,
-                      add_param_method='replace', **params)
+    hlp_mod.add_param('from_lower_sweet_spot', from_lower, data_dict, **params)
+    hlp_mod.add_param('asymmetry', vfc['asymmetry'], data_dict, **params)
     dphidV = -np.pi / vfc['V_per_phi0']
-    hlp_mod.add_param('dphidV', dphidV, data_dict,
-                      add_param_method='replace', **params)
+    hlp_mod.add_param('dphidV', dphidV, data_dict, **params)
     # TODO: check whether the following line is correct
     phi_0 = -dphidV * (vfc['dac_sweet_spot'] + (vfc['V_per_phi0'] / 2 if
                                                 from_lower else 0))
-    hlp_mod.add_param('phi_0', phi_0, data_dict,
-                      add_param_method='replace', **params)
+    hlp_mod.add_param('phi_0', phi_0, data_dict, **params)
 
 def fd_create_volt_freq_conv(data_dict, keys_out=None, **params):
     if keys_out is None:
@@ -359,8 +361,9 @@ def fd_create_volt_freq_conv(data_dict, keys_out=None, **params):
             ) ** (0.25)  # TODO: rough approximation
     else:
         vfc['f_max'] = f_sweet_spot
-    hlp_mod.add_param(keys_out[0], vfc, data_dict, add_param_method='replace',
-                      **params)
+    if params.get('add_param_method', None) is None:
+        params['add_param_method'] = 'replace'
+    hlp_mod.add_param(keys_out[0], vfc, data_dict, **params)
 
 def fd_resample(data_dict, keys_in, keys_tvals, keys_out, **params):
     method = hlp_mod.get_param('method', data_dict, default_value='interp',
@@ -593,8 +596,9 @@ def fd_estimate_f_pulsed(data_dict, keys_in, **params):
         f_pulsed = freqs[np.argmax(freqs)]
         from_lower = True
     hlp_mod.add_param('f_pulsed', f_pulsed, data_dict, **params)
-    hlp_mod.add_param('from_lower_sweet_spot', from_lower, data_dict,
-                      add_param_method='replace', **params)
+    if params.get('add_param_method', None) is None:
+        params['add_param_method'] = 'replace'
+    hlp_mod.add_param('from_lower_sweet_spot', from_lower, data_dict, **params)
 
 def fd_estimate_phi0(data_dict, **params):
     """
@@ -614,8 +618,9 @@ def fd_estimate_phi0(data_dict, **params):
     func_for_phi_0 = lambda phi_0: f_park - (-E_c + (f_sweet_spot + E_c) * (
         (np.cos(phi_0)) ** 2 + (d * np.sin(phi_0)) ** 2) ** (0.25))
     phi_0 = optimize.fsolve(func_for_phi_0, guess_phi_0)[0]
-    hlp_mod.add_param('phi_0', phi_0, data_dict, add_param_method='replace',
-                      **params)
+    if params.get('add_param_method', None) is None:
+        params['add_param_method'] = 'replace'
+    hlp_mod.add_param('phi_0', phi_0, data_dict, **params)
 
 def fd_estimate_dphidV(data_dict, **params):
     """
@@ -644,8 +649,9 @@ def fd_estimate_dphidV(data_dict, **params):
     if np.abs(dphidV - guess_dphidV) > 0.1:
         log.warning(f"dphidV is significantly different from typical value: "
                     f"dphidV={dphidV}, where typical value is {guess_dphidV}")
-    hlp_mod.add_param('dphidV', dphidV, data_dict, add_param_method='replace',
-                      **params)
+    if params.get('add_param_method', None) is None:
+        params['add_param_method'] = 'replace'
+    hlp_mod.add_param('dphidV', dphidV, data_dict, **params)
 
 def fd_import_fp_scope(data_dict, keys_out, keys_err=None,
                        keys_projected=None, **params):
@@ -711,8 +717,9 @@ def fd_import_fp_scope(data_dict, keys_out, keys_err=None,
                 kp, [[freqs, pdd['projected_data_dict'][mobjn]['pe'][:, i]]
                      for i in range(len(delays))],
                 data_dict, **params)
-        hlp_mod.add_param('fit_dicts', fp_ana.fit_dicts, data_dict,
-                          add_param_method='update', **params)
+        if params.get('add_param_method', None) is None:
+            params['add_param_method'] = 'update'
+        hlp_mod.add_param('fit_dicts', fp_ana.fit_dicts, data_dict, **params)
         # if kf is not None:
         #     hlp_mod.add_param(
         #         # kf, [fp_ana.fit_res[f"gauss_fit_{mobjn}_slice{i}"] for i in
@@ -751,6 +758,9 @@ def fd_fit_iir(data_dict, keys_in, keys_out, keys_corrected=None, method='JB',
         # scaling by 1e-6 seems reasonable for numerical stability
         t_factor = hlp_mod.get_param('fit_iir_scaling', data_dict,
                                      default_value=1e-6, **params)
+        params_with_update = deepcopy(params)
+        if params_with_update.get('add_param_method', None) is None:
+            params_with_update['add_param_method'] = 'update'
         if method in ['JB', 'JB_iter']:
             prep_data, delays_filter, dt_osc, i_start, i_end, t_end = \
                 IIR_fitting.prepare_data(
@@ -796,7 +806,7 @@ def fd_fit_iir(data_dict, keys_in, keys_out, keys_corrected=None, method='JB',
                              for p in ['A', 'B', 'tau']]
             hlp_mod.add_param('fit_dicts',
                               {f'IIR_{method}_{ki}': dict(fit_res=fit_res)},
-                              data_dict, add_param_method='update', **params)
+                              data_dict, **params_with_update)
         if method in ['integral', 'multiexp']:
             mask = np.logical_and(data[0] >= fit_range[0],
                                   data[0] <= fit_range[1])
@@ -817,7 +827,7 @@ def fd_fit_iir(data_dict, keys_in, keys_out, keys_corrected=None, method='JB',
                 weights=weights, **lmfit_kwargs)
             hlp_mod.add_param('fit_dicts',
                               {f'IIR_{method}_{ki}': dict(fit_res=fit_res)},
-                              data_dict, add_param_method='update', **params)
+                              data_dict, **params_with_update)
             N = len([k for k in fit_res.values if k.startswith('tau')])
             A = fit_res.values.get('A', 0)
             B = [fit_res.values.get(f'B{i}') for i in range(N)]
