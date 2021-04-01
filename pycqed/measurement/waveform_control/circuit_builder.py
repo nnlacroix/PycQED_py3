@@ -859,8 +859,6 @@ class CircuitBuilder:
                     sweep_dicts_list=sweep_points, sweep_index_list=[j, i]))
                 # apply Segment sweep points
                 for dim in [0, 1]:
-                    if len(sweep_points[dim]) == 0:
-                        continue
                     for param in sweep_points[dim]:
                         if param.startswith('Segment.'):
                             vals = sweep_points.get_sweep_params_property(
