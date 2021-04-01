@@ -861,11 +861,10 @@ class CircuitBuilder:
                 for dim in [0, 1]:
                     if len(sweep_points[dim]) == 0:
                         continue
-                    for param, vals in [
-                            [s[2], s[0]] for s in
-                            sweep_points.get_sweep_params_description(
-                                'all', dimension=dim)]:
+                    for param in sweep_points[dim]:
                         if param.startswith('Segment.'):
+                            vals = sweep_points.get_sweep_params_property(
+                                'values', dim, param)
                             setattr(seg, param[len('Segment.'):],
                                     vals[j if dim == 0 else i])
                 # add the new segment to the sequence
