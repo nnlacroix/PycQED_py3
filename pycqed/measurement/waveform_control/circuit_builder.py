@@ -776,8 +776,8 @@ class CircuitBuilder:
         Currently, only 1D and 2D sweeps are implemented.
 
         :param sweep_points: SweepPoints object
-            If it contains sweep points whose name parameter names of the form
-            with "Segment.property", the respective property of the created
+            Note: If it contains sweep points with parameter names of the form
+            "Segment.property", the respective property of the created
             Segment objects will be swept.
         :param body_block: block containing the pulses to be swept (excluding
             initialization and readout)
@@ -881,13 +881,10 @@ class CircuitBuilder:
                     sweep_dicts_list=sweep_points, sweep_index_list=[j, i]))
                 # apply Segment sweep points
                 for dim in [0, 1]:
-                    if len(sweep_points[dim]) == 0:
-                        continue
-                    for param, vals in [
-                            [s[2], s[0]] for s in
-                            sweep_points.get_sweep_params_description(
-                                'all', dimension=dim)]:
+                    for param in sweep_points[dim]:
                         if param.startswith('Segment.'):
+                            vals = sweep_points.get_sweep_params_property(
+                                'values', dim, param)
                             setattr(seg, param[len('Segment.'):],
                                     vals[j if dim == 0 else i])
                 # add the new segment to the sequence
