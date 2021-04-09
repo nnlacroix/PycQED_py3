@@ -543,9 +543,11 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                              zip(["pg", "pe", "pf"], probas_corrected)})
 
         # get data_to_fit
+        suffix = "_corrected" if self.get_param_value("correction_matrix")\
+                                 is not None else ""
         self.proc_data_dict['data_to_fit'] = OrderedDict()
         for qbn, prob_data in self.proc_data_dict[
-                'projected_data_dict_corrected'].items():
+                'projected_data_dict' + suffix].items():
             if qbn in self.data_to_fit:
                 self.proc_data_dict['data_to_fit'][qbn] = prob_data[
                     self.data_to_fit[qbn]]
@@ -1559,7 +1561,7 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
             self, fig_name, data, qb_name, title_suffix='', sweep_points=None,
             plot_cal_points=True, plot_name_suffix='', fig_name_suffix='',
             data_label='Data', data_axis_label='', do_legend_data=True,
-            do_legend_cal_states=True, TwoD=None):
+            do_legend_cal_states=True, TwoD=None, yrange=None):
 
         if len(fig_name_suffix):
             fig_name = f'{fig_name}_{fig_name_suffix}'
@@ -1598,7 +1600,9 @@ class MultiQubit_TimeDomain_Analysis(ba.BaseDataAnalysis):
                     'legend_pos': 'center left',
                     'linestyle': 'none',
                     'line_kws': {'color': self.get_cal_state_color(
-                        list(self.cal_states_dict)[i])}}
+                        list(self.cal_states_dict)[i])},
+                    'yrange': yrange,
+                }
 
                 self.plot_dicts[plot_dict_name_cal+'_line'] = {
                     'fig_id': fig_name,
@@ -4865,9 +4869,7 @@ class FluxlineCrosstalkAnalysis(MultiQubit_TimeDomain_Analysis):
                              'class instance.')
 
         pdd = self.proc_data_dict
-        # get the ramsey phases as the values of the first sweep parameter
-        # in the 1st sweep dimension.
-        # !!! This assumes all qubits have the same ramsey phases !!!
+
         pdd['ramsey_phases'] = self.sp.get_sweep_params_property('values', 0)
         pdd['target_amps'] = self.sp.get_sweep_params_property('values', 1)
         pdd['target_fluxpulse_length'] = \
@@ -6891,7 +6893,6 @@ class MultiCZgate_Calib_Analysis(MultiQubit_TimeDomain_Analysis):
                             f'population_loss_{qbn}'] = \
                             {'val': population_loss,
                              'stderr': population_loss_stderrs}
-
                 else:
                     self.proc_data_dict['analysis_params_dict'][
                         f'amps_{qbn}'] = {
@@ -7666,13 +7667,13 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
             basis_labels = self.get_param_value('acq_weights_basis', None, 0)
             if basis_labels is None:
                 # guess basis labels from # states measured
-                basis_labels = ["ge", "gf"] \
+                basis_labels = ["ge", "ef"] \
                     if len(ana_params['timetraces'][qbn]) > 2 else ['ge']
 
             if isinstance(basis_labels, dict):
                 # if different basis for qubits, then select the according one
                 basis_labels = basis_labels[qbn]
-
+            print(basis_labels)
             # check that states from the basis are included in mmnt
             for bs in basis_labels:
                 for qb_s in bs:
@@ -7685,7 +7686,15 @@ class MultiQutrit_Timetrace_Analysis(ba.BaseDataAnalysis):
 
             # orthonormalize if required
             if self.get_param_value("orthonormalize", False):
-                basis = math.gram_schmidt(basis.T).T
+                # We need to consider the integration weights as a vector of
+                # real numbers for the Gram-Schmidt transformation of the
+                # weights leads to a linear transformation of the integrated
+                # readout results (relates to how integration is done on UHF,
+                # see One Note: )
+                basis_real = np.hstack((basis.real, basis.imag), )
+                basis_real = math.gram_schmidt(basis_real.T).T
+                basis =    basis_real[:,:basis_real.shape[1]//2] + \
+                        1j*basis_real[:,basis_real.shape[1]//2:]
                 basis_labels = [bs + "_ortho" if bs != basis_labels[0] else bs
                                 for bs in basis_labels]
 
