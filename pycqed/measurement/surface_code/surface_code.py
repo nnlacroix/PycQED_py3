@@ -56,6 +56,14 @@ class SurfaceCodeExperiment(qe_mod.QuantumExperiment):
         if self.mc_points_override is not None:
             self.mc_points[0] = self.mc_points_override
 
+        # TODO (Nahan): in the future, we might want to put the experimental metadata update
+        #  at the beginning of the measurement or in the "prepare measurement", such that
+        #  we are sure that the "latest" values of these parameters are used when saving the
+        #  metadata.
+        self.exp_metadata.update({"nr_cycles": self.nr_cycles,
+                                  "ancilla_dd": self.ancilla_dd,
+                                  "ancilla_reset": self.ancilla_reset})
+
     def _parse_finalizations(self, basis_rots):
         if self.finalizations is None or self.finalizations == 'logical_z':
             self.finalizations = [len(self.data_qubits) * ['I']]

@@ -589,7 +589,7 @@ def measure_ssro(dev, qubits, states=('g', 'e'), n_shots=10000, label=None,
 def find_optimal_weights(dev, qubits, states=('g', 'e'), upload=True,
                          acq_length=4096/1.8e9, exp_metadata=None,
                          analyze=True, analysis_kwargs=None,
-                         acq_weights_basis=None, orthonormalize=False,
+                         acq_weights_basis=None, orthonormalize=True,
                          update=True, measure=True):
     """
     Measures time traces for specified states and

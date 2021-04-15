@@ -504,6 +504,7 @@ def correct_readout(data_dict, keys_in, keys_out=None, state_prob_mtxs=None,
         uncorrected_data = np.stack(list(data_to_proc_dict.values()))
         num_states = uncorrected_data.shape[1]
 
+
     state_assign_matrix = [[1]]
     for mobjn in meas_obj_names:
         state_prob_mtx = state_prob_mtxs.get(mobjn, None)
@@ -969,6 +970,10 @@ def calculate_meas_ops_and_covariations(
      - len(keys_out) == 2
      - order in keys_out corresponds to [measurement_operators, covar_matrix]
     """
+    correct_readout = hlp_mod.get_param('correct_readout', data_dict, **params)
+    if correct_readout is None:
+        correct_readout = False
+
     if keys_out is None:
         keys_out = ['measurement_ops', 'cov_matrix_meas_obs']
     if len(keys_out) != 2:
@@ -981,16 +986,39 @@ def calculate_meas_ops_and_covariations(
             **params)
 
     Fs = []
-    Fsingle = {None: np.array([[1, 0], [0, 1]]),
-               True: np.array([[0, 0], [0, 1]]),
-               False: np.array([[1, 0], [0, 0]])}
+    if not correct_readout:
+        Fsingle = {mobjn: {None: np.array([[1, 0], [0, 1]]),
+                           True: np.array([[0, 0], [0, 1]]),
+                           False: np.array([[1, 0], [0, 0]])}
+                    for mobjn in meas_obj_names}
+    else:
+        state_prob_mtxs = hlp_mod.get_param('state_prob_mtxs', data_dict,
+                                            **params,
+                                            default_value={})
+        Fsingle = {}
+        for mobjn in meas_obj_names:
+            state_prob_mtx = state_prob_mtxs.get(mobjn, None)
+            if state_prob_mtx is None:
+                state_prob_mtx = hlp_mod.get_param(f'{mobjn}.state_prob_mtx',
+                                                   data_dict,
+                                                   raise_error=True, **params)
+            state_prob_mtx = state_prob_mtx[:2, :2]
+            state_prob_mtx = state_prob_mtx/state_prob_mtx.sum(axis=1, keepdims=True)
+            Fsingle[mobjn] = {
+                None: np.array([[1, 0], [0, 1]]),
+                False: np.diag(state_prob_mtx[:, 0]),
+                True: np.diag(state_prob_mtx[:, 1]),
+            }
+
     Omega = []
-    for obs in observables.values():
+    for obs_name, obs in observables.items():
+        if obs_name == 'pre':
+            continue
         F = np.array([[1]])
         nr_meas = 0
         for qb in meas_obj_names:
             # TODO: does not handle conditions on previous readouts
-            Fqb = Fsingle[obs.get(qb, None)]
+            Fqb = Fsingle[qb][obs.get(qb, None)]
             # Kronecker product convention - assumed the same as QuTiP
             F = np.kron(F, Fqb)
             if qb in obs:
@@ -1347,32 +1375,34 @@ def calculate_flat_multiqubit_shots(data_dict, keys_in, keys_out=None,
     presel_mask = np.ones(nr_shots)
     if do_preselection:
         nr_shots //= 2
-        # distinguish between measurement and preselection segments
+        # distinguish between measurement and preselection shots
         presel_segs = np.logical_not(np.arange(2*nr_shots) % 2)
 
         # calculate preselection mask: True when the shots are to be kept
         presel_mask = np.ones(nr_shots)
         for mobjn in meas_obj_names:
             presel_mask = np.logical_and(presel_mask, ps[mobjn][0][presel_segs])
+    presel_mask = presel_mask.astype(bool)
 
     # Calculate flat multiqubit shots
-    # e.g. [pgg, pge, pgf, peg, pee, pef, pfg, pfe, pff] for two qubits
-    ps_flat = []
-    for i in range(nr_shots):
-        if not presel_mask[i]:
-            continue
-        res = [1]
-        idx = 2*i + 1 if do_preselection else i
-        for mobjn in meas_obj_names:
-            res = np.kron(res, ps[mobjn].T[idx])
-        ps_flat.append(res)
+    # e.g. [gg, ge, gf, eg, ee, ef, fg, fe, ff] for two qubits
+    alphabet = list(map(chr, range(97, 123)))
+    s = ','.join(['n'+alphabet[i] for i in range(len(meas_obj_names))])
+    s += '->n'+''.join([alphabet[i] for i in range(len(meas_obj_names))])
+    if do_preselection:
+        data_arr_list = [ps[mobjn].T[1::2][list(presel_mask)]
+                         for mobjn in meas_obj_names]
+    else:
+        data_arr_list = [ps[mobjn].T[list(presel_mask)]
+                         for mobjn in meas_obj_names]
+    ps_flat = np.einsum(s, *data_arr_list).reshape(data_arr_list[0].shape[0], -1)
 
     if keys_out is None:
         hlp_mod.add_param(
             f'{",".join(meas_obj_names)}.calculate_flat_multiqubit_shots',
-            np.array(ps_flat), data_dict, **params)
+            ps_flat, data_dict, **params)
     else:
         if len(keys_out) != 1:
             raise ValueError(f'keys_out must have length 1 but has '
                              f'length {len(keys_out)}')
-        hlp_mod.add_param(keys_out[0], np.array(ps_flat), data_dict, **params)
+        hlp_mod.add_param(keys_out[0], ps_flat, data_dict, **params)

@@ -105,7 +105,8 @@ class CircuitBuilder:
             qb_names = [qb_names]
 
         # test if qubit objects have been provided instead of names
-        qb_names = [qb if isinstance(qb, str) else qb.name for qb in qb_names]
+        qb_names = [qb if isinstance(qb, str) or isinstance(qb, int)
+                    else qb.name for qb in qb_names]
         # test if qubit indices have been provided instead of names
         try:
             ind = [int(i) for i in qb_names]
@@ -221,7 +222,8 @@ class CircuitBuilder:
             if op_name[0] not in ['X', 'Y', 'Z']:
                 raise KeyError(f'Gate "{op}" not found.')
             angle, qbn = op_name[1:], op_info[1]
-            if angle[-1] == 's':
+            if angle[-1] == 's' and angle[:-1].isnumeric():
+                op_info[0] = 's' + op_info[0]
                 angle = angle[:-1]
             param = None
             if angle[0] == ':':  # angle depends on a parameter
@@ -782,8 +784,8 @@ class CircuitBuilder:
         Currently, only 1D and 2D sweeps are implemented.
 
         :param sweep_points: SweepPoints object
-            If it contains sweep points whose name parameter names of the form
-            with "Segment.property", the respective property of the created
+            Note: If it contains sweep points with parameter names of the form
+            "Segment.property", the respective property of the created
             Segment objects will be swept.
         :param body_block: block containing the pulses to be swept (excluding
             initialization and readout)
@@ -887,13 +889,10 @@ class CircuitBuilder:
                     sweep_dicts_list=sweep_points, sweep_index_list=[j, i]))
                 # apply Segment sweep points
                 for dim in [0, 1]:
-                    if len(sweep_points[dim]) == 0:
-                        continue
-                    for param, vals in [
-                            [s[2], s[0]] for s in
-                            sweep_points.get_sweep_params_description(
-                                'all', dimension=dim)]:
+                    for param in sweep_points[dim]:
                         if param.startswith('Segment.'):
+                            vals = sweep_points.get_sweep_params_property(
+                                'values', dim, param)
                             setattr(seg, param[len('Segment.'):],
                                     vals[j if dim == 0 else i])
                 # add the new segment to the sequence

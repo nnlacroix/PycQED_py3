@@ -188,41 +188,9 @@ class RandomizedBenchmarking(MultiTaskingExperiment):
         Runs analysis and stores analysis instance in self.analysis.
         :param kw: keyword_arguments passed to analysis functions;
             see docstrings there
-
-        Currently only works for a single-shot measurement without preselection,
-        and if the readout thresholds exist in the acq_classifier_params of
-        each qubit at the time of measurement.
-
         """
-
-        if 'dim_hilbert' not in kw:
-            raise ValueError('Please specify the dimension of the Hilbert '
-                             'space "dim_hilbert" for this measurement.')
-        if 'log' not in self.df_name:
-            raise NotImplementedError(
-                f'Automatic analysis only works for a single-shot '
-                f'measurement without preselection. '
-                f'There is no support for the detector type '
-                f'{self.df_name}. Use df_name=int_log_det.')
-
-        pp = rb_ana.pipeline_ssro_measurement(
-            self.meas_obj_names, self.exp_metadata[
-                'meas_obj_sweep_points_map'], self.sweep_points,
-            n_shots=max(qb.acq_shots() for qb in self.meas_objs),
-            dim_hilbert=kw['dim_hilbert'], cal_points=self.cal_points,
-            sweep_type=self.sweep_type,
-            interleaved_irb=self.interleaved_gate is not None, **kw)
-        params_dict = {f'{qbn}.acq_classifier_params':
-                           f'Instrument settings.{qbn}.acq_classifier_params'
-                       for qbn in self.meas_obj_names}
-        pp.add_node('extract_data_hdf', params_dict=params_dict, at_idx=0)
-        # self.exp_metadata.update({'processing_pipeline': pp})
-        self.analysis = pp
-
-        data_dict = {'plot_T1_lim': True, 'do_simple_fit': False}
-        self.analysis.resolve(self.exp_metadata['meas_obj_value_names_map'])
-        self.analysis(data_dict)
-        self.analysis.save()
+        self.analysis = pla.extract_data_hdf()  # returns a dict
+        pla.process_pipeline(self.analysis)
 
 
 class SingleQubitRandomizedBenchmarking(RandomizedBenchmarking):
@@ -523,9 +491,10 @@ class SingleQubitXEB(MultiTaskingExperiment):
 class TwoQubitXEB(MultiTaskingExperiment):
     kw_for_sweep_points = {'cycles': dict(param_name='cycles', unit='',
                                           label='Nr. Cycles', dimension=0),
-                           'nr_seqs,cycles': dict(param_name='gateschoice', unit='',
-                                                  label='two single gates and CZ', dimension=1,
-                                                  values_func='paulis_gen_func')
+                           'nr_seqs,cycles': dict(
+                               param_name='gateschoice', unit='',
+                               label='cycles gates', dimension=1,
+                               values_func='paulis_gen_func')
                            }
 
     def __init__(self, task_list, sweep_points=None, qubits=None,
@@ -633,9 +602,11 @@ class TwoQubitXEB(MultiTaskingExperiment):
                 i = 0
                 gates = []
                 gates.append(s_gates[1] + "qb_1")
-                gates.append(s_gates[1][0:3] + 's ' + "qb_2")
+                sim_str = ' ' if 'Z' in s_gates[1][0:3] else 's '
+                gates.append(s_gates[1][0:3] + sim_str + "qb_2")
                 gates.append(s_gates[2] + "qb_1")
-                gates.append(s_gates[2][0:3] + 's ' + "qb_2")
+                sim_str = ' ' if 'Z' in s_gates[2][0:3] else 's '
+                gates.append(s_gates[2][0:3] + sim_str + "qb_2")
                 gates.append("CZ " + "qb_1 qb_2")
                 while i < length:
                     last_1_gate1 = gates[-3][0:4]
@@ -653,7 +624,8 @@ class TwoQubitXEB(MultiTaskingExperiment):
                         choice2.append(gate)
                     choice2.remove(last_1_gate2)
                     gate2 = random.choice(choice2)
-                    gates.append(gate2[:3] + 's ' + 'qb_2')
+                    sim_str = ' ' if 'Z' in gate2[:3] else 's '
+                    gates.append(gate2[:3] + sim_str + 'qb_2')
                     gates.append("CZ " + 'qb_1 qb_2')
                     i += 1
                 lis.append(gates)

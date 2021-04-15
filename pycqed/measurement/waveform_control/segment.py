@@ -1257,7 +1257,7 @@ class Segment:
                 len(channel_map)
             if axes is not None:
                 if np.ndim(axes) == 0:
-                    axes = [[axes]]
+                    axes = np.array([[axes]])
                 fig = axes[0,0].get_figure()
                 ax = axes
             else:
