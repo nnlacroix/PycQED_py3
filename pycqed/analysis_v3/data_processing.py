@@ -1385,7 +1385,7 @@ def calculate_flat_multiqubit_shots(data_dict, keys_in, keys_out=None,
     presel_mask = presel_mask.astype(bool)
 
     # Calculate flat multiqubit shots
-    # e.g. [pgg, pge, pgf, peg, pee, pef, pfg, pfe, pff] for two qubits
+    # e.g. [gg, ge, gf, eg, ee, ef, fg, fe, ff] for two qubits
     alphabet = list(map(chr, range(97, 123)))
     s = ','.join(['n'+alphabet[i] for i in range(len(meas_obj_names))])
     s += '->n'+''.join([alphabet[i] for i in range(len(meas_obj_names))])

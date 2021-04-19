@@ -159,7 +159,7 @@ def convert_expmod_to_IIR(expmod, dt, inverse_IIR=True, direct=False):
             a = [sp.Rational(a) for a in [A] + list(B)]
             tau_s = [sp.Rational(t / 1e-9) * 1e-9 for t in list(tau)]
             # In the next line, going via the reciprocal value is more precise
-            # since we usually specify dt a 1 over sampling frequency.
+            # since we usually specify dt as 1 over sampling frequency.
             T = 1 / sp.Rational(f"{1 / dt}")
             if direct:
                 z = sp.symbols('z')

@@ -218,8 +218,8 @@ def add_measured_data_dict(data_dict, **params):
                                            **params)
     if 'measured_data' in data_dict and 'value_names' in metadata:
         value_names = metadata['value_names']
-        sp, rev_movnm = hlp_mod.get_measurement_properties(
-            data_dict, props_to_extract=['sp', 'rev_movnm'])
+        rev_movnm = hlp_mod.get_measurement_properties(
+            data_dict, props_to_extract=['rev_movnm'])
 
         if rev_movnm is not None:
             data_key = lambda ro_ch, rev_movnm=rev_movnm: f'{rev_movnm[ro_ch]}.{ro_ch}'
@@ -269,13 +269,18 @@ def add_measured_data_dict(data_dict, **params):
                                       default_value=100, **params)
         if perc_done < 100 and mc_points.shape[0] > 1:
             sp = hlp_mod.get_measurement_properties(data_dict,
-                                                    props_to_extract=['sp'])
-            sp_new = sp_mod.SweepPoints([sp.get_sweep_dimension(0)])
-            sp_new.add_sweep_dimension()
-            for param_name, props_tup in sp.get_sweep_dimension(1).items():
-                sp_new.add_sweep_parameter(param_name, props_tup[0][:len(ssp)],
-                                           props_tup[1], props_tup[2])
-            hlp_mod.add_param('sweep_points', sp_new, data_dict, **params)
+                                                    props_to_extract=['sp'],
+                                                    raise_error=False)
+            if len(sp):  # above call returns [] is sp not found
+                sp_new = sp_mod.SweepPoints([sp.get_sweep_dimension(0)])
+                sp_new.add_sweep_dimension()
+                for param_name, props_tup in sp.get_sweep_dimension(1).items():
+                    sp_new.add_sweep_parameter(param_name, props_tup[0][:len(ssp)],
+                                               props_tup[1], props_tup[2])
+                hlp_mod.add_param('sweep_points', sp_new, data_dict, **params)
+            else:
+                log.warning('sweep_points not found. Cannot deal with '
+                            'interrupted measurements.')
     else:
         raise ValueError('Either "measured_data" was not found in data_dict '
                          'or "value_names" was not found in metadata. '
