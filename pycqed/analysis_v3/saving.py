@@ -71,7 +71,7 @@ class Save:
             np.set_printoptions(**opt)
         except Exception:
             np.set_printoptions(**opt)
-            log.warning("Unhandled error during init of analysis!")
+            log.warning("Unhandled error during saving!")
             log.warning(traceback.format_exc())
 
     def save_data_dict(self):
@@ -101,14 +101,24 @@ class Save:
                     if value.get('is_data_dict', False):
                         self.dump_to_file(value, group)
                     else:
-                        value_to_save = {k: v for k, v in value.items() if
-                                         k not in self.filter_keys}
+                        value_to_save = {}
+                        for k, v in value.items():
+                            if k not in self.filter_keys:
+                                if isinstance(v, lmfit.model.ModelResult):
+                                    frd = {f'{k}': _convert_dict_rec(v)}
+                                    self.dump_to_file(frd,
+                                                      entry_point=group)
+                                else:
+                                    value_to_save[k] = v
                         h5d.write_dict_to_hdf5(value_to_save,
                                                entry_point=group)
                 elif isinstance(value, np.ndarray):
                     group.create_dataset(key, data=value)
                 elif isinstance(value, qtp.qobj.Qobj):
                     group.create_dataset(key, data=value.full())
+                elif isinstance(value, lmfit.model.ModelResult):
+                    h5d.write_dict_to_hdf5(_convert_dict_rec(value),
+                                           entry_point=group)
                 else:
                     try:
                         val = repr(value)

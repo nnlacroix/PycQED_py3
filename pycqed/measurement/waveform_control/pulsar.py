@@ -1417,7 +1417,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
     def __init__(self, name='Pulsar', master_awg=None):
         super().__init__(name)
 
-        self.sequence_cache = dict()
+        self._sequence_cache = dict()
         self.reset_sequence_cache()
 
         self.add_parameter('master_awg',
@@ -1488,11 +1488,11 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
         return val
 
     def reset_sequence_cache(self):
-        self.sequence_cache = {}
-        self.sequence_cache['settings'] = {}
-        self.sequence_cache['metadata'] = {}
-        self.sequence_cache['hashes'] = {}
-        self.sequence_cache['length'] = {}
+        self._sequence_cache = {}
+        self._sequence_cache['settings'] = {}
+        self._sequence_cache['metadata'] = {}
+        self._sequence_cache['hashes'] = {}
+        self._sequence_cache['length'] = {}
 
     def check_for_other_pulsar(self):
         """
@@ -1727,7 +1727,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
                 sequence.generate_waveforms_sequences(get_channel_hashes=True)
             log.debug(f'End of waveform hashing sequence {sequence.name} '
                       f'{time.time() - t0}')
-            sequence_cache = self.sequence_cache
+            sequence_cache = self._sequence_cache
             # The following makes sure that the sequence cache is empty if
             # the compilation crashes or gets interrupted.
             self.reset_sequence_cache()
@@ -1899,7 +1899,7 @@ class Pulsar(AWG5014Pulsar, HDAWG8Pulsar, UHFQCPulsar, Instrument):
 
         if self.use_sequence_cache():
             # Compilation finished sucessfully. Store sequence cache.
-            self.sequence_cache = sequence_cache
+            self._sequence_cache = sequence_cache
         self.num_seg = len(sequence.segments)
         self.AWGs_prequeried(False)
 
