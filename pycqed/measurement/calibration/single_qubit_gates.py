@@ -1253,7 +1253,10 @@ class SingleQubitGateCalib(CalibBuilder):
             if 'cal_states' not in kw:
                 indices = [self.state_order.index(s) for s in states]
                 cal_states = self.state_order[:max(indices)+1]
-                self.create_cal_points(cal_states=cal_states)
+                self.create_cal_points(
+                    n_cal_points_per_state=kw.get('n_cal_points_per_state', 1),
+                    for_ef=kw.get('for_ef', False),
+                    transition_name=''.join(cal_states))
 
             self.update_preproc_tasks()
             self.define_data_to_fit()
@@ -1299,37 +1302,23 @@ class SingleQubitGateCalib(CalibBuilder):
             if 'cal_states_rotations' in task:
                 cal_states_rotations.update(task['cal_states_rotations'])
             else:
-                transition_name = task['transition_name_input']
-                if 'h' in transition_name:
-                    states = transition_name
-                else:
+                if len(self.cal_states) > 3:
+                    transition_name = task['transition_name_input']
                     indices = [self.state_order.index(s)
                                for s in transition_name]
-                    states = self.state_order[:max(indices)+1]
-
-                rots = []
-                for s in states:
-                    try:
-                        rots += [(s, self.cal_states.index(s))]
-                    except ValueError:
-                        log.warning(f'For {qb_name} with transition '
-                                    f'{transition_name}, "{s}" is not in '
-                                    f'cal_states: {self.cal_states}. '
-                                    f'Will add the next lowest cal state.')
-
-                # check if fewer than 2 states were added (happens in the
-                # exception above).
-                if len(rots) == 1:
-                    added_state = rots[0][0]
-                    states = [s for s in self.cal_states if s != added_state]
-                    rots += [(states[-1], self.cal_states.index(states[-1]))]
-                elif len(rots) == 0:
-                    rots += [(self.cal_states[i], i) for i in range(2)]
-
-                # sort by index of cal_state
-                rots.sort(key=lambda t: t[1])
-                cal_states_rotations[qb_name] = {t[0]: i for i, t in
-                                                 enumerate(rots)}
+                    if transition_name == 'ge':
+                        states = self.state_order[:max(indices)+2]
+                    else:
+                        states = self.state_order[
+                                 min(indices)-1:max(indices)+1]
+                    rots = [(s, self.cal_states.index(s)) for s in states]
+                    # sort by index of cal_state
+                    rots.sort(key=lambda t: t[1])
+                    cal_states_rotations[qb_name] = {t[0]: i for i, t in
+                                                     enumerate(rots)}
+                else:
+                    cal_states_rotations[qb_name] = \
+                        {s: i for i, s in enumerate(self.cal_states)}
 
         self.exp_metadata.update({'cal_states_rotations': cal_states_rotations})
 
